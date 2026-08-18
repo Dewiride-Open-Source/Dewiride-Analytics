@@ -37,7 +37,7 @@
     <Company>Dewiride Technologies</Company>
     <Product>Dewiride Analytics</Product>
     <Copyright>Copyright (c) 2026 Dewiride Technologies</Copyright>
-    <RepositoryUrl>https://github.com/dewiride/analytics</RepositoryUrl>
+    <RepositoryUrl>https://github.com/Dewiride-Open-Source/Dewiride-Analytics</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 
@@ -48,7 +48,13 @@
     by which projects were compiled — never by a preprocessor branch. Roslyn analyzers and
     SonarQube do not analyse an inactive #if branch, so `#if EE` would push half the code
     outside a gate this repository treats as non-negotiable.
-    See docs/adr/0002-single-public-repo-with-ee.md.
+
+    ee/ is not part of this repository. It is a separate private repository checked out into
+    ./ee, which is why that path is ignored here: what the commercial edition adds is
+    cross-customer analysis that only exists because the hosted service sees many customers
+    at once, and it is the one part of this product a competitor could not derive from the
+    free code. A Cloud build without it fails on a missing project rather than quietly
+    producing something that calls itself Cloud.
   -->
   <PropertyGroup Label="Edition">
     <DewirideEdition Condition="'$(DewirideEdition)' == ''">Community</DewirideEdition>

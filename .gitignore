@@ -81,3 +81,7 @@ fixtures/real/
 .DS_Store
 Thumbs.db
 *.swp
+
+# The commercial edition is a separate private repository, checked out here to build the
+# Cloud edition. It is never part of this one.
+/ee/

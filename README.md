@@ -109,7 +109,6 @@ Change any of them in `.env` if something else on your machine already has the p
 | `frontend/` | The dashboard                                                           |
 | `config/`   | Service tuning that is mounted into the containers                      |
 | `tracker/`  | The browser beacon and its no-JavaScript fallback — licence only so far |
-| `ee/`       | Commercially licensed extras — see below                                |
 
 Folders for the hosting-platform integrations, the traffic generator, the cloud deployment
 description and the decision records arrive with the work that fills them. A directory with
@@ -127,15 +126,14 @@ The engine, the dashboard, and everything that decides what your traffic is are
 self-host it, including for your own commercial purposes. If you run a modified version as a
 service for other people, the AGPL asks you to offer them your changes.
 
-- `tracker/` and `integrations/` are **MIT**, because they are pasted into other people's
-  websites and a copyleft beacon is not a reasonable thing to ask somebody to embed.
-- `ee/` is **not** free software. It holds what only exists because we run this as a hosted
-  service — billing, single sign-on, directory synchronisation, alerting, and analysis across more
-  than one customer's traffic. Its terms are in [`ee/COPYING.txt`](ee/COPYING.txt). Everything
-  under `ee/` is excluded from the free build, and the build fails if free code reaches into it.
+`tracker/` and `integrations/` are **MIT** instead, because they are pasted into other people's
+websites and a copyleft beacon is not a reasonable thing to ask somebody to embed.
 
 Self-hosting is not a crippled tier. The full detection engine, every screen, and unlimited
-websites, traffic and retention are free.
+websites, traffic and retention are free. What the hosted service adds is the running of it —
+and analysis that only exists because it sees many customers' traffic at once, which no single
+installation could produce for itself. That part is commercial, lives in its own repository, and
+is not required to build or run anything here.
 
 Attributions for the data and libraries this depends on are in [`NOTICE`](NOTICE).
 

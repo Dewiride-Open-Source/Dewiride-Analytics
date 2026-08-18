@@ -1,4 +1,7 @@
+using System.Collections.Immutable;
 using Dewiride.Analytics.Application.Tenancy;
+using Dewiride.Analytics.Classification;
+using Dewiride.Analytics.Domain.Telemetry;
 
 namespace Dewiride.Analytics.Application.Analytics;
 
@@ -33,6 +36,69 @@ public interface ITelemetryQueries
         TenantScope scope,
         TimeSeriesQuery query,
         CancellationToken cancellationToken);
+
+    /// <summary>Returns judged visits grouped by what generated them.</summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The window to group over.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One row per category and evidence strength, busiest first.</returns>
+    Task<IReadOnlyList<TrafficBreakdownRow>> GetTrafficBreakdownAsync(
+        TenantScope scope,
+        TrafficBreakdownQuery query,
+        CancellationToken cancellationToken);
+
+    /// <summary>Returns individual judged visits with the evidence behind each verdict.</summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The window and how many visits to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The visits, newest first.</returns>
+    Task<IReadOnlyList<JudgedSession>> GetJudgedSessionsAsync(
+        TenantScope scope,
+        JudgedSessionsQuery query,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// One group of visits that reached the same conclusion with the same weight behind it.
+/// </summary>
+/// <remarks>
+/// Category and strength are reported together rather than summed across strengths, because a
+/// hundred visits called a crawler on weak evidence is a different statement from a hundred
+/// called one on strong evidence, and collapsing the two would hide exactly the distinction this
+/// product exists to make.
+/// </remarks>
+/// <param name="Category">What the engine concluded generated these visits.</param>
+/// <param name="Strength">How much weight stood behind that conclusion.</param>
+/// <param name="Sessions">How many visits fell into the group.</param>
+/// <param name="PageViews">How many pages those visits asked for between them.</param>
+public readonly record struct TrafficBreakdownRow(
+    TrafficCategory Category,
+    EvidenceStrength Strength,
+    long Sessions,
+    long PageViews);
+
+/// <summary>
+/// One judged visit, as it is read back for display.
+/// </summary>
+public sealed record JudgedSession
+{
+    /// <summary>Identity of the visit, derived from the visitor key and when the visit began.</summary>
+    public required string SessionKey { get; init; }
+
+    /// <summary>When the visit began.</summary>
+    public required DateTimeOffset StartedAt { get; init; }
+
+    /// <summary>When the last activity on it was seen.</summary>
+    public required DateTimeOffset EndedAt { get; init; }
+
+    /// <summary>How many pages the visit asked for.</summary>
+    public required int PageCount { get; init; }
+
+    /// <summary>Which capture surfaces saw it.</summary>
+    public required ImmutableArray<IngestSurface> Surfaces { get; init; }
+
+    /// <summary>The conclusion, with the evidence for and against it.</summary>
+    public required ClassificationVerdict Verdict { get; init; }
 }
 
 /// <summary>

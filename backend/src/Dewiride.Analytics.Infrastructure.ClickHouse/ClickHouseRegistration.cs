@@ -3,10 +3,12 @@ using ClickHouse.Driver;
 using ClickHouse.Driver.ADO;
 using Dewiride.Analytics.Application.Abstractions;
 using Dewiride.Analytics.Application.Analytics;
+using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Health;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Migrations;
+using Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Telemetry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -77,6 +79,8 @@ public static class ClickHouseRegistration
         builder.Services.AddSingleton<ClickHouseMigrationRunner>();
         builder.Services.AddSingleton<IEventSink, ClickHouseEventSink>();
         builder.Services.AddSingleton<ITelemetryQueries, ClickHouseTelemetryQueries>();
+        builder.Services.AddSingleton<ISessionSource, ClickHouseSessionSource>();
+        builder.Services.AddSingleton<IClassificationStore, ClickHouseClassificationStore>();
 
         builder.Services.AddHealthChecks()
             .AddCheck<TelemetryStoreHealthCheck>(

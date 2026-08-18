@@ -19,7 +19,19 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import typescript from 'typescript-eslint';
 
 export default defineConfig([
-  globalIgnores(['**/.next/**', '**/out/**', '**/build/**', '**/coverage/**', '**/next-env.d.ts']),
+  globalIgnores([
+    '**/.next/**',
+    '**/out/**',
+    '**/build/**',
+    '**/dist/**',
+    '**/coverage/**',
+    // Compiled output, served as it is. Linting it reports on the compiler's choices.
+    'frontend/apps/web/public/**',
+    '**/next-env.d.ts',
+    // A separate repository with its own tooling, checked out here to build the Cloud
+    // edition. Absent from an ordinary clone, so linting it would pass or fail by luck.
+    'ee/**',
+  ]),
 
   ...typescript.configs.recommended,
   reactHooks.configs.flat['recommended-latest'],
@@ -31,7 +43,7 @@ export default defineConfig([
     // The application does not sit at the root of the workspace, and without being told where it
     // is the Next.js rules look for it beside this file, fail to find it, and report that as a
     // warning on every run.
-    settings: { next: { rootDir: 'apps/web/' } },
+    settings: { next: { rootDir: 'frontend/apps/web/' } },
     rules: {
       ...nextPlugin.configs.recommended.rules,
       ...nextPlugin.configs['core-web-vitals'].rules,
@@ -64,7 +76,7 @@ export default defineConfig([
   {
     // Command-line scripts exist to print something and set an exit code. Writing to the console
     // is their whole output, not a leftover from debugging.
-    files: ['scripts/**/*.mjs'],
+    files: ['scripts/**/*.mjs', 'tracker/build.mjs'],
     rules: { 'no-console': 'off' },
   },
 ]);

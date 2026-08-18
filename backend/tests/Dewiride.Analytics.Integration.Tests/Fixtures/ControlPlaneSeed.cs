@@ -1,3 +1,4 @@
+using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Infrastructure.Identity;
 using Dewiride.Analytics.Infrastructure.Persistence;
@@ -38,6 +39,43 @@ internal static class ControlPlaneSeed
         await database.SaveChangesAsync(Cancellation.Token).ConfigureAwait(false);
 
         return site;
+    }
+
+    /// <summary>
+    /// Issues a server key for a site.
+    /// </summary>
+    /// <param name="stack">The running stack.</param>
+    /// <param name="siteId">The site the key reports for.</param>
+    /// <param name="name">What to call it.</param>
+    /// <returns>The secret, which exists only here and in the caller's hands.</returns>
+    public static async Task<string> AddServerKeyAsync(
+        AnalyticsStackFixture stack,
+        Guid siteId,
+        string name = "Test reporter")
+    {
+        await using var scope = stack.Services.CreateAsyncScope();
+        var keys = scope.ServiceProvider.GetRequiredService<IIngestKeyDirectory>();
+
+        var issued = await keys.IssueAsync(siteId, name, Cancellation.Token).ConfigureAwait(false);
+
+        return issued.Secret;
+    }
+
+    /// <summary>
+    /// Withdraws every key a site has.
+    /// </summary>
+    /// <param name="stack">The running stack.</param>
+    /// <param name="siteId">The site.</param>
+    /// <returns>A task that completes once they are all withdrawn.</returns>
+    public static async Task RevokeServerKeysAsync(AnalyticsStackFixture stack, Guid siteId)
+    {
+        await using var scope = stack.Services.CreateAsyncScope();
+        var keys = scope.ServiceProvider.GetRequiredService<IIngestKeyDirectory>();
+
+        foreach (var key in await keys.ListAsync(siteId, Cancellation.Token).ConfigureAwait(false))
+        {
+            await keys.RevokeAsync(siteId, key.Id, Cancellation.Token).ConfigureAwait(false);
+        }
     }
 
     /// <summary>

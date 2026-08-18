@@ -3,7 +3,15 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { routing } from '@/i18n/routing';
 import type { Session } from '@/lib/api/schemas';
-import { DASHBOARD, destinationFor, isScreen, SCREENS, SET_UP, SIGN_IN } from '@/lib/routes';
+import {
+  DASHBOARD,
+  destinationFor,
+  isEngineAddress,
+  isScreen,
+  SCREENS,
+  SET_UP,
+  SIGN_IN,
+} from '@/lib/routes';
 
 const somebody = {
   id: '0195f7e0-0000-7000-8000-000000000000',
@@ -80,4 +88,24 @@ describe('which addresses name a screen', () => {
 
     expect([...SCREENS].sort()).toEqual([DASHBOARD, ...onDisk].sort());
   });
+});
+
+describe('what the engine answers rather than the dashboard', () => {
+  it.each(['/api/session', '/api/sites/1/overview', '/collect', '/collect/pixel.gif'])(
+    'forwards %s',
+    (address) => {
+      expect(isEngineAddress(address)).toBe(true);
+    },
+  );
+
+  /**
+   * The beacon is a file the dashboard serves itself, and the collector's name must not be able to
+   * shadow a screen that merely begins with the same letters.
+   */
+  it.each(['/', '/sign-in', '/dw.js', '/collections', '/apiary'])(
+    'answers %s itself',
+    (address) => {
+      expect(isEngineAddress(address)).toBe(false);
+    },
+  );
 });

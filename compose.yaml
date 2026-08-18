@@ -10,7 +10,6 @@
 name: dewiride-analytics
 
 services:
-
   postgres:
     image: postgres:18-alpine
     restart: unless-stopped
@@ -36,7 +35,7 @@ services:
       # created for the first time the image runs a temporary server that listens on the socket
       # alone; the socket form of this check passes against it and then fails again when it shuts
       # down, so anything waiting on the check starts against a database that is about to vanish.
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      test: ["CMD-SHELL", 'pg_isready -h 127.0.0.1 -p 5432 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 5s
       timeout: 5s
       retries: 12

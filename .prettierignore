@@ -1,4 +1,17 @@
+# Prettier formats only the prose in this repository — Markdown and YAML. Biome formats the code.
+
 node_modules
 .next
 coverage
+TestResults
 pnpm-lock.yaml
+
+# The commercial edition is a separate repository with its own tooling.
+ee
+
+# Build output, and the tracker's compiled beacon.
+tracker/dist
+frontend/apps/web/public
+
+# Written and rewritten by `next dev`, not by hand.
+frontend/apps/web/AGENTS.md

@@ -49,6 +49,33 @@ export async function submitResource<T>(
 }
 
 /**
+ * Submits something the engine answers with nothing at all.
+ *
+ * Separate from the call that reads an answer back, because a successful removal has an empty
+ * body and asking to read one as JSON fails on the answer that means it worked.
+ */
+export async function discardResource(
+  path: string,
+  method: 'POST' | 'DELETE',
+  proof: string,
+): Promise<void> {
+  const response = await send(path, {
+    method,
+    headers: { ...ACCEPTS_JSON, [PROOF_HEADER]: proof },
+  });
+
+  if (!response.ok) {
+    const problem = await readProblem(response);
+
+    throw new ApiError(
+      response.status,
+      problem,
+      problem?.title ?? `The engine answered with ${response.status}.`,
+    );
+  }
+}
+
+/**
  * Makes the request, turning a connection that never completed into the same kind of failure as
  * one the engine refused.
  *

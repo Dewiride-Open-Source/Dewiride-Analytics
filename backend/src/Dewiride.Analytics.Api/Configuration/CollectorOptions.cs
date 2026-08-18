@@ -34,4 +34,32 @@ public sealed class CollectorOptions
     /// </remarks>
     [Range(1, 100000)]
     public int RequestsPerMinutePerAddress { get; init; } = 1200;
+
+    /// <summary>
+    /// Largest accepted body from a server-side reporter, in bytes.
+    /// </summary>
+    /// <remarks>
+    /// Far larger than a single report, because a reporter sends batches. Kept as its own setting
+    /// rather than raised for everyone: the browser collector takes writes from anybody who knows
+    /// a site identifier, and it has no business accepting a quarter of a megabyte.
+    /// </remarks>
+    [Range(4096, 4194304)]
+    public int MaxServerBatchBytes { get; init; } = 262144;
+
+    /// <summary>
+    /// Most observations accepted in one batch from a server-side reporter.
+    /// </summary>
+    [Range(1, 1000)]
+    public int MaxEventsPerBatch { get; init; } = 100;
+
+    /// <summary>
+    /// Batches accepted per minute from one network address.
+    /// </summary>
+    /// <remarks>
+    /// Counted in batches rather than observations, because the address is all that is known
+    /// before the body is read. A reporter is one machine rather than a shared office connection,
+    /// so this can be tighter per address than the browser allowance while carrying far more.
+    /// </remarks>
+    [Range(1, 1000000)]
+    public int ServerBatchesPerMinutePerAddress { get; init; } = 600;
 }

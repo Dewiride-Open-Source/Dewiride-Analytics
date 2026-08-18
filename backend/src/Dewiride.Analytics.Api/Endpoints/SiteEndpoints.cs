@@ -4,6 +4,7 @@ using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Tenancy;
+using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Infrastructure.Tenancy;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -28,6 +29,12 @@ namespace Dewiride.Analytics.Api.Endpoints;
 /// </remarks>
 internal static class SiteEndpoints
 {
+    /// <summary>
+    /// Visits returned when the caller does not say how many they want. Enough to fill a screen
+    /// and read down, and small enough that the evidence on each one still arrives quickly.
+    /// </summary>
+    private const int DefaultVisits = 50;
+
     /// <summary>
     /// What each role is called on the wire.
     /// </summary>
@@ -89,7 +96,118 @@ internal static class SiteEndpoints
         routes.MapGet("/api/sites/{siteId:guid}/series", SeriesAsync)
             .WithName("SiteSeries")
             .WithSummary("Returns one measure counted in buckets across a period.");
+
+        routes.MapGet("/api/sites/{siteId:guid}/traffic", TrafficAsync)
+            .WithName("SiteTraffic")
+            .WithSummary("Returns judged visits grouped by what generated them.");
+
+        routes.MapGet("/api/sites/{siteId:guid}/visits", VisitsAsync)
+            .WithName("SiteVisits")
+            .WithSummary("Returns individual judged visits and the evidence behind each verdict.");
     }
+
+    private static async Task<Results<Ok<TrafficResponse>, NotFound, ProblemHttpResult>> TrafficAsync(
+        [AsParameters] OverviewParameters parameters,
+        ITenantScopeProvider scopes,
+        ITelemetryQueries telemetry,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!RequestedWindow.TryResolve(
+                parameters.From,
+                parameters.To,
+                RequestedWindow.Longest,
+                clock,
+                out var range,
+                out var refusal))
+        {
+            return Unusable(refusal);
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var groups = await telemetry
+            .GetTrafficBreakdownAsync(scope, new TrafficBreakdownQuery(range), cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(
+            new TrafficResponse(
+                range.From,
+                range.To,
+                groups.Sum(group => group.Sessions),
+                groups.Sum(group => group.PageViews),
+                [
+                    .. groups.Select(group => new TrafficGroup(
+                        ReportedNames.Categories[group.Category],
+                        ReportedNames.Strengths[group.Strength],
+                        group.Sessions,
+                        group.PageViews)),
+                ]));
+    }
+
+    private static async Task<Results<Ok<VisitsResponse>, NotFound, ProblemHttpResult>> VisitsAsync(
+        [AsParameters] VisitsParameters parameters,
+        ITenantScopeProvider scopes,
+        ITelemetryQueries telemetry,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var limit = parameters.Limit ?? DefaultVisits;
+
+        if (limit < 1 || limit > JudgedSessionsQuery.MostSessions)
+        {
+            return Unusable($"Ask for between 1 and {JudgedSessionsQuery.MostSessions} visits at a time.");
+        }
+
+        if (!RequestedWindow.TryResolve(
+                parameters.From,
+                parameters.To,
+                RequestedWindow.Longest,
+                clock,
+                out var range,
+                out var refusal))
+        {
+            return Unusable(refusal);
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var visits = await telemetry
+            .GetJudgedSessionsAsync(scope, new JudgedSessionsQuery(range, limit), cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(
+            new VisitsResponse(range.From, range.To, [.. visits.Select(Describe)]));
+    }
+
+    private static VisitSummary Describe(JudgedSession visit) => new(
+        visit.SessionKey,
+        visit.StartedAt,
+        visit.EndedAt,
+        visit.PageCount,
+        [.. visit.Surfaces.Select(surface => ReportedNames.Surfaces[surface])],
+        ReportedNames.Categories[visit.Verdict.Category],
+        ReportedNames.Strengths[visit.Verdict.Strength],
+        visit.Verdict.IsProvisional,
+        visit.Verdict.RulesetVersion.ToString(),
+        [.. visit.Verdict.Supporting.Select(Explain)],
+        [.. visit.Verdict.Contradicting.Select(Explain)]);
+
+    private static VisitReason Explain(Signal signal) => new(
+        signal.Code,
+        ReportedNames.Directions[signal.Direction],
+        signal.Weight,
+        signal.Parameters);
 
     private static async Task<Results<Ok<IReadOnlyList<SiteSummary>>, UnauthorizedHttpResult>> ListAsync(
         ISiteDirectory directory,
@@ -235,3 +353,16 @@ internal readonly record struct SeriesParameters(
     [FromQuery] string? Granularity,
     [FromQuery] DateTimeOffset? From,
     [FromQuery] DateTimeOffset? To);
+
+/// <summary>
+/// What the visits endpoint reads from the path and the query string.
+/// </summary>
+/// <param name="SiteId">The site to list visits for.</param>
+/// <param name="From">Inclusive start of the period. Defaults to a week before the end.</param>
+/// <param name="To">Exclusive end of the period. Defaults to now.</param>
+/// <param name="Limit">How many visits to return. Defaults to a screenful.</param>
+internal readonly record struct VisitsParameters(
+    Guid SiteId,
+    [FromQuery] DateTimeOffset? From,
+    [FromQuery] DateTimeOffset? To,
+    [FromQuery] int? Limit);

@@ -1,3 +1,4 @@
+using Dewiride.Analytics.Domain.Classification;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Infrastructure.Identity;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
@@ -34,6 +35,12 @@ public sealed class ControlPlaneDbContext(DbContextOptions<ControlPlaneDbContext
 
     /// <summary>Grants of a role on a site.</summary>
     public DbSet<SiteMembership> SiteMemberships => Set<SiteMembership>();
+
+    /// <summary>Secrets that let a site's own server report traffic the browser cannot see.</summary>
+    public DbSet<SiteIngestKey> SiteIngestKeys => Set<SiteIngestKey>();
+
+    /// <summary>How far the detection engine has judged each site, under each set of rules.</summary>
+    public DbSet<ClassificationProgress> ClassificationProgress => Set<ClassificationProgress>();
 
     /// <summary>
     /// Keys the framework uses to sign and encrypt sign-in cookies.

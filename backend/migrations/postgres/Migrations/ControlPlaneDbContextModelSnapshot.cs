@@ -23,6 +23,34 @@ namespace Dewiride.Analytics.Migrations.Postgres.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Dewiride.Analytics.Domain.Classification.ClassificationProgress", b =>
+                {
+                    b.Property<Guid>("SiteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("site_id");
+
+                    b.Property<int>("RulesetMajor")
+                        .HasColumnType("integer")
+                        .HasColumnName("ruleset_major");
+
+                    b.Property<int>("RulesetMinor")
+                        .HasColumnType("integer")
+                        .HasColumnName("ruleset_minor");
+
+                    b.Property<DateTimeOffset>("ClassifiedThrough")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("classified_through");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("SiteId", "RulesetMajor", "RulesetMinor")
+                        .HasName("pk_classification_progress");
+
+                    b.ToTable("classification_progress", (string)null);
+                });
+
             modelBuilder.Entity("Dewiride.Analytics.Domain.Sites.Organization", b =>
                 {
                     b.Property<Guid>("Id")
@@ -98,6 +126,60 @@ namespace Dewiride.Analytics.Migrations.Postgres.Migrations
                         .HasDatabaseName("ix_sites_organization_id");
 
                     b.ToTable("sites", (string)null);
+                });
+
+            modelBuilder.Entity("Dewiride.Analytics.Domain.Sites.SiteIngestKey", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("LastUsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_used_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Preview")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("preview");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<Guid>("SiteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("site_id");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("token_hash");
+
+                    b.HasKey("Id")
+                        .HasName("pk_site_ingest_keys");
+
+                    b.HasIndex("SiteId")
+                        .HasDatabaseName("ix_site_ingest_keys_site_id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_site_ingest_keys_token_hash");
+
+                    b.ToTable("site_ingest_keys", (string)null);
                 });
 
             modelBuilder.Entity("Dewiride.Analytics.Domain.Sites.SiteMembership", b =>
@@ -696,6 +778,16 @@ namespace Dewiride.Analytics.Migrations.Postgres.Migrations
                     b.ToTable("openiddict_tokens", (string)null);
                 });
 
+            modelBuilder.Entity("Dewiride.Analytics.Domain.Classification.ClassificationProgress", b =>
+                {
+                    b.HasOne("Dewiride.Analytics.Domain.Sites.Site", null)
+                        .WithMany()
+                        .HasForeignKey("SiteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_classification_progress_sites_site_id");
+                });
+
             modelBuilder.Entity("Dewiride.Analytics.Domain.Sites.Site", b =>
                 {
                     b.HasOne("Dewiride.Analytics.Domain.Sites.Organization", null)
@@ -704,6 +796,16 @@ namespace Dewiride.Analytics.Migrations.Postgres.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_sites_organizations_organization_id");
+                });
+
+            modelBuilder.Entity("Dewiride.Analytics.Domain.Sites.SiteIngestKey", b =>
+                {
+                    b.HasOne("Dewiride.Analytics.Domain.Sites.Site", null)
+                        .WithMany()
+                        .HasForeignKey("SiteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_site_ingest_keys_sites_site_id");
                 });
 
             modelBuilder.Entity("Dewiride.Analytics.Domain.Sites.SiteMembership", b =>

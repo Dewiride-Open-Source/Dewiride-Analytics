@@ -78,6 +78,9 @@
     }
   },
   "dashboard": {
+    "site": {
+      "label": "Website"
+    },
     "period": {
       "label": "Period",
       "week": "7 days",
@@ -104,13 +107,121 @@
       "table": "Show these figures as a table",
       "columnDay": "Day"
     },
+    "traffic": {
+      "title": "Who's visiting",
+      "judged": "{count, plural, one {# visit judged} other {# visits judged}}",
+      "sessions": "{count, plural, one {# visit} other {# visits}}",
+      "pages": "{count, plural, one {# page} other {# pages}}",
+      "pending": "Visits still under way aren't counted here yet.",
+      "empty": {
+        "title": "Nothing judged yet",
+        "body": "A visit is judged once it has finished, so the first ones appear about half an hour after they end."
+      }
+    },
+    "visits": {
+      "title": "Recent visits",
+      "caption": "The last {count, plural, one {visit} other {# visits}} to finish. Open one to see what it was judged on.",
+      "pages": "{count, plural, one {# page} other {# pages}}",
+      "seenBy": "Seen by {surfaces}",
+      "supporting": "What we saw",
+      "contradicting": "Pointing the other way"
+    },
     "empty": {
       "title": "Waiting for your first visit",
-      "body": "Nothing has reached {site} yet. As soon as it does, it shows up here."
+      "body": "Nothing has reached {site} yet. As soon as it does, it shows up here.",
+      "action": "Get your tracking code"
     },
     "noSites": {
       "title": "No website yet",
       "body": "Add a website to this account and its traffic will appear here."
+    }
+  },
+  "verdicts": {
+    "category": {
+      "likely-human": "A person",
+      "known-search-crawler": "A search engine",
+      "known-ai-crawler": "An AI crawler",
+      "suspected-ai-crawler": "Says it's an AI crawler",
+      "known-automated-service": "A known service",
+      "browser-automation": "An automated browser",
+      "generic-web-crawler": "A crawler",
+      "content-scraper": "Copying your pages",
+      "monitoring-or-synthetic": "An uptime check",
+      "security-scanner": "Probing for a way in",
+      "suspicious-automation": "Something automated",
+      "likely-analytics-spam": "Fake traffic",
+      "insufficient-evidence": "Too little to go on",
+      "unknown": "Not recognised"
+    },
+    "strength": {
+      "none": "nothing to go on",
+      "weak": "slight signs",
+      "moderate": "some signs",
+      "strong": "strong signs",
+      "verified": "confirmed"
+    },
+    "surface": {
+      "unknown": "your website",
+      "browser-tracker": "your tracking code",
+      "no-script-pixel": "your tracking image",
+      "cloudflare-worker": "Cloudflare",
+      "wordpress-plugin": "WordPress",
+      "netlify-edge": "Netlify",
+      "vercel-edge": "Vercel",
+      "aspnetcore-middleware": "your own server",
+      "nextjs-middleware": "your own server",
+      "log-import": "your server records",
+      "server-side": "your own server"
+    }
+  },
+  "reasons": {
+    "other": "Something else about this visit pointed that way.",
+    "identity": {
+      "declared_crawler": {
+        "aiTraining": "It called itself {token}, a crawler {operator} uses to train AI models.",
+        "aiAssistant": "It called itself {token}, a crawler {operator} uses to answer people's questions.",
+        "aiSearch": "It called itself {token}, a crawler {operator} uses to build AI search results.",
+        "searchIndex": "It called itself {token}, a crawler {operator} uses to build search results.",
+        "advertising": "It called itself {token}, a crawler {operator} uses for advertising.",
+        "siteTooling": "It called itself {token}, a tool {operator} uses to check websites.",
+        "unstated": "It called itself {token}, a crawler run by {operator}."
+      },
+      "unverified_claim": "Any visitor can claim that name. We have not checked it against the addresses that company publishes, so this is what it says it is.",
+      "declared_tool": {
+        "headlessBrowser": "It named itself as a browser running with nobody watching it.",
+        "script": "It named itself as a program fetching pages rather than as a browser.",
+        "scrapingFramework": "It named itself as a tool built for copying whole websites.",
+        "commandLine": "It named itself as a download tool rather than as a browser.",
+        "other": "It named itself as software rather than as a browser."
+      },
+      "no_user_agent": "It did not say what it was. Every ordinary browser does."
+    },
+    "engagement": {
+      "read_time": {
+        "seconds": "Your pages were open in front of somebody for {seconds, plural, one {# second} other {# seconds}}.",
+        "minutes": "Your pages were open in front of somebody for about {minutes, plural, one {# minute} other {# minutes}}."
+      },
+      "scrolled": "Somebody scrolled {percent}% of the way down a page.",
+      "pointer_used": "A mouse or a finger was used on the page.",
+      "keyboard_used": "A key was pressed on the page.",
+      "none_observed": "Across {pageCount, plural, one {# page} other {# pages}}, nothing was read, scrolled or touched."
+    },
+    "retrieval": {
+      "rate": "It took {pageCount, plural, one {# page} other {# pages}} at around {perMinute} a minute, far faster than anyone reads.",
+      "breadth": "It worked through {pageCount, plural, one {# page} other {# pages}} in a single visit."
+    },
+    "probing": {
+      "missing_paths": "It asked for {missingCount, plural, one {# page} other {# pages}} that do not exist, out of {pageCount} it tried.",
+      "sensitive_paths": "It went looking for {attemptCount, plural, one {# place} other {# places}} where websites keep passwords and settings."
+    },
+    "automation": {
+      "declared_web_driver": "The browser said outright that software was driving it.",
+      "no_script_execution": "Something on your side saw the visit and your tracking code never ran."
+    },
+    "browser": {
+      "script_executed": "A real browser ran your tracking code.",
+      "images_only": "Pictures on the page were fetched but nothing was run — a browser with scripts turned off.",
+      "no_language_declared": "It did not say which language it prefers. Browsers always do."
     }
   },
   "problems": {
@@ -141,5 +252,45 @@
     "websiteRequired": "Enter your website address.",
     "websiteInvalid": "Enter an address like example.com.",
     "timeZoneRequired": "Choose a time zone."
+  },
+  "install": {
+    "action": "Tracking code",
+    "title": "Your tracking code",
+    "body": "Paste these two lines into {site} once, wherever your website keeps the things that show on every page. Most website builders have a box for it, usually called custom code or header.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "close": "Close",
+    "next": "Traffic starts appearing here as soon as somebody visits."
+  },
+  "serverKeys": {
+    "action": "Server keys",
+    "title": "Server keys",
+    "body": "Your tracking code counts visitors whose browser runs it. Crawlers and AI assistants usually don't run it. A server key lets {site}'s own server report those visits as well.",
+    "name": {
+      "label": "What will use this key?",
+      "placeholder": "Cloudflare"
+    },
+    "create": "Create key",
+    "creating": "Creating",
+    "issued": {
+      "title": "Here is your key",
+      "body": "Copy it now. It is not shown again."
+    },
+    "copy": "Copy",
+    "copied": "Copied",
+    "list": {
+      "title": "Keys in use",
+      "empty": "Nothing is reporting from your server yet."
+    },
+    "added": "Added {date}",
+    "lastUsed": "Last used {date}",
+    "neverUsed": "Not used yet",
+    "remove": "Remove",
+    "confirm": {
+      "question": "Remove this key?",
+      "yes": "Remove",
+      "no": "Keep"
+    },
+    "close": "Close"
   }
 }

@@ -20,6 +20,7 @@ builder.AddTelemetryStore();
 var edition = builder.AddEdition();
 
 builder.Services.AddHostedService<SchemaMigrationService>();
+builder.Services.AddHostedService<ClassificationWorker>();
 
 var app = builder.Build();
 
@@ -37,8 +38,11 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapCollect();
+app.MapNoScriptPixel();
+app.MapServerCollect();
 app.MapAccount();
 app.MapSites();
+app.MapServerKeys();
 app.MapHealth();
 
 // The description covers a contract that is published in the open anyway, and a self-hoster

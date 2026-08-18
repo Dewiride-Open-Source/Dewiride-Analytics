@@ -28,3 +28,24 @@ Object.defineProperty(window, 'matchMedia', {
       dispatchEvent: () => false,
     }) as unknown as MediaQueryList,
 });
+
+// The same document implements the dialog element's markup but none of its behaviour: opening and
+// closing one is simply missing. The real thing is what supplies the focus trap, the inert page
+// behind it and the Escape key, so it stays in the product and the two calls are supplied here.
+// What a dialog actually does is checked in a real browser instead.
+for (const [name, open] of [
+  ['show', true],
+  ['showModal', true],
+  ['close', false],
+] as const) {
+  Object.defineProperty(HTMLDialogElement.prototype, name, {
+    configurable: true,
+    value(this: HTMLDialogElement) {
+      this.open = open;
+
+      if (!open) {
+        this.dispatchEvent(new Event('close'));
+      }
+    },
+  });
+}

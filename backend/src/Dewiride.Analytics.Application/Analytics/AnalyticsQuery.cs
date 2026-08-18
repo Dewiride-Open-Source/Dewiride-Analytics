@@ -64,3 +64,46 @@ public enum TimeSeriesMetric
     /// <summary>Number of distinct visitor keys observed.</summary>
     Visitors = 2,
 }
+
+/// <summary>
+/// Visits grouped by what the engine concluded generated them.
+/// </summary>
+/// <remarks>
+/// Answered from stored verdicts rather than from raw activity, because what generated a visit is
+/// a property of the whole visit and is not knowable one request at a time. Only visits that have
+/// been judged appear, so a window that reaches into the last half-hour reports less than the
+/// headline totals do — which the interface states rather than papers over.
+/// </remarks>
+/// <param name="Range">The window to group over, by when each visit began.</param>
+public sealed record TrafficBreakdownQuery(TimeRange Range) : AnalyticsQuery(Range);
+
+/// <summary>
+/// Individual visits with the evidence behind each verdict, newest first.
+/// </summary>
+public sealed record JudgedSessionsQuery : AnalyticsQuery
+{
+    /// <summary>
+    /// Most visits any one question may ask for.
+    /// </summary>
+    /// <remarks>
+    /// Each visit carries its whole evidence list, so this bounds the answer's size rather than
+    /// merely its length. Nobody reads five hundred visits at once either.
+    /// </remarks>
+    public const int MostSessions = 500;
+
+    /// <summary>Asks for the most recent judged visits in a window.</summary>
+    /// <param name="range">The window to look in, by when each visit began.</param>
+    /// <param name="limit">How many visits to return, at most <see cref="MostSessions"/>.</param>
+    /// <exception cref="ArgumentOutOfRangeException">The limit is not between one and the maximum.</exception>
+    public JudgedSessionsQuery(TimeRange range, int limit)
+        : base(range)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, MostSessions);
+
+        Limit = limit;
+    }
+
+    /// <summary>How many visits to return.</summary>
+    public int Limit { get; }
+}

@@ -5,6 +5,9 @@ export const DASHBOARD = '/';
 export const SIGN_IN = '/sign-in';
 export const SET_UP = '/set-up';
 
+/** Where every capture surface files what it saw. Not a screen: the engine answers it. */
+const COLLECT = '/collect';
+
 /**
  * Every address that leads to a screen.
  *
@@ -13,6 +16,21 @@ export const SET_UP = '/set-up';
  * file, and a test fails if one is left out.
  */
 export const SCREENS: ReadonlySet<string> = new Set([DASHBOARD, SIGN_IN, SET_UP]);
+
+/**
+ * Whether an address belongs to the engine rather than to a screen.
+ *
+ * Three things live behind the dashboard's own address: the data every screen reads, the
+ * collector, and the image a page asks for when it cannot run the tracker. They are forwarded
+ * rather than published separately, so that a website only ever has one address to be told about
+ * and so that the sign-in cookie — which a browser returns only to the address that set it —
+ * keeps working with no cross-origin arrangement to get wrong.
+ *
+ * @param pathname The address as it arrived, never carrying a language prefix.
+ */
+export function isEngineAddress(pathname: string): boolean {
+  return pathname.startsWith('/api/') || pathname === COLLECT || pathname.startsWith(`${COLLECT}/`);
+}
 
 /**
  * Strips the language from the front of an address, leaving the screen it names.

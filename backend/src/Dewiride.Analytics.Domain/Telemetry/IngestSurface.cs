@@ -47,4 +47,16 @@ public enum IngestSurface
 
     /// <summary>Batch import of web-server access logs.</summary>
     LogImport = 9,
+
+    /// <summary>
+    /// A reporter running on the customer's own server that did not name itself as one of the
+    /// integrations shipped with this product — most often something they wrote themselves
+    /// against the published wire format.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="Unknown"/>, which means no provenance was established at all.
+    /// Here it is known that a server observed the request and that it held a key for the site;
+    /// only the software's identity is unstated.
+    /// </remarks>
+    ServerSide = 10,
 }

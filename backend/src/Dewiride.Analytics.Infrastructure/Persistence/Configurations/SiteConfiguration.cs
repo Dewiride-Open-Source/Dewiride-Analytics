@@ -79,6 +79,54 @@ public sealed class SiteConfiguration : IEntityTypeConfiguration<Site>
     }
 }
 
+/// <summary>Maps <see cref="SiteIngestKey"/>.</summary>
+public sealed class SiteIngestKeyConfiguration : IEntityTypeConfiguration<SiteIngestKey>
+{
+    /// <inheritdoc />
+    public void Configure(EntityTypeBuilder<SiteIngestKey> builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.ToTable("site_ingest_keys");
+        builder.HasKey(key => key.Id);
+
+        builder.Property(key => key.SiteId).IsRequired();
+
+        builder.Property(key => key.Name)
+            .HasMaxLength(SiteIngestKey.MaxNameLength)
+            .IsRequired();
+
+        // Fixed width: a SHA-256 digest in lower-case hexadecimal is always sixty-four
+        // characters, and saying so lets the database refuse anything that is not one.
+        builder.Property(key => key.TokenHash)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        builder.Property(key => key.Preview)
+            .HasMaxLength(8)
+            .IsRequired();
+
+        builder.Property(key => key.CreatedAt).IsRequired();
+
+        builder.Ignore(key => key.IsRevoked);
+
+        // Unique across the estate rather than within a site, because the hash is what a
+        // presented secret is looked up by and that lookup names no site. A collision would be
+        // a secret that authorises somebody else's traffic.
+        builder.HasIndex(key => key.TokenHash)
+            .IsUnique()
+            .HasDatabaseName("ux_site_ingest_keys_token_hash");
+
+        builder.HasIndex(key => key.SiteId).HasDatabaseName("ix_site_ingest_keys_site_id");
+
+        builder.HasOne<Site>()
+            .WithMany()
+            .HasForeignKey(key => key.SiteId)
+            .HasConstraintName("fk_site_ingest_keys_sites_site_id")
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 /// <summary>Maps <see cref="SiteMembership"/>.</summary>
 public sealed class SiteMembershipConfiguration : IEntityTypeConfiguration<SiteMembership>
 {

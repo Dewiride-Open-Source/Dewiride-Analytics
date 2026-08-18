@@ -1,0 +1,35 @@
+﻿--- statement ---
+SELECT
+    session_key,
+    started_at,
+    ended_at,
+    page_count,
+    surfaces,
+    category,
+    strength,
+    is_provisional,
+    ruleset_major,
+    ruleset_minor,
+    signal_codes,
+    signal_directions,
+    signal_weights,
+    signal_supporting,
+    signal_parameters
+FROM
+(
+    SELECT *
+    FROM session_classifications
+    WHERE site_id = {site_id:UUID}
+      AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+      AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    ORDER BY ruleset_major DESC, ruleset_minor DESC, classified_at DESC
+    LIMIT 1 BY session_key
+)
+ORDER BY started_at DESC, session_key
+LIMIT {limit:UInt32}
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777593600000
+to_ms = 1778198400000
+limit = 50

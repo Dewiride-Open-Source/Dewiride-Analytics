@@ -6,6 +6,7 @@ using Dewiride.Analytics.Api.Configuration;
 using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Api.Endpoints;
 using Dewiride.Analytics.Api.Ingest;
+using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Infrastructure.Tenancy;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
@@ -32,6 +33,11 @@ internal static class ApiRegistration
 
         builder.Services.AddOptions<CollectorOptions>()
             .Bind(builder.Configuration.GetSection(CollectorOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        builder.Services.AddOptions<ClassificationOptions>()
+            .Bind(builder.Configuration.GetSection(ClassificationOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
@@ -200,6 +206,17 @@ internal static class ApiRegistration
                         // Reports are worthless once they are late, so a caller over the limit is
                         // turned away rather than held: queuing would spend memory on a request
                         // whose answer nobody is waiting for.
+                        QueueLimit = 0,
+                    }));
+
+            limiter.AddPolicy(
+                ServerCollectEndpoint.RateLimitPolicyName,
+                context => RateLimitPartition.GetFixedWindowLimiter(
+                    RequestObservation.ClientAddress(context) ?? string.Empty,
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = collector.ServerBatchesPerMinutePerAddress,
+                        Window = TimeSpan.FromMinutes(1),
                         QueueLimit = 0,
                     }));
 

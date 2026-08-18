@@ -5,18 +5,20 @@ import { MetricCardSkeleton } from '@/components/dashboard/metric-card';
 import { SiteOverview } from '@/components/dashboard/site-overview';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
+import { useChosenSite } from '@/lib/analytics/chosen-site';
 import { useSites } from '@/lib/queries/sites';
 
 /**
  * The screen somebody lands on once they are signed in.
  *
- * It shows the first website on the account. Choosing between several is a control that does not
- * exist yet, and an account has exactly one website until there is a way to add a second.
+ * It shows one website at a time, and remembers which one. Where that choice is kept, and what
+ * happens when it names a website the account can no longer see, is decided in one place rather
+ * than here.
  */
 export function Dashboard() {
   const t = useTranslations('dashboard');
   const sites = useSites();
-  const site = sites.data?.[0];
+  const { site, choose } = useChosenSite(sites.data);
 
   if (sites.isPending) {
     return (
@@ -55,7 +57,7 @@ export function Dashboard() {
 
   return (
     <Shell>
-      <SiteOverview site={site} />
+      <SiteOverview site={site} sites={sites.data} onChoose={choose} />
     </Shell>
   );
 }

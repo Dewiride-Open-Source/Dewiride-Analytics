@@ -87,5 +87,9 @@ public sealed class AnalyticsStackFixture : WebApplicationFactory<Program>, IAsy
         // later test would be turned away. Raised here and proved separately, on a host built
         // for the purpose with a deliberately tiny allowance.
         builder.UseSetting(TestSettings.SignInAllowance, TestSettings.NoPracticalLimit);
+
+        // The engine is driven directly by the tests that are about judging, so it must not also
+        // be running on a timer and writing verdicts in the middle of them.
+        builder.UseSetting(TestSettings.BackgroundJudging, "false");
     }
 }

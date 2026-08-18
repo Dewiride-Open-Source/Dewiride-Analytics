@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import createMiddleware from 'next-intl/middleware';
 import { routing } from '@/i18n/routing';
 import { engineOrigin } from '@/lib/engine-origin';
-import { DASHBOARD, isScreen } from '@/lib/routes';
+import { DASHBOARD, isEngineAddress, isScreen } from '@/lib/routes';
 
 const localise = createMiddleware(routing);
 
@@ -11,10 +11,11 @@ const localise = createMiddleware(routing);
  *
  * Three jobs, and they never overlap.
  *
- * Anything under `/api` is forwarded to the engine untouched, which is what lets the browser see a
+ * Anything the engine answers is forwarded to it untouched, which is what lets the browser see a
  * single address for both halves of the product: sign-in is held in a cookie the browser only
  * returns to the address that set it, so a dashboard calling the engine directly would arrive
- * signed out.
+ * signed out. The same forwarding is what lets somebody paste one address into their own website
+ * and have the beacon, the image fallback and the collector all reach it.
  *
  * An address that names no screen is answered here, before anything is rendered. This is an
  * application rather than a website — nobody arrives from a search result, and the only way to
@@ -28,7 +29,7 @@ const localise = createMiddleware(routing);
 export default function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
-  if (pathname.startsWith('/api/')) {
+  if (isEngineAddress(pathname)) {
     return NextResponse.rewrite(new URL(`${pathname}${search}`, engineOrigin()));
   }
 
@@ -42,8 +43,12 @@ export default function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     '/api/:path*',
+    // Named in full because the image fallback's address ends in a file extension, and the rule
+    // below deliberately leaves anything shaped like a file to be served as one.
+    '/collect',
+    '/collect/:path*',
     // Everything that is a screen: not the engine's addresses, not the framework's own files, and
     // nothing with a full stop in it, which is how a request for a file is told from a page.
-    '/((?!api|_next|_vercel|.*\\..*).*)',
+    '/((?!api|collect|_next|_vercel|.*\\..*).*)',
   ],
 };

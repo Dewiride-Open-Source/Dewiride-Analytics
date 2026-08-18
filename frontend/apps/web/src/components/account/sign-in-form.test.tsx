@@ -95,3 +95,26 @@ describe('the sign-in screen', () => {
     expect(await screen.findByText("Can't reach Dewiride Analytics")).toBeInTheDocument();
   });
 });
+
+describe('reading back what was typed', () => {
+  /**
+   * A long passphrase typed blind is three wrong attempts and a locked account. The reveal is
+   * announced by what it will do next, so a screen reader hears "Show password" while it is
+   * hidden rather than a label that describes the state it is already in.
+   */
+  it('can be shown, and then hidden again', async () => {
+    renderScreen(<SignInForm />);
+
+    const password = screen.getByLabelText('Password');
+
+    expect(password).toHaveAttribute('type', 'password');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show password' }));
+
+    expect(password).toHaveAttribute('type', 'text');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Hide password' }));
+
+    expect(password).toHaveAttribute('type', 'password');
+  });
+});

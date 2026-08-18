@@ -31,14 +31,32 @@ what does not.
   timestamp alongside the reported one, and writes them to the telemetry store.
 - Sign-in, several accounts on one installation, and three roles with a real membership check.
 - A dashboard showing page views, daily visitors and a daily traffic graph for a website you own.
+- A tracker you paste into your own site, and an image fallback for readers whose browsers run no
+  scripts. The dashboard hands you both lines with your address already filled in.
+- A collection endpoint your own server can report to, so the traffic that never runs a script —
+  crawlers, feed readers, scanners probing for paths that do not exist — is counted too, with the
+  status your site returned. Keys are created and withdrawn in the dashboard; the wire format is
+  in [`docs/server-reporting.md`](docs/server-reporting.md).
+
+- Traffic that has been judged: activity is grouped into visits, each finished visit is examined,
+  and the answer — somebody reading, a crawler that says it is an AI one, a search crawler, a sweep
+  for a way in, or an honest "not enough to say" — is stored with the specific reasons behind it,
+  including the ones that pointed the other way. A crawler's name is never treated as proof of who
+  sent it; until the address it came from has been checked against what the operator publishes, the
+  answer says it is only a claim. The verdicts are stamped with the rules that produced them, so a
+  number can still be explained after the rules improve.
+- A breakdown of who a period's visitors were, and the case behind every individual verdict, on the
+  dashboard. Each observation is a written sentence rather than a code, and the strength of the
+  evidence is a band shown beside the category — never a percentage. A judged visit only appears
+  once it has finished, so that part of the dashboard trails the headline totals and says so.
 
 **Not built yet**
 
-- **The browser tracker.** Until it exists there is nothing to paste into a website, so the only
-  way to send traffic is to call the collection endpoint yourself. A real site will show zeros.
-- **The classification engine.** Nothing is categorised as human or automated yet — that is the
-  point of the product and it is the next substantial piece of work.
-- Capture from Cloudflare, WordPress, Netlify and Vercel.
+- **Checking a crawler's claim against its operator's published addresses.** Until that exists
+  nothing is ever reported as a confirmed identity, which is why every recognised crawler is
+  reported as suspected.
+- Ready-made reporters for Cloudflare, WordPress, Netlify and Vercel. The endpoint they will use
+  exists and is documented; writing one against it today is a few dozen lines.
 
 ## Running it
 
@@ -81,6 +99,12 @@ run the pieces outside containers.
    the first person to arrive becomes the owner, and it takes a database lock so two people
    arriving together cannot both win.
 
+6. **Put the tracker on your site.** Choose **Tracking code** on the dashboard and paste the two
+   lines it gives you into your website's pages. Traffic appears as soon as somebody visits.
+
+   The address in those lines is the one you are reading the dashboard on, so a site on the
+   internet needs a dashboard the internet can reach.
+
 To stop: `docker compose down`. To start over from nothing, including wiping the data:
 `docker compose down --volumes`.
 
@@ -108,11 +132,12 @@ Change any of them in `.env` if something else on your machine already has the p
 | `backend/`  | The engine: collection, the query surface, accounts, and classification |
 | `frontend/` | The dashboard                                                           |
 | `config/`   | Service tuning that is mounted into the containers                      |
-| `tracker/`  | The browser beacon and its no-JavaScript fallback — licence only so far |
+| `tracker/`  | The browser beacon and its no-JavaScript fallback, MIT rather than AGPL |
+| `docs/`     | How to report from your own server, and the decisions behind the design |
 
-Folders for the hosting-platform integrations, the traffic generator, the cloud deployment
-description and the decision records arrive with the work that fills them. A directory with
-nothing in it is a promise, not a feature.
+Folders for the hosting-platform integrations, the traffic generator and the cloud deployment
+description arrive with the work that fills them. A directory with nothing in it is a promise, not
+a feature.
 
 Two stores, deliberately. PostgreSQL holds accounts, websites, settings and the job queue, where
 records are updated and relationships matter. ClickHouse holds the telemetry, which is written

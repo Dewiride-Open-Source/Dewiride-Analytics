@@ -18,6 +18,11 @@ namespace Dewiride.Analytics.Api.Contracts;
     ReadCommentHandling = JsonCommentHandling.Disallow,
     AllowTrailingCommas = false)]
 [JsonSerializable(typeof(CollectRequest))]
+[JsonSerializable(typeof(ServerCollectRequest))]
+[JsonSerializable(typeof(ServerCollectResponse))]
+[JsonSerializable(typeof(CreateServerKeyRequest))]
+[JsonSerializable(typeof(IssuedServerKey))]
+[JsonSerializable(typeof(IReadOnlyList<ServerKeySummary>))]
 [JsonSerializable(typeof(SignInRequest))]
 [JsonSerializable(typeof(SetupRequest))]
 [JsonSerializable(typeof(SessionResponse))]
@@ -25,4 +30,6 @@ namespace Dewiride.Analytics.Api.Contracts;
 [JsonSerializable(typeof(IReadOnlyList<SiteSummary>))]
 [JsonSerializable(typeof(OverviewResponse))]
 [JsonSerializable(typeof(SeriesResponse))]
+[JsonSerializable(typeof(TrafficResponse))]
+[JsonSerializable(typeof(VisitsResponse))]
 public sealed partial class ApiJsonContext : JsonSerializerContext;

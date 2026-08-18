@@ -1,10 +1,16 @@
 'use client';
 
+import { Code2, KeyRound } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
+import { JudgedTraffic } from '@/components/dashboard/judged-traffic';
 import { MetricCard, MetricCardSkeleton } from '@/components/dashboard/metric-card';
 import { PeriodSwitch } from '@/components/dashboard/period-switch';
+import { ServerKeys } from '@/components/dashboard/server-keys';
+import { SiteSwitch } from '@/components/dashboard/site-switch';
+import { TrackingCode } from '@/components/dashboard/tracking-code';
 import { type TrafficDay, TrafficChart } from '@/components/dashboard/traffic-chart';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { DEFAULT_PERIOD, type PeriodDays, windowFor } from '@/lib/analytics/period';
@@ -12,12 +18,23 @@ import type { Site } from '@/lib/api/schemas';
 import { useDailySeries, useOverview } from '@/lib/queries/sites';
 import { readableZone } from '@/lib/time-zones';
 
+interface SiteOverviewProps {
+  readonly site: Site;
+  /** Every website the caller may look at, so the one on screen can be swapped for another. */
+  readonly sites: readonly Site[];
+  readonly onChoose: (siteId: string) => void;
+}
+
 /** One website, over one period. */
-export function SiteOverview({ site }: { readonly site: Site }) {
+export function SiteOverview({ site, sites, onChoose }: SiteOverviewProps) {
   const t = useTranslations('dashboard');
   const metrics = useTranslations('dashboard.metrics');
+  const install = useTranslations('install');
+  const serverKeys = useTranslations('serverKeys');
   const format = useFormatter();
   const [period, setPeriod] = useState<PeriodDays>(DEFAULT_PERIOD);
+  const [showingCode, setShowingCode] = useState(false);
+  const [showingKeys, setShowingKeys] = useState(false);
 
   // Resolved once per period rather than on every render: the window is part of the name each
   // answer is cached under, and one that moved with the clock would never find a cached answer.
@@ -40,13 +57,34 @@ export function SiteOverview({ site }: { readonly site: Site }) {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            {site.displayName}
-          </h1>
+        <div className="flex min-w-0 flex-col gap-1">
+          {/*
+            With one website the name is a heading and nothing more. With several it becomes the
+            control that swaps between them, in place rather than beside itself — a picker next to
+            a heading showing the same word reads as a mistake.
+          */}
+          {sites.length > 1 ? (
+            <h1>
+              <SiteSwitch sites={sites} chosen={site} onChoose={onChoose} />
+            </h1>
+          ) : (
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              {site.displayName}
+            </h1>
+          )}
           <p className="text-sm text-foreground-muted">{site.domain}</p>
         </div>
-        <PeriodSwitch value={period} onChange={setPeriod} />
+        <div className="flex flex-wrap items-center gap-3">
+          <Button tone="secondary" size="sm" onClick={() => setShowingCode(true)}>
+            <Code2 aria-hidden className="size-4" />
+            {install('action')}
+          </Button>
+          <Button tone="secondary" size="sm" onClick={() => setShowingKeys(true)}>
+            <KeyRound aria-hidden className="size-4" />
+            {serverKeys('action')}
+          </Button>
+          <PeriodSwitch value={period} onChange={setPeriod} />
+        </div>
       </header>
 
       {overview.isError ? <FailureNotice error={overview.error} /> : null}
@@ -78,22 +116,61 @@ export function SiteOverview({ site }: { readonly site: Site }) {
       </div>
 
       {silent ? (
-        <FirstVisit title={t('empty.title')} body={t('empty.body', { site: site.domain })} />
-      ) : days.length > 0 ? (
-        <TrafficChart
-          days={days}
-          siteName={site.displayName}
-          zone={readableZone(site.timeZoneId)}
+        <FirstVisit
+          title={t('empty.title')}
+          body={t('empty.body', { site: site.domain })}
+          action={t('empty.action')}
+          onAction={() => setShowingCode(true)}
         />
       ) : (
-        <div className="h-72 animate-pulse rounded-lg border border-border bg-surface-muted" />
+        <>
+          {days.length > 0 ? (
+            <TrafficChart
+              days={days}
+              siteName={site.displayName}
+              zone={readableZone(site.timeZoneId)}
+            />
+          ) : (
+            <div className="h-72 animate-pulse rounded-lg border border-border bg-surface-muted" />
+          )}
+
+          <JudgedTraffic site={site} window={window} />
+        </>
       )}
+
+      <TrackingCode
+        open={showingCode}
+        onClose={() => setShowingCode(false)}
+        siteId={site.id}
+        siteDomain={site.domain}
+      />
+
+      <ServerKeys
+        open={showingKeys}
+        onClose={() => setShowingKeys(false)}
+        siteId={site.id}
+        siteDomain={site.domain}
+        timeZoneId={site.timeZoneId}
+      />
     </div>
   );
 }
 
-/** The screen a website shows before anybody has been to it. */
-function FirstVisit({ title, body }: { readonly title: string; readonly body: string }) {
+interface FirstVisitProps {
+  readonly title: string;
+  readonly body: string;
+  readonly action: string;
+  readonly onAction: () => void;
+}
+
+/**
+ * The screen a website shows before anybody has been to it.
+ *
+ * It carries the one thing that would change it. A website with nothing on it yet is almost always
+ * a website whose owner has not put the code on their pages, and sending them looking for it
+ * elsewhere is how a first evening with a new product ends.
+ */
+function FirstVisit({ title, body, action, onAction }: FirstVisitProps) {
   return (
     <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center">
       <span
@@ -104,6 +181,9 @@ function FirstVisit({ title, body }: { readonly title: string; readonly body: st
       </span>
       <h2 className="text-lg font-semibold text-foreground">{title}</h2>
       <p className="max-w-sm text-sm text-foreground-muted">{body}</p>
+      <Button className="mt-4" onClick={onAction}>
+        {action}
+      </Button>
     </Card>
   );
 }

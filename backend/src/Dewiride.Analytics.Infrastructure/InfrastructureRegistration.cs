@@ -1,8 +1,10 @@
 using Dewiride.Analytics.Application.Abstractions;
 using Dewiride.Analytics.Application.Accounts;
+using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Infrastructure.Accounts;
+using Dewiride.Analytics.Infrastructure.Classification;
 using Dewiride.Analytics.Infrastructure.Health;
 using Dewiride.Analytics.Infrastructure.Identity;
 using Dewiride.Analytics.Infrastructure.Persistence;
@@ -90,7 +92,11 @@ public static class InfrastructureRegistration
 
         builder.Services.AddScoped<ISiteCatalog, CachedSiteCatalog>();
         builder.Services.AddScoped<ISiteDirectory, SiteDirectory>();
+        builder.Services.AddScoped<ISiteRoster, SiteRoster>();
+        builder.Services.AddScoped<IIngestKeyCatalog, CachedIngestKeyCatalog>();
+        builder.Services.AddScoped<IIngestKeyDirectory, IngestKeyDirectory>();
         builder.Services.AddScoped<IInstallation, Installation>();
+        builder.Services.AddScoped<IClassificationProgressStore, ClassificationProgressStore>();
 
         builder.Services.AddSingleton<VisitorKeySaltStore>();
         builder.Services.AddSingleton<IVisitorKeyFactory, RotatingSaltVisitorKeyFactory>();

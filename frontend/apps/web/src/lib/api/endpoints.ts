@@ -1,7 +1,9 @@
 import type { AnalyticsWindow } from '@/lib/analytics/period';
-import { readResource, submitResource } from './client';
+import { discardResource, readResource, submitResource } from './client';
 import {
   type Installation,
+  issuedServerKeySchema,
+  type IssuedServerKey,
   installationSchema,
   type Overview,
   overviewSchema,
@@ -10,8 +12,14 @@ import {
   type Series,
   type SeriesMetric,
   seriesSchema,
+  type ServerKey,
+  serverKeysSchema,
   type Site,
   sitesSchema,
+  type Traffic,
+  trafficSchema,
+  type Visits,
+  visitsSchema,
 } from './schemas';
 
 /**
@@ -74,6 +82,52 @@ export function readSeries(
   const asked = new URLSearchParams({ metric, granularity: 'day' });
 
   return readResource(`${siteAddress(siteId)}/series?${asked}&${period(window)}`, seriesSchema);
+}
+
+/** Judged visits over a period, grouped by what generated them. */
+export function readTraffic(siteId: string, window: AnalyticsWindow): Promise<Traffic> {
+  return readResource(`${siteAddress(siteId)}/traffic?${period(window)}`, trafficSchema);
+}
+
+/**
+ * The most recent judged visits over a period, with the evidence behind each verdict.
+ *
+ * How many to bring back is decided by the screen rather than left to the engine's own default,
+ * because it is the screen that knows how many rows a reader will actually work through.
+ */
+export function readVisits(
+  siteId: string,
+  window: AnalyticsWindow,
+  limit: number,
+): Promise<Visits> {
+  const asked = new URLSearchParams({ limit: String(limit) });
+
+  return readResource(`${siteAddress(siteId)}/visits?${asked}&${period(window)}`, visitsSchema);
+}
+
+/** The keys a website's own server may report with. */
+export function listServerKeys(siteId: string): Promise<ServerKey[]> {
+  return readResource(serverKeysAddress(siteId), serverKeysSchema);
+}
+
+export function createServerKey(
+  siteId: string,
+  name: string,
+  proof: string,
+): Promise<IssuedServerKey> {
+  return submitResource(serverKeysAddress(siteId), 'POST', proof, issuedServerKeySchema, { name });
+}
+
+export function revokeServerKey(siteId: string, keyId: string, proof: string): Promise<void> {
+  return discardResource(
+    `${serverKeysAddress(siteId)}/${encodeURIComponent(keyId)}`,
+    'DELETE',
+    proof,
+  );
+}
+
+function serverKeysAddress(siteId: string): string {
+  return `${siteAddress(siteId)}/server-keys`;
 }
 
 function siteAddress(siteId: string): string {

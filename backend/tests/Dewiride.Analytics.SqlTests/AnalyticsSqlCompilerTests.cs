@@ -9,10 +9,10 @@ namespace Dewiride.Analytics.SqlTests;
 /// Approves the statements the analytics compiler produces.
 /// </summary>
 /// <remarks>
-/// This is the only place in the product where SQL is written, and this suite is what makes a
-/// change to it visible: the approved statement sits beside the test, and altering the compiler
-/// fails the build until somebody has read the new statement and moved the received file over
-/// the approved one.
+/// One of the two compilers that between them write every statement this product sends, and this
+/// suite is what makes a change to it visible: the approved statement sits beside the test, and
+/// altering the compiler fails the build until somebody has read the new statement and moved the
+/// received file over the approved one.
 /// </remarks>
 public sealed class AnalyticsSqlCompilerTests
 {
@@ -59,6 +59,63 @@ public sealed class AnalyticsSqlCompilerTests
         var statement = Compile(TimeGranularity.Day, TimeSeriesMetric.Visitors);
 
         return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Traffic_Breakdown()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new TrafficBreakdownQuery(Window()));
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Judged_Sessions()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new JudgedSessionsQuery(Window(), 50));
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    /// <summary>
+    /// Verdicts are kept per ruleset, so a visit judged under two of them exists twice. Both
+    /// statements reduce to the newest ruleset that has an opinion about a visit; without that,
+    /// improving the rules would double every number on the screen and count one visit as both a
+    /// person and a crawler.
+    /// </summary>
+    [Theory]
+    [InlineData("ruleset_major, ruleset_minor, classified_at")]
+    [InlineData("session_key")]
+    public void The_Breakdown_Counts_Each_Visit_Once(string expected)
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new TrafficBreakdownQuery(Window()));
+
+        statement.Sql.Should().Contain(expected);
+    }
+
+    /// <summary>
+    /// How much evidence stood behind a conclusion is reported beside it rather than folded into
+    /// it. A hundred visits called a crawler on weak evidence is a different statement from a
+    /// hundred called one on strong evidence, and collapsing them would hide the distinction the
+    /// product exists to make.
+    /// </summary>
+    [Fact]
+    public void The_Breakdown_Reports_Strength_Alongside_Category()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new TrafficBreakdownQuery(Window()));
+
+        statement.Sql.Should().Contain("GROUP BY category, strength");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(JudgedSessionsQuery.MostSessions + 1)]
+    public void Asking_For_An_Impossible_Number_Of_Visits_Is_Refused(int limit)
+    {
+        var act = () => new JudgedSessionsQuery(Window(), limit);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
     }
 
     /// <summary>

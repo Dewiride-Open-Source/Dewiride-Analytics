@@ -1,5 +1,5 @@
 {
-  "name": "@dewiride/frontend",
+  "name": "@dewiride/analytics",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.22.0",
@@ -7,12 +7,12 @@
     "node": ">=24.15.0"
   },
   "scripts": {
-    "dev": "pnpm --filter @dewiride/web dev",
-    "build": "pnpm --filter @dewiride/web build",
+    "dev": "pnpm --filter @dewiride/tracker build && pnpm --filter @dewiride/web dev",
+    "build": "pnpm --filter @dewiride/tracker build && pnpm --filter @dewiride/web build",
     "start": "pnpm --filter @dewiride/web start",
-    "test": "pnpm --filter @dewiride/web test",
-    "test:coverage": "pnpm --filter @dewiride/web test:coverage",
-    "typecheck": "pnpm --filter @dewiride/web typecheck",
+    "test": "pnpm --recursive test",
+    "test:coverage": "pnpm --recursive test:coverage",
+    "typecheck": "pnpm --recursive typecheck",
     "lint": "eslint .",
     "format": "biome format --write . && prettier --write \"**/*.{md,yaml,yml}\"",
     "format:check": "biome format . && prettier --check \"**/*.{md,yaml,yml}\"",

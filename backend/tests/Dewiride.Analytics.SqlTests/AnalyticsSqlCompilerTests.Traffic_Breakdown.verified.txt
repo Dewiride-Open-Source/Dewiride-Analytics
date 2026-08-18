@@ -1,0 +1,26 @@
+﻿--- statement ---
+SELECT
+    category,
+    strength,
+    toInt64(count()) AS sessions,
+    toInt64(sum(page_count)) AS page_views
+FROM
+(
+    SELECT
+        session_key,
+        argMax(category, (ruleset_major, ruleset_minor, classified_at)) AS category,
+        argMax(strength, (ruleset_major, ruleset_minor, classified_at)) AS strength,
+        argMax(page_count, (ruleset_major, ruleset_minor, classified_at)) AS page_count
+    FROM session_classifications
+    WHERE site_id = {site_id:UUID}
+      AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+      AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    GROUP BY session_key
+)
+GROUP BY category, strength
+ORDER BY sessions DESC, category, strength
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777593600000
+to_ms = 1778198400000

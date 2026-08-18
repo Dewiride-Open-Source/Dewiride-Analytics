@@ -1,5 +1,7 @@
 using ClickHouse.Driver;
 using ClickHouse.Driver.ADO;
+using ClickHouse.Driver.Utility;
+using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Domain.Telemetry;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Health;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Migrations;
@@ -20,7 +22,7 @@ public sealed class TelemetrySchemaTests(AnalyticsStackFixture stack)
     private const string ColumnTypeSql = """
         SELECT type
         FROM system.columns
-        WHERE database = currentDatabase() AND table = 'events' AND name = {column:String}
+        WHERE database = currentDatabase() AND table = {table:String} AND name = {column:String}
         """;
 
     [Fact]
@@ -62,6 +64,58 @@ public sealed class TelemetrySchemaTests(AnalyticsStackFixture stack)
         {
             declared.Should().Contain($"'{surface}'");
         }
+    }
+
+    /// <summary>
+    /// Same obligation as the surface column, and a worse failure: a category added in code and
+    /// forgotten here would make every visit the engine put in it unstorable, so the site would
+    /// silently stop being judged from the moment one arrived.
+    /// </summary>
+    [Fact]
+    public async Task The_Category_Column_Accepts_Every_Verdict_The_Engine_Can_Reach()
+    {
+        var declared = await ColumnTypeAsync("category", "session_classifications");
+
+        foreach (var category in Enum.GetNames<TrafficCategory>())
+        {
+            declared.Should().Contain($"'{category}'");
+        }
+    }
+
+    [Fact]
+    public async Task The_Strength_Column_Accepts_Every_Band()
+    {
+        var declared = await ColumnTypeAsync("strength", "session_classifications");
+
+        foreach (var strength in Enum.GetNames<EvidenceStrength>())
+        {
+            declared.Should().Contain($"'{strength}'");
+        }
+    }
+
+    [Fact]
+    public async Task The_Direction_Column_Accepts_Every_Way_Evidence_Can_Point()
+    {
+        var declared = await ColumnTypeAsync("signal_directions", "session_classifications");
+
+        foreach (var direction in Enum.GetNames<SignalDirection>())
+        {
+            declared.Should().Contain($"'{direction}'");
+        }
+    }
+
+    /// <summary>
+    /// Verdicts are kept per ruleset rather than overwritten, so improving the rules adds to
+    /// history instead of rewriting it — and a number can still be attributed to the rules that
+    /// produced it a month later.
+    /// </summary>
+    [Fact]
+    public async Task Verdicts_Are_Kept_Per_Visit_And_Per_Ruleset()
+    {
+        var definition = await TableDefinitionAsync("session_classifications");
+
+        definition.Should().Contain("ReplacingMergeTree(classified_at)");
+        definition.Should().Contain("ORDER BY (site_id, session_key, ruleset_major, ruleset_minor)");
     }
 
     [Fact]
@@ -235,15 +289,21 @@ public sealed class TelemetrySchemaTests(AnalyticsStackFixture stack)
     private Task<ulong> AppliedCountAsync() =>
         TelemetryStore.ScalarAsync<ulong>(Client, "SELECT count() FROM schema_migrations");
 
-    private Task<string> ColumnTypeAsync(string column) =>
-        TelemetryStore.ScalarAsync<string>(Client, ColumnTypeSql, TelemetryStore.Bind("column", column));
+    private Task<string> ColumnTypeAsync(string column, string table = "events")
+    {
+        var parameters = TelemetryStore.Bind("column", column);
+        parameters.AddParameter("table", table);
 
-    private Task<string> TableDefinitionAsync() =>
+        return TelemetryStore.ScalarAsync<string>(Client, ColumnTypeSql, parameters);
+    }
+
+    private Task<string> TableDefinitionAsync(string table = "events") =>
         TelemetryStore.ScalarAsync<string>(
             Client,
             """
             SELECT create_table_query
             FROM system.tables
-            WHERE database = currentDatabase() AND name = 'events'
-            """);
+            WHERE database = currentDatabase() AND name = {table:String}
+            """,
+            TelemetryStore.Bind("table", table));
 }

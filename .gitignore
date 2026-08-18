@@ -85,3 +85,13 @@ Thumbs.db
 # The commercial edition is a separate private repository, checked out here to build the
 # Cloud edition. It is never part of this one.
 /ee/
+
+# ---------------------------------------------------------------------------
+# The tracker's compiled beacon
+#
+# Built by esbuild from tracker/src and copied to where the dashboard serves it.
+# Both are output: the source of record is tracker/src.
+# ---------------------------------------------------------------------------
+tracker/dist/
+frontend/apps/web/public/dw.js
+frontend/apps/web/public/dw.js.map

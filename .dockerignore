@@ -19,8 +19,10 @@
 .env.*
 !.env.example
 
-# Not needed by either image. The dashboard and the engine are built from frontend/ and backend/.
-tracker
+# The dashboard image compiles the tracker as well, because it is the dashboard that serves the
+# beacon: one address for the snippet somebody pastes into their website.
+
+# Not needed by either image.
 integrations
 tools
 infra

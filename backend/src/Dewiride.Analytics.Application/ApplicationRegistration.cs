@@ -1,4 +1,6 @@
 using Dewiride.Analytics.Application.Ingest;
+using Dewiride.Analytics.Application.Sessions;
+using Dewiride.Analytics.Classification;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -23,6 +25,11 @@ public static class ApplicationRegistration
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.Services.AddScoped<EventIngestor>();
+
+
+        // ruleset, performs no I/O, and is safe to use from as many threads as ask.
+        builder.Services.AddSingleton(TrafficClassifier.Current());
+        builder.Services.AddScoped<SessionClassifier>();
 
         return builder;
     }

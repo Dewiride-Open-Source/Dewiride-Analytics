@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { readResource, submitResource } from '@/lib/api/client';
+import { discardResource, readResource, submitResource } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/problem';
-import { engineAnswering, engineDoing, engineStopped, respondWithRubbish } from '@/test/engine';
+import {
+  engineAnswering,
+  engineDoing,
+  engineStopped,
+  respondWith,
+  respondWithRubbish,
+} from '@/test/engine';
 
 const shape = z.object({ name: z.string() });
 
@@ -75,5 +81,32 @@ describe('submitting to the engine', () => {
 
     expect(engine.first().init.body).toBeUndefined();
     expect(engine.header('content-type')).toBeUndefined();
+  });
+});
+
+describe('submitting something the engine answers with nothing', () => {
+  /**
+   * The answer that means it worked has an empty body. Reading one as though it held something
+   * would turn every success into a failure.
+   */
+  it('accepts an empty answer as success', async () => {
+    const engine = engineDoing(async () => respondWithRubbish(204));
+
+    await expect(discardResource('/api/thing/1', 'DELETE', 'proof-value')).resolves.toBeUndefined();
+
+    expect(engine.first().init.method).toBe('DELETE');
+    expect(engine.header('X-Csrf-Token')).toBe('proof-value');
+  });
+
+  it('reports a refusal in the same way as everything else', async () => {
+    engineDoing(async () => respondWith(403, { title: 'Not allowed' }));
+
+    const failure = await discardResource('/api/thing/1', 'DELETE', 'proof-value').catch(
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(ApiError);
+    expect((failure as ApiError).status).toBe(403);
+    expect((failure as ApiError).message).toBe('Not allowed');
   });
 });

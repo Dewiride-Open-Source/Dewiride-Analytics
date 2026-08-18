@@ -1,10 +1,20 @@
-# One workspace, one dependency-version table.
+# One workspace for every JavaScript package in the repository, and one dependency-version table.
 #
+# The root sits here rather than in `frontend/` because the packages are not all the dashboard's.
+# The tracker is MIT and is pasted into other people's websites; the dashboard is AGPL. Keeping
+# them in separate top-level directories is what makes that boundary readable, and a workspace
+# cannot reach outside its own root to find a package.
+#
+# Members are listed one by one rather than matched with a pattern. A pattern at the repository
+# root would sweep in `ee/`, which is a separate private repository that is simply absent from an
+# ordinary checkout — and an install that fails depending on who cloned it is worse than a list
+# that has to be edited when a package is added.
+packages:
+  - frontend/apps/web
+  - tracker
+
 # Every version lives in the catalog below and packages refer to it as `catalog:`, so an upgrade
 # is a single line and two packages can never drift onto different copies of React.
-
-packages:
-  - apps/*
 
 # A dependency may only run install scripts if it is named here. The list is short on purpose:
 # each entry is a package that unpacks a platform-specific binary and does nothing else.
@@ -12,6 +22,7 @@ allowBuilds:
   "@biomejs/biome": true
   "@parcel/watcher": true
   "@swc/core": true
+  esbuild: true
   unrs-resolver: true
 
 catalog:
@@ -20,7 +31,7 @@ catalog:
   react: 19.2.8
   react-dom: 19.2.8
 
-  # Language. Pinned to 6.x deliberately — see the note in apps/web/package.json.
+  # Language. Pinned to 6.x deliberately — see the note in frontend/apps/web/package.json.
   typescript: 6.0.3
   "@types/node": 26.2.0
   "@types/react": 19.2.18
@@ -40,6 +51,10 @@ catalog:
   next-intl: 4.13.7
   zod: 4.4.3
   "@tanstack/react-query": 5.101.4
+
+  # Build. Pinned exactly rather than to a range: esbuild is pre-1.0 and treats a minor release as
+  # allowed to break, and this one compiles a script that goes on other people's websites.
+  esbuild: 0.28.2
 
   # Quality
   eslint: 10.8.1

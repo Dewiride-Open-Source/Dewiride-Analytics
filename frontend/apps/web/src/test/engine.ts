@@ -19,6 +19,8 @@ type Answering = (path: string, init: RequestInit) => Promise<Response>;
 export interface Engine {
   /** How many requests reached it. */
   readonly count: number;
+  /** Every request that reached it, in the order they were made. */
+  all(): Sent[];
   /** The first request, or a failed test if nothing was sent. */
   first(): Sent;
   /** One header from the first request. */
@@ -51,6 +53,9 @@ export function engineDoing(answering: Answering): Engine {
   return {
     get count() {
       return fetching.mock.calls.length;
+    },
+    all() {
+      return sent();
     },
     first() {
       const first = sent()[0];

@@ -16,12 +16,21 @@ vi.mock('@/components/charts/chart', () => ({
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  window.localStorage.clear();
 });
 
 const SITE = {
   id: '01a013fa-49d6-77be-b65d-20ec86e9df78',
   domain: 'example.com',
   displayName: 'My Blog',
+  timeZoneId: 'Asia/Kolkata',
+  role: 'owner',
+};
+
+const SECOND_SITE = {
+  id: '01a013fa-49d6-77be-b65d-20ec86e9df99',
+  domain: 'shop.example.com',
+  displayName: 'The Shop',
   timeZoneId: 'Asia/Kolkata',
   role: 'owner',
 };
@@ -49,9 +58,21 @@ function series(metric: string, values: readonly number[]) {
 const VIEWS = [40, 55, 30, 70, 65, 90, 84];
 const VISITORS = [12, 18, 9, 21, 20, 27, 25];
 
-/** Answers all four questions the screen asks, in whichever order they arrive. */
+/** Answers every question the screen asks, in whichever order they arrive. */
 function engineWith(sites: unknown, overview: unknown) {
   return engineDoing(async (path) => {
+    if (path.includes('/server-keys')) {
+      return respondWith(200, []);
+    }
+
+    if (path.includes('/traffic')) {
+      return respondWith(200, { from: FROM, to: TO, sessions: 0, pageViews: 0, groups: [] });
+    }
+
+    if (path.includes('/visits')) {
+      return respondWith(200, { from: FROM, to: TO, visits: [] });
+    }
+
     if (path.includes('/series')) {
       return respondWith(
         200,
@@ -112,6 +133,42 @@ describe('the dashboard', () => {
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
+  /**
+   * A website with nothing on it yet is almost always a website whose owner has not put the code
+   * on their pages. Sending them elsewhere to look for it is how a first evening with a new
+   * product ends.
+   */
+  it('offers the tracking code from the screen a website shows before anybody has been', async () => {
+    engineWith([SITE], totals(0, 0, 0));
+
+    renderScreen(<Dashboard />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Get your tracking code' }));
+
+    expect(await screen.findByRole('dialog')).toHaveTextContent(SITE.id);
+  });
+
+  /**
+   * The tracking code counts browsers. Whatever is asked for a page and never renders it is only
+   * ever seen by the site's own server, so the way to let that be reported has to be reachable
+   * from the same place.
+   */
+  it('offers the keys a website’s own server reports with', async () => {
+    busy();
+
+    renderScreen(<Dashboard />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Server keys' }));
+
+    const panel = await screen.findByRole('dialog');
+
+    expect(panel).toHaveTextContent('Crawlers and AI assistants');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('draws the period and publishes the same figures as a table', async () => {
     busy();
 
@@ -127,6 +184,18 @@ describe('the dashboard', () => {
 
     expect(table).toBeInTheDocument();
     expect(screen.getAllByRole('row')).toHaveLength(VIEWS.length + 1);
+  });
+
+  /**
+   * The whole point of the product is on this screen rather than behind a link. A website whose
+   * traffic has not been judged yet says so on the same page as its totals.
+   */
+  it('carries what the traffic was judged to be, beneath the numbers and the drawing', async () => {
+    busy();
+
+    renderScreen(<Dashboard />);
+
+    expect(await screen.findByText('Nothing judged yet')).toBeInTheDocument();
   });
 
   it('says which place a day is counted in, without printing an identifier', async () => {
@@ -153,6 +222,53 @@ describe('the dashboard', () => {
     await userEvent.click(screen.getByRole('radio', { name: '30 days' }));
 
     expect(screen.getByRole('radio', { name: '30 days' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  /**
+   * An account with a second website used to be an account that could only ever see its first
+   * one, which reads as traffic that was never collected rather than as a screen looking
+   * elsewhere.
+   */
+  it('offers no way to change website when there is only the one', async () => {
+    busy();
+
+    renderScreen(<Dashboard />);
+
+    expect(await screen.findByRole('heading', { name: 'My Blog' })).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Website' })).not.toBeInTheDocument();
+  });
+
+  it('lets somebody move between websites when the account has several', async () => {
+    engineWith([SITE, SECOND_SITE], totals(464, 132, 900));
+
+    renderScreen(<Dashboard />);
+
+    const picker = await screen.findByRole('combobox', { name: 'Website' });
+
+    expect(picker).toHaveValue(SITE.id);
+    expect(screen.getByText('example.com')).toBeInTheDocument();
+
+    await userEvent.selectOptions(picker, SECOND_SITE.id);
+
+    expect(await screen.findByText('shop.example.com')).toBeInTheDocument();
+  });
+
+  it('opens on the website last looked at rather than the first on the account', async () => {
+    window.localStorage.setItem('dewiride.chosen-site', SECOND_SITE.id);
+    engineWith([SITE, SECOND_SITE], totals(464, 132, 900));
+
+    renderScreen(<Dashboard />);
+
+    expect(await screen.findByText('shop.example.com')).toBeInTheDocument();
+  });
+
+  it('falls back to the first website when the one last looked at has gone', async () => {
+    window.localStorage.setItem('dewiride.chosen-site', '01a013fa-49d6-77be-b65d-20ec86e9df00');
+    busy();
+
+    renderScreen(<Dashboard />);
+
+    expect(await screen.findByText('example.com')).toBeInTheDocument();
   });
 
   it('says there is nothing to show when the account has no website', async () => {

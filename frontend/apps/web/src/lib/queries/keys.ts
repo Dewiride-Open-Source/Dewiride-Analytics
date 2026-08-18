@@ -17,3 +17,15 @@ export function overviewKey(siteId: string, window: AnalyticsWindow) {
 export function seriesKey(siteId: string, metric: SeriesMetric, window: AnalyticsWindow) {
   return ['sites', siteId, 'series', metric, window.from, window.to] as const;
 }
+
+export function trafficKey(siteId: string, window: AnalyticsWindow) {
+  return ['sites', siteId, 'traffic', window.from, window.to] as const;
+}
+
+export function visitsKey(siteId: string, window: AnalyticsWindow, limit: number) {
+  return ['sites', siteId, 'visits', window.from, window.to, limit] as const;
+}
+
+export function serverKeysKey(siteId: string) {
+  return ['sites', siteId, 'server-keys'] as const;
+}

@@ -30,6 +30,6 @@ rights are separate, and the AGPL says so explicitly in section 7(e).
 A copyleft licence protects the code but cannot stop a fork from presenting itself as
 the original. That harms users, who cannot tell whose software they are trusting with
 their visitors' data — and trust is this product's entire proposition. This policy stops
-a *confusing* fork, not a fork.
+a _confusing_ fork, not a fork.
 
 Enquiries: trademark@dewiride.com

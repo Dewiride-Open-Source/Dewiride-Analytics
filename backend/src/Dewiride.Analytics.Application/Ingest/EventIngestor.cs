@@ -39,6 +39,18 @@ public sealed class EventIngestor(
     /// <summary>Longest correlation identifier accepted.</summary>
     private const int MaxCorrelationIdLength = 64;
 
+    /// <summary>
+    /// Longest user agent stored. Real ones run to a couple of hundred characters; the header can
+    /// carry tens of kilobytes, and every one of those bytes would be stored on every event.
+    /// </summary>
+    private const int MaxUserAgentLength = 1024;
+
+    /// <summary>
+    /// Longest content type stored. The column is held as a small set of repeated values, and one
+    /// arbitrarily long entry would spoil that for the whole site.
+    /// </summary>
+    private const int MaxContentTypeLength = 128;
+
     /// <summary>Largest meaningful scroll depth.</summary>
     private const byte MaxScrollDepthPercent = 100;
 
@@ -100,9 +112,9 @@ public sealed class EventIngestor(
             QueryString = site.RetainQueryStrings ? NullIfEmpty(url.Query) : null,
             Referrer = referrer,
             ReferrerDomain = ExtractHost(referrer),
-            UserAgent = context.UserAgent,
+            UserAgent = Truncate(context.UserAgent, MaxUserAgentLength),
             StatusCode = context.StatusCode,
-            ContentType = context.ContentType,
+            ContentType = Truncate(context.ContentType, MaxContentTypeLength),
             ResponseBytes = context.ResponseBytes,
             IpAddress = context.IpAddress,
             ViewportWidth = command.ViewportWidth,

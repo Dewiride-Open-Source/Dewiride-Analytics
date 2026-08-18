@@ -1,4 +1,3 @@
-using System.Collections.Frozen;
 using System.Text.Json;
 using Dewiride.Analytics.Api.Configuration;
 using Dewiride.Analytics.Api.Contracts;
@@ -35,21 +34,6 @@ internal static class CollectEndpoint
 
     /// <summary>Name of the rate-limiting policy this endpoint runs under.</summary>
     public const string RateLimitPolicyName = "collector";
-
-    /// <summary>
-    /// The kinds of report a surface may send, keyed by the word used on the wire.
-    /// </summary>
-    /// <remarks>
-    /// Written out rather than parsed from the enumeration so that renaming a member in C# cannot
-    /// silently change a published wire format that other people's integrations depend on.
-    /// </remarks>
-    private static readonly FrozenDictionary<string, EventKind> Kinds =
-        new Dictionary<string, EventKind>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["pageview"] = EventKind.PageView,
-            ["engagement"] = EventKind.Engagement,
-            ["exit"] = EventKind.Exit,
-        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Maps the collection endpoint.
@@ -143,7 +127,7 @@ internal static class CollectEndpoint
         if (request.SiteId == Guid.Empty
             || string.IsNullOrWhiteSpace(request.Url)
             || request.Kind is null
-            || !Kinds.TryGetValue(request.Kind, out var kind))
+            || !WireVocabulary.Kinds.TryGetValue(request.Kind, out var kind))
         {
             return false;
         }

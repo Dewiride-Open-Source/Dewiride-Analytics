@@ -1,0 +1,69 @@
+﻿--- statement ---
+WITH
+    ordered AS
+    (
+        SELECT
+            visitor_key,
+            server_ts,
+            kind,
+            path,
+            status_code,
+            surface,
+            user_agent,
+            language,
+            viewport_width,
+            engaged_ms,
+            scroll_depth_percent,
+            had_pointer_interaction,
+            had_keyboard_interaction,
+            declared_web_driver,
+            dateDiff('second', lagInFrame(server_ts, 1, server_ts) OVER visit, server_ts) AS since_previous
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND visitor_key != ''
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {idle_seconds:Int64} * 1000, 'UTC')
+        WINDOW visit AS (PARTITION BY visitor_key ORDER BY server_ts ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
+    ),
+    grouped AS
+    (
+        SELECT
+            *,
+            sum(toUInt8(since_previous > {idle_seconds:Int64})) OVER (
+                PARTITION BY visitor_key
+                ORDER BY server_ts
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS visit_ordinal
+        FROM ordered
+    )
+SELECT
+    concat(visitor_key, ':', toString(toUnixTimestamp64Milli(min(server_ts)))) AS session_key,
+    min(server_ts) AS started_at,
+    max(server_ts) AS ended_at,
+    toBool(max(server_ts) < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')) AS is_closed,
+    toUInt32(countIf(kind = 'PageView')) AS page_count,
+    groupArraySortedIf({max_requests:UInt32})(
+        (toUnixTimestamp64Milli(server_ts), path, status_code), kind = 'PageView') AS requests,
+    groupUniqArray(toString(surface)) AS surfaces,
+    anyIf(user_agent, user_agent != '') AS user_agent,
+    anyIf(language, language != '') AS language,
+    max(viewport_width) AS viewport_width,
+    sum(engaged_ms) AS engaged_ms,
+    max(scroll_depth_percent) AS max_scroll_depth_percent,
+    toUInt32(countIf(had_pointer_interaction != 'Unobserved')) AS pointer_observed,
+    toUInt32(countIf(had_pointer_interaction = 'Yes')) AS pointer_seen,
+    toUInt32(countIf(had_keyboard_interaction != 'Unobserved')) AS keyboard_observed,
+    toUInt32(countIf(had_keyboard_interaction = 'Yes')) AS keyboard_seen,
+    toUInt32(countIf(declared_web_driver != 'Unobserved')) AS web_driver_observed,
+    toUInt32(countIf(declared_web_driver = 'Yes')) AS web_driver_seen
+FROM grouped
+GROUP BY visitor_key, visit_ordinal
+HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+   AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+ORDER BY started_at, session_key
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777593600000
+to_ms = 1777615200000
+idle_seconds = 1800
+max_requests = 1000

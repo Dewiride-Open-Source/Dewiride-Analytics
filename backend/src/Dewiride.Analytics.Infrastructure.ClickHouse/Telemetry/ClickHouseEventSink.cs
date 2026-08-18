@@ -1,4 +1,3 @@
-using System.Collections.Frozen;
 using ClickHouse.Driver;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Domain.Telemetry;
@@ -18,7 +17,6 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Telemetry;
 internal sealed class ClickHouseEventSink(IClickHouseClient client) : IEventSink
 {
     private const string TableName = "events";
-    private const string Unobserved = "Unobserved";
 
     /// <summary>
     /// Insert columns, in the order <see cref="ToRow"/> produces values for them.
@@ -55,34 +53,6 @@ internal sealed class ClickHouseEventSink(IClickHouseClient client) : IEventSink
         "correlation_id",
     ];
 
-    /// <summary>
-    /// Stored name for each event kind. Written out rather than derived from the member name, so
-    /// that renaming a member in code cannot quietly change the meaning of years of stored rows.
-    /// </summary>
-    private static readonly FrozenDictionary<EventKind, string> KindNames =
-        new Dictionary<EventKind, string>
-        {
-            [EventKind.PageView] = "PageView",
-            [EventKind.Engagement] = "Engagement",
-            [EventKind.Exit] = "Exit",
-        }.ToFrozenDictionary();
-
-    /// <summary>Stored name for each capture surface, on the same terms as <see cref="KindNames"/>.</summary>
-    private static readonly FrozenDictionary<IngestSurface, string> SurfaceNames =
-        new Dictionary<IngestSurface, string>
-        {
-            [IngestSurface.Unknown] = "Unknown",
-            [IngestSurface.BrowserTracker] = "BrowserTracker",
-            [IngestSurface.NoScriptPixel] = "NoScriptPixel",
-            [IngestSurface.CloudflareWorker] = "CloudflareWorker",
-            [IngestSurface.WordPressPlugin] = "WordPressPlugin",
-            [IngestSurface.NetlifyEdge] = "NetlifyEdge",
-            [IngestSurface.VercelEdge] = "VercelEdge",
-            [IngestSurface.AspNetCoreMiddleware] = "AspNetCoreMiddleware",
-            [IngestSurface.NextJsMiddleware] = "NextJsMiddleware",
-            [IngestSurface.LogImport] = "LogImport",
-        }.ToFrozenDictionary();
-
     /// <inheritdoc />
     public Task WriteAsync(RawEvent rawEvent, CancellationToken cancellationToken)
     {
@@ -105,8 +75,8 @@ internal sealed class ClickHouseEventSink(IClickHouseClient client) : IEventSink
     [
         source.EventId,
         source.SiteId,
-        KindNames[source.Kind],
-        SurfaceNames[source.Surface],
+        StoredNames.KindNames[source.Kind],
+        StoredNames.SurfaceNames[source.Surface],
         source.ServerTimestamp.UtcDateTime,
         Optional(source.ClientTimestamp),
         source.ClockSkewMs,
@@ -127,9 +97,9 @@ internal sealed class ClickHouseEventSink(IClickHouseClient client) : IEventSink
         Optional(source.TimezoneOffsetMinutes),
         Optional(source.EngagedMs),
         Optional(source.ScrollDepthPercent),
-        Observed(source.HadPointerInteraction),
-        Observed(source.HadKeyboardInteraction),
-        Observed(source.DeclaredWebDriver),
+        StoredNames.Observed(source.HadPointerInteraction),
+        StoredNames.Observed(source.HadKeyboardInteraction),
+        StoredNames.Observed(source.DeclaredWebDriver),
         Text(source.CorrelationId),
     ];
 
@@ -159,19 +129,6 @@ internal sealed class ClickHouseEventSink(IClickHouseClient client) : IEventSink
     private static object Optional<T>(T? value)
         where T : struct =>
         value.HasValue ? value.Value : (object)DBNull.Value;
-
-    /// <summary>
-    /// Renders a three-state observation. A surface that cannot see an interaction records that
-    /// it could not see it, which is not the same claim as recording that none happened.
-    /// </summary>
-    /// <param name="value">What was observed, if anything could be.</param>
-    /// <returns>The stored name.</returns>
-    private static string Observed(bool? value) => value switch
-    {
-        true => "Yes",
-        false => "No",
-        _ => Unobserved,
-    };
 
     private async Task WriteRowsAsync(IEnumerable<object[]> rows, CancellationToken cancellationToken)
     {

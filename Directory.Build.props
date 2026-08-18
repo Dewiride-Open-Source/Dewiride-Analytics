@@ -1,0 +1,75 @@
+<Project>
+
+  <!--
+    Repository-wide build settings. Every project in backend/ and ee/ inherits these.
+    Overriding any of the quality settings below in a leaf project requires a comment
+    explaining why; the SonarQube gate treats them as non-negotiable.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Quality gate">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsNotAsErrors></WarningsNotAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-Recommended</AnalysisLevel>
+    <AnalysisMode>Recommended</AnalysisMode>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Reproducibility">
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <EnablePackageValidation>false</EnablePackageValidation>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Assembly identity">
+    <Company>Dewiride Technologies</Company>
+    <Product>Dewiride Analytics</Product>
+    <Copyright>Copyright (c) 2026 Dewiride Technologies</Copyright>
+    <RepositoryUrl>https://github.com/dewiride/analytics</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <!--
+    Edition switch. `Community` compiles the AGPL open-source product only; `Cloud`
+    additionally compiles the commercially-licensed projects under ee/. Every ee/
+    ProjectReference is conditioned on this property, so which edition you get is decided
+    by which projects were compiled — never by a preprocessor branch. Roslyn analyzers and
+    SonarQube do not analyse an inactive #if branch, so `#if EE` would push half the code
+    outside a gate this repository treats as non-negotiable.
+    See docs/adr/0002-single-public-repo-with-ee.md.
+  -->
+  <PropertyGroup Label="Edition">
+    <DewirideEdition Condition="'$(DewirideEdition)' == ''">Community</DewirideEdition>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(DewirideEdition)' != 'Community' AND '$(DewirideEdition)' != 'Cloud'">
+    <_DewirideEditionInvalid>true</_DewirideEditionInvalid>
+  </PropertyGroup>
+
+  <Target Name="ValidateDewirideEdition" BeforeTargets="PrepareForBuild" Condition="'$(_DewirideEditionInvalid)' == 'true'">
+    <Error Code="DEW0001"
+           Text="DewirideEdition must be 'Community' or 'Cloud', but was '$(DewirideEdition)'." />
+  </Target>
+
+  <ItemGroup Label="Analyzers applied to every project">
+    <PackageReference Include="SonarAnalyzer.CSharp" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
+  </ItemGroup>
+
+  <ItemGroup Label="Banned API list">
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" Visible="false" />
+  </ItemGroup>
+
+</Project>

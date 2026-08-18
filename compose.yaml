@@ -1,0 +1,148 @@
+# The stores Dewiride Analytics runs on, sized for a laptop.
+#
+# Both are pinned to the versions the product is built and tested against. Neither image ships a
+# health check of its own, so the ones below are written from each project's documented liveness
+# primitive: pg_isready for PostgreSQL, the /ping handler for ClickHouse. Without them
+# `docker compose up --wait` has nothing to wait for and returns while both are still starting.
+#
+# Copy .env.example to .env before the first run. Nothing here carries a default credential.
+
+name: dewiride-analytics
+
+services:
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dewiride}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-dewiride_analytics}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # PostgreSQL 18 moved its data directory inside the image, and the volume it declares moved
+      # with it. Mounting the pre-18 path instead leaves the real data outside any volume, where
+      # recreating the container quietly discards it.
+      - postgres-data:/var/lib/postgresql
+    # Parallel query workers share memory through /dev/shm, and Docker's 64 MB default is small
+    # enough for a wide query to fail on.
+    shm_size: 128mb
+    # The image stops on SIGINT, which is PostgreSQL's fast shutdown. Docker's ten-second default
+    # can cut that short in the middle of a checkpoint.
+    stop_grace_period: 90s
+    healthcheck:
+      # Over TCP rather than the socket, and this is load-bearing. While the database is being
+      # created for the first time the image runs a temporary server that listens on the socket
+      # alone; the socket form of this check passes against it and then fails again when it shuts
+      # down, so anything waiting on the check starts against a database that is about to vanish.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.3-alpine
+    restart: unless-stopped
+    environment:
+      # Naming a user removes the built-in one. Given no user at all the image confines the
+      # built-in account to the loopback address, where nothing outside the container can reach
+      # it — which looks exactly like a wrong password from the outside.
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-dewiride}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-dewiride_telemetry}
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+    ulimits:
+      # The figure every example in ClickHouse's own installation documentation carries. The
+      # server does not complain when it is missing; it simply runs out of file handles later.
+      nofile:
+        soft: 262144
+        hard: 262144
+    # ClickHouse sizes itself against whatever memory it is allowed, and the tuning file below
+    # asks for three quarters of it. Without a limit here that is three quarters of the whole
+    # machine, which is the outcome the tuning exists to prevent.
+    mem_limit: ${CLICKHOUSE_MEMORY:-2g}
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      # Two files, two directories, and they are not interchangeable: server settings are read
+      # from config.d and user-profile settings from users.d. A file in the wrong one is merged
+      # in, reported in the log as merged, and then ignored — no error, no warning, and every
+      # value silently back at a default sized for a dedicated machine.
+      - ./config/clickhouse/low-resources.xml:/etc/clickhouse-server/config.d/low-resources.xml:ro
+      - ./config/clickhouse/low-resources-profile.xml:/etc/clickhouse-server/users.d/low-resources-profile.xml:ro
+    healthcheck:
+      # The address must be written out. This image's wget resolves "localhost" to the IPv6
+      # loopback, which the server does not listen on, and reports a healthy server as refusing
+      # the connection.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    # Both stores must be answering before this starts. It applies the schema changes for each of
+    # them as it comes up, and against a database that is still being created that fails rather
+    # than waits.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    environment:
+      # Inside the network each store answers to its own name on its own standard port, which is
+      # why these do not match the addresses used from the machine itself.
+      ConnectionStrings__ControlPlane: >-
+        Host=postgres;Port=5432;Database=${POSTGRES_DB:-dewiride_analytics};Username=${POSTGRES_USER:-dewiride};Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      ConnectionStrings__Telemetry: >-
+        Host=clickhouse;Port=8123;Protocol=http;Database=${CLICKHOUSE_DB:-dewiride_telemetry};Username=${CLICKHOUSE_USER:-dewiride};Password=${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    healthcheck:
+      # Readiness, not liveness: this passes only once both stores are reachable and their schema
+      # changes have been applied, which is the point at which the product is genuinely usable.
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    # The screens are useless before the engine can answer, and the first thing every one of them
+    # does is ask whether this install has an owner yet.
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      # Everything the browser sends to /api is forwarded from here, so the browser only ever sees
+      # one address and the sign-in cookie works with no cross-origin arrangement to get wrong.
+      # Read when a request is forwarded rather than when the image was built.
+      DEWIRIDE_API_ORIGIN: http://api:8080
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    healthcheck:
+      # Asked with the runtime's own fetch rather than a tool added to the image for the purpose.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  postgres-data:
+  clickhouse-data:

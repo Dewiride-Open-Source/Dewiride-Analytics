@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Golden-file tests over the statements the analytics compiler produces. No container and no
+    database: the point is that a change to generated SQL becomes visible in review rather than
+    at run time, so the approved statement is checked in beside the test and a diff fails the
+    build. What the statements mean when executed is proven separately, against a real server.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Dewiride.Analytics.SqlTests</RootNamespace>
+    <AssemblyName>Dewiride.Analytics.SqlTests</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dewiride.Analytics.Infrastructure.ClickHouse\Dewiride.Analytics.Infrastructure.ClickHouse.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Verify.XunitV3" />
+  </ItemGroup>
+
+</Project>

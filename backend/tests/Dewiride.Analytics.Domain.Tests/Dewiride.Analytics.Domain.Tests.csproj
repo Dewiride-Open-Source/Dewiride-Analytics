@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Dewiride.Analytics.Domain.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dewiride.Analytics.Domain\Dewiride.Analytics.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

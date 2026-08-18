@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<!--
+  Query limits for a single node sharing a developer's laptop or a small VM.
+
+  These belong to the default user profile rather than to the server, which is why they are a
+  separate file: ClickHouse reads server settings from config.xml and profile settings from
+  users.xml, and a profile placed in the server's configuration is silently ignored. Both files
+  are mounted in every compose profile.
+-->
+<clickhouse>
+  <profiles>
+    <default>
+
+      <!-- Two threads per query leaves the rest of the machine responsive. -->
+      <max_threads>2</max_threads>
+
+      <!--
+        A ceiling per query, so that one expensive question cannot take the whole allowance and
+        stop the collector from writing.
+      -->
+      <max_memory_usage>1073741824</max_memory_usage>
+
+      <!--
+        Past these thresholds a grouping or a sort spills to disk instead of failing. Slower is
+        the correct outcome here: a self-hoster asking a year-wide question on a small machine
+        should wait, not receive an error.
+      -->
+      <max_bytes_before_external_group_by>536870912</max_bytes_before_external_group_by>
+      <max_bytes_before_external_sort>536870912</max_bytes_before_external_sort>
+
+      <!-- Parallel parsing and formatting buy throughput with memory this machine has not got. -->
+      <input_format_parallel_parsing>0</input_format_parallel_parsing>
+      <output_format_parallel_formatting>0</output_format_parallel_formatting>
+
+    </default>
+  </profiles>
+</clickhouse>

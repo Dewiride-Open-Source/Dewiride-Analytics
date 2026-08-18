@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Dewiride.Analytics.Api</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dewiride.Analytics.Infrastructure\Dewiride.Analytics.Infrastructure.csproj" />
+    <ProjectReference Include="..\Dewiride.Analytics.Infrastructure.ClickHouse\Dewiride.Analytics.Infrastructure.ClickHouse.csproj" />
+    <!--
+      Referenced so the compiled migrations are in the load context; nothing here names a type
+      from it. Entity Framework Core finds them by assembly name at run time.
+    -->
+    <ProjectReference Include="..\..\migrations\postgres\Dewiride.Analytics.Migrations.Postgres.csproj" />
+  </ItemGroup>
+
+  <!--
+    The edition is chosen here and nowhere else. Exactly one composition module is compiled into
+    any build, and the host discovers it rather than naming it, so neither edition's code appears
+    in the other's binary. See docs/adr/0002-single-public-repo-with-ee.md.
+  -->
+  <ItemGroup Condition="'$(DewirideEdition)' == 'Community'">
+    <ProjectReference Include="..\Dewiride.Analytics.Community\Dewiride.Analytics.Community.csproj" />
+  </ItemGroup>
+
+  <!--
+    The integration suite boots this host against real containers, and the entry point a file of
+    top-level statements compiles to is internal. Nothing else is exposed by this.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dewiride.Analytics.Integration.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+  </ItemGroup>
+
+</Project>

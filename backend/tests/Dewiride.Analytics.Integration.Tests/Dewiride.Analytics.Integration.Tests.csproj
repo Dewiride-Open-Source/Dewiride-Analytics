@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The suite that runs against real servers. Everything here needs Docker: a PostgreSQL and a
+    ClickHouse container are started once, both schemas are applied to them from empty, and the
+    host is booted against the pair. Nothing is substituted, because the things worth proving here
+    — that a migration applies, that a column round-trips, that a probe fails when a store is gone
+    — are precisely the things a substitute cannot tell you.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Dewiride.Analytics.Integration.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dewiride.Analytics.Api\Dewiride.Analytics.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Testcontainers.ClickHouse" />
+  </ItemGroup>
+
+</Project>

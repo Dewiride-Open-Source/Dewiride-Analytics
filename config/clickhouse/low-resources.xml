@@ -1,0 +1,93 @@
+<?xml version="1.0"?>
+<!--
+  Server tuning for a single node sharing a developer's laptop or a small VM.
+
+  Out of the box ClickHouse sizes itself for a dedicated analytics machine: a 5 GB mark cache, a
+  5 GB index mark cache, and permission to take 90% of the host's memory. On a machine that is
+  also running a database, an application, a browser and an editor, that is not a slow start —
+  it is the container being killed before it finishes starting. This file is mounted in every
+  compose profile for that reason.
+
+  Merged into config.xml. The companion file low-resources-profile.xml carries the settings that
+  belong to the default user profile instead, because ClickHouse reads those from users.xml.
+-->
+<clickhouse>
+
+  <!-- Caches: enough to keep the index hot for one site's data, rather than for a cluster. -->
+  <mark_cache_size>268435456</mark_cache_size>
+  <index_mark_cache_size>67108864</index_mark_cache_size>
+  <uncompressed_cache_size>16777216</uncompressed_cache_size>
+
+  <!--
+    Leave a quarter of whatever the container is given to everything else. ClickHouse reads the
+    container's own memory limit, so this is a share of the limit compose sets rather than of the
+    host.
+  -->
+  <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
+
+  <!--
+    Background work is sized for the few cores a laptop can spare. Merges still keep up with the
+    write rate a single site produces; what this prevents is a merge storm competing with the
+    application for the machine.
+  -->
+  <background_pool_size>4</background_pool_size>
+  <background_merges_mutations_concurrency_ratio>2</background_merges_mutations_concurrency_ratio>
+  <background_common_pool_size>2</background_common_pool_size>
+  <background_schedule_pool_size>8</background_schedule_pool_size>
+  <background_fetches_pool_size>2</background_fetches_pool_size>
+  <background_move_pool_size>2</background_move_pool_size>
+  <max_thread_pool_size>200</max_thread_pool_size>
+
+  <max_concurrent_queries>8</max_concurrent_queries>
+
+  <!--
+    These thresholds are how many pool slots must stay free before a merge tree will start a
+    mutation or a whole-partition optimisation, and they are expressed in slots rather than as a
+    proportion. Their defaults assume the sixteen-slot pool above has been shrunk away from, so
+    they have to come down with it: leave them alone and the server refuses to start, on the
+    grounds that a mutation could never find room to run.
+  -->
+  <merge_tree>
+    <number_of_free_entries_in_pool_to_execute_mutation>2</number_of_free_entries_in_pool_to_execute_mutation>
+    <number_of_free_entries_in_pool_to_lower_max_size_of_merge>2</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
+    <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>2</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
+  </merge_tree>
+
+  <!--
+    The internal telemetry tables are the largest thing a quiet ClickHouse writes. Those that
+    record one row per second regardless of activity are switched off; query_log stays, because
+    "which query was slow" is a question a self-hoster will actually ask, and is kept to a week.
+  -->
+  <metric_log remove="1" />
+  <asynchronous_metric_log remove="1" />
+  <trace_log remove="1" />
+  <query_thread_log remove="1" />
+  <text_log remove="1" />
+  <session_log remove="1" />
+  <latency_log remove="1" />
+
+  <query_log>
+    <database>system</database>
+    <table>query_log</table>
+    <ttl>event_date + INTERVAL 7 DAY DELETE</ttl>
+    <flush_interval_milliseconds>15000</flush_interval_milliseconds>
+  </query_log>
+
+  <part_log>
+    <database>system</database>
+    <table>part_log</table>
+    <ttl>event_date + INTERVAL 7 DAY DELETE</ttl>
+    <flush_interval_milliseconds>15000</flush_interval_milliseconds>
+  </part_log>
+
+  <!--
+    Trace-level logging on an idle server still produces a steady stream of disk writes, which on
+    a laptop is felt. Warnings and above are what a self-hoster needs to see.
+  -->
+  <logger>
+    <level>information</level>
+    <size>50M</size>
+    <count>3</count>
+  </logger>
+
+</clickhouse>

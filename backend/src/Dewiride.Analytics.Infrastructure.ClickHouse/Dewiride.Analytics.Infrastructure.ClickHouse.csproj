@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Dewiride.Analytics.Infrastructure.ClickHouse</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dewiride.Analytics.Application\Dewiride.Analytics.Application.csproj" />
+  </ItemGroup>
+
+  <!--
+    ClickHouse.Driver is confined to this project. An architecture test asserts that no other
+    assembly references it, so the telemetry store cannot leak into layers that are supposed to
+    depend only on the AnalyticsQuery vocabulary.
+  -->
+  <ItemGroup>
+    <PackageReference Include="ClickHouse.Driver" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <!--
+    The migration scripts are embedded so that a published container carries its own schema and
+    a self-hoster never has to place files next to the binary for an upgrade to succeed. They
+    stay in backend/migrations/clickhouse, alongside the EF Core migrations for the control
+    plane, because a reviewer looking for "what does the schema do" should find both in one place.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\migrations\clickhouse\*.sql" LinkBase="Migrations" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    This project intentionally declares NO PackageReference of its own. The domain model
+    is the one layer that must stay free of infrastructure, and the cheapest way to keep
+    it that way is to make a dependency impossible to add without it being visible in the
+    diff. Architecture.Tests asserts the compiled assembly references nothing but the
+    framework. Analyzers arrive from Directory.Build.props and contribute no runtime
+    dependency.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Dewiride.Analytics.Domain</RootNamespace>
+  </PropertyGroup>
+
+</Project>

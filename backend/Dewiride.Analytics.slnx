@@ -1,0 +1,22 @@
+<Solution>
+	<Folder Name="/migrations/">
+		<Project Path="migrations/postgres/Dewiride.Analytics.Migrations.Postgres.csproj" />
+	</Folder>
+	<Folder Name="/src/">
+		<Project Path="src/Dewiride.Analytics.Api/Dewiride.Analytics.Api.csproj" />
+		<Project Path="src/Dewiride.Analytics.Application/Dewiride.Analytics.Application.csproj" />
+		<Project Path="src/Dewiride.Analytics.Community/Dewiride.Analytics.Community.csproj" />
+		<Project Path="src/Dewiride.Analytics.Classification/Dewiride.Analytics.Classification.csproj" />
+		<Project Path="src/Dewiride.Analytics.Domain/Dewiride.Analytics.Domain.csproj" />
+		<Project Path="src/Dewiride.Analytics.Infrastructure/Dewiride.Analytics.Infrastructure.csproj" />
+		<Project Path="src/Dewiride.Analytics.Infrastructure.ClickHouse/Dewiride.Analytics.Infrastructure.ClickHouse.csproj" />
+	</Folder>
+	<Folder Name="/tests/">
+		<Project Path="tests/Dewiride.Analytics.Application.Tests/Dewiride.Analytics.Application.Tests.csproj" />
+		<Project Path="tests/Dewiride.Analytics.Architecture.Tests/Dewiride.Analytics.Architecture.Tests.csproj" />
+		<Project Path="tests/Dewiride.Analytics.Classification.Tests/Dewiride.Analytics.Classification.Tests.csproj" />
+		<Project Path="tests/Dewiride.Analytics.Domain.Tests/Dewiride.Analytics.Domain.Tests.csproj" />
+		<Project Path="tests/Dewiride.Analytics.Integration.Tests/Dewiride.Analytics.Integration.Tests.csproj" />
+		<Project Path="tests/Dewiride.Analytics.SqlTests/Dewiride.Analytics.SqlTests.csproj" />
+	</Folder>
+</Solution>

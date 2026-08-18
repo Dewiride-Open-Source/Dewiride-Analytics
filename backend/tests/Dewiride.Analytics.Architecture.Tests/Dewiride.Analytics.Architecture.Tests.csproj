@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The boundaries this repository depends on, expressed as a red build rather than as a
+    convention somebody is asked to remember. The host is referenced so that every compiled
+    product assembly is present in this project's output and can be examined: nothing here names
+    a type from it.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Dewiride.Analytics.Architecture.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dewiride.Analytics.Api\Dewiride.Analytics.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NetArchTest.eNhancedEdition" />
+  </ItemGroup>
+
+</Project>

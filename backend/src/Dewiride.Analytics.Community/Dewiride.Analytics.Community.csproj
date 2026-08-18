@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The open-source edition's composition root. It is a project of its own, rather than a class in
+    the host, because the host must be able to be built without it: a Cloud build references the
+    commercial module instead, and nothing in the host names either type. That is what makes the
+    edition a decision about which projects were compiled.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Dewiride.Analytics.Community</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dewiride.Analytics.Infrastructure\Dewiride.Analytics.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

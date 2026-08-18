@@ -1,0 +1,20 @@
+﻿--- statement ---
+SELECT
+    toStartOfDay(server_ts, {time_zone:String}) AS bucket,
+    toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS value
+FROM events
+WHERE site_id = {site_id:UUID}
+  AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+  AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+GROUP BY bucket
+ORDER BY bucket
+WITH FILL
+    FROM toStartOfDay(fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC'), {time_zone:String})
+    TO toStartOfDay(fromUnixTimestamp64Milli({to_ms:Int64} - 1, 'UTC'), {time_zone:String}) + INTERVAL 1 DAY
+    STEP INTERVAL 1 DAY
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777593600000
+to_ms = 1778198400000
+time_zone = 'Europe/London'

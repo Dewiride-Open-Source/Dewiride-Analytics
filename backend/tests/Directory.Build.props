@@ -1,0 +1,46 @@
+<Project>
+
+  <!--
+    Settings shared by every test project. The repository-wide file is imported explicitly
+    because MSBuild stops at the first Directory.Build.props it finds walking up, and the
+    quality gate in the root file applies to tests exactly as it does to the product.
+  -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <!--
+      xUnit v3 test projects are executables: the runner is compiled into the assembly rather
+      than launched around it, which is what the Microsoft Testing Platform entry in global.json
+      expects `dotnet test` to find.
+    -->
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+
+    <!--
+      Switches xUnit's compiled-in runner to the Microsoft Testing Platform entry point, which is
+      the runner global.json names. Without it the assembly still runs its own console runner when
+      launched directly, but `dotnet test` hands it arguments it does not understand and reports
+      that no tests were found.
+
+      One trap that costs an afternoon: in this mode `dotnet test` forwards the banner-suppressing
+      flag to the test application, which does not recognise it, and the run then reports zero
+      tests with no explanation. Never pass that flag, in scripts or in the build pipeline.
+    -->
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <!--
+      AwesomeAssertions, never FluentAssertions v8 or later, which is proprietary and charges per
+      developer. Version 9 renamed its namespaces from FluentAssertions to AwesomeAssertions.
+    -->
+    <PackageReference Include="AwesomeAssertions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="AwesomeAssertions" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

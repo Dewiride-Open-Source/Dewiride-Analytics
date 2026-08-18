@@ -1,0 +1,33 @@
+{
+  "name": "@dewiride/frontend",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @dewiride/web dev",
+    "build": "pnpm --filter @dewiride/web build",
+    "start": "pnpm --filter @dewiride/web start",
+    "test": "pnpm --filter @dewiride/web test",
+    "test:coverage": "pnpm --filter @dewiride/web test:coverage",
+    "typecheck": "pnpm --filter @dewiride/web typecheck",
+    "lint": "eslint .",
+    "format": "biome format --write . && prettier --write \"**/*.{md,yaml,yml}\"",
+    "format:check": "biome format . && prettier --check \"**/*.{md,yaml,yml}\"",
+    "verify:typescript": "node scripts/assert-typescript-version.mjs",
+    "verify": "pnpm verify:typescript && pnpm lint && pnpm format:check && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@playwright/test": "catalog:",
+    "eslint": "catalog:",
+    "@next/eslint-plugin-next": "catalog:",
+    "eslint-plugin-jsx-a11y": "catalog:",
+    "eslint-plugin-react-hooks": "catalog:",
+    "typescript-eslint": "catalog:",
+    "prettier": "catalog:",
+    "typescript": "catalog:"
+  }
+}

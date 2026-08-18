@@ -1,0 +1,14 @@
+﻿--- statement ---
+SELECT
+    toInt64(countIf(kind = 'PageView')) AS page_views,
+    toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS visitors,
+    toInt64(count()) AS events
+FROM events
+WHERE site_id = {site_id:UUID}
+  AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+  AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777593600000
+to_ms = 1778198400000

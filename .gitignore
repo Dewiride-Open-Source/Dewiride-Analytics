@@ -1,0 +1,83 @@
+# ---------------------------------------------------------------------------
+# Private working documents — never published
+#
+# This repository is public. These two files are internal: the engineering
+# standards that steer development, and the product brief they are derived from.
+# They stay on local machines only. Nothing that ships may link to them, so a
+# reader of the public repository is never sent to a file that isn't there.
+# ---------------------------------------------------------------------------
+CLAUDE.md
+docs/goal.md
+
+# ---------------------------------------------------------------------------
+# Secrets and local configuration — never commit
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+appsettings.Local.json
+appsettings.*.Local.json
+
+# ---------------------------------------------------------------------------
+# .NET
+# ---------------------------------------------------------------------------
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+*.userprefs
+.vs/
+TestResults/
+coverage.xml
+coverage/
+*.coverage
+*.trx
+BenchmarkDotNet.Artifacts/
+.sonarqube/
+
+# ---------------------------------------------------------------------------
+# Node / pnpm
+# ---------------------------------------------------------------------------
+node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+npm-debug.log*
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# Test + coverage output
+lcov.info
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# ---------------------------------------------------------------------------
+# Local data volumes and generated fixtures
+# ---------------------------------------------------------------------------
+.data/
+backups/
+fixtures/real/
+
+# Snapshot output. The approved *.verified.* files are committed and reviewed; the received
+# ones are what a failing comparison produced and are only useful until somebody has read them.
+**/*.received.*
+
+# ---------------------------------------------------------------------------
+# Editors and OS
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+.DS_Store
+Thumbs.db
+*.swp

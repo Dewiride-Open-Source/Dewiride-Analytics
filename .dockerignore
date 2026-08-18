@@ -1,0 +1,34 @@
+# Everything a build does not need. A smaller context is a faster build, and it keeps local
+# working files — including .env — out of any image layer.
+
+.git
+.github
+.vs
+.vscode
+.idea
+
+**/bin
+**/obj
+**/node_modules
+**/.next
+**/coverage
+**/TestResults
+**/*.user
+
+.env
+.env.*
+!.env.example
+
+# Not needed by either image. The dashboard and the engine are built from frontend/ and backend/.
+tracker
+integrations
+tools
+infra
+deploy
+docs
+ee
+
+**/Dockerfile
+.dockerignore
+compose.yaml
+compose.override.yaml

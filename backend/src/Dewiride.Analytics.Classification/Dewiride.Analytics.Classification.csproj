@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The classification engine is pure: no I/O, no clock, no database, no HTTP. Everything it
+    needs arrives as an argument. That is what makes its verdicts reproducible, and
+    reproducibility is what makes the golden-fixture suite meaningful — a detector that could
+    reach the network or read the ambient clock would produce a different evidence string on
+    every run and the suite would become noise rather than a regression gate.
+
+    Architecture.Tests asserts this project references neither Infrastructure nor any
+    I/O-capable package.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Dewiride.Analytics.Classification</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dewiride.Analytics.Domain\Dewiride.Analytics.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

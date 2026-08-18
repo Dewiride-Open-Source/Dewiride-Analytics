@@ -1,0 +1,29 @@
+## Banned APIs, enforced by Microsoft.CodeAnalysis.BannedApiAnalyzers as build errors.
+##
+## The clock rules are the load-bearing ones. Classification verdicts are snapshot-tested:
+## a detector that reads the ambient clock produces a different evidence string on every
+## run, and the golden-fixture suite becomes noise. Every component that needs the time
+## takes TimeProvider from dependency injection, so tests can freeze it. The DateTime and
+## DateTimeOffset types themselves are fine — only the ambient reads are banned.
+
+P:System.DateTime.Now; Use TimeProvider.GetUtcNow(). Local time is never correct for telemetry.
+P:System.DateTime.UtcNow; Use TimeProvider.GetUtcNow() so tests can freeze the clock.
+P:System.DateTime.Today; Use TimeProvider.GetUtcNow().Date.
+P:System.DateTimeOffset.Now; Use TimeProvider.GetUtcNow().
+P:System.DateTimeOffset.UtcNow; Use TimeProvider.GetUtcNow().
+P:System.Environment.TickCount; Use TimeProvider.GetTimestamp().
+P:System.Environment.TickCount64; Use TimeProvider.GetTimestamp().
+M:System.Diagnostics.Stopwatch.StartNew; Use TimeProvider.GetTimestamp() with TimeProvider.GetElapsedTime().
+
+## Randomness: seeded in tests, so cluster sampling and ID generation stay reproducible.
+P:System.Random.Shared; Inject an explicitly seeded Random. Unseeded randomness breaks reproducible clustering.
+
+## Culture-sensitive string handling silently changes behaviour by host locale. Telemetry
+## parsing and SQL identifier handling must be ordinal or invariant, always.
+M:System.String.ToLower; Use ToLowerInvariant() — telemetry parsing must not depend on host locale.
+M:System.String.ToUpper; Use ToUpperInvariant() — telemetry parsing must not depend on host locale.
+
+## Blocking on async work deadlocks and starves the thread pool under load.
+P:System.Threading.Tasks.Task`1.Result; Await the task instead of blocking.
+M:System.Threading.Tasks.Task.Wait; Await the task instead of blocking.
+M:System.Threading.Tasks.Task.GetAwaiter; Await the task instead of blocking on its awaiter.

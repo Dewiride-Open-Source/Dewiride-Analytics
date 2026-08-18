@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Dewiride Analytics">
+  <rect width="32" height="32" rx="8" fill="#e8963c" />
+  <path
+    d="M8 22.5V17m5.333 5.5V10m5.334 12.5V13.5M24 22.5V7"
+    stroke="#3a2410"
+    stroke-width="3"
+    stroke-linecap="round"
+    fill="none"
+  />
+</svg>

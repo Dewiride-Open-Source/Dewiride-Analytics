@@ -1,0 +1,182 @@
+root = true
+
+# ---------------------------------------------------------------------------
+# All files
+# ---------------------------------------------------------------------------
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.{md,markdown}]
+trim_trailing_whitespace = false
+
+[*.{sln,slnx}]
+indent_style = tab
+
+# ---------------------------------------------------------------------------
+# C#
+# ---------------------------------------------------------------------------
+[*.cs]
+indent_size = 4
+max_line_length = 120
+
+# --- using directives ---
+csharp_using_directive_placement = outside_namespace:error
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+
+# --- namespaces and modern syntax ---
+csharp_style_namespace_declarations = file_scoped:error
+csharp_prefer_braces = true:error
+csharp_style_prefer_primary_constructors = true:suggestion
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = false:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_style_prefer_switch_expression = true:suggestion
+csharp_style_prefer_pattern_matching = true:suggestion
+csharp_style_prefer_not_pattern = true:suggestion
+csharp_style_prefer_range_operator = true:suggestion
+csharp_style_prefer_index_operator = true:suggestion
+csharp_style_throw_expression = true:suggestion
+csharp_prefer_simple_using_statement = true:suggestion
+csharp_style_prefer_readonly_struct = true:suggestion
+csharp_style_prefer_utf8_string_literals = true:suggestion
+
+# --- null handling ---
+csharp_style_conditional_delegate_call = true:error
+dotnet_style_coalesce_expression = true:suggestion
+dotnet_style_null_propagation = true:suggestion
+
+# --- immutability ---
+dotnet_style_readonly_field = true:error
+csharp_prefer_static_local_function = true:suggestion
+dotnet_style_prefer_auto_properties = true:suggestion
+
+# --- 'this.' is noise ---
+dotnet_style_qualification_for_field = false:error
+dotnet_style_qualification_for_property = false:error
+dotnet_style_qualification_for_method = false:error
+dotnet_style_qualification_for_event = false:error
+
+# --- naming ---
+dotnet_naming_rule.interfaces_start_with_i.severity = error
+dotnet_naming_rule.interfaces_start_with_i.symbols = interface_symbol
+dotnet_naming_rule.interfaces_start_with_i.style = i_prefix_style
+dotnet_naming_symbols.interface_symbol.applicable_kinds = interface
+dotnet_naming_style.i_prefix_style.required_prefix = I
+dotnet_naming_style.i_prefix_style.capitalization = pascal_case
+
+dotnet_naming_rule.types_are_pascal_case.severity = error
+dotnet_naming_rule.types_are_pascal_case.symbols = type_symbol
+dotnet_naming_rule.types_are_pascal_case.style = pascal_case_style
+dotnet_naming_symbols.type_symbol.applicable_kinds = class,struct,enum,delegate
+dotnet_naming_style.pascal_case_style.capitalization = pascal_case
+
+dotnet_naming_rule.private_fields_are_camel_case_with_underscore.severity = error
+dotnet_naming_rule.private_fields_are_camel_case_with_underscore.symbols = private_field_symbol
+dotnet_naming_rule.private_fields_are_camel_case_with_underscore.style = underscore_camel_style
+dotnet_naming_symbols.private_field_symbol.applicable_kinds = field
+dotnet_naming_symbols.private_field_symbol.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel_style.required_prefix = _
+dotnet_naming_style.underscore_camel_style.capitalization = camel_case
+
+dotnet_naming_rule.constants_are_pascal_case.severity = error
+dotnet_naming_rule.constants_are_pascal_case.symbols = constant_symbol
+dotnet_naming_rule.constants_are_pascal_case.style = pascal_case_style
+dotnet_naming_symbols.constant_symbol.applicable_kinds = field
+dotnet_naming_symbols.constant_symbol.required_modifiers = const
+
+# --- formatting promoted to an error so the build enforces it ---
+dotnet_diagnostic.IDE0055.severity = error
+dotnet_diagnostic.IDE0005.severity = error   # unused using directives
+
+# --- correctness rules promoted to errors ---
+dotnet_diagnostic.CA1062.severity = error   # validate public arguments
+dotnet_diagnostic.CA2007.severity = none    # ConfigureAwait: not needed in ASP.NET Core
+dotnet_diagnostic.CA1848.severity = error   # use LoggerMessage delegates on hot paths
+dotnet_diagnostic.CA2016.severity = error   # forward CancellationToken
+dotnet_diagnostic.CA2100.severity = error   # SQL injection review
+dotnet_diagnostic.CA5350.severity = error   # weak crypto
+dotnet_diagnostic.CA5351.severity = error   # broken crypto
+dotnet_diagnostic.CA1305.severity = error   # specify IFormatProvider
+dotnet_diagnostic.CA1310.severity = error   # specify StringComparison for correctness
+dotnet_diagnostic.CA1849.severity = error   # do not block in async methods
+dotnet_diagnostic.RS0030.severity = error   # banned API used
+
+# --- Sonar rules that matter most for this codebase ---
+dotnet_diagnostic.S1541.severity = error    # cyclomatic complexity
+dotnet_diagnostic.S3776.severity = error    # cognitive complexity
+dotnet_diagnostic.S1244.severity = error    # floating point equality
+dotnet_diagnostic.S2589.severity = error    # gratuitous boolean expression
+dotnet_diagnostic.S6664.severity = none     # logging template arg count: LoggerMessage handles it
+
+# --- nullable ---
+dotnet_diagnostic.CS8600.severity = error
+dotnet_diagnostic.CS8602.severity = error
+dotnet_diagnostic.CS8603.severity = error
+dotnet_diagnostic.CS8604.severity = error
+dotnet_diagnostic.CS8618.severity = error
+dotnet_diagnostic.CS8625.severity = error
+
+# ---------------------------------------------------------------------------
+# Schema history. Every file here is emitted by `dotnet ef migrations add` and
+# is never edited afterwards — a migration that has shipped has already run on
+# somebody's database. Style and analysis rules are written for code a person
+# maintains, so they are switched off rather than fought with; what matters
+# about a migration is the schema it produces, which is reviewed in the diff
+# and proven by applying it to a real database.
+# ---------------------------------------------------------------------------
+[backend/migrations/postgres/Migrations/*.cs]
+generated_code = true
+
+# ---------------------------------------------------------------------------
+# Approved snapshots. These are compared character for character against what
+# the code produced, so an editor that helpfully trims a trailing space or adds
+# a final newline breaks a test rather than tidying a file.
+# ---------------------------------------------------------------------------
+[*.{verified,received}.{txt,json,sql,xml}]
+charset = utf-8-bom
+insert_final_newline = false
+trim_trailing_whitespace = false
+
+# ---------------------------------------------------------------------------
+# Test projects: a handful of rules fight the way good tests are written.
+# ---------------------------------------------------------------------------
+[backend/tests/**/*.cs]
+dotnet_diagnostic.CA1062.severity = none    # arguments come from the test framework
+dotnet_diagnostic.CA1707.severity = none    # Method_Should_Behaviour naming is intentional
+dotnet_diagnostic.S2699.severity = none     # Verify-based tests assert via snapshot
+dotnet_diagnostic.S4144.severity = none     # similar test bodies are not duplication
+
+[ee/tests/**/*.cs]
+dotnet_diagnostic.CA1062.severity = none
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.S2699.severity = none
+dotnet_diagnostic.S4144.severity = none
+
+# ---------------------------------------------------------------------------
+# Frontend — Biome formats TS/TSX/JSON, Prettier keeps MD/YAML. This block only
+# aligns editors that read .editorconfig directly.
+# ---------------------------------------------------------------------------
+[*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc,css}]
+indent_size = 2
+max_line_length = 100
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.{sql,xml,props,targets,csproj}]
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+[justfile]
+indent_style = space
+indent_size = 4

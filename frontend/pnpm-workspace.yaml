@@ -1,0 +1,80 @@
+# One workspace, one dependency-version table.
+#
+# Every version lives in the catalog below and packages refer to it as `catalog:`, so an upgrade
+# is a single line and two packages can never drift onto different copies of React.
+
+packages:
+  - apps/*
+
+# A dependency may only run install scripts if it is named here. The list is short on purpose:
+# each entry is a package that unpacks a platform-specific binary and does nothing else.
+allowBuilds:
+  "@biomejs/biome": true
+  "@parcel/watcher": true
+  "@swc/core": true
+  unrs-resolver: true
+
+catalog:
+  # Framework
+  next: 16.3.1
+  react: 19.2.8
+  react-dom: 19.2.8
+
+  # Language. Pinned to 6.x deliberately — see the note in apps/web/package.json.
+  typescript: 6.0.3
+  "@types/node": 26.2.0
+  "@types/react": 19.2.18
+  "@types/react-dom": 19.2.4
+
+  # Presentation
+  tailwindcss: 4.3.3
+  "@tailwindcss/postcss": 4.3.3
+  next-themes: 0.4.6
+  lucide-react: 1.31.0
+  clsx: 2.1.1
+  tailwind-merge: 3.6.0
+  class-variance-authority: 0.7.1
+  echarts: 6.1.0
+
+  # Behaviour
+  next-intl: 4.13.7
+  zod: 4.4.3
+  "@tanstack/react-query": 5.101.4
+
+  # Quality
+  eslint: 10.8.1
+  "@next/eslint-plugin-next": 16.3.1
+  eslint-plugin-react-hooks: 7.1.1
+  eslint-plugin-jsx-a11y: 6.10.2
+  typescript-eslint: 8.67.0
+  "@biomejs/biome": 2.5.9
+  prettier: 3.9.6
+
+  # Tests
+  vitest: 4.1.10
+  "@vitest/coverage-v8": 4.1.10
+  "@vitejs/plugin-react": 6.0.5
+  jsdom: 30.0.1
+  "@testing-library/react": 16.3.2
+  "@testing-library/jest-dom": 7.0.1
+  "@testing-library/user-event": 14.6.5
+  "@playwright/test": 1.62.1
+
+# Newly published versions are held back by default, so a package compromised at the registry has
+# to survive a waiting period before it can be installed here. Everything below is a version that
+# was deliberately taken before that period had elapsed.
+minimumReleaseAgeExclude:
+  - "@biomejs/biome@2.5.9"
+  - "@biomejs/cli-darwin-arm64@2.5.9"
+  - "@biomejs/cli-darwin-x64@2.5.9"
+  - "@biomejs/cli-linux-arm64-musl@2.5.9"
+  - "@biomejs/cli-linux-arm64@2.5.9"
+  - "@biomejs/cli-linux-x64-musl@2.5.9"
+  - "@biomejs/cli-linux-x64@2.5.9"
+  - "@biomejs/cli-win32-arm64@2.5.9"
+  - "@biomejs/cli-win32-x64@2.5.9"
+  - icu-minify@4.13.7
+  - next-intl-swc-plugin-extractor@4.13.7
+  - next-intl@4.13.7
+  - use-intl@4.13.7
+  - "@testing-library/user-event@14.6.5"

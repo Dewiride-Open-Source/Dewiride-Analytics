@@ -1,0 +1,145 @@
+{
+  "app": {
+    "name": "Dewiride Analytics",
+    "description": "Web analytics that tells you which of your visitors are people.",
+    "loading": "Loading"
+  },
+  "header": {
+    "signedInAs": "Signed in as {name}",
+    "signOut": "Sign out",
+    "signingOut": "Signing out"
+  },
+  "theme": {
+    "label": "Appearance",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "Match my device"
+  },
+  "setup": {
+    "title": "Welcome to Dewiride Analytics",
+    "subtitle": "Set up your account and your first website. It takes about a minute.",
+    "accountSection": "Your account",
+    "siteSection": "Your first website",
+    "name": {
+      "label": "Your name",
+      "optional": "Optional",
+      "placeholder": "Ada Lovelace"
+    },
+    "email": {
+      "label": "Email address",
+      "placeholder": "you@example.com"
+    },
+    "password": {
+      "label": "Password",
+      "hint": "At least 15 characters. A few unrelated words work well.",
+      "show": "Show password",
+      "hide": "Hide password"
+    },
+    "organisation": {
+      "label": "Organisation",
+      "placeholder": "Acme Inc.",
+      "hint": "Your company, your blog, or your own name."
+    },
+    "website": {
+      "label": "Website address",
+      "placeholder": "example.com"
+    },
+    "timeZone": {
+      "label": "Reporting time zone"
+    },
+    "submit": "Create my account",
+    "submitting": "Creating your account",
+    "claimed": {
+      "title": "This installation already has an owner",
+      "body": "Sign in with the account that was created, or ask whoever set it up to invite you.",
+      "action": "Go to sign in"
+    }
+  },
+  "signIn": {
+    "title": "Welcome back",
+    "subtitle": "Sign in to Dewiride Analytics.",
+    "email": {
+      "label": "Email address",
+      "placeholder": "you@example.com"
+    },
+    "password": {
+      "label": "Password",
+      "show": "Show password",
+      "hide": "Hide password"
+    },
+    "stay": {
+      "label": "Keep me signed in"
+    },
+    "submit": "Sign in",
+    "submitting": "Signing in",
+    "refused": {
+      "title": "We couldn't sign you in",
+      "body": "Check your email address and password, then try again. Several wrong attempts in a row will pause sign-in for a few minutes."
+    }
+  },
+  "dashboard": {
+    "period": {
+      "label": "Period",
+      "week": "7 days",
+      "month": "30 days"
+    },
+    "metrics": {
+      "pageViews": {
+        "label": "Page views"
+      },
+      "visitors": {
+        "label": "Daily visitors",
+        "note": "Someone who returns tomorrow counts again."
+      },
+      "pagesPerVisitor": {
+        "label": "Pages per visitor"
+      }
+    },
+    "chart": {
+      "title": "Traffic",
+      "pageViews": "Page views",
+      "visitors": "Daily visitors",
+      "days": "Days run midnight to midnight in {zone}.",
+      "summary": "Daily page views and daily visitors for {site} over the selected period.",
+      "table": "Show these figures as a table",
+      "columnDay": "Day"
+    },
+    "empty": {
+      "title": "Waiting for your first visit",
+      "body": "Nothing has reached {site} yet. As soon as it does, it shows up here."
+    },
+    "noSites": {
+      "title": "No website yet",
+      "body": "Add a website to this account and its traffic will appear here."
+    }
+  },
+  "problems": {
+    "genericTitle": "We couldn't use those details",
+    "PasswordTooShort": "That password is too short — use at least 15 characters.",
+    "PasswordIsPredictable": "That password is easy to guess. Try a few unrelated words instead.",
+    "DuplicateEmail": "An account already uses that email address.",
+    "DuplicateUserName": "An account already uses that email address.",
+    "InvalidEmail": "That doesn't look like an email address.",
+    "SiteDetailsRejected": "We couldn't use that website address or time zone. Check both and try again.",
+    "OrganizationNameRejected": "We couldn't use that organisation name. Try a different one."
+  },
+  "errors": {
+    "unreachableTitle": "Can't reach Dewiride Analytics",
+    "unreachableBody": "The connection didn't get through. Check that everything is running, then try again.",
+    "unexpectedTitle": "Something went wrong",
+    "unexpectedBody": "That didn't work. Try again in a moment.",
+    "tooManyTitle": "Too many attempts",
+    "tooManyBody": "Wait a few minutes, then try again.",
+    "retry": "Try again"
+  },
+  "validation": {
+    "emailRequired": "Enter your email address.",
+    "emailInvalid": "That doesn't look like an email address.",
+    "passwordRequired": "Enter a password.",
+    "passwordTooShort": "Use at least 15 characters.",
+    "organisationRequired": "Enter a name for your organisation.",
+    "websiteRequired": "Enter your website address.",
+    "websiteInvalid": "Enter an address like example.com.",
+    "timeZoneRequired": "Choose a time zone."
+  }
+}

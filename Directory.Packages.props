@@ -1,0 +1,107 @@
+<Project>
+
+  <!--
+    Single central package version file for the whole repository, including ee/.
+    Dependabot has known defects handling multiple Directory.Packages.props files, so
+    there is exactly one. Add versions here, never inline in a .csproj.
+
+    Excluded on purpose — do not add these, the CI licence gate fails the build:
+      MediatR, AutoMapper      dual-licensed RPL-1.5 (strong copyleft) + commercial
+      Hangfire.Core            LGPL-3.0
+      MassTransit v9+          commercial
+      FluentAssertions v8+     proprietary, $129.95/developer/year
+      Duende.IdentityServer    commercial above a revenue threshold
+      NBomber                  source-available, per-company fee
+    See docs/adr/0003-agpl-mit-commercial-licensing.md.
+  -->
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Label="ASP.NET Core and Entity Framework Core">
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.11" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <!--
+      Maps the model to snake_case tables and columns. Self-hosters own their database and will
+      query it directly; PascalCase identifiers in PostgreSQL have to be double-quoted in every
+      hand-written statement, which turns routine inspection into a papercut.
+    -->
+    <PackageVersion Include="EFCore.NamingConventions" Version="10.0.1" />
+  </ItemGroup>
+
+  <ItemGroup Label="Authentication and authorisation">
+    <PackageVersion Include="OpenIddict.AspNetCore" Version="7.6.0" />
+    <PackageVersion Include="OpenIddict.EntityFrameworkCore" Version="7.6.0" />
+    <!--
+      Keeps the keys that sign and encrypt sign-in cookies in PostgreSQL. Without it they live
+      under the container's own filesystem, so restarting the API signs everybody out and two
+      instances of it could never read each other's cookies.
+    -->
+    <PackageVersion Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.11" />
+  </ItemGroup>
+
+  <ItemGroup Label="Telemetry store">
+    <!--
+      ClickHouse.Driver is published by ClickHouse, Inc. and supersedes the community
+      ClickHouse.Client package. EF Core is deliberately NOT used against ClickHouse:
+      ClickHouse.EntityFrameworkCore is still 0.3.0 and change tracking is the wrong
+      abstraction for an append-mostly columnar store. An architecture test asserts that
+      no assembly outside Infrastructure.ClickHouse references this package.
+    -->
+    <PackageVersion Include="ClickHouse.Driver" Version="1.3.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Runtime infrastructure">
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.11" />
+    <!--
+      Health checks are declared by the projects that know how to reach a store, so the class
+      libraries need the package; the host maps the endpoints from the shared framework and does
+      not reference it.
+    -->
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.9.0" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Observability">
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Analyzers">
+    <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.32.0.713" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="5.6.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Testing">
+    <PackageVersion Include="xunit.v3" Version="4.0.0" />
+    <PackageVersion Include="AwesomeAssertions" Version="9.5.0" />
+    <PackageVersion Include="NSubstitute" Version="6.2.0" />
+    <PackageVersion Include="Verify.XunitV3" Version="31.28.0" />
+    <PackageVersion Include="NetArchTest.eNhancedEdition" Version="1.4.5" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
+    <PackageVersion Include="Testcontainers.ClickHouse" Version="4.14.0" />
+    <!--
+      Freezes and advances the clock. Every component takes TimeProvider from dependency
+      injection and BannedSymbols.txt fails the build on an ambient clock read, so this is what
+      the other half of that rule is for.
+    -->
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.9.0" />
+  </ItemGroup>
+
+</Project>

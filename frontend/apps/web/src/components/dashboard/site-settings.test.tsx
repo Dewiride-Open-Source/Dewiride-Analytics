@@ -230,6 +230,24 @@ describe('what a website is called and when its days begin', () => {
     expect(await saveButton()).toBeDisabled();
   });
 
+  /**
+   * The switch below shares these settings, so saving it hands the form a fresh answer. Following
+   * that answer wholesale would take a half-typed name away from somebody who had only reached
+   * across to turn recording off, and leave nothing on screen saying where it went.
+   */
+  it('keeps a half-typed name when the recording switch is used beside it', async () => {
+    offering();
+    engineHolding({ captureClicks: true });
+
+    show();
+    await rename('Reader Weekly');
+    await userEvent.click(await screen.findByRole('switch'));
+
+    expect(await screen.findByRole('switch')).not.toBeChecked();
+    expect(await nameBox()).toHaveValue('Reader Weekly');
+    expect(await saveButton()).toBeEnabled();
+  });
+
   it('says why a name was refused rather than showing it as saved', async () => {
     offering();
     refusing('PUT', 400, {

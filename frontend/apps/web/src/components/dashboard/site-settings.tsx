@@ -124,17 +124,21 @@ interface WebsiteDetailsProps {
  * re-read both do. Seeded once and left, the boxes would go on holding what was stored a moment
  * ago while the button beside them compares against what is stored now — so the button would arm
  * itself with nobody having typed anything, and pressing it would put the older name back.
+ *
+ * What is watched is the two values this form is about, not the settings they arrive in. The switch
+ * below shares those settings, so anybody who typed a new name and then turned recording off would
+ * have had the name taken out from under them by a save that had nothing to do with it.
  */
 function WebsiteDetails({ siteId, stored }: WebsiteDetailsProps) {
   const t = useTranslations('siteSettings');
-  const [seeded, setSeeded] = useState(stored);
+  const [seeded, setSeeded] = useState({ name: stored.displayName, zone: stored.timeZoneId });
   const [zones, setZones] = useState(() => withZone(timeZoneGroups(), stored.timeZoneId));
   const [name, setName] = useState(stored.displayName);
   const [zone, setZone] = useState(stored.timeZoneId);
   const saving = useUpdateSiteSettings(siteId);
 
-  if (seeded !== stored) {
-    setSeeded(stored);
+  if (seeded.name !== stored.displayName || seeded.zone !== stored.timeZoneId) {
+    setSeeded({ name: stored.displayName, zone: stored.timeZoneId });
     setZones(withZone(timeZoneGroups(), stored.timeZoneId));
     setName(stored.displayName);
     setZone(stored.timeZoneId);

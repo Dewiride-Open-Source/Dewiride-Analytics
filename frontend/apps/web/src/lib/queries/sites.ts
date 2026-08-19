@@ -1,10 +1,17 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
-import { listSites, readOverview, readSeries, readTraffic, readVisits } from '@/lib/api/endpoints';
+import {
+  listSites,
+  readOverview,
+  readPages,
+  readSeries,
+  readTraffic,
+  readVisits,
+} from '@/lib/api/endpoints';
 import type { SeriesMetric } from '@/lib/api/schemas';
-import { overviewKey, seriesKey, sitesKey, trafficKey, visitsKey } from './keys';
+import { overviewKey, pagesKey, seriesKey, sitesKey, trafficKey, visitsKey } from './keys';
 
 /** How long an answer about traffic is treated as current before it is asked again. */
 const FRESH_FOR = 30_000;
@@ -37,6 +44,23 @@ export function useDailySeries(siteId: string, metric: SeriesMetric, window: Ana
   return useQuery({
     queryKey: seriesKey(siteId, metric, window),
     queryFn: () => readSeries(siteId, metric, window),
+    retry: false,
+    staleTime: FRESH_FOR,
+  });
+}
+
+/**
+ * One slice of the pages on a website over a period.
+ *
+ * The slice already fetched stays on screen while the next one is being read, so moving through
+ * the list slides from one set of rows to the next instead of collapsing the list to a blank box
+ * and pushing everything below it up the screen.
+ */
+export function usePages(siteId: string, window: AnalyticsWindow, limit: number, offset: number) {
+  return useQuery({
+    queryKey: pagesKey(siteId, window, limit, offset),
+    queryFn: () => readPages(siteId, window, limit, offset),
+    placeholderData: keepPreviousData,
     retry: false,
     staleTime: FRESH_FOR,
   });

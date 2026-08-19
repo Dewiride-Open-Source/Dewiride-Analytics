@@ -34,6 +34,7 @@ public static class AnalyticsSqlCompiler
     private const string ToParameter = "to_ms";
     private const string TimeZoneParameter = "time_zone";
     private const string LimitParameter = "limit";
+    private const string OffsetParameter = "offset";
 
     /// <summary>
     /// Bucket function per granularity. Bucketing runs in the site's own time zone, so the
@@ -59,14 +60,15 @@ public static class AnalyticsSqlCompiler
         }.ToFrozenDictionary();
 
     /// <summary>
-    /// Aggregate per metric. Visitors excludes events that carry no visitor key: a surface that
-    /// could not derive one has not observed an anonymous visitor, it has observed nothing about
-    /// who was there, and counting those together would invent a single busy phantom.
+    /// Aggregate per metric, over one visitor's activity on one page. Visitors excludes activity
+    /// carrying no visitor key: a surface that could not derive one has not observed an anonymous
+    /// visitor, it has observed nothing about who was there, and counting those together would
+    /// invent a single busy phantom.
     /// </summary>
     private static readonly FrozenDictionary<TimeSeriesMetric, string> MetricExpressions =
         new Dictionary<TimeSeriesMetric, string>
         {
-            [TimeSeriesMetric.PageViews] = "toInt64(countIf(kind = 'PageView'))",
+            [TimeSeriesMetric.PageViews] = "toInt64(sum(page_views))",
             [TimeSeriesMetric.Visitors] = "toInt64(uniqExactIf(visitor_key, visitor_key != ''))",
         }.ToFrozenDictionary();
 
@@ -86,6 +88,7 @@ public static class AnalyticsSqlCompiler
         {
             OverviewQuery overview => CompileOverview(scope, overview),
             TimeSeriesQuery series => CompileTimeSeries(scope, series),
+            SitePagesQuery pages => CompileSitePages(scope, pages),
             TrafficBreakdownQuery breakdown => CompileTrafficBreakdown(scope, breakdown),
             JudgedSessionsQuery judged => CompileJudgedSessions(scope, judged),
             _ => throw new NotSupportedException(
@@ -176,20 +179,120 @@ public static class AnalyticsSqlCompiler
             [.. WindowParameters(scope, query.Range), new QueryParameter(LimitParameter, (uint)query.Limit)]);
     }
 
+    /// <summary>
+    /// Counts the headline totals, reading pages delivered rather than reports received.
+    /// </summary>
+    /// <remarks>
+    /// Reports are still totalled as they arrive, because that figure answers a different question
+    /// — how much the site is being watched — and is not a claim about how much traffic there was.
+    /// </remarks>
     private static CompiledStatement CompileOverview(TenantScope scope, OverviewQuery query)
     {
-        const string sql = """
+        var sql = $$"""
+            WITH
+                windowed AS
+                (
+                    SELECT kind, surface, path, visitor_key, correlation_id
+                    FROM events
+                    WHERE site_id = {site_id:UUID}
+                      AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                      AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+                ),
+                {{ReconciledEvents.Reconciliation}}
             SELECT
-                toInt64(countIf(kind = 'PageView')) AS page_views,
+                toInt64(sum(page_views)) AS page_views,
                 toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS visitors,
-                toInt64(count()) AS events
-            FROM events
-            WHERE site_id = {site_id:UUID}
-              AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-              AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+                toInt64(sum(reports)) AS events
+            FROM
+            (
+                SELECT
+                    visitor_key,
+                    count() AS reports,
+                    {{ReconciledEvents.DeliveredPageViews(8)}}
+                FROM identified
+                GROUP BY visitor_key, path
+            )
             """;
 
         return new CompiledStatement(sql, WindowParameters(scope, query.Range));
+    }
+
+    /// <summary>
+    /// Counts pages delivered, grouped by which page was delivered, one slice at a time.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Three figures about the whole window ride on every row: what was delivered altogether, how
+    /// many addresses there were, and how much the busiest of them had. All three are window
+    /// functions, so they are worked out across every address before the slice is taken and stay
+    /// still while somebody moves through the list. Summing the rows instead would report the
+    /// busiest page of a large site at several times the share it has, and measuring a bar against
+    /// whatever led one slice would start every slice with a full one.
+    /// </para>
+    /// <para>
+    /// Working them out takes a level of its own: the store refuses an aggregate inside a window
+    /// function, so the per-page counts have to be finished before anything can be measured across
+    /// them.
+    /// </para>
+    /// <para>
+    /// The ordering is total — busiest first, and the address breaks a tie — so successive slices
+    /// neither repeat a row nor skip one. Without the tie-break, two addresses with equal traffic
+    /// could swap places between one slice and the next and one of them would never be seen.
+    /// </para>
+    /// <para>
+    /// A path never enters this statement. It is grouped on and read back, which is the whole of
+    /// what a hostile one can do here.
+    /// </para>
+    /// </remarks>
+    private static CompiledStatement CompileSitePages(TenantScope scope, SitePagesQuery query)
+    {
+        var sql = $$"""
+            WITH
+                windowed AS
+                (
+                    SELECT kind, surface, path, visitor_key, correlation_id
+                    FROM events
+                    WHERE site_id = {site_id:UUID}
+                      AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                      AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+                ),
+                {{ReconciledEvents.Reconciliation}}
+            SELECT
+                path,
+                page_views,
+                visitors,
+                toInt64(sum(page_views) OVER ()) AS total_page_views,
+                toInt64(count() OVER ()) AS total_paths,
+                toInt64(max(page_views) OVER ()) AS most_page_views
+            FROM
+            (
+                SELECT
+                    path,
+                    toInt64(sum(page_views)) AS page_views,
+                    toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS visitors
+                FROM
+                (
+                    SELECT
+                        path,
+                        visitor_key,
+                        {{ReconciledEvents.DeliveredPageViews(12)}}
+                    FROM identified
+                    GROUP BY path, visitor_key
+                )
+                GROUP BY path
+                HAVING page_views > 0
+            )
+            ORDER BY page_views DESC, path
+            LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+            """;
+
+        return new CompiledStatement(
+            sql,
+            [
+                .. WindowParameters(scope, query.Range),
+                new QueryParameter(LimitParameter, (uint)query.Limit),
+                new QueryParameter(OffsetParameter, (uint)query.Offset),
+            ]);
     }
 
     private static CompiledStatement CompileTimeSeries(TenantScope scope, TimeSeriesQuery query)
@@ -203,13 +306,28 @@ public static class AnalyticsSqlCompiler
         // end instant itself would append an empty bucket whenever a window ends exactly on a
         // boundary, and truncate the final partial bucket whenever it does not.
         var sql = $$"""
+            WITH
+                windowed AS
+                (
+                    SELECT kind, surface, path, visitor_key, correlation_id, server_ts
+                    FROM events
+                    WHERE site_id = {site_id:UUID}
+                      AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                      AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+                ),
+                {{ReconciledEvents.Reconciliation}}
             SELECT
-                {{bucket}}(server_ts, {time_zone:String}) AS bucket,
+                bucket,
                 {{metric}} AS value
-            FROM events
-            WHERE site_id = {site_id:UUID}
-              AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-              AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+            FROM
+            (
+                SELECT
+                    {{bucket}}(server_ts, {time_zone:String}) AS bucket,
+                    visitor_key,
+                    {{ReconciledEvents.DeliveredPageViews(8)}}
+                FROM identified
+                GROUP BY bucket, visitor_key, path
+            )
             GROUP BY bucket
             ORDER BY bucket
             WITH FILL

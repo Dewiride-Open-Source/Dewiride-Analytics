@@ -66,6 +66,56 @@ public enum TimeSeriesMetric
 }
 
 /// <summary>
+/// One slice of the pages a site's traffic went to, busiest first.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Counted as pages delivered rather than as reports received, on the same terms as
+/// <see cref="OverviewQuery"/>, so a share taken against the headline total is a share of the
+/// same arithmetic rather than of a second, differently-derived number.
+/// </para>
+/// <para>
+/// Every address the window holds is reachable by asking for successive slices. The ordering is
+/// total — busiest first, and the address itself breaks a tie — so a page of results does not
+/// shuffle beneath somebody moving through them.
+/// </para>
+/// </remarks>
+public sealed record SitePagesQuery : AnalyticsQuery
+{
+    /// <summary>
+    /// Most pages any one question may ask for.
+    /// </summary>
+    /// <remarks>
+    /// A documentation site has thousands of addresses and every one of them is a group in the
+    /// store. This bounds one answer, not the work behind it, which is why the window is bounded
+    /// separately and why the whole list is reached a slice at a time rather than at once.
+    /// </remarks>
+    public const int MostPages = 100;
+
+    /// <summary>Asks for a slice of the pages in a window.</summary>
+    /// <param name="range">The window to count over.</param>
+    /// <param name="limit">How many pages to return, at most <see cref="MostPages"/>.</param>
+    /// <param name="offset">How many of the busiest pages to pass over first.</param>
+    /// <exception cref="ArgumentOutOfRangeException">The limit is outside its bounds, or the offset is negative.</exception>
+    public SitePagesQuery(TimeRange range, int limit, int offset = 0)
+        : base(range)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, MostPages);
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+
+        Limit = limit;
+        Offset = offset;
+    }
+
+    /// <summary>How many pages to return.</summary>
+    public int Limit { get; }
+
+    /// <summary>How many of the busiest pages to pass over first.</summary>
+    public int Offset { get; }
+}
+
+/// <summary>
 /// Visits grouped by what the engine concluded generated them.
 /// </summary>
 /// <remarks>

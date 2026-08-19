@@ -314,7 +314,11 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         var starts = await Task.WhenAll(
             Enumerable.Range(0, 4).Select(_ => ResumePointAsync(site.Id, from)));
 
-        starts.Should().AllBeEquivalentTo(from);
+        // The control plane keeps an instant to the microsecond, so whichever engine wrote the row
+        // reads its own value back one truncation coarser than the engines that lost the race. A
+        // starting point is a window boundary measured in minutes; agreeing to the precision the
+        // store keeps is the guarantee, and the whole of it.
+        starts.Should().AllSatisfy(start => start.Should().BeCloseTo(from, TimeSpan.FromMicroseconds(1)));
     }
 
     private async Task<DateTimeOffset> ResumePointAsync(Guid siteId, DateTimeOffset from)

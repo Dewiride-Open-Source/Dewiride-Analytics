@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { goTo, only, openPage, type Sent, visibility } from './harness';
+import { stampedIdentifier } from './beacon';
+import { goTo, only, openPage, type Sent, stampResponse, visibility } from './harness';
 
 let page: ReturnType<typeof openPage>;
 
@@ -52,6 +53,47 @@ describe('what the beacon reports when a page is opened', () => {
     page.open({ correlationId: 'e6c1f0' });
 
     expect(only(page.sent, 'pageview')['correlationId']).toBe('e6c1f0');
+  });
+
+  /**
+   * A site built once and served from a cache has no per-request markup to carry an identifier,
+   * but its response still has headers — so that is where the identifier is looked for. Without
+   * this, matching the two halves of the measurement would work only on sites that render every
+   * page as it is asked for, which is a minority of the ones this product is for.
+   */
+  it('finds the identifier on the response when the page itself carries none', () => {
+    stampResponse([{ name: 'dw', description: '7b21ae' }]);
+
+    expect(stampedIdentifier()).toBe('7b21ae');
+  });
+
+  it('reports no identifier when the site put none on the response', () => {
+    stampResponse([{ name: 'cache', description: 'hit' }]);
+
+    expect(stampedIdentifier()).toBeUndefined();
+  });
+
+  it('reports no identifier when the browser kept no timings at all', () => {
+    stampResponse([]);
+
+    expect(stampedIdentifier()).toBeUndefined();
+  });
+
+  /**
+   * The identifier names the one page the site's server handed over. Pages reached from it without
+   * a fresh request were never delivered by anybody, so repeating it would make several readings
+   * look like one and lose every page after the first.
+   */
+  it('sends the identifier for the delivered page only, not for the ones reached from it', () => {
+    page.open({ correlationId: 'e6c1f0' });
+
+    goTo('/posts/second');
+
+    const views = page.sent.filter((report) => report['kind'] === 'pageview');
+
+    expect(views).toHaveLength(2);
+    expect(views[0]?.['correlationId']).toBe('e6c1f0');
+    expect(views[1]).not.toHaveProperty('correlationId');
   });
 
   /**

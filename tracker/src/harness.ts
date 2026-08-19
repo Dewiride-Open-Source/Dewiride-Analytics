@@ -96,6 +96,20 @@ export function openPage(): Page {
   };
 }
 
+/**
+ * Gives this page's response the timings a site's own server would have put on it.
+ *
+ * How a reporter on the site's server tells the tracker which delivery it is looking at, without
+ * anything having to be written into the page itself.
+ */
+export function stampResponse(timings: readonly { name: string; description: string }[]): void {
+  vi.spyOn(performance, 'getEntriesByType').mockImplementation((type) =>
+    type === 'navigation'
+      ? ([{ serverTiming: timings }] as unknown as PerformanceEntryList)
+      : ([] as PerformanceEntryList),
+  );
+}
+
 /** Puts the page in front of somebody, or takes it away, and tells the beacon. */
 export function visibility(state: DocumentVisibilityState): void {
   Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });

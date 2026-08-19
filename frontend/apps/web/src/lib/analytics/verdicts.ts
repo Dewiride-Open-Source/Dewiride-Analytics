@@ -150,8 +150,3 @@ function secondsIn(reason: VisitReason): number {
 export function byWeight(reasons: readonly VisitReason[]): readonly VisitReason[] {
   return [...reasons].sort((first, second) => second.weight - first.weight);
 }
-
-/** A share of the whole, rounded for reading rather than for arithmetic. */
-export function shareOf(part: number, whole: number): number {
-  return whole > 0 ? part / whole : 0;
-}

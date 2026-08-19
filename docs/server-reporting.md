@@ -83,23 +83,56 @@ Recognised `surface` values: `cloudflare-worker`, `wordpress-plugin`, `netlify-e
 
 ### One observation
 
-| Field           | Required | Meaning                                                                                                                                                                                                                                  |
-| --------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kind`          | yes      | `pageview`, `engagement` or `exit`. A server surface reports `pageview`.                                                                                                                                                                 |
-| `url`           | yes      | Absolute `http` or `https` URL of the page requested. Its hostname must be one the site covers.                                                                                                                                          |
-| `referrer`      | no       | The referring URL the visitor's browser sent.                                                                                                                                                                                            |
-| `ipAddress`     | no       | The **visitor's** address, not the reporter's. Absent means the reporter could not determine one; present but unparseable is refused.                                                                                                    |
-| `userAgent`     | no       | The **visitor's** user agent, not the reporter's.                                                                                                                                                                                        |
-| `statusCode`    | no       | Status the site returned.                                                                                                                                                                                                                |
-| `contentType`   | no       | Content type of the response.                                                                                                                                                                                                            |
-| `responseBytes` | no       | Bytes sent in the response.                                                                                                                                                                                                              |
-| `language`      | no       | Primary language the visitor's browser asked for.                                                                                                                                                                                        |
-| `observedAt`    | no       | Unix milliseconds at which the reporter saw the request. Never used as the event's time; the collector stamps that on receipt. The difference between the two is recorded.                                                               |
-| `correlationId` | no       | An identifier stamped into the served page, so a later browser report can be matched to this one. HTML served under an identifier that no script ever reported is a page that was fetched and never rendered — which is itself evidence. |
+| Field           | Required | Meaning                                                                                                                                                                                                       |
+| --------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kind`          | yes      | `pageview`, `engagement` or `exit`. A server surface reports `pageview`.                                                                                                                                      |
+| `url`           | yes      | Absolute `http` or `https` URL of the page requested. Its hostname must be one the site covers.                                                                                                               |
+| `referrer`      | no       | The referring URL the visitor's browser sent.                                                                                                                                                                 |
+| `ipAddress`     | no       | The **visitor's** address, not the reporter's. Absent means the reporter could not determine one; present but unparseable is refused.                                                                         |
+| `userAgent`     | no       | The **visitor's** user agent, not the reporter's.                                                                                                                                                             |
+| `statusCode`    | no       | Status the site returned.                                                                                                                                                                                     |
+| `contentType`   | no       | Content type of the response.                                                                                                                                                                                 |
+| `responseBytes` | no       | Bytes sent in the response.                                                                                                                                                                                   |
+| `language`      | no       | Primary language the visitor's browser asked for.                                                                                                                                                             |
+| `observedAt`    | no       | Unix milliseconds at which the reporter saw the request. Never used as the event's time; the collector stamps that on receipt. The difference between the two is recorded.                                    |
+| `correlationId` | no       | Names this one delivery, so the browser's account of the same page can be matched to it. See [Naming the delivery](#naming-the-delivery) — a reporter that runs alongside the browser tracker should send it. |
 
 Fields the browser observes and a server cannot — viewport, engaged time, scroll depth, pointer
 and keyboard presence, declared automation — are absent from this shape on purpose. There is no
 way to assert them here, and the store records them as _not observed_ rather than as zero.
+
+### Naming the delivery
+
+A reporter here and the browser tracker both see every page a person reads, and each works out for
+itself who the visitor was — from addresses that need not agree, because the page and the collector
+are different hosts and a visitor whose network offers both kinds of address can reach one over
+each. Left alone, that is two page views and two people for every one of each.
+
+Send a `correlationId` and put the same value on the response, and the two accounts are recognised
+as one. Mint it per request; it names an event rather than a person, and has no meaning once the
+pair has been matched.
+
+Put it on the response as a `Server-Timing` metric called `dw`:
+
+```http
+Server-Timing: dw;desc="7b21ae4c90f1d33e"
+```
+
+The tracker reads it from the timings the browser already collected for the page, so nothing has to
+be written into the markup — which matters, because most of the sites this product is for are built
+once and served from a cache, and a reporter sitting in the request path often cannot alter a body
+at all. A browser hands these timings to script on the page they came from and, unless the site says
+otherwise, to nobody else.
+
+Where a reporter renders the page itself, writing the value into the tracker's tag as
+`data-correlation` does the same job, and the tag wins if both are present.
+
+Both are optional. Without either, page views are still counted once per delivery — the two halves
+are counted separately and the larger kept — but the two halves cannot be recognised as one
+visitor, so a site running both will report each person twice.
+
+HTML served under an identifier that no script ever reported is a page that was fetched and never
+rendered, which is itself evidence.
 
 ### The answer
 

@@ -84,6 +84,69 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
         }
     }
 
+    [Fact]
+    public async Task A_Member_Can_Read_The_Busiest_Pages()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/pages");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var pages = await response.Content.ReadFromJsonAsync<PagesResponse>(Cancellation.Token);
+
+            pages.Should().NotBeNull();
+            pages.Pages.Should().BeEmpty();
+            pages.PageViews.Should().Be(0);
+            pages.TotalPaths.Should().Be(0);
+            pages.To.Should().BeAfter(pages.From);
+        }
+    }
+
+    /// <summary>
+    /// The whole list is read a slice at a time, so a caller may start anywhere along it — and
+    /// past the end of a short one answers empty rather than refusing.
+    /// </summary>
+    [Fact]
+    public async Task A_Member_Can_Start_The_Page_List_Further_Along()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/pages?limit=10&offset=20");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var pages = await response.Content.ReadFromJsonAsync<PagesResponse>(Cancellation.Token);
+
+            pages.Should().NotBeNull();
+            pages.Pages.Should().BeEmpty();
+        }
+    }
+
+    [Theory]
+    [InlineData("limit=0")]
+    [InlineData("limit=101")]
+    [InlineData("limit=-1")]
+    [InlineData("offset=-1")]
+    public async Task Asking_For_An_Impossible_Number_Of_Pages_Is_Refused(string query)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/pages?{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
     /// <summary>
     /// The same answer as a site that was never created, so the endpoint cannot be used to test
     /// which identifiers on an install are real.

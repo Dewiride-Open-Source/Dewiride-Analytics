@@ -18,6 +18,10 @@ export function seriesKey(siteId: string, metric: SeriesMetric, window: Analytic
   return ['sites', siteId, 'series', metric, window.from, window.to] as const;
 }
 
+export function pagesKey(siteId: string, window: AnalyticsWindow, limit: number, offset: number) {
+  return ['sites', siteId, 'pages', window.from, window.to, limit, offset] as const;
+}
+
 export function trafficKey(siteId: string, window: AnalyticsWindow) {
   return ['sites', siteId, 'traffic', window.from, window.to] as const;
 }

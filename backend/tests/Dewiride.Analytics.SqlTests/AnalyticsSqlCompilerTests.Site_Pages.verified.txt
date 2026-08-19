@@ -2,7 +2,7 @@
 WITH
     windowed AS
     (
-        SELECT kind, surface, path, visitor_key, correlation_id, server_ts
+        SELECT kind, surface, path, visitor_key, correlation_id
         FROM events
         WHERE site_id = {site_id:UUID}
           AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
@@ -37,29 +37,39 @@ WITH
         LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
     )
 SELECT
-    bucket,
-    toInt64(sum(page_views)) AS value
+    path,
+    page_views,
+    visitors,
+    toInt64(sum(page_views) OVER ()) AS total_page_views,
+    toInt64(count() OVER ()) AS total_paths,
+    toInt64(max(page_views) OVER ()) AS most_page_views
 FROM
 (
     SELECT
-        toStartOfDay(server_ts, {time_zone:String}) AS bucket,
-        visitor_key,
-        greatest(
-            countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),
-            countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) AS delivered,
-        if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
-    FROM identified
-    GROUP BY bucket, visitor_key, path
+        path,
+        toInt64(sum(page_views)) AS page_views,
+        toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS visitors
+    FROM
+    (
+        SELECT
+            path,
+            visitor_key,
+            greatest(
+                countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),
+                countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) AS delivered,
+            if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
+        FROM identified
+        GROUP BY path, visitor_key
+    )
+    GROUP BY path
+    HAVING page_views > 0
 )
-GROUP BY bucket
-ORDER BY bucket
-WITH FILL
-    FROM toStartOfDay(fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC'), {time_zone:String})
-    TO toStartOfDay(fromUnixTimestamp64Milli({to_ms:Int64} - 1, 'UTC'), {time_zone:String}) + INTERVAL 1 DAY
-    STEP INTERVAL 1 DAY
+ORDER BY page_views DESC, path
+LIMIT {limit:UInt32} OFFSET {offset:UInt32}
 
 --- bound values ---
 site_id = 0197c0de-0000-7000-8000-000000000001
 from_ms = 1777593600000
 to_ms = 1778198400000
-time_zone = 'Europe/London'
+limit = 10
+offset = 0

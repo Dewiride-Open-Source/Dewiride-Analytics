@@ -59,6 +59,45 @@ public sealed record SeriesResponse(
 public readonly record struct SeriesPoint(DateTimeOffset BucketStart, long Value);
 
 /// <summary>
+/// One slice of the pages a website's traffic went to over a window, busiest first.
+/// </summary>
+/// <remarks>
+/// The whole list is read a slice at a time: ask again with <c>offset</c> advanced by as many
+/// pages as were returned. The ordering is total, so successive slices neither repeat a page nor
+/// skip one, and an offset past the end answers with an empty list rather than an error.
+/// </remarks>
+/// <param name="From">Inclusive start of the window.</param>
+/// <param name="To">Exclusive end of the window.</param>
+/// <param name="PageViews">
+/// Pages delivered across the whole window, counting every address outside this slice. Shares are
+/// taken against this, so the rows returned need not add up to it.
+/// </param>
+/// <param name="TotalPaths">How many addresses had traffic in the window, across every slice.</param>
+/// <param name="MostPageViews">
+/// Pages delivered at the single busiest address in the window. Lets a slice be drawn to the same
+/// scale as every other one.
+/// </param>
+/// <param name="Pages">The slice, busiest first.</param>
+public sealed record PagesResponse(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    long PageViews,
+    long TotalPaths,
+    long MostPageViews,
+    IReadOnlyList<PageRow> Pages);
+
+/// <summary>
+/// One page and how much of a window's traffic went to it.
+/// </summary>
+/// <param name="Path">
+/// Path of the page, as it was asked for. Written by whoever made the request and never
+/// interpreted: it is shown as text and is not a link the dashboard follows.
+/// </param>
+/// <param name="PageViews">Pages delivered at this path.</param>
+/// <param name="Visitors">Distinct visitors that asked for it, counted on the same daily terms as the headline.</param>
+public sealed record PageRow(string Path, long PageViews, long Visitors);
+
+/// <summary>
 /// Judged visits over a window, grouped by what generated them.
 /// </summary>
 /// <param name="From">Inclusive start of the window.</param>

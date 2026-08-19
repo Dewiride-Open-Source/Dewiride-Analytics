@@ -1,11 +1,56 @@
 ﻿--- statement ---
+WITH
+    windowed AS
+    (
+        SELECT kind, surface, path, visitor_key, correlation_id, server_ts
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    ),
+    echoed AS
+    (
+        SELECT
+            minIf(visitor_key, surface IN ('BrowserTracker', 'NoScriptPixel')) AS browser_key,
+            minIf(visitor_key, surface NOT IN ('BrowserTracker', 'NoScriptPixel')) AS reported_key
+        FROM windowed
+        WHERE correlation_id != ''
+          AND visitor_key != ''
+        GROUP BY correlation_id
+        HAVING browser_key != ''
+           AND reported_key != ''
+    ),
+    linked AS
+    (
+        SELECT
+            reported_key,
+            min(browser_key) AS browser_key
+        FROM echoed
+        GROUP BY reported_key
+    ),
+    identified AS
+    (
+        SELECT
+            windowed.* EXCEPT (visitor_key),
+            if(linked.browser_key != '' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'), linked.browser_key, windowed.visitor_key) AS visitor_key
+        FROM windowed
+        LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
+    )
 SELECT
-    toStartOfHour(server_ts, {time_zone:String}) AS bucket,
+    bucket,
     toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS value
-FROM events
-WHERE site_id = {site_id:UUID}
-  AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-  AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+FROM
+(
+    SELECT
+        toStartOfHour(server_ts, {time_zone:String}) AS bucket,
+        visitor_key,
+        greatest(
+            countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),
+            countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) AS delivered,
+        if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
+    FROM identified
+    GROUP BY bucket, visitor_key, path
+)
 GROUP BY bucket
 ORDER BY bucket
 WITH FILL

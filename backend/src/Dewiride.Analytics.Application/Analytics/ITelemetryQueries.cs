@@ -37,6 +37,16 @@ public interface ITelemetryQueries
         TimeSeriesQuery query,
         CancellationToken cancellationToken);
 
+    /// <summary>Returns one slice of the pages traffic went to over a window, busiest first.</summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The window, how many pages to return, and how many to pass over.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The slice, with the figures the whole window gives it its meaning against.</returns>
+    Task<SitePages> GetSitePagesAsync(
+        TenantScope scope,
+        SitePagesQuery query,
+        CancellationToken cancellationToken);
+
     /// <summary>Returns judged visits grouped by what generated them.</summary>
     /// <param name="scope">Proof the caller may read this site.</param>
     /// <param name="query">The window to group over.</param>
@@ -119,3 +129,44 @@ public readonly record struct OverviewResult(long PageViews, long Visitors, long
 /// <param name="BucketStart">Inclusive start of the bucket.</param>
 /// <param name="Value">The metric's value within the bucket.</param>
 public readonly record struct TimeSeriesPoint(DateTimeOffset BucketStart, long Value);
+
+/// <summary>
+/// One slice of the pages traffic went to over a window.
+/// </summary>
+/// <remarks>
+/// The three figures beside the rows all describe the whole window rather than the slice, because
+/// a slice on its own says nothing: a row is only worth reading against everything it was drawn
+/// from. They are computed before the slice is taken, so they do not change as somebody moves
+/// through the list.
+/// </remarks>
+/// <param name="TotalPageViews">
+/// Pages delivered across the whole window, counting every address this slice does not contain.
+/// Every share is taken against this, so ten rows from a site with a thousand addresses do not
+/// add up to the whole of its traffic.
+/// </param>
+/// <param name="TotalPaths">
+/// How many addresses had traffic in the window. What tells a caller how much of the list is
+/// still ahead of them.
+/// </param>
+/// <param name="MostPageViews">
+/// Pages delivered at the single busiest address. A bar drawn against this stays the same length
+/// for the same figure wherever in the list it appears; drawn against whatever happened to be
+/// busiest in one slice, every slice would start with a full bar.
+/// </param>
+/// <param name="Pages">The slice, busiest first.</param>
+public sealed record SitePages(
+    long TotalPageViews,
+    long TotalPaths,
+    long MostPageViews,
+    ImmutableArray<SitePageRow> Pages);
+
+/// <summary>
+/// One page and how much of a window's traffic went to it.
+/// </summary>
+/// <param name="Path">
+/// Path of the page, exactly as it was asked for. Written by whoever made the request, so it is
+/// data everywhere it travels and never anything else.
+/// </param>
+/// <param name="PageViews">Pages delivered at this path.</param>
+/// <param name="Visitors">Distinct visitor keys that asked for it, on the same daily terms as the headline count.</param>
+public readonly record struct SitePageRow(string Path, long PageViews, long Visitors);

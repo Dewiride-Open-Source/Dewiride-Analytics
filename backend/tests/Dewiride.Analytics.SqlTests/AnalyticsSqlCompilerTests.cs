@@ -62,6 +62,14 @@ public sealed class AnalyticsSqlCompilerTests
     }
 
     [Fact]
+    public Task Site_Pages()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new SitePagesQuery(Window(), 10));
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
     public Task Traffic_Breakdown()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new TrafficBreakdownQuery(Window()));
@@ -116,6 +124,76 @@ public sealed class AnalyticsSqlCompilerTests
         var act = () => new JudgedSessionsQuery(Window(), limit);
 
         act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(SitePagesQuery.MostPages + 1)]
+    public void Asking_For_An_Impossible_Number_Of_Pages_Is_Refused(int limit)
+    {
+        var act = () => new SitePagesQuery(Window(), limit);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void Starting_The_Page_List_Before_Its_Beginning_Is_Refused()
+    {
+        var act = () => new SitePagesQuery(Window(), 10, -1);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    /// <summary>
+    /// Each figure describes the whole window rather than the slice returned, so it stays still
+    /// while somebody moves through the list. Worked out from the rows returned instead, the
+    /// busiest page of a large site would be reported at several times the share it has, and
+    /// every slice would begin with a full-length bar.
+    /// </summary>
+    [Theory]
+    [InlineData("sum(page_views) OVER ()")]
+    [InlineData("count() OVER ()")]
+    [InlineData("max(page_views) OVER ()")]
+    public void The_Page_List_Describes_The_Whole_Window_Rather_Than_The_Slice(string figure)
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new SitePagesQuery(Window(), 10, 40));
+
+        statement.Sql.Should().Contain(figure);
+    }
+
+    /// <summary>
+    /// Two addresses with equal traffic could otherwise swap places between one slice and the
+    /// next, which would show one of them twice and never show the other at all.
+    /// </summary>
+    [Fact]
+    public void The_Page_List_Orders_Totally_So_Slices_Neither_Repeat_Nor_Skip()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new SitePagesQuery(Window(), 10, 40));
+
+        statement.Sql.Should().Contain("ORDER BY page_views DESC, path");
+        statement.Sql.Should().Contain("LIMIT {limit:UInt32} OFFSET {offset:UInt32}");
+        statement.Parameters.Select(parameter => parameter.Name)
+            .Should().Equal("site_id", "from_ms", "to_ms", "limit", "offset");
+    }
+
+    /// <summary>
+    /// The list and the headline are the same arithmetic, so a share taken against one is a share
+    /// of the other. Counting reports here while the headline counts deliveries would put a page
+    /// on the list at twice the traffic the site is told it had.
+    /// </summary>
+    [Theory]
+    [InlineData("greatest(")]
+    [InlineData("countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel'))")]
+    [InlineData("countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))")]
+    [InlineData("if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views")]
+    public void The_Page_List_Counts_Deliveries_On_The_Same_Terms_As_The_Headline(string arithmetic)
+    {
+        var pages = AnalyticsSqlCompiler.Compile(Scope(), new SitePagesQuery(Window(), 10));
+        var overview = AnalyticsSqlCompiler.Compile(Scope(), new OverviewQuery(Window()));
+
+        pages.Sql.Should().Contain(arithmetic);
+        overview.Sql.Should().Contain(arithmetic);
     }
 
     /// <summary>

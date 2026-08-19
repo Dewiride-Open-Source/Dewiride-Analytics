@@ -3,7 +3,7 @@
 import { useFormatter, useTranslations } from 'next-intl';
 import { fillFor, VerdictBadge } from '@/components/dashboard/verdict-badge';
 import { Card } from '@/components/ui/card';
-import { shareOf } from '@/lib/analytics/verdicts';
+import { shareOf } from '@/lib/analytics/share';
 import type { TrafficGroup } from '@/lib/api/schemas';
 
 interface TrafficBreakdownProps {

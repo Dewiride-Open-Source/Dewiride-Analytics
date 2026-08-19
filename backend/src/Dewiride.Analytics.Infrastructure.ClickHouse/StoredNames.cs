@@ -53,6 +53,23 @@ internal static class StoredNames
     /// <summary>Capture surface for each stored name.</summary>
     public static FrozenDictionary<string, IngestSurface> Surfaces { get; } = Invert(SurfaceNames);
 
+    /// <summary>
+    /// The surfaces reporting from the visitor's own browser, written as a list a statement can
+    /// test membership of.
+    /// </summary>
+    /// <remarks>
+    /// Assembled from the table above rather than typed out a second time, so a surface added to
+    /// the product cannot be classified one way in code and the other way in a statement. Every
+    /// part of it is a literal from this file, which is what keeps the rule that no statement
+    /// contains anything a caller supplied.
+    /// </remarks>
+    public static string BrowserSurfaceList { get; } = string.Join(
+        ", ",
+        SurfaceNames
+            .Where(entry => IngestSurfaces.RunsInVisitorBrowser(entry.Key))
+            .Select(entry => $"'{entry.Value}'")
+            .Order(StringComparer.Ordinal));
+
     /// <summary>Stored name for each traffic category.</summary>
     public static FrozenDictionary<TrafficCategory, string> CategoryNames { get; } =
         new Dictionary<TrafficCategory, string>

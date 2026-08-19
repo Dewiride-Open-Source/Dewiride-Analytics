@@ -30,6 +30,7 @@ namespace Dewiride.Analytics.Api.Contracts;
 [JsonSerializable(typeof(IReadOnlyList<SiteSummary>))]
 [JsonSerializable(typeof(OverviewResponse))]
 [JsonSerializable(typeof(SeriesResponse))]
+[JsonSerializable(typeof(PagesResponse))]
 [JsonSerializable(typeof(TrafficResponse))]
 [JsonSerializable(typeof(VisitsResponse))]
 public sealed partial class ApiJsonContext : JsonSerializerContext;

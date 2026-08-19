@@ -59,6 +59,30 @@ export const seriesSchema = z.object({
   points: z.array(z.object({ bucketStart: timestamp, value: z.number().int() })),
 });
 
+/** One page and how much of a period's traffic went to it. */
+export const sitePageSchema = z.object({
+  path: z.string(),
+  pageViews: z.number().int(),
+  visitors: z.number().int(),
+});
+
+/**
+ * One slice of the pages a period's traffic went to.
+ *
+ * The three figures beside the rows all describe the whole period rather than the slice: what was
+ * read altogether, how many addresses there were, and how much the busiest of them had. A share
+ * worked out from the rows alone would put the busiest page of a large site at several times the
+ * share it has, and a bar measured against the slice would start every slice with a full one.
+ */
+export const pagesSchema = z.object({
+  from: timestamp,
+  to: timestamp,
+  pageViews: z.number().int(),
+  totalPaths: z.number().int(),
+  mostPageViews: z.number().int(),
+  pages: z.array(sitePageSchema),
+});
+
 /**
  * What generated a visit.
  *
@@ -190,6 +214,8 @@ export type Site = z.infer<typeof siteSchema>;
 export type Overview = z.infer<typeof overviewSchema>;
 export type Series = z.infer<typeof seriesSchema>;
 export type SeriesMetric = Series['metric'];
+export type SitePage = z.infer<typeof sitePageSchema>;
+export type Pages = z.infer<typeof pagesSchema>;
 export type TrafficCategory = z.infer<typeof trafficCategorySchema>;
 export type EvidenceStrength = z.infer<typeof evidenceStrengthSchema>;
 export type CaptureSurface = z.infer<typeof captureSurfaceSchema>;

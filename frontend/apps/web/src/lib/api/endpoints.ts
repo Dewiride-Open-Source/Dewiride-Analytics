@@ -7,6 +7,8 @@ import {
   installationSchema,
   type Overview,
   overviewSchema,
+  type Pages,
+  pagesSchema,
   type Session,
   sessionSchema,
   type Series,
@@ -82,6 +84,24 @@ export function readSeries(
   const asked = new URLSearchParams({ metric, granularity: 'day' });
 
   return readResource(`${siteAddress(siteId)}/series?${asked}&${period(window)}`, seriesSchema);
+}
+
+/**
+ * One slice of the pages a period's traffic went to, busiest first.
+ *
+ * How many to bring back and where to start are the screen's decisions, as they are for visits.
+ * The answer also describes the whole period, so one slice still reports honest shares and still
+ * knows how much of the list is ahead of it.
+ */
+export function readPages(
+  siteId: string,
+  window: AnalyticsWindow,
+  limit: number,
+  offset: number,
+): Promise<Pages> {
+  const asked = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+
+  return readResource(`${siteAddress(siteId)}/pages?${asked}&${period(window)}`, pagesSchema);
 }
 
 /** Judged visits over a period, grouped by what generated them. */

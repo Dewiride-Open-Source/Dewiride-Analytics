@@ -102,8 +102,20 @@ services:
         Host=postgres;Port=5432;Database=${POSTGRES_DB:-dewiride_analytics};Username=${POSTGRES_USER:-dewiride};Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       ConnectionStrings__Telemetry: >-
         Host=clickhouse;Port=8123;Protocol=http;Database=${CLICKHOUSE_DB:-dewiride_telemetry};Username=${CLICKHOUSE_USER:-dewiride};Password=${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+      # Everything a browser sends arrives here through the web container, so the address the
+      # connection comes from is that container's rather than the visitor's — and the visitor's
+      # address is what decides who they are, where they are and whose network they are on. This
+      # names the range Docker gives this stack's own network, which is the one hop in front of
+      # the collector. Anything reaching this service from outside that range is still counted
+      # from the address it actually came from, whatever it claims about itself.
+      Dewiride__Network__TrustedNetworks__0: ${TRUSTED_PROXY_NETWORK:-172.16.0.0/12}
     ports:
-      - "${API_PORT:-8080}:8080"
+      # Bound to this machine only. The screens reach the engine over the network below and the
+      # browser only ever sees the address it opened the dashboard on, so nothing needs to reach
+      # this port from elsewhere — and the setting above believes the address a request says it
+      # came from when it arrives over that network, which is a thing to hand to the machine's
+      # owner and to nobody else.
+      - "127.0.0.1:${API_PORT:-8080}:8080"
     healthcheck:
       # Readiness, not liveness: this passes only once both stores are reachable and their schema
       # changes have been applied, which is the point at which the product is genuinely usable.

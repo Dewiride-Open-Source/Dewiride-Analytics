@@ -21,6 +21,14 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
 /// keeping it in one statement means a visit is defined in exactly one place.
 /// </para>
 /// <para>
+/// A visit watched by both a tracker in the browser and a reporter on the site's own server holds
+/// two accounts of every page it asked for, and counting both would tell the classifier that
+/// everybody reads each page twice at machine speed. The second sighting of a page is therefore
+/// set aside — see <see cref="Analytics.ReconciledEvents"/> — and it is the browser's copy that goes,
+/// because the report from the request path is the one carrying the status the site answered with,
+/// which is most of what identifies something probing for a way in.
+/// </para>
+/// <para>
 /// Activity is read a full idle timeout past the end of the window. That is what makes "this visit
 /// is over" a fact rather than an artefact of where the reading stopped: a visit whose last
 /// activity falls before the end of the window has been watched falling silent for long enough to
@@ -112,12 +120,14 @@ public static class SessionSqlCompiler
     /// all of those under one empty key would build a single impossibly busy visitor out of
     /// everybody the product could not identify, and then judge it.
     /// </remarks>
-    private const string Sql = """
+    private static readonly string Sql = $$"""
         WITH
-            ordered AS
+            windowed AS
             (
                 SELECT
+                    event_id,
                     visitor_key,
+                    correlation_id,
                     server_ts,
                     kind,
                     path,
@@ -130,13 +140,20 @@ public static class SessionSqlCompiler
                     scroll_depth_percent,
                     had_pointer_interaction,
                     had_keyboard_interaction,
-                    declared_web_driver,
-                    dateDiff('second', lagInFrame(server_ts, 1, server_ts) OVER visit, server_ts) AS since_previous
+                    declared_web_driver
                 FROM events
                 WHERE site_id = {site_id:UUID}
-                  AND visitor_key != ''
                   AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
                   AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {idle_seconds:Int64} * 1000, 'UTC')
+            ),
+            {{ReconciledEvents.Reconciliation}},
+            ordered AS
+            (
+                SELECT
+                    *,
+                    dateDiff('second', lagInFrame(server_ts, 1, server_ts) OVER visit, server_ts) AS since_previous
+                FROM identified
+                WHERE visitor_key != ''
                 WINDOW visit AS (PARTITION BY visitor_key ORDER BY server_ts ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
             ),
             grouped AS
@@ -148,15 +165,36 @@ public static class SessionSqlCompiler
                         ORDER BY server_ts
                         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS visit_ordinal
                 FROM ordered
+            ),
+            sighted AS
+            (
+                SELECT
+                    *,
+                    row_number() OVER (
+                        PARTITION BY visitor_key, visit_ordinal, path, kind, {{ReconciledEvents.FromVisitorBrowser}}
+                        ORDER BY server_ts, event_id) AS sighting,
+                    sum(toUInt8(kind = 'PageView' AND {{ReconciledEvents.FromRequestPath}})) OVER (
+                        PARTITION BY visitor_key, visit_ordinal, path) AS sightings_from_path
+                FROM grouped
+            ),
+            counted AS
+            (
+                SELECT
+                    *,
+                    kind = 'PageView'
+                        AND {{ReconciledEvents.FromVisitorBrowser}}
+                        AND sighting <= sightings_from_path AS is_second_sighting
+                FROM sighted
             )
         SELECT
             concat(visitor_key, ':', toString(toUnixTimestamp64Milli(min(server_ts)))) AS session_key,
             min(server_ts) AS started_at,
             max(server_ts) AS ended_at,
             toBool(max(server_ts) < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')) AS is_closed,
-            toUInt32(countIf(kind = 'PageView')) AS page_count,
+            toUInt32(countIf(kind = 'PageView' AND NOT is_second_sighting)) AS page_count,
             groupArraySortedIf({max_requests:UInt32})(
-                (toUnixTimestamp64Milli(server_ts), path, status_code), kind = 'PageView') AS requests,
+                (toUnixTimestamp64Milli(server_ts), path, status_code),
+                kind = 'PageView' AND NOT is_second_sighting) AS requests,
             groupUniqArray(toString(surface)) AS surfaces,
             anyIf(user_agent, user_agent != '') AS user_agent,
             anyIf(language, language != '') AS language,
@@ -169,7 +207,7 @@ public static class SessionSqlCompiler
             toUInt32(countIf(had_keyboard_interaction = 'Yes')) AS keyboard_seen,
             toUInt32(countIf(declared_web_driver != 'Unobserved')) AS web_driver_observed,
             toUInt32(countIf(declared_web_driver = 'Yes')) AS web_driver_seen
-        FROM grouped
+        FROM counted
         GROUP BY visitor_key, visit_ordinal
         HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
            AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')

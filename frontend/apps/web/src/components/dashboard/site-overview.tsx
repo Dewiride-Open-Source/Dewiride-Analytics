@@ -8,6 +8,7 @@ import { MetricCard, MetricCardSkeleton } from '@/components/dashboard/metric-ca
 import { PeriodSwitch } from '@/components/dashboard/period-switch';
 import { ServerKeys } from '@/components/dashboard/server-keys';
 import { SiteSwitch } from '@/components/dashboard/site-switch';
+import { SitePages } from '@/components/dashboard/site-pages';
 import { TrackingCode } from '@/components/dashboard/tracking-code';
 import { type TrafficDay, TrafficChart } from '@/components/dashboard/traffic-chart';
 import { Button } from '@/components/ui/button';
@@ -133,6 +134,12 @@ export function SiteOverview({ site, sites, onChoose }: SiteOverviewProps) {
           ) : (
             <div className="h-72 animate-pulse rounded-lg border border-border bg-surface-muted" />
           )}
+
+          <SitePages
+            key={`${site.id}:${window.from}:${window.to}`}
+            siteId={site.id}
+            window={window}
+          />
 
           <JudgedTraffic site={site} window={window} />
         </>

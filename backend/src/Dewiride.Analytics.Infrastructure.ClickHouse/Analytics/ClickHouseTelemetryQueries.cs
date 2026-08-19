@@ -57,6 +57,38 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     }
 
     /// <inheritdoc />
+    public async Task<SitePages> GetSitePagesAsync(
+        TenantScope scope,
+        SitePagesQuery query,
+        CancellationToken cancellationToken)
+    {
+        var pages = ImmutableArray.CreateBuilder<SitePageRow>();
+        var totalPageViews = 0L;
+        var totalPaths = 0L;
+        var mostPageViews = 0L;
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            pages.Add(new SitePageRow(reader.GetString(0), reader.GetInt64(1), reader.GetInt64(2)));
+
+            // The three window figures are the same on every row, and there is nowhere else to
+            // read them from. A slice with nothing in it — an empty window, or one asked for past
+            // the end of the list — returns no rows, and nought is the honest answer for all
+            // three rather than a figure invented to fill them.
+            totalPageViews = reader.GetInt64(3);
+            totalPaths = reader.GetInt64(4);
+            mostPageViews = reader.GetInt64(5);
+        }
+
+        return new SitePages(totalPageViews, totalPaths, mostPageViews, pages.DrainToImmutable());
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<TrafficBreakdownRow>> GetTrafficBreakdownAsync(
         TenantScope scope,
         TrafficBreakdownQuery query,

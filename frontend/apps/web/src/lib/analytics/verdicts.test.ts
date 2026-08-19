@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  byWeight,
-  CATEGORY_TONES,
-  reasonKey,
-  reasonValues,
-  shareOf,
-} from '@/lib/analytics/verdicts';
+import { byWeight, CATEGORY_TONES, reasonKey, reasonValues } from '@/lib/analytics/verdicts';
 import type { SignalDirection, VisitReason } from '@/lib/api/schemas';
 
 function reason(
@@ -129,15 +123,5 @@ describe('the tone a category is shown in', () => {
   it('never lets a crawler that says it is an AI one be read as a person', () => {
     expect(CATEGORY_TONES['suspected-ai-crawler']).not.toBe('people');
     expect(CATEGORY_TONES['known-ai-crawler']).not.toBe('people');
-  });
-});
-
-describe('working out a share', () => {
-  it('answers with the part over the whole', () => {
-    expect(shareOf(3, 4)).toBe(0.75);
-  });
-
-  it('answers with nothing rather than dividing by nothing', () => {
-    expect(shareOf(0, 0)).toBe(0);
   });
 });

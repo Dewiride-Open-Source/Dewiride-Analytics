@@ -7,7 +7,7 @@
  * handler asks, the answer is nothing.
  */
 
-import { start } from './beacon';
+import { start, stampedIdentifier } from './beacon';
 
 const tag = document.currentScript as HTMLScriptElement | null;
 
@@ -19,6 +19,9 @@ if (tag?.src && site) {
     // Worked out from where this file was loaded from, so the tag carries one address rather than
     // two that can disagree. An installation served under a path keeps that path.
     endpoint: new URL(tag.getAttribute('data-collector') || 'collect', tag.src).href,
-    correlationId: tag.getAttribute('data-correlation') || undefined,
+    // Written into the tag where a site renders each page as it is asked for, and read off the
+    // response otherwise — which is the only one available to a site that was built once and is
+    // served from a cache.
+    correlationId: tag.getAttribute('data-correlation') || stampedIdentifier(),
   });
 }

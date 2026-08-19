@@ -30,7 +30,10 @@ what does not.
 - A collection endpoint accepts page views and engagement reports, stamps its own authoritative
   timestamp alongside the reported one, and writes them to the telemetry store.
 - Sign-in, several accounts on one installation, and three roles with a real membership check.
-- A dashboard showing page views, daily visitors and a daily traffic graph for a website you own.
+- A dashboard showing page views, daily visitors, a daily traffic graph and the pages a period's
+  traffic went to, for a website you own. A site running both the tracker and its own server's
+  reports is counted once per page delivered rather than once per report, so running the product
+  properly does not double what it tells you.
 - A tracker you paste into your own site, and an image fallback for readers whose browsers run no
   scripts. The dashboard hands you both lines with your address already filled in.
 - A collection endpoint your own server can report to, so the traffic that never runs a script —

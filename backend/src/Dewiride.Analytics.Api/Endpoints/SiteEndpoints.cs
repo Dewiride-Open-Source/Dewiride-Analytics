@@ -36,6 +36,12 @@ internal static class SiteEndpoints
     private const int DefaultVisits = 50;
 
     /// <summary>
+    /// Pages returned when the caller does not say how many they want. A list somebody reads down
+    /// in one glance to see where a period's attention went, rather than a site map.
+    /// </summary>
+    private const int DefaultPages = 10;
+
+    /// <summary>
     /// What each role is called on the wire.
     /// </summary>
     /// <remarks>
@@ -97,6 +103,10 @@ internal static class SiteEndpoints
             .WithName("SiteSeries")
             .WithSummary("Returns one measure counted in buckets across a period.");
 
+        routes.MapGet("/api/sites/{siteId:guid}/pages", PagesAsync)
+            .WithName("SitePages")
+            .WithSummary("Returns the busiest pages on a website over a period.");
+
         routes.MapGet("/api/sites/{siteId:guid}/traffic", TrafficAsync)
             .WithName("SiteTraffic")
             .WithSummary("Returns judged visits grouped by what generated them.");
@@ -104,6 +114,58 @@ internal static class SiteEndpoints
         routes.MapGet("/api/sites/{siteId:guid}/visits", VisitsAsync)
             .WithName("SiteVisits")
             .WithSummary("Returns individual judged visits and the evidence behind each verdict.");
+    }
+
+    private static async Task<Results<Ok<PagesResponse>, NotFound, ProblemHttpResult>> PagesAsync(
+        [AsParameters] PagesParameters parameters,
+        ITenantScopeProvider scopes,
+        ITelemetryQueries telemetry,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var limit = parameters.Limit ?? DefaultPages;
+        var offset = parameters.Offset ?? 0;
+
+        if (limit < 1 || limit > SitePagesQuery.MostPages)
+        {
+            return Unusable($"Ask for between 1 and {SitePagesQuery.MostPages} pages at a time.");
+        }
+
+        if (offset < 0)
+        {
+            return Unusable("Start the list at the beginning or further along it, never before it.");
+        }
+
+        if (!RequestedWindow.TryResolve(
+                parameters.From,
+                parameters.To,
+                RequestedWindow.Longest,
+                clock,
+                out var range,
+                out var refusal))
+        {
+            return Unusable(refusal);
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var pages = await telemetry
+            .GetSitePagesAsync(scope, new SitePagesQuery(range, limit, offset), cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(
+            new PagesResponse(
+                range.From,
+                range.To,
+                pages.TotalPageViews,
+                pages.TotalPaths,
+                pages.MostPageViews,
+                [.. pages.Pages.Select(page => new PageRow(page.Path, page.PageViews, page.Visitors))]));
     }
 
     private static async Task<Results<Ok<TrafficResponse>, NotFound, ProblemHttpResult>> TrafficAsync(
@@ -353,6 +415,21 @@ internal readonly record struct SeriesParameters(
     [FromQuery] string? Granularity,
     [FromQuery] DateTimeOffset? From,
     [FromQuery] DateTimeOffset? To);
+
+/// <summary>
+/// What the pages endpoint reads from the path and the query string.
+/// </summary>
+/// <param name="SiteId">The site to count over.</param>
+/// <param name="From">Inclusive start of the period. Defaults to a week before the end.</param>
+/// <param name="To">Exclusive end of the period. Defaults to now.</param>
+/// <param name="Limit">How many pages to return. Defaults to a list somebody reads in one glance.</param>
+/// <param name="Offset">How many of the busiest pages to pass over first. Defaults to none.</param>
+internal readonly record struct PagesParameters(
+    Guid SiteId,
+    [FromQuery] DateTimeOffset? From,
+    [FromQuery] DateTimeOffset? To,
+    [FromQuery] int? Limit,
+    [FromQuery] int? Offset);
 
 /// <summary>
 /// What the visits endpoint reads from the path and the query string.

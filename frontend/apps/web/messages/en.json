@@ -107,6 +107,22 @@
       "table": "Show these figures as a table",
       "columnDay": "Day"
     },
+    "pages": {
+      "title": "Pages",
+      "total": "{count, plural, one {# page view} other {# page views}}",
+      "views": "{count, plural, one {# view} other {# views}}",
+      "visitors": "{count, plural, one {# visitor} other {# visitors}}",
+      "nav": {
+        "label": "More pages",
+        "previous": "Previous",
+        "next": "Next",
+        "showing": "{first}–{last} of {total}"
+      },
+      "empty": {
+        "title": "No pages read yet",
+        "body": "Once somebody opens a page, the ones people read most appear here."
+      }
+    },
     "traffic": {
       "title": "Who's visiting",
       "judged": "{count, plural, one {# visit judged} other {# visits judged}}",

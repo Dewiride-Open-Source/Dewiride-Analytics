@@ -36,8 +36,34 @@ export interface Settings {
   readonly siteId: string;
   /** Absolute address reports are sent to. */
   readonly endpoint: string;
-  /** Identifier stamped into the served page, echoed back so the two can be matched. */
+  /** Identifier the site's own server put on this page, echoed back so the two can be matched. */
   readonly correlationId?: string;
+}
+
+/** The timing a reporter on the site's own server writes its identifier into. */
+const STAMP = 'dw';
+
+/**
+ * The identifier the site's own server put on this page's response, if it put one there.
+ *
+ * Taken from the timings the browser already collected for this document rather than from anything
+ * written into the page. Most of the sites this product is for are built once and served from a
+ * cache, so there is no per-request markup to carry an identifier — but every response has headers,
+ * whoever served it and however long ago it was built.
+ *
+ * Readable because this is the page's own response. A browser hands these back for the address the
+ * page came from and, without the site saying otherwise, for nowhere else.
+ */
+export function stampedIdentifier(): string | undefined {
+  const entries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+
+  for (const timing of entries[0]?.serverTiming || []) {
+    if (timing.name === STAMP) {
+      return timing.description || undefined;
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -91,6 +117,7 @@ export function start(settings: Settings): void {
   let pointer = false;
   let keyboard = false;
   let ended = false;
+  let firstView = true;
 
   function send(report: Report): void {
     const body = JSON.stringify(report);
@@ -164,8 +191,13 @@ export function start(settings: Settings): void {
       language: navigator.language || undefined,
       timezoneOffsetMinutes: -new Date().getTimezoneOffset(),
       webDriver: navigator.webdriver,
-      correlationId: settings.correlationId,
+      // Only the first reading carries it. The identifier belongs to the one page the site's
+      // server handed over; everything reached from it afterwards without a fresh request was
+      // never delivered by anybody, so sending it again would fold several readings into one.
+      correlationId: firstView ? settings.correlationId : undefined,
     });
+
+    firstView = false;
   }
 
   /**

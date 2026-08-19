@@ -421,12 +421,13 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<JudgedSession>> GetJudgedSessionsAsync(
+    public async Task<JudgedSessions> GetJudgedSessionsAsync(
         TenantScope scope,
         JudgedSessionsQuery query,
         CancellationToken cancellationToken)
     {
-        var visits = new List<JudgedSession>();
+        var visits = ImmutableArray.CreateBuilder<JudgedSession>();
+        var totalVisits = 0L;
 
         await using var reader = await ExecuteAsync(
                 AnalyticsSqlCompiler.Compile(scope, query),
@@ -436,10 +437,25 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             visits.Add(ToJudgedSession(reader));
+
+            // The same on every row, and there is nowhere else to read it from. A slice with
+            // nothing in it — an empty window, or one asked for past the end of the list —
+            // returns no rows at all, and nought is the honest answer rather than a figure
+            // invented to fill it.
+            totalVisits = reader.GetInt64(TotalVisitsColumn);
         }
 
-        return visits;
+        return new JudgedSessions(totalVisits, visits.DrainToImmutable());
     }
+
+    /// <summary>
+    /// Where the whole-window count sits on a judged-visit row.
+    /// </summary>
+    /// <remarks>
+    /// Last, after the fifteen columns a visit is built from, so adding it left every index the
+    /// visit itself is read from where it was.
+    /// </remarks>
+    private const int TotalVisitsColumn = 15;
 
     private static JudgedSession ToJudgedSession(ClickHouseDataReader reader)
     {

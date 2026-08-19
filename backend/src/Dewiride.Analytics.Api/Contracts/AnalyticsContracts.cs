@@ -305,12 +305,25 @@ public sealed record TrafficResponse(
 public sealed record TrafficGroup(string Category, string Strength, long Sessions, long PageViews);
 
 /// <summary>
-/// Individual judged visits over a window.
+/// One slice of the individual judged visits over a window, newest first.
 /// </summary>
+/// <remarks>
+/// Read a slice at a time on the same terms as <see cref="PagesResponse"/>: ask again with a
+/// larger offset for the next one. Every visit carries its whole evidence list, so the slice bounds
+/// the answer's size rather than merely its length.
+/// </remarks>
 /// <param name="From">Inclusive start of the window.</param>
 /// <param name="To">Exclusive end of the window.</param>
-/// <param name="Visits">The visits, newest first.</param>
-public sealed record VisitsResponse(DateTimeOffset From, DateTimeOffset To, IReadOnlyList<VisitSummary> Visits);
+/// <param name="TotalVisits">
+/// How many judged visits the window holds, across every slice. Counted over the whole window, so
+/// the rows returned need not add up to it.
+/// </param>
+/// <param name="Visits">The slice, newest first.</param>
+public sealed record VisitsResponse(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    long TotalVisits,
+    IReadOnlyList<VisitSummary> Visits);
 
 /// <summary>
 /// One judged visit and why it was judged that way.

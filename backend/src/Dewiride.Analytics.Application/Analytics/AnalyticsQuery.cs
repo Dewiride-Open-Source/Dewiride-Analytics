@@ -572,19 +572,27 @@ public sealed record JudgedSessionsQuery : AnalyticsQuery
     /// </remarks>
     public const int MostSessions = 500;
 
-    /// <summary>Asks for the most recent judged visits in a window.</summary>
+    /// <summary>Asks for judged visits in a window, newest first, one slice at a time.</summary>
     /// <param name="range">The window to look in, by when each visit began.</param>
     /// <param name="limit">How many visits to return, at most <see cref="MostSessions"/>.</param>
-    /// <exception cref="ArgumentOutOfRangeException">The limit is not between one and the maximum.</exception>
-    public JudgedSessionsQuery(TimeRange range, int limit)
+    /// <param name="offset">How many of the most recent visits to pass over first.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The limit is not between one and the maximum, or the offset is negative.
+    /// </exception>
+    public JudgedSessionsQuery(TimeRange range, int limit, int offset = 0)
         : base(range)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, MostSessions);
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
 
         Limit = limit;
+        Offset = offset;
     }
 
     /// <summary>How many visits to return.</summary>
     public int Limit { get; }
+
+    /// <summary>How many of the most recent visits to pass over first.</summary>
+    public int Offset { get; }
 }

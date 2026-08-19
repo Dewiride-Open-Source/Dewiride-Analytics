@@ -114,10 +114,41 @@ function engineWith(
     return respondWith(
       200,
       path.includes('/visits')
-        ? { from: FROM, to: TO, visits }
+        ? sliceOf(path, visits)
         : { from: FROM, to: TO, sessions, pageViews: 120, groups },
     );
   });
+}
+
+/**
+ * A period with more visits in it than one screenful holds.
+ *
+ * Each is given a different number of pages, which is the one thing a row prints that tells two
+ * visits apart on screen, so a test can say which of them it is looking at.
+ */
+function manyVisits(count: number): readonly unknown[] {
+  return Array.from({ length: count }, (_, index) => ({
+    ...READER,
+    id: `visit-${index + 1}`,
+    pageCount: index + 1,
+  }));
+}
+
+/**
+ * Answers the visit list the way the engine does: the slice that was asked for, and the whole
+ * period's count beside it rather than the length of the slice.
+ */
+function sliceOf(path: string, visits: readonly unknown[]) {
+  const asked = new URLSearchParams(path.slice(path.indexOf('?') + 1));
+  const offset = Number(asked.get('offset') ?? 0);
+  const limit = Number(asked.get('limit') ?? visits.length);
+
+  return {
+    from: FROM,
+    to: TO,
+    totalVisits: visits.length,
+    visits: visits.slice(offset, offset + limit),
+  };
 }
 
 function show() {
@@ -171,7 +202,7 @@ describe('the breakdown of who is visiting', () => {
 
     expect(await screen.findByText('Nothing judged yet')).toBeInTheDocument();
     expect(screen.getByText(/about half an hour after they end/)).toBeInTheDocument();
-    expect(screen.queryByText('Recent visits')).not.toBeInTheDocument();
+    expect(screen.queryByText('Visits')).not.toBeInTheDocument();
   });
 
   it('says something a reader can act on when the engine cannot be reached', async () => {
@@ -189,9 +220,66 @@ describe('one visit and the case behind it', () => {
 
     show();
 
-    expect(await screen.findByText('Recent visits')).toBeInTheDocument();
+    expect(await screen.findByText('Visits')).toBeInTheDocument();
     expect(screen.getByText('3 pages')).toBeInTheDocument();
     expect(screen.getByText('64 pages')).toBeInTheDocument();
+  });
+
+  /**
+   * Every visit carries its whole case, so the list is read a screenful at a time. What must not
+   * happen is the list quietly stopping: a verdict nobody can reach is a verdict nobody can
+   * question, which is the one thing this product exists to allow.
+   */
+  it('reaches the visits behind the first screenful', async () => {
+    engineWith(GROUPS, manyVisits(30));
+
+    show();
+
+    expect(await screen.findByText('1–25 of 30')).toBeInTheDocument();
+    expect(screen.getByText('1 page')).toBeInTheDocument();
+    expect(screen.queryByText('30 pages')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    expect(await screen.findByText('26–30 of 30')).toBeInTheDocument();
+    expect(screen.getByText('30 pages')).toBeInTheDocument();
+    expect(screen.queryByText('1 page')).not.toBeInTheDocument();
+  });
+
+  /**
+   * The count says what the period holds, not what one screenful does. A list that reported the
+   * length of its own slice would tell somebody with a thousand visits that they had twenty-five.
+   */
+  it('says how many visits the period holds rather than how many are on screen', async () => {
+    engineWith(GROUPS, manyVisits(30));
+
+    show();
+
+    expect(await screen.findByText(/^30 visits in this period/)).toBeInTheDocument();
+  });
+
+  it('offers no way back from the first screenful', async () => {
+    engineWith(GROUPS, manyVisits(30));
+
+    show();
+
+    await screen.findByText('1–25 of 30');
+
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled();
+  });
+
+  /**
+   * A period that fits on one screen has nothing to move through, and controls that could never do
+   * anything are clutter on every quiet website.
+   */
+  it('shows no way through a list that already fits', async () => {
+    engineWith(GROUPS, [READER, CRAWLER]);
+
+    show();
+
+    await screen.findByText('Visits');
+
+    expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument();
   });
 
   it('opens to show what was seen, in sentences with the figures filled in', async () => {

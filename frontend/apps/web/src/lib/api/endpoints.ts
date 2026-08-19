@@ -304,8 +304,9 @@ export function readVisits(
   siteId: string,
   window: AnalyticsWindow,
   limit: number,
+  offset: number,
 ): Promise<Visits> {
-  const asked = new URLSearchParams({ limit: String(limit) });
+  const asked = new URLSearchParams({ limit: String(limit), offset: String(offset) });
 
   return readResource(`${siteAddress(siteId)}/visits?${asked}&${period(window)}`, visitsSchema);
 }

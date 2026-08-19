@@ -344,9 +344,44 @@ public sealed class AnalyticsSqlCompilerTests
     [Fact]
     public Task Judged_Sessions()
     {
-        var statement = AnalyticsSqlCompiler.Compile(Scope(), new JudgedSessionsQuery(Window(), 50));
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new JudgedSessionsQuery(Window(), 50, 100));
 
         return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    /// <summary>
+    /// The count describes the whole window rather than the slice returned, so a list can say how
+    /// far through it somebody is and stop when there is genuinely nothing left. Counted from the
+    /// rows returned instead, a period would be reported as holding whatever a screenful happens
+    /// to be, and the list would stop without admitting there is more behind it.
+    /// </summary>
+    [Fact]
+    public void The_Visit_List_Counts_The_Whole_Window_Rather_Than_The_Slice()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new JudgedSessionsQuery(Window(), 10, 20));
+
+        statement.Sql.Should().Contain("count() OVER ()");
+    }
+
+    /// <summary>
+    /// Two visits beginning in the same millisecond are ordinary on a busy site. Without the visit's
+    /// own key breaking the tie they could swap places between one slice and the next, and one of
+    /// them would be shown twice while the other was never seen at all.
+    /// </summary>
+    [Fact]
+    public void The_Visit_List_Is_Ordered_Totally_So_Slices_Neither_Repeat_Nor_Skip()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new JudgedSessionsQuery(Window(), 10, 20));
+
+        statement.Sql.Should().Contain("ORDER BY started_at DESC, session_key");
+    }
+
+    [Fact]
+    public void Starting_The_Visit_List_Before_Its_Beginning_Is_Refused()
+    {
+        var act = () => new JudgedSessionsQuery(Window(), 10, -1);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
     }
 
     /// <summary>

@@ -149,14 +149,26 @@ public interface ITelemetryQueries
 
     /// <summary>Returns individual judged visits with the evidence behind each verdict.</summary>
     /// <param name="scope">Proof the caller may read this site.</param>
-    /// <param name="query">The window and how many visits to return.</param>
+    /// <param name="query">The window, and which slice of it to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The visits, newest first.</returns>
-    Task<IReadOnlyList<JudgedSession>> GetJudgedSessionsAsync(
+    /// <returns>The slice, newest first, and how many visits the window holds altogether.</returns>
+    Task<JudgedSessions> GetJudgedSessionsAsync(
         TenantScope scope,
         JudgedSessionsQuery query,
         CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// One slice of a window's judged visits, newest first.
+/// </summary>
+/// <remarks>
+/// The total is counted across the whole window rather than over the slice, so a list can say how
+/// far through it somebody is and stop when there is genuinely nothing left rather than when a
+/// screenful runs out.
+/// </remarks>
+/// <param name="TotalVisits">How many judged visits the window holds, across every slice.</param>
+/// <param name="Visits">The slice, newest first.</param>
+public sealed record JudgedSessions(long TotalVisits, ImmutableArray<JudgedSession> Visits);
 
 /// <summary>
 /// One group of visits that reached the same conclusion with the same weight behind it.

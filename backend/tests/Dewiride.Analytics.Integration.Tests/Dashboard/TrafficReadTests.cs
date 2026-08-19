@@ -81,6 +81,83 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// The list is a slice, so the count beside it has to describe the period rather than the slice.
+    /// A list reporting its own length would tell somebody with a hundred visits that they had two,
+    /// and would stop without admitting there was anything behind it.
+    /// </summary>
+    [Fact]
+    public async Task Every_Visit_A_Period_Holds_Can_Be_Reached_A_Slice_At_A_Time()
+    {
+        var site = await JudgedSiteAsync(visitors: 5);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var first = await ReadVisitsAsync(browser, site.Id, "limit=2&offset=0");
+            var second = await ReadVisitsAsync(browser, site.Id, "limit=2&offset=2");
+            var last = await ReadVisitsAsync(browser, site.Id, "limit=2&offset=4");
+
+            first.TotalVisits.Should().Be(5);
+            second.TotalVisits.Should().Be(5);
+            last.TotalVisits.Should().Be(5);
+
+            first.Visits.Should().HaveCount(2);
+            second.Visits.Should().HaveCount(2);
+            last.Visits.Should().ContainSingle();
+
+            // The ordering is total, so walking the slices reaches every visit exactly once. A tie
+            // broken arbitrarily would show one of them twice and leave another unreachable.
+            IEnumerable<string> walked =
+            [
+                .. first.Visits.Select(visit => visit.Id),
+                .. second.Visits.Select(visit => visit.Id),
+                .. last.Visits.Select(visit => visit.Id),
+            ];
+
+            walked.Should().OnlyHaveUniqueItems().And.HaveCount(5);
+            first.Visits.Should().BeInDescendingOrder(visit => visit.StartedAt);
+        }
+    }
+
+    /// <summary>
+    /// Newest first, so the list opens on what just happened rather than on the oldest thing the
+    /// period still holds.
+    /// </summary>
+    [Fact]
+    public async Task The_Visit_List_Opens_On_The_Most_Recent_Visit()
+    {
+        var site = await JudgedSiteAsync(visitors: 3);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var everything = await ReadVisitsAsync(browser, site.Id, "limit=10&offset=0");
+            var opening = await ReadVisitsAsync(browser, site.Id, "limit=1&offset=0");
+
+            opening.Visits.Should().ContainSingle();
+            opening.Visits[0].StartedAt.Should().Be(everything.Visits.Max(visit => visit.StartedAt));
+        }
+    }
+
+    /// <summary>
+    /// Asked past the end, the answer is a slice with nothing in it rather than a refusal: reaching
+    /// the end of a list is an ordinary thing to have done, not a mistake.
+    /// </summary>
+    [Fact]
+    public async Task Asking_Past_The_End_Of_The_Visit_List_Answers_With_An_Empty_Slice()
+    {
+        var site = await JudgedSiteAsync(visitors: 2);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var past = await ReadVisitsAsync(browser, site.Id, "limit=10&offset=500");
+
+            past.Visits.Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
     /// The same answer as a site that was never created, so neither endpoint can be used to test
     /// which identifiers on an install are real.
     /// </summary>
@@ -119,6 +196,7 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     [Theory]
     [InlineData("visits?limit=0")]
     [InlineData("visits?limit=501")]
+    [InlineData("visits?offset=-1")]
     [InlineData("visits?from=2024-01-02T00:00:00Z&to=2024-01-01T00:00:00Z")]
     [InlineData("traffic?from=2020-01-01T00:00:00Z&to=2024-01-01T00:00:00Z")]
     public async Task A_Question_That_Cannot_Be_Answered_As_Asked_Is_Refused(string query)
@@ -164,19 +242,38 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     /// Writes one recognisable visit and judges it, so what the screens read back has been through
     /// the whole path rather than been placed there.
     /// </summary>
-    private async Task<Site> JudgedSiteAsync()
+    /// <summary>
+    /// A site whose traffic has been judged.
+    /// </summary>
+    /// <param name="visitors">
+    /// How many separate visitors to seed. Sessions are cut per visitor, so this is how many judged
+    /// visits the site ends up with — which is what a list read a slice at a time needs more than
+    /// one of.
+    /// </param>
+    /// <returns>The site.</returns>
+    private async Task<Site> JudgedSiteAsync(int visitors = 1)
     {
         var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
         var clock = stack.Services.GetRequiredService<TimeProvider>();
         var at = clock.GetUtcNow().AddDays(-1);
 
-        await stack.Services.GetRequiredService<IEventSink>().WriteBatchAsync(
-            [
-                Probe(site.Id, at, "/.env"),
-                Probe(site.Id, at.AddSeconds(1), "/.git/config"),
-                Probe(site.Id, at.AddSeconds(2), "/wp-login.php"),
-            ],
-            Cancellation.Token);
+        // Spaced an hour apart so the visits are in a definite order rather than one the store is
+        // free to choose, which is what makes walking through them meaningful to assert.
+        var probes = Enumerable.Range(0, visitors)
+            .SelectMany(visitor =>
+            {
+                var began = at.AddHours(visitor);
+
+                return new[]
+                {
+                    Probe(site.Id, began, "/.env", visitor),
+                    Probe(site.Id, began.AddSeconds(1), "/.git/config", visitor),
+                    Probe(site.Id, began.AddSeconds(2), "/wp-login.php", visitor),
+                };
+            });
+
+        await stack.Services.GetRequiredService<IEventSink>()
+            .WriteBatchAsync([.. probes], Cancellation.Token);
 
         await using var scope = stack.Services.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<SessionClassifier>()
@@ -185,19 +282,32 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
         return site;
     }
 
-    private static RawEvent Probe(Guid siteId, DateTimeOffset at, string path) => new()
+    private static RawEvent Probe(Guid siteId, DateTimeOffset at, string path, int visitor = 0) => new()
     {
         EventId = Guid.CreateVersion7(at),
         SiteId = siteId,
         Kind = EventKind.PageView,
         Surface = IngestSurface.CloudflareWorker,
         ServerTimestamp = at,
-        VisitorKey = $"intruder-{siteId:n}",
+        VisitorKey = $"intruder-{visitor}-{siteId:n}",
         Host = "example.com",
         Path = path,
         UserAgent = Scanner,
         StatusCode = 404,
     };
+
+    private static async Task<VisitsResponse> ReadVisitsAsync(Browser browser, Guid siteId, string slice)
+    {
+        var response = await browser.GetAsync($"/api/sites/{siteId}/visits?{slice}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var visits = await response.Content.ReadFromJsonAsync<VisitsResponse>(Cancellation.Token);
+
+        visits.Should().NotBeNull();
+
+        return visits;
+    }
 
     private async Task<Browser> SignedInAsync(Guid siteId, SiteRole role)
     {

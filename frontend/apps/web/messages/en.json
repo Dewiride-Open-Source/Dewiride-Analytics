@@ -234,12 +234,15 @@
       }
     },
     "visits": {
-      "title": "Recent visits",
-      "caption": "The last {count, plural, one {visit} other {# visits}} to finish. Open one to see the pages it went through, what people clicked, and what it was judged on.",
+      "title": "Visits",
+      "caption": "{count, plural, one {# visit} other {# visits}} in this period, newest first. Open one to see the pages it went through, what people clicked, and what it was judged on.",
       "pages": "{count, plural, one {# page} other {# pages}}",
       "seenBy": "Seen by {surfaces}",
       "supporting": "What we saw",
-      "contradicting": "Pointing the other way"
+      "contradicting": "Pointing the other way",
+      "nav": {
+        "label": "More visits"
+      }
     },
     "empty": {
       "title": "Waiting for your first visit",

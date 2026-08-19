@@ -2,6 +2,7 @@
 
 import { ScanSearch } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { useState } from 'react';
 import { TrafficBreakdown } from '@/components/dashboard/traffic-breakdown';
 import { VisitList } from '@/components/dashboard/visit-list';
 import { Card } from '@/components/ui/card';
@@ -16,23 +17,29 @@ interface JudgedTrafficProps {
 }
 
 /**
- * How many visits to bring back for the list.
+ * How many visits to put on screen at once.
  *
- * Enough to read down and see the shape of a day's traffic, and no more: every one of them
- * carries its whole case, and a hundred of those is a slower screen nobody scrolls to the end of.
+ * Every one of them carries its whole case, so a screenful is a slice rather than the whole
+ * period: a hundred of them at once is a slower screen nobody scrolls to the end of. The rest are
+ * a press away rather than out of reach.
  */
-const RECENT_VISITS = 25;
+const PER_PAGE = 25;
 
 /**
  * Everything the engine has decided about a website's traffic over a period.
  *
  * The breakdown and the list are asked for together rather than one after the other, so the
  * slower of the two decides how long the screen takes rather than the two of them added up.
+ *
+ * How far down the list somebody has read is kept here, and the screen above gives this a key that
+ * changes with the website and the period — so choosing either starts the new list at its most
+ * recent visit rather than at whichever screenful was open of the old one.
  */
 export function JudgedTraffic({ site, window }: JudgedTrafficProps) {
   const t = useTranslations('dashboard.traffic');
+  const [offset, setOffset] = useState(0);
   const traffic = useTraffic(site.id, window);
-  const visits = useVisits(site.id, window, RECENT_VISITS);
+  const visits = useVisits(site.id, window, PER_PAGE, offset);
 
   if (traffic.isError) {
     return <FailureNotice error={traffic.error} />;
@@ -64,7 +71,16 @@ export function JudgedTraffic({ site, window }: JudgedTrafficProps) {
       {visits.isError ? <FailureNotice error={visits.error} /> : null}
 
       {visits.data && visits.data.visits.length > 0 ? (
-        <VisitList siteId={site.id} visits={visits.data.visits} timeZoneId={site.timeZoneId} />
+        <VisitList
+          siteId={site.id}
+          visits={visits.data.visits}
+          totalVisits={visits.data.totalVisits}
+          timeZoneId={site.timeZoneId}
+          offset={offset}
+          step={PER_PAGE}
+          busy={visits.isFetching}
+          onMove={setOffset}
+        />
       ) : null}
     </>
   );

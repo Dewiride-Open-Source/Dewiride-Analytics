@@ -738,8 +738,22 @@ public static class AnalyticsSqlCompiler
     /// Returns individual judged visits with the evidence behind each verdict.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Reduced to one row per visit on the same terms as the breakdown, so a visit judged under
     /// two rulesets appears once, under the newer of them.
+    /// </para>
+    /// <para>
+    /// How many visits the window holds altogether rides on every row as a window function, worked
+    /// out across the whole deduplicated set before the slice is taken. Counting the rows returned
+    /// instead would say a period held whatever a screenful happens to be, which is the figure that
+    /// makes a list stop without admitting there is more behind it.
+    /// </para>
+    /// <para>
+    /// The ordering is total — newest first, and the visit's own key breaks a tie — so successive
+    /// slices neither repeat a visit nor skip one. Two visits beginning in the same millisecond are
+    /// ordinary on a busy site, and without the tie-break they could swap places between one slice
+    /// and the next and one of them would never be seen.
+    /// </para>
     /// </remarks>
     private static CompiledStatement CompileJudgedSessions(TenantScope scope, JudgedSessionsQuery query)
     {
@@ -759,7 +773,8 @@ public static class AnalyticsSqlCompiler
                 signal_directions,
                 signal_weights,
                 signal_supporting,
-                signal_parameters
+                signal_parameters,
+                toInt64(count() OVER ()) AS total_visits
             FROM
             (
                 SELECT *
@@ -771,12 +786,16 @@ public static class AnalyticsSqlCompiler
                 LIMIT 1 BY session_key
             )
             ORDER BY started_at DESC, session_key
-            LIMIT {limit:UInt32}
+            LIMIT {limit:UInt32} OFFSET {offset:UInt32}
             """;
 
         return new CompiledStatement(
             sql,
-            [.. WindowParameters(scope, query.Range), new QueryParameter(LimitParameter, (uint)query.Limit)]);
+            [
+                .. WindowParameters(scope, query.Range),
+                new QueryParameter(LimitParameter, (uint)query.Limit),
+                new QueryParameter(OffsetParameter, (uint)query.Offset),
+            ]);
     }
 
     /// <summary>

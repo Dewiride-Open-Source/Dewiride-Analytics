@@ -941,19 +941,11 @@ internal static class SiteEndpoints
         TimeProvider clock,
         CancellationToken cancellationToken)
     {
-        var limit = parameters.Limit ?? DefaultVisits;
-
-        if (limit < 1 || limit > JudgedSessionsQuery.MostSessions)
-        {
-            return Unusable($"Ask for between 1 and {JudgedSessionsQuery.MostSessions} visits at a time.");
-        }
-
-        if (!RequestedWindow.TryResolve(
-                parameters.From,
-                parameters.To,
-                RequestedWindow.Longest,
+        if (!TryReadSlice(
+                new ListRequest(parameters.Limit, parameters.Offset, parameters.From, parameters.To),
+                new ListBounds(DefaultVisits, JudgedSessionsQuery.MostSessions, "visits"),
                 clock,
-                out var range,
+                out var slice,
                 out var refusal))
         {
             return Unusable(refusal);
@@ -967,11 +959,18 @@ internal static class SiteEndpoints
         }
 
         var visits = await telemetry
-            .GetJudgedSessionsAsync(scope, new JudgedSessionsQuery(range, limit), cancellationToken)
+            .GetJudgedSessionsAsync(
+                scope,
+                new JudgedSessionsQuery(slice.Range, slice.Limit, slice.Offset),
+                cancellationToken)
             .ConfigureAwait(false);
 
         return TypedResults.Ok(
-            new VisitsResponse(range.From, range.To, [.. visits.Select(Describe)]));
+            new VisitsResponse(
+                slice.Range.From,
+                slice.Range.To,
+                visits.TotalVisits,
+                [.. visits.Visits.Select(Describe)]));
     }
 
     private static VisitSummary Describe(JudgedSession visit) => new(
@@ -1441,11 +1440,13 @@ internal readonly record struct ActionsParameters(
 /// <param name="From">Inclusive start of the period. Defaults to a week before the end.</param>
 /// <param name="To">Exclusive end of the period. Defaults to now.</param>
 /// <param name="Limit">How many visits to return. Defaults to a screenful.</param>
+/// <param name="Offset">How many of the most recent visits to pass over first. Defaults to none.</param>
 internal readonly record struct VisitsParameters(
     Guid SiteId,
     [FromQuery] DateTimeOffset? From,
     [FromQuery] DateTimeOffset? To,
-    [FromQuery] int? Limit);
+    [FromQuery] int? Limit,
+    [FromQuery] int? Offset);
 
 /// <summary>
 /// What the page-reading endpoint reads from the path and the query string.

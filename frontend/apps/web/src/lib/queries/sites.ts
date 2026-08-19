@@ -251,12 +251,18 @@ export function useTraffic(siteId: string, window: AnalyticsWindow) {
   });
 }
 
-/** The most recent judged visits for one website, with the evidence behind each verdict. */
-export function useVisits(siteId: string, window: AnalyticsWindow, limit: number) {
+/**
+ * One slice of a website's judged visits, newest first, with the evidence behind each verdict.
+ *
+ * The slice on screen is kept while the next is read, so moving through the list does not empty
+ * the card and drop everything below it up the page between one slice and the next.
+ */
+export function useVisits(siteId: string, window: AnalyticsWindow, limit: number, offset: number) {
   return useQuery({
-    queryKey: visitsKey(siteId, window, limit),
-    queryFn: () => readVisits(siteId, window, limit),
+    queryKey: visitsKey(siteId, window, limit, offset),
+    queryFn: () => readVisits(siteId, window, limit, offset),
     retry: false,
+    placeholderData: keepPreviousData,
     staleTime: JUDGED_FRESH_FOR,
   });
 }

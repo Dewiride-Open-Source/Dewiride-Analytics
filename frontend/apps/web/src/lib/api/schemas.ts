@@ -434,6 +434,7 @@ export const visitSchema = z.object({
 export const visitsSchema = z.object({
   from: timestamp,
   to: timestamp,
+  totalVisits: z.number().int(),
   visits: z.array(visitSchema),
 });
 

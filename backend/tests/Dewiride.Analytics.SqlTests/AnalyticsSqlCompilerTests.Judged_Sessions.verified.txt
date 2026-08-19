@@ -14,7 +14,8 @@ SELECT
     signal_directions,
     signal_weights,
     signal_supporting,
-    signal_parameters
+    signal_parameters,
+    toInt64(count() OVER ()) AS total_visits
 FROM
 (
     SELECT *
@@ -26,10 +27,11 @@ FROM
     LIMIT 1 BY session_key
 )
 ORDER BY started_at DESC, session_key
-LIMIT {limit:UInt32}
+LIMIT {limit:UInt32} OFFSET {offset:UInt32}
 
 --- bound values ---
 site_id = 0197c0de-0000-7000-8000-000000000001
 from_ms = 1777593600000
 to_ms = 1778198400000
 limit = 50
+offset = 100

@@ -3,6 +3,7 @@
 import { Bot, ChevronRight, Info, type LucideIcon, UserRound } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
 import { useState } from 'react';
+import { RankedNav } from '@/components/dashboard/ranked-list';
 import { VerdictBadge } from '@/components/dashboard/verdict-badge';
 import { VisitJourney } from '@/components/dashboard/visit-journey';
 import { Card } from '@/components/ui/card';
@@ -12,9 +13,19 @@ import { cn } from '@/lib/styling';
 
 interface VisitListProps {
   readonly siteId: string;
+  /** The slice on screen, newest first, as the engine returned it. */
   readonly visits: readonly Visit[];
+  /** How many visits the period holds altogether, across every slice. */
+  readonly totalVisits: number;
   /** The site's own zone, so a visit is stamped with the time it happened where the site is. */
   readonly timeZoneId: string;
+  /** How far down the list this slice begins. */
+  readonly offset: number;
+  /** How many a press moves by. */
+  readonly step: number;
+  /** Whether the next slice is still on its way, so the controls do not invite a second press. */
+  readonly busy: boolean;
+  readonly onMove: (offset: number) => void;
 }
 
 /** What each observation is marked with: somebody, something, or a qualifier on either. */
@@ -31,24 +42,32 @@ const TINTS: Readonly<Record<SignalDirection, string>> = {
 };
 
 /**
- * The most recent visits, each openable to show what it was judged on.
+ * Every visit a period holds, newest first, a screenful at a time, each openable to show what it
+ * was judged on.
  *
  * Every verdict on this list can be taken apart, including the evidence that pointed away from it.
  * A product whose whole proposition is that a number can be explained has to be able to explain
  * one, and a conclusion shown without the case against it is an assertion rather than a finding.
+ * That is also why the list pages rather than stopping: a verdict nobody can reach is a verdict
+ * nobody can question.
  */
-export function VisitList({ siteId, visits, timeZoneId }: VisitListProps) {
+export function VisitList({
+  siteId,
+  visits,
+  totalVisits,
+  timeZoneId,
+  offset,
+  step,
+  busy,
+  onMove,
+}: VisitListProps) {
   const t = useTranslations('dashboard.visits');
 
   return (
     <Card className="flex flex-col gap-3 p-5 sm:p-6">
       <header className="flex flex-col gap-1">
         <h2 className="text-base font-semibold text-foreground">{t('title')}</h2>
-        {/*
-          The count is said rather than left out. A list capped at a number the reader was never
-          told about reads as the whole of a period's traffic, which on a busy website it is not.
-        */}
-        <p className="text-xs text-foreground-subtle">{t('caption', { count: visits.length })}</p>
+        <p className="text-xs text-foreground-subtle">{t('caption', { count: totalVisits })}</p>
       </header>
 
       <div className="flex flex-col">
@@ -56,6 +75,16 @@ export function VisitList({ siteId, visits, timeZoneId }: VisitListProps) {
           <VisitRow key={visit.id} siteId={siteId} visit={visit} timeZoneId={timeZoneId} />
         ))}
       </div>
+
+      <RankedNav
+        label={t('nav.label')}
+        offset={offset}
+        shown={visits.length}
+        total={totalVisits}
+        step={step}
+        busy={busy}
+        onMove={onMove}
+      />
     </Card>
   );
 }

@@ -383,9 +383,10 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
                 Cancellation.Token)
             .ConfigureAwait(false);
 
-    private Task<IReadOnlyList<JudgedSession>> VisitsAsync(Site site) =>
-        stack.Services.GetRequiredService<ITelemetryQueries>()
-            .GetJudgedSessionsAsync(Scope(site), new JudgedSessionsQuery(Window(), 50), Cancellation.Token);
+    private async Task<IReadOnlyList<JudgedSession>> VisitsAsync(Site site) =>
+        (await stack.Services.GetRequiredService<ITelemetryQueries>()
+            .GetJudgedSessionsAsync(Scope(site), new JudgedSessionsQuery(Window(), 50), Cancellation.Token)
+            .ConfigureAwait(false)).Visits;
 
     private Task<IReadOnlyList<TrafficBreakdownRow>> BreakdownAsync(Site site) =>
         stack.Services.GetRequiredService<ITelemetryQueries>()

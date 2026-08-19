@@ -173,7 +173,7 @@ export function SiteOverview({ site }: SiteOverviewProps) {
 
           <SiteActions key={`presses:${listing}`} siteId={site.id} window={window} />
 
-          <JudgedTraffic site={site} window={window} />
+          <JudgedTraffic key={`visits:${listing}`} site={site} window={window} />
         </>
       )}
 

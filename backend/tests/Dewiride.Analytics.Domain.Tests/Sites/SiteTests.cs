@@ -130,6 +130,119 @@ public sealed class SiteTests
         act.Should().Throw<ArgumentException>().WithParameterName("displayName");
     }
 
+    /// <summary>
+    /// The limit is the width the column is declared at, so a name the site accepts is a name the
+    /// database can store. Refusing it here is what turns an over-long name into an answer
+    /// somebody can act on rather than a save that reports nothing until it reaches PostgreSQL.
+    /// </summary>
+    [Fact]
+    public void SetDisplayName_Accepts_A_Name_At_The_Limit()
+    {
+        var site = NewSite();
+        var longest = new string('n', Site.MaxDisplayNameLength);
+
+        site.SetDisplayName(longest);
+
+        site.DisplayName.Should().Be(longest);
+    }
+
+    [Fact]
+    public void SetDisplayName_Rejects_A_Name_Past_The_Limit()
+    {
+        var site = NewSite();
+
+        var act = () => site.SetDisplayName(new string('n', Site.MaxDisplayNameLength + 1));
+
+        act.Should().Throw<ArgumentException>().WithParameterName("displayName");
+    }
+
+    /// <summary>
+    /// Length is measured on what will be stored. A name pasted with space around it is the same
+    /// name, and refusing it for a width it does not have would be a rule about the clipboard.
+    /// </summary>
+    [Fact]
+    public void SetDisplayName_Measures_The_Limit_After_Trimming()
+    {
+        var site = NewSite();
+        var longest = new string('n', Site.MaxDisplayNameLength);
+
+        site.SetDisplayName($"   {longest}   ");
+
+        site.DisplayName.Should().Be(longest);
+    }
+
+    [Fact]
+    public void SetDisplayName_Keeps_The_Existing_Name_When_The_New_One_Is_Refused()
+    {
+        var site = NewSite();
+        site.SetDisplayName("Example Blog");
+
+        var act = () => site.SetDisplayName(new string('n', Site.MaxDisplayNameLength + 1));
+
+        act.Should().Throw<ArgumentException>();
+        site.DisplayName.Should().Be("Example Blog");
+    }
+
+    [Theory]
+    [InlineData("Europe/London")]
+    [InlineData("Asia/Kolkata")]
+    [InlineData("America/Sao_Paulo")]
+    [InlineData("Etc/UTC")]
+    public void SetTimeZone_Moves_The_Zone_Days_Are_Counted_In(string timeZoneId)
+    {
+        var site = NewSite(timeZoneId: "Europe/Berlin");
+
+        site.SetTimeZone(timeZoneId);
+
+        site.TimeZoneId.Should().Be(timeZoneId);
+    }
+
+    [Theory]
+    [InlineData("Mars/Olympus_Mons")]
+    [InlineData("GMT+5")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void SetTimeZone_Rejects_A_Zone_This_Installation_Does_Not_Know(string unknown)
+    {
+        var site = NewSite();
+
+        var act = () => site.SetTimeZone(unknown);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("timeZoneId");
+    }
+
+    /// <summary>
+    /// A refused zone never reaches the site, so its days go on being cut where they were rather
+    /// than on an identifier the telemetry store would not recognise on the next read.
+    /// </summary>
+    [Fact]
+    public void SetTimeZone_Keeps_The_Existing_Zone_When_The_New_One_Is_Refused()
+    {
+        var site = NewSite(timeZoneId: "Asia/Kolkata");
+
+        var act = () => site.SetTimeZone("Mars/Olympus_Mons");
+
+        act.Should().Throw<ArgumentException>();
+        site.TimeZoneId.Should().Be("Asia/Kolkata");
+    }
+
+    /// <summary>
+    /// The zone decides where the days are cut and settles nothing else. Moving it must not
+    /// disturb the hostname the collector matches every incoming report against.
+    /// </summary>
+    [Fact]
+    public void SetTimeZone_Changes_Nothing_But_The_Zone()
+    {
+        var site = NewSite(domain: "blog.example.com", timeZoneId: "Etc/UTC");
+        site.SetDisplayName("Example Blog");
+
+        site.SetTimeZone("Asia/Kolkata");
+
+        site.Domain.Should().Be("blog.example.com");
+        site.DisplayName.Should().Be("Example Blog");
+        site.CaptureClicks.Should().BeTrue();
+    }
+
     [Fact]
     public void SetQueryStringRetention_Turns_Retention_On()
     {

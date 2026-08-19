@@ -18,7 +18,7 @@ import { useSites } from '@/lib/queries/sites';
 export function Dashboard() {
   const t = useTranslations('dashboard');
   const sites = useSites();
-  const { site, choose } = useChosenSite(sites.data);
+  const { site } = useChosenSite(sites.data);
 
   if (sites.isPending) {
     return (
@@ -57,7 +57,7 @@ export function Dashboard() {
 
   return (
     <Shell>
-      <SiteOverview site={site} sites={sites.data} onChoose={choose} />
+      <SiteOverview site={site} />
     </Shell>
   );
 }

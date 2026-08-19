@@ -255,21 +255,6 @@ describe('the dashboard', () => {
     expect(screen.queryByRole('combobox', { name: 'Website' })).not.toBeInTheDocument();
   });
 
-  it('lets somebody move between websites when the account has several', async () => {
-    engineWith([SITE, SECOND_SITE], totals(464, 132, 900));
-
-    renderScreen(<Dashboard />);
-
-    const picker = await screen.findByRole('combobox', { name: 'Website' });
-
-    expect(picker).toHaveValue(SITE.id);
-    expect(screen.getByText('example.com')).toBeInTheDocument();
-
-    await userEvent.selectOptions(picker, SECOND_SITE.id);
-
-    expect(await screen.findByText('shop.example.com')).toBeInTheDocument();
-  });
-
   it('opens on the website last looked at rather than the first on the account', async () => {
     window.localStorage.setItem('dewiride.chosen-site', SECOND_SITE.id);
     engineWith([SITE, SECOND_SITE], totals(464, 132, 900));

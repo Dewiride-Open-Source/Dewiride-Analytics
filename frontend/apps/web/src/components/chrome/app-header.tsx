@@ -2,29 +2,63 @@
 
 import { LogOut } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { useState } from 'react';
 import { BrandMark } from '@/components/chrome/brand-mark';
 import { ThemeSwitch } from '@/components/chrome/theme-switch';
+import { AddSite } from '@/components/dashboard/add-site';
+import { SiteSwitch } from '@/components/dashboard/site-switch';
 import { Button } from '@/components/ui/button';
+import { useChosenSite } from '@/lib/analytics/chosen-site';
 import { useSession, useSignOut } from '@/lib/queries/session';
+import { useSites } from '@/lib/queries/sites';
 
 /**
  * The bar across the top of every screen, signed in or not.
  *
  * It stays in place on the setup and sign-in screens as well, so the product does not appear to
  * change identity between the page somebody arrives on and the one they end up on.
+ *
+ * Which website is being looked at lives here rather than on the screen below it, because it is
+ * true of the whole session rather than of one screen — and because the heading below is then a
+ * heading rather than a control the size of one. Which website is chosen is kept in one place the
+ * browser owns, so the bar and the screen cannot disagree about it.
  */
 export function AppHeader() {
   const t = useTranslations();
   const session = useSession();
   const signOut = useSignOut();
   const user = session.data?.user ?? null;
+  const sites = useSites(Boolean(user));
+  const { site, choose } = useChosenSite(sites.data);
+  const [adding, setAdding] = useState(false);
+
+  function show(siteId: string) {
+    choose(siteId);
+    setAdding(false);
+  }
 
   return (
     <header className="sticky top-0 z-20 border-b border-border/70 bg-background/75 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
-        <BrandMark name={t('app.name')} compactOnMobile />
+        {/*
+          The picker takes whatever room is left rather than a width of its own, and everything to
+          the right of it keeps its own. On a phone there is very little left, and a picker that
+          insisted on a comfortable width would simply sit on top of the controls beside it.
+        */}
+        <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+          <BrandMark name={t('app.name')} compactOnMobile />
 
-        <div className="flex items-center gap-2 sm:gap-3">
+          {site && sites.data ? (
+            <SiteSwitch
+              sites={sites.data}
+              chosen={site}
+              onChoose={choose}
+              onAdd={() => setAdding(true)}
+            />
+          ) : null}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <ThemeSwitch />
 
           {user ? (
@@ -47,6 +81,13 @@ export function AppHeader() {
           ) : null}
         </div>
       </div>
+
+      <AddSite
+        open={adding}
+        onClose={() => setAdding(false)}
+        likelyTimeZoneId={site?.timeZoneId}
+        onAdded={show}
+      />
     </header>
   );
 }

@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using Dewiride.Analytics.Api.Analytics;
 using Dewiride.Analytics.Api.Contracts;
+using Dewiride.Analytics.Api.Security;
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Sites;
@@ -15,7 +16,7 @@ using Microsoft.Extensions.Options;
 namespace Dewiride.Analytics.Api.Endpoints;
 
 /// <summary>
-/// Reading a site's numbers.
+/// Reading a site's numbers, and keeping the list of sites they belong to.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -245,6 +246,23 @@ internal static class SiteEndpoints
         routes.MapGet("/api/sites", ListAsync)
             .WithName("ListSites")
             .WithSummary("Lists the websites the signed-in person may look at.");
+
+        routes.MapPost("/api/sites", AddAsync)
+            .WithName("AddSite")
+            .WithSummary("Adds a website to measure, owned by whoever added it.")
+            .WithDescription(
+                "The new website joins the organisation the caller already owns a website in, so "
+                + "somebody who owns none cannot add one.")
+            .RequireProofOfOrigin();
+
+        routes.MapDelete("/api/sites/{siteId:guid}", RemoveAsync)
+            .WithName("RemoveSite")
+            .WithSummary("Removes a website and everything measured for it.")
+            .WithDescription(
+                "Only the website's owner may remove it, and the last website somebody owns is "
+                + "kept, so that they are always able to add another. What was measured for it "
+                + "is deleted outright and cannot be brought back.")
+            .RequireProofOfOrigin();
 
         routes.MapGet("/api/sites/{siteId:guid}/overview", OverviewAsync)
             .WithName("SiteOverview")
@@ -1001,6 +1019,150 @@ internal static class SiteEndpoints
 
         return TypedResults.Ok(summaries);
     }
+
+    /// <summary>
+    /// Adds a website.
+    /// </summary>
+    /// <remarks>
+    /// Every refusal that is about the caller rather than about what they typed answers the same
+    /// way, so this cannot be used to find out who owns what on an installation.
+    /// </remarks>
+    private static async Task<Results<Ok<SiteSummary>, UnauthorizedHttpResult, ForbidHttpResult, ProblemHttpResult>> AddAsync(
+        AddSiteRequest? request,
+        ISiteDirectory directory,
+        ICurrentPrincipalAccessor caller,
+        CancellationToken cancellationToken)
+    {
+        var userId = caller.GetUserId();
+
+        if (userId is null)
+        {
+            return TypedResults.Unauthorized();
+        }
+
+        if (request is null)
+        {
+            return Unaddable();
+        }
+
+        var addition = await directory
+            .AddAsync(
+                userId.Value,
+                new NewSite(request.Domain ?? string.Empty, request.TimeZoneId ?? string.Empty),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return addition.Outcome switch
+        {
+            SiteAdditionOutcome.Added when addition.Added is { } added => TypedResults.Ok(
+                new SiteSummary(
+                    added.Id,
+                    added.Domain,
+                    added.DisplayName,
+                    added.TimeZoneId,
+                    RoleNames[added.Role])),
+            SiteAdditionOutcome.NotAllowed => TypedResults.Forbid(),
+            SiteAdditionOutcome.AlreadyMeasured => AlreadyMeasured(),
+            _ => Unaddable(),
+        };
+    }
+
+    /// <summary>
+    /// Removes a website.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The identifier in the path is not a secret — it is printed in the tracking snippet on every
+    /// page the website measures — so what stands between somebody and another person's website is
+    /// the owner's role, the proof-of-origin pair every state-changing endpoint carries, and the
+    /// confirmation the dashboard asks for before it sends this. Nothing about the request itself
+    /// is trusted.
+    /// </para>
+    /// <para>
+    /// A website nobody signed in has a role on and one that was never there answer identically,
+    /// as everywhere else, so this cannot be used to discover which identifiers are real.
+    /// </para>
+    /// </remarks>
+    private static async Task<Results<NoContent, NotFound, ForbidHttpResult, ProblemHttpResult>> RemoveAsync(
+        Guid siteId,
+        ITenantScopeProvider scopes,
+        ISiteDirectory directory,
+        ICurrentPrincipalAccessor caller,
+        CancellationToken cancellationToken)
+    {
+        var scope = await scopes.ResolveAsync(siteId, cancellationToken).ConfigureAwait(false);
+        var userId = caller.GetUserId();
+
+        if (scope is null || userId is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        if (scope.Role != SiteRole.Owner)
+        {
+            return TypedResults.Forbid();
+        }
+
+        var removal = await directory.RemoveAsync(userId.Value, siteId, cancellationToken).ConfigureAwait(false);
+
+        return removal.Outcome switch
+        {
+            SiteRemovalOutcome.Removed => TypedResults.NoContent(),
+            SiteRemovalOutcome.OnlyOne => OnlyOne(),
+            _ => TypedResults.NotFound(),
+        };
+    }
+
+    /// <summary>Names the reason a website could not be built from what was asked for.</summary>
+    private const string DetailsRejectedCode = "SiteDetailsRejected";
+
+    /// <summary>Names the reason a website is already being measured here.</summary>
+    private const string AlreadyMeasuredCode = "SiteAlreadyMeasured";
+
+    /// <summary>Names the reason a website is the last one its owner has.</summary>
+    private const string OnlyOneCode = "SiteIsOnlyOne";
+
+    private static ProblemHttpResult Unaddable() =>
+        Refused(
+            "That website could not be added.",
+            StatusCodes.Status400BadRequest,
+            new RefusedReason(
+                DetailsRejectedCode,
+                "Give the address of the website, such as blog.example.com, and choose the time "
+                    + "zone its days should be counted in."));
+
+    private static ProblemHttpResult AlreadyMeasured() =>
+        Refused(
+            "That website is already here.",
+            StatusCodes.Status409Conflict,
+            new RefusedReason(
+                AlreadyMeasuredCode,
+                "It is already in the list of websites you can switch between."));
+
+    private static ProblemHttpResult OnlyOne() =>
+        Refused(
+            "That website cannot be removed.",
+            StatusCodes.Status409Conflict,
+            new RefusedReason(
+                OnlyOneCode,
+                "It is the only website you own. Add another one first, then remove this."));
+
+    /// <summary>
+    /// Refuses with a reason the dashboard can write its own sentence for.
+    /// </summary>
+    /// <param name="title">What went wrong, in one line.</param>
+    /// <param name="status">The status to answer with.</param>
+    /// <param name="reason">The specific reason.</param>
+    /// <returns>The refusal.</returns>
+    private static ProblemHttpResult Refused(string title, int status, RefusedReason reason) =>
+        TypedResults.Problem(
+            title: title,
+            detail: reason.Description,
+            statusCode: status,
+            extensions: new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["problems"] = new[] { reason },
+            });
 
     private static async Task<Results<Ok<OverviewResponse>, NotFound, ProblemHttpResult>> OverviewAsync(
         [AsParameters] OverviewParameters parameters,

@@ -30,6 +30,10 @@ what does not.
 - A collection endpoint accepts page views, engagement reports and clicks, stamps its own authoritative
   timestamp alongside the reported one, and writes them to the telemetry store.
 - Sign-in, several accounts on one installation, and three roles with a real membership check.
+- Looking after a website once it is there: change what it is called, change the time zone its days
+  are counted in, or remove it. Removing a website deletes everything ever measured for it and
+  nothing brings it back, so it asks you to type the website's address before it will go ahead.
+  Anyone who can change a website's settings can rename it; removing one is the owner's alone.
 - A dashboard showing page views, daily visitors, a daily traffic graph and the pages a period's
   traffic went to, for a website you own. A site running both the tracker and its own server's
   reports is counted once per page delivered rather than once per report, so running the product

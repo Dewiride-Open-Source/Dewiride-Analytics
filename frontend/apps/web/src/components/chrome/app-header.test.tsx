@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from 'next-themes';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppHeader } from '@/components/chrome/app-header';
+import type { Site } from '@/lib/api/schemas';
 import { engineDoing, respondWith } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
 
@@ -15,6 +16,41 @@ const OWNER = {
   emailAddress: 'owner@example.com',
   displayName: 'Ada Lovelace',
 };
+
+const SITE: Site = {
+  id: '01a013fa-49d6-77be-b65d-20ec86e9df78',
+  domain: 'example.com',
+  displayName: 'My Blog',
+  timeZoneId: 'Europe/London',
+  role: 'owner',
+};
+
+const SHOP: Site = {
+  id: '01a013fa-49d6-77be-b65d-20ec86e9df99',
+  domain: 'shop.example.com',
+  displayName: 'The Shop',
+  timeZoneId: 'Europe/London',
+  role: 'owner',
+};
+
+/** Answers with a signed-in person and their websites, and remembers one that is added. */
+function engineWith(sites: readonly Site[]) {
+  const known = [...sites];
+
+  return engineDoing(async (path, init) => {
+    if (init.method === 'POST' && path.endsWith('/api/sites')) {
+      known.push(SHOP);
+
+      return respondWith(200, SHOP);
+    }
+
+    if (path.endsWith('/api/sites')) {
+      return respondWith(200, known);
+    }
+
+    return respondWith(200, { setupCompleted: true, user: OWNER, token: 'p' });
+  });
+}
 
 function withTheme(ui: React.ReactElement) {
   return renderScreen(<ThemeProvider attribute="class">{ui}</ThemeProvider>, {
@@ -65,6 +101,178 @@ describe('the bar across the top', () => {
       expect(screen.queryByText('Signed in as Ada Lovelace')).not.toBeInTheDocument(),
     );
     expect(engine.count).toBeGreaterThan(1);
+  });
+
+  it('offers no website picker before anybody is signed in', async () => {
+    engineDoing(async () => respondWith(200, { setupCompleted: false, user: null, token: 'p' }));
+
+    withTheme(<AppHeader />);
+
+    await screen.findByText('Dewiride Analytics');
+
+    expect(screen.queryByRole('combobox', { name: 'Website' })).not.toBeInTheDocument();
+  });
+
+  it('names the website being looked at, and lets it be swapped for another', async () => {
+    engineWith([SITE, SHOP]);
+
+    withTheme(<AppHeader />);
+
+    const picker = await screen.findByRole('combobox', { name: 'Website' });
+
+    expect(picker).toHaveValue(SITE.id);
+
+    await userEvent.selectOptions(picker, SHOP.id);
+
+    await waitFor(() => expect(picker).toHaveValue(SHOP.id));
+  });
+
+  /**
+   * An installation with one website is exactly the one that needs somewhere to add a second, so
+   * the picker is there whether or not there is anything to pick between.
+   */
+  it('offers the picker with one website, because that is where another is added', async () => {
+    engineWith([SITE]);
+
+    withTheme(<AppHeader />);
+
+    const picker = await screen.findByRole('combobox', { name: 'Website' });
+
+    expect(picker).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '+ Add a website' })).toBeInTheDocument();
+  });
+
+  it('opens the way to add a website from the end of the same list', async () => {
+    engineWith([SITE]);
+
+    withTheme(<AppHeader />);
+
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Website' }), 'add');
+
+    expect(await screen.findByRole('dialog', { name: 'Add a website' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Website address' })).toBeInTheDocument();
+  });
+
+  /**
+   * The panel is mounted before the websites have arrived, so a starting value chosen at that
+   * moment would be the zone of the machine somebody is sitting at rather than the one the website
+   * they are already measuring counts its days in.
+   */
+  it('starts on the time zone the website already on screen counts its days in', async () => {
+    engineWith([SITE]);
+
+    withTheme(<AppHeader />);
+
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Website' }), 'add');
+
+    expect(await screen.findByRole('combobox', { name: 'Count its days in' })).toHaveValue(
+      'Europe/London',
+    );
+  });
+
+  /**
+   * The same place goes by two names — `Asia/Calcutta` on one platform and `Asia/Kolkata` on
+   * another — so a website's own zone is not always among the ones a particular browser lists.
+   * A picker that cannot offer it settles on whichever zone happens to sort first, which is how a
+   * second website ends up counted in a country nobody involved has ever been to.
+   */
+  it('starts on that zone even where this browser spells it the other way', async () => {
+    vi.spyOn(Intl, 'supportedValuesOf').mockReturnValue([
+      'Africa/Abidjan',
+      'Asia/Calcutta',
+      'Europe/London',
+    ]);
+    engineWith([{ ...SITE, timeZoneId: 'Asia/Kolkata' }]);
+
+    withTheme(<AppHeader />);
+
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Website' }), 'add');
+
+    expect(await screen.findByRole('combobox', { name: 'Count its days in' })).toHaveValue(
+      'Asia/Kolkata',
+    );
+  });
+
+  it('adds a website and moves to it', async () => {
+    const engine = engineWith([SITE]);
+
+    withTheme(<AppHeader />);
+
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Website' }), 'add');
+    await userEvent.type(
+      await screen.findByRole('textbox', { name: 'Website address' }),
+      'shop.example.com',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Add website' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: 'Website' })).toHaveValue(SHOP.id),
+    );
+
+    const added = engine.all().find((sent) => sent.init.method === 'POST');
+
+    expect(added).toBeDefined();
+    expect(JSON.parse(String(added?.init.body))).toMatchObject({ domain: 'shop.example.com' });
+  });
+
+  /**
+   * A cookie the browser returns on its own is not proof that this page meant to send the request,
+   * so the pair the engine issued travels with it.
+   */
+  it('proves where a new website came from', async () => {
+    const engine = engineWith([SITE]);
+
+    withTheme(<AppHeader />);
+
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Website' }), 'add');
+    await userEvent.type(
+      await screen.findByRole('textbox', { name: 'Website address' }),
+      'shop.example.com',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Add website' }));
+
+    await waitFor(() =>
+      expect(engine.all().some((sent) => sent.init.method === 'POST')).toBe(true),
+    );
+
+    const added = engine.all().find((sent) => sent.init.method === 'POST');
+    const headers = added?.init.headers as Record<string, string> | undefined;
+
+    expect(headers?.['X-Csrf-Token']).toBe('p');
+  });
+
+  it('says why a website could not be added rather than closing as though it had been', async () => {
+    engineDoing(async (path, init) => {
+      if (init.method === 'POST') {
+        return respondWith(409, {
+          title: 'That website is already here.',
+          problems: [
+            {
+              code: 'SiteAlreadyMeasured',
+              description: 'It is already in the list of websites you can switch between.',
+            },
+          ],
+        });
+      }
+
+      if (path.endsWith('/api/sites')) {
+        return respondWith(200, [SITE]);
+      }
+
+      return respondWith(200, { setupCompleted: true, user: OWNER, token: 'p' });
+    });
+
+    withTheme(<AppHeader />);
+
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Website' }), 'add');
+    await userEvent.type(
+      await screen.findByRole('textbox', { name: 'Website address' }),
+      'example.com',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Add website' }));
+
+    expect(await screen.findByText(/That website is already in your list/)).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Add a website' })).toBeInTheDocument();
   });
 
   it('offers all three ways of choosing how the product looks', async () => {

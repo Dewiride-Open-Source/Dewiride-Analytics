@@ -97,6 +97,12 @@ internal sealed class Browser : IDisposable
     public Task<HttpResponseMessage> DeleteAsync(string path) =>
         SendAsync(HttpMethod.Delete, path, content: null, Token);
 
+    /// <summary>Sends a request that removes something, with a token that will not be accepted.</summary>
+    /// <param name="path">Path to delete.</param>
+    /// <returns>The answer.</returns>
+    public Task<HttpResponseMessage> DeleteWithoutProofAsync(string path) =>
+        SendAsync(HttpMethod.Delete, path, content: null, token: null);
+
     /// <summary>Ends the current sign-in, keeping the token the answer carries.</summary>
     /// <returns>The answer.</returns>
     public async Task<HttpResponseMessage> SignOutAsync()

@@ -25,6 +25,7 @@ import {
   type ServerKey,
   serverKeysSchema,
   type Site,
+  siteSchema,
   type SiteSettings,
   siteSettingsSchema,
   sitesSchema,
@@ -208,13 +209,34 @@ export function readActions(
   return readResource(`${siteAddress(siteId)}/actions?${asked}&${period(window)}`, actionsSchema);
 }
 
-/** What a website collects, as far as its owner decides it. */
+/** What is needed to start measuring another website. */
+export interface NewSite {
+  readonly domain: string;
+  readonly timeZoneId: string;
+}
+
+/** Starts measuring another website, owned by whoever added it. */
+export function addSite(site: NewSite, proof: string): Promise<Site> {
+  return submitResource(SITES, 'POST', proof, siteSchema, site);
+}
+
+/**
+ * Stops measuring a website, and takes everything measured for it with them.
+ *
+ * Answered with nothing at all, so it goes through the call that expects no body: reading an
+ * empty answer as an object would fail on the very answer that means it worked.
+ */
+export function removeSite(siteId: string, proof: string): Promise<void> {
+  return discardResource(siteAddress(siteId), 'DELETE', proof);
+}
+
+/** Everything about one website that its owner decides. */
 export function readSiteSettings(siteId: string): Promise<SiteSettings> {
   return readResource(`${siteAddress(siteId)}/settings`, siteSettingsSchema);
 }
 
 /**
- * Changes what a website collects.
+ * Changes one website's settings.
  *
  * A setting left out is left as it was, so this sends only what is being changed.
  */

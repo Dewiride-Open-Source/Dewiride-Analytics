@@ -8,7 +8,7 @@ import { cn } from '@/lib/styling';
 /**
  * What a category looks like when it is named on a screen.
  *
- * Green for the people the website is for, amber for machinery, red for what nobody asked for,
+ * Green for the people the website is for, violet for machinery, red for what nobody asked for,
  * and grey for what cannot be said. The colour is a summary and never the whole answer: the words
  * inside the pill always name the category exactly, so a crawler that says it is an AI one is
  * never mistaken for one that has been confirmed.

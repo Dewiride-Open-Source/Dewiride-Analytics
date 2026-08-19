@@ -9,8 +9,9 @@
 /* ---------------------------------------------------------------------------
  * Palette
  *
- * Warm neutrals rather than pure greys, and amber as the single accent. Every colour is stated in
- * oklch so that lightening or darkening one keeps its hue instead of drifting towards grey.
+ * Cool neutrals carrying a trace of the accent rather than pure greys, and violet as the single
+ * accent. Every colour is stated in oklch so that lightening or darkening one keeps its hue
+ * instead of drifting towards grey.
  * ------------------------------------------------------------------------ */
 :root {
   /*
@@ -20,20 +21,20 @@
    */
   color-scheme: light;
 
-  --background: oklch(0.985 0.006 85);
-  --background-deep: oklch(0.965 0.008 82);
+  --background: oklch(0.985 0.004 288);
+  --background-deep: oklch(0.962 0.007 288);
   --surface: oklch(1 0 0);
-  --surface-muted: oklch(0.975 0.007 85);
-  --foreground: oklch(0.24 0.012 70);
-  --foreground-muted: oklch(0.52 0.015 70);
-  --foreground-subtle: oklch(0.63 0.014 75);
-  --border: oklch(0.9 0.008 80);
-  --border-strong: oklch(0.84 0.011 78);
+  --surface-muted: oklch(0.972 0.005 288);
+  --foreground: oklch(0.235 0.015 288);
+  --foreground-muted: oklch(0.515 0.017 288);
+  --foreground-subtle: oklch(0.63 0.015 288);
+  --border: oklch(0.9 0.009 288);
+  --border-strong: oklch(0.84 0.013 288);
 
-  --accent: oklch(0.76 0.152 68);
-  --accent-foreground: oklch(0.24 0.05 60);
-  --accent-strong: oklch(0.52 0.118 55);
-  --accent-soft: oklch(0.96 0.035 82);
+  --accent: oklch(0.56 0.2 288);
+  --accent-foreground: oklch(0.99 0.008 288);
+  --accent-strong: oklch(0.47 0.185 288);
+  --accent-soft: oklch(0.955 0.03 288);
 
   --danger: oklch(0.52 0.185 26);
   --danger-foreground: oklch(0.99 0.01 60);
@@ -42,12 +43,12 @@
   --positive: oklch(0.52 0.115 155);
 
   /*
-   * The two series a traffic chart draws. Amber and a cool blue rather than two shades of the
+   * The two series a traffic chart draws. Violet and a cool teal rather than two shades of the
    * accent: they stay apart for a reader who cannot separate the hues, because their lightness
    * differs as well as their colour.
    */
-  --chart-1: oklch(0.72 0.155 65);
-  --chart-2: oklch(0.55 0.105 245);
+  --chart-1: oklch(0.58 0.195 288);
+  --chart-2: oklch(0.68 0.12 200);
 
   /*
    * The signature glow. Kept as two separate values because they are used apart as often as
@@ -57,10 +58,16 @@
   --glow-bloom: 0 0 28px -6px color-mix(in oklab, var(--accent) 50%, transparent);
   --glow-bloom-soft: 0 0 44px -14px color-mix(in oklab, var(--accent) 40%, transparent);
 
+  /*
+   * The edge a card rests behind. Fainter than the ring a focused control wears, because a screen
+   * carries a dozen cards at once and one of them is never the thing being pointed at.
+   */
+  --glow-edge: 0 0 0 1px color-mix(in oklab, var(--accent) 26%, transparent);
+
   --shadow-raised:
-    0 1px 2px -1px oklch(0.24 0.012 70 / 0.1), 0 4px 16px -8px oklch(0.24 0.012 70 / 0.14);
+    0 1px 2px -1px oklch(0.235 0.015 288 / 0.1), 0 4px 16px -8px oklch(0.235 0.015 288 / 0.14);
   --shadow-lifted:
-    0 2px 4px -2px oklch(0.24 0.012 70 / 0.12), 0 18px 44px -16px oklch(0.24 0.012 70 / 0.22);
+    0 2px 4px -2px oklch(0.235 0.015 288 / 0.12), 0 18px 44px -16px oklch(0.235 0.015 288 / 0.22);
 
   --radius: 0.75rem;
 }
@@ -68,20 +75,25 @@
 .dark {
   color-scheme: dark;
 
-  --background: oklch(0.175 0.008 70);
-  --background-deep: oklch(0.145 0.008 68);
-  --surface: oklch(0.215 0.009 72);
-  --surface-muted: oklch(0.245 0.01 72);
-  --foreground: oklch(0.955 0.006 85);
-  --foreground-muted: oklch(0.72 0.012 80);
-  --foreground-subtle: oklch(0.6 0.012 78);
-  --border: oklch(0.305 0.012 72);
-  --border-strong: oklch(0.38 0.015 72);
+  --background: oklch(0.18 0.013 288);
+  --background-deep: oklch(0.148 0.013 288);
+  --surface: oklch(0.218 0.015 288);
+  --surface-muted: oklch(0.25 0.017 288);
+  --foreground: oklch(0.958 0.005 288);
+  --foreground-muted: oklch(0.72 0.013 288);
+  --foreground-subtle: oklch(0.6 0.014 288);
 
-  --accent: oklch(0.79 0.152 72);
-  --accent-foreground: oklch(0.2 0.045 58);
-  --accent-strong: oklch(0.84 0.135 74);
-  --accent-soft: oklch(0.29 0.045 65);
+  /*
+   * Lighter than the light theme's border is dark, because here the surface and the ground it sits
+   * on are only a few percent apart and an edge drawn as quietly would not be an edge at all.
+   */
+  --border: oklch(0.345 0.022 288);
+  --border-strong: oklch(0.42 0.028 288);
+
+  --accent: oklch(0.7 0.175 290);
+  --accent-foreground: oklch(0.16 0.045 288);
+  --accent-strong: oklch(0.8 0.145 292);
+  --accent-soft: oklch(0.3 0.07 288);
 
   --danger: oklch(0.68 0.17 26);
   --danger-foreground: oklch(0.16 0.03 28);
@@ -89,12 +101,13 @@
 
   --positive: oklch(0.74 0.13 155);
 
-  --chart-1: oklch(0.8 0.15 72);
-  --chart-2: oklch(0.72 0.105 245);
+  --chart-1: oklch(0.72 0.175 290);
+  --chart-2: oklch(0.76 0.11 200);
 
   --glow-ring: 0 0 0 1px color-mix(in oklab, var(--accent) 48%, transparent);
   --glow-bloom: 0 0 32px -6px color-mix(in oklab, var(--accent) 42%, transparent);
   --glow-bloom-soft: 0 0 52px -16px color-mix(in oklab, var(--accent) 34%, transparent);
+  --glow-edge: 0 0 0 1px color-mix(in oklab, var(--accent) 30%, transparent);
 
   --shadow-raised: 0 1px 2px -1px oklch(0 0 0 / 0.5), 0 6px 20px -10px oklch(0 0 0 / 0.6);
   --shadow-lifted: 0 2px 6px -2px oklch(0 0 0 / 0.55), 0 22px 52px -18px oklch(0 0 0 / 0.7);
@@ -143,6 +156,13 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     min-height: 100dvh;
+
+    /*
+     * Tick boxes, radios and range sliders are drawn by the browser, and left alone it draws them
+     * in whatever accent the operating system is set to — which is somebody else's colour sitting
+     * in the middle of a form. It inherits, so stating it once here reaches every one of them.
+     */
+    accent-color: var(--accent);
   }
 
   /*
@@ -244,6 +264,22 @@
   .glow-card:hover,
   .glow-card:focus-within {
     box-shadow: var(--shadow-lifted), var(--glow-bloom);
+  }
+
+  /*
+   * In the dark theme a card also carries the accent along its edge. A card is told apart from the
+   * page beneath it by the step in lightness between the two, and in the dark that step is a few
+   * per cent where in the light it is most of the range — so the same card that reads as a raised
+   * surface on a light page reads as a slightly different patch of dark on a dark one. The edge is
+   * what gives it back its shape.
+   */
+  .dark .glow-card {
+    box-shadow: var(--shadow-raised), var(--glow-edge), var(--glow-bloom-soft);
+  }
+
+  .dark .glow-card:hover,
+  .dark .glow-card:focus-within {
+    box-shadow: var(--shadow-lifted), var(--glow-ring), var(--glow-bloom);
   }
 
   /*

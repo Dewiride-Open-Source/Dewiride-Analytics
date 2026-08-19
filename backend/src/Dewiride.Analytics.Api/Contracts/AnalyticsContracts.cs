@@ -213,6 +213,32 @@ public sealed record SoftwareResponse(
 public sealed record SoftwareRow(string Name, long Visitors, long PageViews);
 
 /// <summary>
+/// One specific reason a request was refused.
+/// </summary>
+/// <remarks>
+/// The code is what the dashboard looks up in its own catalogue to write a sentence somebody can
+/// act on; the description is what it falls back to for a code it has never seen, because hiding
+/// the only explanation behind a generic sentence helps nobody.
+/// </remarks>
+/// <param name="Code">Names the reason. Stable, and never shown to anybody.</param>
+/// <param name="Description">The reason in words, for a reader whose dashboard has none.</param>
+public sealed record RefusedReason(string Code, string Description);
+
+/// <summary>
+/// A website somebody is asking to measure.
+/// </summary>
+public sealed record AddSiteRequest
+{
+    /// <summary>
+    /// The website's address, such as <c>blog.example.com</c>. Normalised where the site is built.
+    /// </summary>
+    public string? Domain { get; init; }
+
+    /// <summary>IANA time zone its days should be counted in.</summary>
+    public string? TimeZoneId { get; init; }
+}
+
+/// <summary>
 /// What a website's visitors operated over a window, most pressed first.
 /// </summary>
 /// <param name="From">Inclusive start of the window.</param>

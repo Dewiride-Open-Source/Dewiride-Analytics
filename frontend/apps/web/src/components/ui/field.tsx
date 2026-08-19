@@ -1,6 +1,6 @@
 'use client';
 
-import { Eye, EyeOff } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff } from 'lucide-react';
 import { type ComponentProps, type ReactNode, useId, useState } from 'react';
 import { cn } from '@/lib/styling';
 
@@ -75,9 +75,18 @@ export function TextInput({ className, ...rest }: ComponentProps<'input'>) {
 
 export function SelectInput({ className, children, ...rest }: ComponentProps<'select'>) {
   return (
-    <select className={cn('select-trigger h-11 appearance-none', control, className)} {...rest}>
-      {children}
-    </select>
+    <span className="relative block">
+      <select
+        className={cn('select-trigger h-11 appearance-none pr-10', control, className)}
+        {...rest}
+      >
+        {children}
+      </select>
+      <ChevronDown
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-foreground-muted"
+      />
+    </span>
   );
 }
 

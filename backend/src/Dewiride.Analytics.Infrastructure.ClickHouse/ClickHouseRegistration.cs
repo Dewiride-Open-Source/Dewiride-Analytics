@@ -79,6 +79,7 @@ public static class ClickHouseRegistration
         builder.Services.AddSingleton<ClickHouseMigrationRunner>();
         builder.Services.AddSingleton<IEventSink, ClickHouseEventSink>();
         builder.Services.AddSingleton<ITelemetryQueries, ClickHouseTelemetryQueries>();
+        builder.Services.AddSingleton<ITelemetryPurge, ClickHouseTelemetryPurge>();
         builder.Services.AddSingleton<ISessionSource, ClickHouseSessionSource>();
         builder.Services.AddSingleton<IClassificationStore, ClickHouseClassificationStore>();
 

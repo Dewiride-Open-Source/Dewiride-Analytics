@@ -11,7 +11,7 @@ import { readChartPalette } from '@/lib/charts/palette';
  */
 function styledDocument() {
   vi.spyOn(window, 'getComputedStyle').mockReturnValue({
-    getPropertyValue: (token: string) => `oklch(0.72 0.155 65) /* ${token} */`,
+    getPropertyValue: (token: string) => `oklch(0.58 0.195 288) /* ${token} */`,
   } as unknown as CSSStyleDeclaration);
 }
 
@@ -52,15 +52,15 @@ describe('the colours a chart is drawn in', () => {
    * colour outside the sRGB gamut is one the engine silently ignores.
    */
   it('reports whatever was actually painted, as plain numbers', () => {
-    canvasPainting([232, 163, 61, 255]);
+    canvasPainting([110, 76, 232, 255]);
 
-    expect(readChartPalette().series[0]).toBe('rgba(232, 163, 61, 1)');
+    expect(readChartPalette().series[0]).toBe('rgba(110, 76, 232, 1)');
   });
 
   it('keeps drawing in something sensible when a colour cannot be painted at all', () => {
     canvasPainting([0, 0, 0, 0], true);
 
-    expect(readChartPalette().series[0]).toBe('rgba(217, 155, 61, 1)');
+    expect(readChartPalette().series[0]).toBe('rgba(110, 76, 232, 1)');
   });
 
   it('keeps drawing in something sensible where there is no canvas', () => {
@@ -68,7 +68,7 @@ describe('the colours a chart is drawn in', () => {
 
     const palette = readChartPalette();
 
-    expect(palette.series).toStrictEqual(['rgba(217, 155, 61, 1)', 'rgba(77, 127, 196, 1)']);
-    expect(palette.text).toBe('rgba(43, 39, 34, 1)');
+    expect(palette.series).toStrictEqual(['rgba(110, 76, 232, 1)', 'rgba(56, 168, 184, 1)']);
+    expect(palette.text).toBe('rgba(41, 38, 51, 1)');
   });
 });

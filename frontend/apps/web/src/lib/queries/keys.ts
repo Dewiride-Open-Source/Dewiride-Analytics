@@ -64,10 +64,10 @@ export function actionsKey(
 }
 
 /**
- * What a website collects.
+ * Everything about one website that its owner decides.
  *
- * Not a question about a period, so it carries none: what a site records today is the same answer
- * whichever week somebody happens to be looking at.
+ * Not a question about a period, so it carries none: what a website is called and what it records
+ * are the same answer whichever week somebody happens to be looking at.
  */
 export function siteSettingsKey(siteId: string) {
   return ['sites', siteId, 'settings'] as const;

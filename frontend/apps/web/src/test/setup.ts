@@ -29,6 +29,16 @@ Object.defineProperty(window, 'matchMedia', {
     }) as unknown as MediaQueryList,
 });
 
+// The same document lays nothing out, so it has no idea where anything is and scrolling an element
+// into view is missing altogether. A screen that brings a newly revealed control into view would
+// otherwise fail on a missing function rather than on anything the test was checking. Whether the
+// control actually comes into view is a question for a real browser.
+Object.defineProperty(Element.prototype, 'scrollIntoView', {
+  writable: true,
+  configurable: true,
+  value: () => {},
+});
+
 // The same document implements the dialog element's markup but none of its behaviour: opening and
 // closing one is simply missing. The real thing is what supplies the focus trap, the inert page
 // behind it and the Escape key, so it stays in the product and the two calls are supplied here.

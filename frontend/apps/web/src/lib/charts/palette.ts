@@ -47,12 +47,12 @@ const SENTINEL = '#010203';
 
 /** Used when there is no canvas to convert with, as in a test document. */
 const FALLBACKS = {
-  series: ['rgba(217, 155, 61, 1)', 'rgba(77, 127, 196, 1)'],
-  label: 'rgba(122, 115, 107, 1)',
-  line: 'rgba(226, 221, 214, 1)',
+  series: ['rgba(110, 76, 232, 1)', 'rgba(56, 168, 184, 1)'],
+  label: 'rgba(116, 113, 128, 1)',
+  line: 'rgba(224, 222, 232, 1)',
   surface: 'rgba(255, 255, 255, 1)',
-  border: 'rgba(207, 200, 191, 1)',
-  text: 'rgba(43, 39, 34, 1)',
+  border: 'rgba(205, 201, 216, 1)',
+  text: 'rgba(41, 38, 51, 1)',
 } as const;
 
 /**

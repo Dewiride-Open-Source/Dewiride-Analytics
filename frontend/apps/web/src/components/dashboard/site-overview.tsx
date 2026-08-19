@@ -7,7 +7,6 @@ import { JudgedTraffic } from '@/components/dashboard/judged-traffic';
 import { MetricCard, MetricCardSkeleton } from '@/components/dashboard/metric-card';
 import { PeriodSwitch } from '@/components/dashboard/period-switch';
 import { ServerKeys } from '@/components/dashboard/server-keys';
-import { SiteSwitch } from '@/components/dashboard/site-switch';
 import { SiteActions } from '@/components/dashboard/site-actions';
 import { SiteDevices } from '@/components/dashboard/site-devices';
 import { SiteFlow } from '@/components/dashboard/site-flow';
@@ -27,13 +26,10 @@ import { readableZone } from '@/lib/time-zones';
 
 interface SiteOverviewProps {
   readonly site: Site;
-  /** Every website the caller may look at, so the one on screen can be swapped for another. */
-  readonly sites: readonly Site[];
-  readonly onChoose: (siteId: string) => void;
 }
 
 /** One website, over one period. */
-export function SiteOverview({ site, sites, onChoose }: SiteOverviewProps) {
+export function SiteOverview({ site }: SiteOverviewProps) {
   const t = useTranslations('dashboard');
   const metrics = useTranslations('dashboard.metrics');
   const install = useTranslations('install');
@@ -67,22 +63,23 @@ export function SiteOverview({ site, sites, onChoose }: SiteOverviewProps) {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
+        {/*
+          A heading and nothing more. Swapping between websites is a property of the session rather
+          than of this screen, and lives in the bar across the top; a name that was also the control
+          for changing it had to be the size of a heading to read as one, which made a picker the
+          size of a heading.
+
+          The address sits beneath the name only where it says something the name does not. A
+          website keeps its address as its name until somebody renames it, and printing the same
+          words twice reads as a mistake.
+        */}
         <div className="flex min-w-0 flex-col gap-1">
-          {/*
-            With one website the name is a heading and nothing more. With several it becomes the
-            control that swaps between them, in place rather than beside itself — a picker next to
-            a heading showing the same word reads as a mistake.
-          */}
-          {sites.length > 1 ? (
-            <h1>
-              <SiteSwitch sites={sites} chosen={site} onChoose={onChoose} />
-            </h1>
-          ) : (
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-              {site.displayName}
-            </h1>
+          <h1 className="truncate text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            {site.displayName}
+          </h1>
+          {site.displayName === site.domain ? null : (
+            <p className="truncate text-sm text-foreground-muted">{site.domain}</p>
           )}
-          <p className="text-sm text-foreground-muted">{site.domain}</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Button tone="secondary" size="sm" onClick={() => setShowingCode(true)}>
@@ -195,11 +192,15 @@ export function SiteOverview({ site, sites, onChoose }: SiteOverviewProps) {
         timeZoneId={site.timeZoneId}
       />
 
+      {/*
+        Removing the website puts the panel away and nothing else. The list of websites is asked
+        for again as part of the removal, and the screen settles on whichever one is left.
+      */}
       <SiteSettings
         open={showingSettings}
         onClose={() => setShowingSettings(false)}
-        siteId={site.id}
-        siteDomain={site.domain}
+        site={site}
+        onRemoved={() => setShowingSettings(false)}
       />
     </div>
   );

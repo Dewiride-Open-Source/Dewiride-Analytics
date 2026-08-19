@@ -37,32 +37,115 @@ export interface TimeZoneChoice {
 export function timeZoneGroups(): readonly TimeZoneGroup[] {
   const supported = Intl.supportedValuesOf('timeZone');
   const identifiers = supported.length > 0 ? supported : [FALLBACK];
-  const byArea = new Map<string, TimeZoneChoice[]>();
+  const regions = new Map<string, TimeZoneChoice[]>();
 
   for (const id of identifiers) {
-    const divider = id.indexOf('/');
-    const area = divider > 0 ? id.slice(0, divider) : id;
-    const place = divider > 0 ? id.slice(divider + 1) : id;
-    const group = byArea.get(area) ?? [];
+    const area = areaOf(id);
+    const region = regions.get(area) ?? [];
 
-    group.push({ id, label: `${readablePlace(place)} (${offsetOf(id)})` });
-    byArea.set(area, group);
+    region.push(choiceFor(id));
+    regions.set(area, region);
   }
 
-  return [...byArea.entries()]
-    .map(([area, zones]) => ({
-      area,
-      zones: zones.toSorted((a, b) => a.label.localeCompare(b.label)),
-    }))
-    .toSorted((a, b) => a.area.localeCompare(b.area));
+  return [...regions.entries()]
+    .map(([area, zones]) => ({ area, zones: zones.toSorted(byLabel) }))
+    .toSorted(byArea);
+}
+
+/**
+ * The same zones, with the one a website is already counted in among them.
+ *
+ * Platforms disagree about zone names — the same place is `Asia/Calcutta` on one and
+ * `Asia/Kolkata` on another — so a stored zone is not always one of the choices the browser
+ * somebody happens to be using offers. A picker that cannot offer it opens on a fall-back
+ * instead, and somebody who came to rename their website moves the boundary of its day by saving
+ * a field they never touched. Adding the stored zone to the choices is what stops that.
+ *
+ * @param groups Every zone this platform offers.
+ * @param id The zone that has to be among them, where there is one.
+ * @returns The groups unchanged, or with that zone under the region it belongs to.
+ */
+export function withZone(
+  groups: readonly TimeZoneGroup[],
+  id: string | undefined,
+): readonly TimeZoneGroup[] {
+  if (id === undefined || id.length === 0 || offers(groups, id)) {
+    return groups;
+  }
+
+  const area = areaOf(id);
+  const added = choiceFor(id);
+
+  if (!groups.some((group) => group.area === area)) {
+    return [...groups, { area, zones: [added] }].toSorted(byArea);
+  }
+
+  return groups.map((group) =>
+    group.area === area ? { area, zones: [...group.zones, added].toSorted(byLabel) } : group,
+  );
 }
 
 /** The zone this device is set to, when the platform also offers it as a choice. */
 export function thisDeviceTimeZone(groups: readonly TimeZoneGroup[]): string {
-  const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const offered = groups.some((group) => group.zones.some((zone) => zone.id === here));
+  return offeredZone(groups, Intl.DateTimeFormat().resolvedOptions().timeZone);
+}
 
-  return offered ? here : (groups[0]?.zones[0]?.id ?? FALLBACK);
+/**
+ * The zone a picker should start on, given the one that would suit.
+ *
+ * Platforms disagree about zone names — the same place is `Asia/Calcutta` on one and
+ * `Asia/Kolkata` on another — so a stored zone is not always among the choices a particular
+ * browser offers. A picker asked to start on a choice it does not have starts on whichever
+ * happens to be first, which is how somebody ends up measuring a website in a country nobody
+ * involved has ever been to. So the fall-back is stated rather than left to the browser.
+ *
+ * @param groups Every zone this platform offers.
+ * @param wanted The zone that would suit, if it is offered.
+ * @returns The wanted zone, this device's zone, or the first there is.
+ */
+export function offeredZone(groups: readonly TimeZoneGroup[], wanted: string | undefined): string {
+  if (wanted !== undefined && offers(groups, wanted)) {
+    return wanted;
+  }
+
+  const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  return offers(groups, here) ? here : (groups[0]?.zones[0]?.id ?? FALLBACK);
+}
+
+/** Whether a zone is one of the choices. */
+function offers(groups: readonly TimeZoneGroup[], id: string): boolean {
+  return groups.some((group) => group.zones.some((zone) => zone.id === id));
+}
+
+/** One zone, named by its place and by where it stands against London today. */
+function choiceFor(id: string): TimeZoneChoice {
+  const place = readablePlace(placeIn(id));
+  const offset = offsetOf(id);
+
+  return { id, label: offset === null ? place : `${place} (${offset})` };
+}
+
+/** The region an identifier opens with: `Asia` in `Asia/Kolkata`, and `UTC` in `UTC`. */
+function areaOf(id: string): string {
+  const divider = id.indexOf('/');
+
+  return divider > 0 ? id.slice(0, divider) : id;
+}
+
+/** Everything after it: `Kolkata`, or `Argentina/Buenos_Aires` where the place has two parts. */
+function placeIn(id: string): string {
+  const divider = id.indexOf('/');
+
+  return divider > 0 ? id.slice(divider + 1) : id;
+}
+
+function byLabel(a: TimeZoneChoice, b: TimeZoneChoice): number {
+  return a.label.localeCompare(b.label);
+}
+
+function byArea(a: TimeZoneGroup, b: TimeZoneGroup): number {
+  return a.area.localeCompare(b.area);
 }
 
 /** `Argentina/Buenos_Aires` reads as `Argentina — Buenos Aires`. */
@@ -75,16 +158,25 @@ function readablePlace(place: string): string {
  *
  * This is the offset in force today, so a zone that observes daylight saving reads differently in
  * June than in December. That is the honest thing to show somebody choosing one now.
+ *
+ * An identifier this platform has never heard of is refused outright rather than answered
+ * vaguely, so the lookup is guarded. A zone stored by an engine running somewhere else still has
+ * to be offered, and a place shown without an offset beside it is far better than a panel that
+ * fails to draw at all.
  */
-function offsetOf(id: string): string {
-  const parts = new Intl.DateTimeFormat('en', {
-    timeZone: id,
-    timeZoneName: 'longOffset',
-  }).formatToParts();
+function offsetOf(id: string): string | null {
+  try {
+    const parts = new Intl.DateTimeFormat('en', {
+      timeZone: id,
+      timeZoneName: 'longOffset',
+    }).formatToParts();
 
-  const named = parts.find((part) => part.type === 'timeZoneName')?.value ?? 'GMT';
+    const named = parts.find((part) => part.type === 'timeZoneName')?.value ?? 'GMT';
 
-  return named.replace(/([+-])0(\d)/, '$1$2');
+    return named.replace(/([+-])0(\d)/, '$1$2');
+  } catch {
+    return null;
+  }
 }
 
 /**

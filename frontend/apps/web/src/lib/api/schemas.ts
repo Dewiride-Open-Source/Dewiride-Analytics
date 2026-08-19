@@ -202,8 +202,10 @@ export const actionsSchema = z.object({
   controls: z.array(siteActionSchema),
 });
 
-/** What a website collects, as far as its owner decides it. */
+/** Everything about one website that its owner decides: what it is called, and what it records. */
 export const siteSettingsSchema = z.object({
+  displayName: z.string(),
+  timeZoneId: z.string(),
   captureClicks: z.boolean(),
 });
 

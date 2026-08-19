@@ -30,6 +30,8 @@ namespace Dewiride.Analytics.Api.Contracts;
 [JsonSerializable(typeof(IReadOnlyList<SiteSummary>))]
 [JsonSerializable(typeof(OverviewResponse))]
 [JsonSerializable(typeof(SeriesResponse))]
+[JsonSerializable(typeof(AddSiteRequest))]
+[JsonSerializable(typeof(SiteSummary))]
 [JsonSerializable(typeof(ActionsResponse))]
 [JsonSerializable(typeof(SiteSettingsResponse))]
 [JsonSerializable(typeof(UpdateSiteSettingsRequest))]

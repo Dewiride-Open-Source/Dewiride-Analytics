@@ -1,8 +1,15 @@
 'use client';
 
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  type QueryClient,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
 import {
+  addSite,
   listSites,
   readDevices,
   readEngagement,
@@ -19,11 +26,13 @@ import {
   readVisitTotals,
   readVisits,
 } from '@/lib/api/endpoints';
+import type { NewSite } from '@/lib/api/endpoints';
 import type {
   EngagementRanking,
   LocationGrouping,
   SeriesMetric,
   ActionGrouping,
+  Session,
   SoftwareGrouping,
   VisitPosition,
 } from '@/lib/api/schemas';
@@ -44,6 +53,7 @@ import {
   visitTotalsKey,
   visitsKey,
 } from './keys';
+import { sessionKey } from './session';
 
 /** How long an answer about traffic is treated as current before it is asked again. */
 const FRESH_FOR = 30_000;
@@ -51,11 +61,19 @@ const FRESH_FOR = 30_000;
 /** The same, for answers that only change as visits finish. */
 const JUDGED_FRESH_FOR = 120_000;
 
-/** The websites the signed-in person is allowed to look at. */
-export function useSites() {
+/**
+ * The websites the signed-in person is allowed to look at.
+ *
+ * Asked for only once somebody is signed in. The bar across the top is on every screen, including
+ * the two nobody is signed in on, and asking there would be a refusal on every first visit.
+ *
+ * @param enabled Whether to ask at all.
+ */
+export function useSites(enabled = true) {
   return useQuery({
     queryKey: sitesKey,
     queryFn: listSites,
+    enabled,
     retry: false,
     staleTime: 60_000,
   });
@@ -157,6 +175,41 @@ export function useSoftware(
     retry: false,
     staleTime: FRESH_FOR,
   });
+}
+
+/**
+ * Starts measuring another website.
+ *
+ * The list of websites is asked for again rather than patched, because what somebody may see is
+ * the engine's answer rather than this screen's arithmetic. Exactly the list and nothing under it:
+ * asking by prefix would match every question already answered about every other website and send
+ * the lot round again, none of which a website being added can have changed.
+ */
+export function useAddSite() {
+  const cache = useQueryClient();
+
+  return useMutation({
+    mutationFn: (site: NewSite) => addSite(site, proofFrom(cache)),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: sitesKey, exact: true });
+    },
+  });
+}
+
+/**
+ * The proof-of-origin value the engine last issued.
+ *
+ * Read at the moment of use rather than held, because it belongs to the identity it was issued to
+ * and a fresh one arrives with every answer that changes who is signed in.
+ */
+function proofFrom(cache: QueryClient): string {
+  const proof = cache.getQueryData<Session>(sessionKey)?.token;
+
+  if (!proof) {
+    throw new Error('No session has been read yet, so nothing can be submitted.');
+  }
+
+  return proof;
 }
 
 /**

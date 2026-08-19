@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using Dewiride.Analytics.Application.Analytics;
 
 namespace Dewiride.Analytics.Architecture.Tests;
 
@@ -76,6 +77,35 @@ public sealed class StorageBoundaryTests
         Product.NonFrameworkReferences(Product.Assembly(Product.Classification))
             .Should().BeSubsetOf([Product.Domain]);
     }
+
+    /// <summary>
+    /// Removing a site has to empty both stores, and the project that owns the control plane may
+    /// not speak to the telemetry one. The need is therefore stated as a port in the Application
+    /// layer, where both sides can see it, and met in the project that holds the driver.
+    /// </summary>
+    [Fact]
+    public void The_Port_That_Empties_The_Telemetry_Store_Is_Declared_In_The_Application_Layer()
+    {
+        Product.Named(typeof(ITelemetryPurge).Assembly, Product.Application).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Answering it anywhere else would mean an assembly outside the telemetry project issuing
+    /// statements against the telemetry store, which is the arrangement the rule above exists to
+    /// make impossible.
+    /// </summary>
+    [Fact]
+    public void Only_Telemetry_Infrastructure_Answers_The_Port_That_Empties_The_Telemetry_Store()
+    {
+        var answering = Product.Assemblies
+            .Where(assembly => assembly.GetTypes().Any(Answers))
+            .Select(assembly => assembly.GetName().Name);
+
+        answering.Should().Equal(Product.TelemetryInfrastructure);
+    }
+
+    private static bool Answers(Type type) =>
+        type is { IsClass: true, IsAbstract: false } && typeof(ITelemetryPurge).IsAssignableFrom(type);
 
     private static IEnumerable<string> DeclaringProjects(string packageName) =>
         Product.ProjectFiles()

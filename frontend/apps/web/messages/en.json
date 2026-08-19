@@ -79,7 +79,8 @@
   },
   "dashboard": {
     "site": {
-      "label": "Website"
+      "label": "Website",
+      "add": "+ Add a website"
     },
     "period": {
       "label": "Period",
@@ -426,7 +427,11 @@
     "DuplicateUserName": "An account already uses that email address.",
     "InvalidEmail": "That doesn't look like an email address.",
     "SiteDetailsRejected": "We couldn't use that website address or time zone. Check both and try again.",
-    "OrganizationNameRejected": "We couldn't use that organisation name. Try a different one."
+    "OrganizationNameRejected": "We couldn't use that organisation name. Try a different one.",
+    "SiteAlreadyMeasured": "That website is already in your list — switch to it from the picker at the top.",
+    "SiteNameRejected": "We couldn't use that name. Try a shorter one.",
+    "SiteTimeZoneRejected": "We couldn't use that time zone. Pick another one from the list.",
+    "SiteIsOnlyOne": "This is your only website, so it can't be removed. Add another one first."
   },
   "errors": {
     "unreachableTitle": "Can't reach Dewiride Analytics",
@@ -491,10 +496,44 @@
     "action": "Settings",
     "title": "Settings",
     "close": "Close",
-    "body": "What {site} measures.",
+    "body": "What {site} is called, when its days begin, and what gets measured.",
+    "name": {
+      "label": "Website name"
+    },
+    "timeZone": {
+      "label": "Count its days in",
+      "hint": "Pick where your readers are, not where you happen to be."
+    },
+    "save": "Save changes",
+    "saving": "Saving…",
+    "saved": "Saved",
     "presses": {
       "label": "Record what people click",
       "hint": "Your own wording on the button or link is kept — never anything a visitor types."
+    },
+    "removal": {
+      "title": "Remove this website",
+      "body": "Everything measured for {site} is deleted. There is no way to get it back.",
+      "action": "Remove website",
+      "removing": "Removing…",
+      "confirm": {
+        "label": "Type {site} to confirm",
+        "yes": "Delete everything",
+        "no": "Cancel"
+      }
+    }
+  },
+  "addSite": {
+    "title": "Add a website",
+    "close": "Close",
+    "add": "Add website",
+    "adding": "Adding…",
+    "domain": {
+      "label": "Website address",
+      "placeholder": "blog.example.com"
+    },
+    "timeZone": {
+      "label": "Count its days in"
     }
   }
 }

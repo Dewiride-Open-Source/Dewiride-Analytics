@@ -46,11 +46,11 @@ public sealed class SiteConfiguration : IEntityTypeConfiguration<Site>
         builder.Property(site => site.OrganizationId).IsRequired();
 
         builder.Property(site => site.Domain)
-            .HasMaxLength(253)
+            .HasMaxLength(Site.MaxDomainLength)
             .IsRequired();
 
         builder.Property(site => site.DisplayName)
-            .HasMaxLength(200)
+            .HasMaxLength(Site.MaxDisplayNameLength)
             .IsRequired();
 
         builder.Property(site => site.TimeZoneId)

@@ -1,7 +1,7 @@
 'use client';
 
 import { X } from 'lucide-react';
-import { type ReactNode, useEffect, useRef } from 'react';
+import { type ReactNode, useEffect, useId, useRef } from 'react';
 import { cn } from '@/lib/styling';
 
 interface DialogProps {
@@ -30,6 +30,13 @@ interface DialogProps {
 export function Dialog({ open, onClose, title, closeLabel, children, className }: DialogProps) {
   const dialog = useRef<HTMLDialogElement>(null);
 
+  /*
+    Generated rather than written down. A screen keeps every panel it can open mounted at once, so
+    a fixed identifier here would appear several times over in one document and every dialog on
+    that screen would be announced under the name of whichever was rendered first.
+  */
+  const heading = useId();
+
   useEffect(() => {
     const element = dialog.current;
 
@@ -50,7 +57,7 @@ export function Dialog({ open, onClose, title, closeLabel, children, className }
       // Escape closes it without anything here running, so the state that opened it has to be
       // told rather than assumed.
       onClose={onClose}
-      aria-labelledby="dialog-title"
+      aria-labelledby={heading}
       className={cn(
         'glow-modal m-auto w-[calc(100vw-2rem)] max-w-2xl rounded-xl border border-border',
         'bg-surface p-0 text-foreground backdrop:bg-background-deep/70 backdrop:backdrop-blur-sm',
@@ -58,7 +65,7 @@ export function Dialog({ open, onClose, title, closeLabel, children, className }
       )}
     >
       <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4 sm:px-6">
-        <h2 id="dialog-title" className="text-lg font-semibold tracking-tight">
+        <h2 id={heading} className="text-lg font-semibold tracking-tight">
           {title}
         </h2>
         <button

@@ -109,6 +109,16 @@ services:
       # the collector. Anything reaching this service from outside that range is still counted
       # from the address it actually came from, whatever it claims about itself.
       Dewiride__Network__TrustedNetworks__0: ${TRUSTED_PROXY_NETWORK:-172.16.0.0/12}
+      # Where the country, town and network data is kept. It is fetched rather than shipped —
+      # around a hundred and twenty megabytes, republished monthly — so it belongs on the volume
+      # below and not inside the image, or every deployment downloads it again.
+      Dewiride__ReferenceData__Directory: /var/lib/dewiride/reference
+      # Set this to false on a machine with no way out to the internet, put the files in the
+      # volume yourself, and everything else behaves the same. Until anything is there, visitors
+      # are still counted and their country reads as not known.
+      Dewiride__ReferenceData__AutoDownload: ${REFERENCE_DATA_AUTO_DOWNLOAD:-true}
+    volumes:
+      - reference-data:/var/lib/dewiride/reference
     ports:
       # Bound to this machine only. The screens reach the engine over the network below and the
       # browser only ever sees the address it opened the dashboard on, so nothing needs to reach
@@ -157,3 +167,8 @@ services:
 volumes:
   postgres-data:
   clickhouse-data:
+  # The country, town and network data. Kept out of the image so that replacing the engine does
+  # not mean fetching a hundred and twenty megabytes again, and out of the two stores because
+  # nothing in it is yours — it is somebody else's published file, and losing it costs one
+  # download.
+  reference-data:

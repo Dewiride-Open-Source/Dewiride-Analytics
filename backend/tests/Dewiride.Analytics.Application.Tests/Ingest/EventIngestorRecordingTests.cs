@@ -1,4 +1,5 @@
 using Dewiride.Analytics.Application.Ingest;
+using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Domain.Telemetry;
 
 namespace Dewiride.Analytics.Application.Tests.Ingest;
@@ -310,5 +311,81 @@ public sealed class EventIngestorRecordingTests
         await harness.IngestAsync(IngestHarness.PageView());
 
         harness.Single.SiteId.Should().Be(IngestHarness.SiteId);
+    }
+
+    /// <summary>
+    /// Resolved on the way in rather than by a later job, because the address it is resolved from
+    /// is erased 72 hours afterwards. An attribute missed here cannot be recovered: there would
+    /// be nothing left to recover it from.
+    /// </summary>
+    [Fact]
+    public async Task Records_Where_The_Visitors_Address_Resolved_To()
+    {
+        var harness = IngestHarness.ForSite();
+
+        await harness.IngestAsync(IngestHarness.PageView());
+
+        var stored = harness.Single;
+
+        stored.CountryCode.Should().Be("IN");
+        stored.Subdivision.Should().Be("MH");
+        stored.City.Should().Be("Pune");
+        stored.AutonomousSystem.Should().Be(24560u);
+        stored.NetworkOwner.Should().Be("Bharti Airtel");
+    }
+
+    /// <summary>
+    /// An address that resolves to nothing is the ordinary case on an installation being run
+    /// locally, and on one behind a proxy that does not pass the visitor's address through.
+    /// Nothing known is stored rather than something invented.
+    /// </summary>
+    [Fact]
+    public async Task Records_Nothing_About_A_Place_That_Did_Not_Resolve()
+    {
+        var harness = IngestHarness.ForSite(network: NetworkAttributes.Unresolved);
+
+        await harness.IngestAsync(IngestHarness.PageView());
+
+        var stored = harness.Single;
+
+        stored.CountryCode.Should().BeNull();
+        stored.City.Should().BeNull();
+        stored.AutonomousSystem.Should().Be(0u);
+        stored.NetworkOwner.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Records_What_The_Visit_Was_Made_On()
+    {
+        var harness = IngestHarness.ForSite();
+
+        await harness.IngestAsync(IngestHarness.PageView());
+
+        var stored = harness.Single;
+
+        stored.DeviceClass.Should().Be(DeviceClass.Desktop);
+        stored.BrowserFamily.Should().Be("Chrome");
+        stored.OperatingSystem.Should().Be("Windows");
+    }
+
+    /// <summary>
+    /// Kept apart from the device it helped decide, because the two disagreeing is informative in
+    /// itself and folding them together would throw that away.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [InlineData(null)]
+    public async Task Records_Whether_The_Client_Declared_Itself_Handheld(bool? declared)
+    {
+        var harness = IngestHarness.ForSite();
+        var request = IngestHarness.BrowserRequest() with
+        {
+            Hints = new ClientHints { Mobile = declared },
+        };
+
+        await harness.IngestAsync(IngestHarness.PageView(), request);
+
+        harness.Single.DeclaredMobile.Should().Be(declared);
     }
 }

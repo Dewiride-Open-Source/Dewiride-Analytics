@@ -6,6 +6,7 @@ using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Api.Ingest;
 using Dewiride.Analytics.Application.Ingest;
 using Dewiride.Analytics.Application.Sites;
+using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Domain.Telemetry;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -174,6 +175,12 @@ internal static class ServerCollectEndpoint
         {
             Surface = surface,
             UserAgent = observation.UserAgent,
+
+            // Forwarded rather than read off this request, for the same reason the user agent is:
+            // the request that reaches here is the reporter's, and what a reporter's own server
+            // says about itself is not what the visitor said about theirs.
+            Hints = HintsFrom(observation),
+
             IpAddress = address,
 
             // Left unset on purpose. A reporter has no browser origin to offer, so the site's own
@@ -188,6 +195,26 @@ internal static class ServerCollectEndpoint
 
         return true;
     }
+
+    /// <summary>
+    /// Reads the three hints a reporter may have forwarded from the visitor's own request.
+    /// </summary>
+    /// <remarks>
+    /// Taken as the browser wrote them, so a reporter forwards headers rather than interpreting
+    /// them. A spelling this does not recognise means what an absent header means: the visitor
+    /// said nothing, which is the ordinary case outside one family of browsers.
+    /// </remarks>
+    private static ClientHints HintsFrom(ServerObservation observation) => new()
+    {
+        Mobile = observation.Mobile switch
+        {
+            "?1" => true,
+            "?0" => false,
+            _ => null,
+        },
+        Platform = observation.Platform,
+        Brands = observation.Brands,
+    };
 
     /// <summary>
     /// Reads an asserted visitor address.

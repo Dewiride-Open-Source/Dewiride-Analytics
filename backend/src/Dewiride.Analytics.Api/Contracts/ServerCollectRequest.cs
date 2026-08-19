@@ -62,6 +62,23 @@ public sealed record ServerObservation
     public string? UserAgent { get; init; }
 
     /// <summary>
+    /// Whether the visitor's browser said it was on a handheld device, from the
+    /// <c>Sec-CH-UA-Mobile</c> header of the request the reporter saw.
+    /// </summary>
+    /// <remarks>
+    /// Forwarded as the browser wrote it — <c>?1</c> or <c>?0</c> — rather than as a true or
+    /// false, so a reporter passes the header along without having to interpret it and anything
+    /// it does not recognise means the same here as it does there: nothing was said.
+    /// </remarks>
+    public string? Mobile { get; init; }
+
+    /// <summary>The visitor's <c>Sec-CH-UA-Platform</c> header, as sent.</summary>
+    public string? Platform { get; init; }
+
+    /// <summary>The visitor's <c>Sec-CH-UA</c> header, as sent.</summary>
+    public string? Brands { get; init; }
+
+    /// <summary>
     /// Status the site returned.
     /// </summary>
     /// <remarks>

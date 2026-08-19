@@ -147,6 +147,436 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
         }
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("?grouping=country")]
+    [InlineData("?grouping=town")]
+    [InlineData("?grouping=TOWN")]
+    public async Task A_Member_Can_Read_Where_The_Audience_Was(string query)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/locations{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var places = await response.Content.ReadFromJsonAsync<LocationsResponse>(Cancellation.Token);
+
+            places.Should().NotBeNull();
+            places.Places.Should().BeEmpty();
+            places.Visitors.Should().Be(0);
+            places.TotalPlaces.Should().Be(0);
+            places.To.Should().BeAfter(places.From);
+        }
+    }
+
+    /// <summary>
+    /// The answer names what it grouped by rather than repeating the caller's spelling, so two
+    /// requests differing only in case produce identical documents.
+    /// </summary>
+    [Theory]
+    [InlineData("Country", "country")]
+    [InlineData("TOWN", "town")]
+    public async Task A_Place_List_Names_What_It_Grouped_By(string asked, string expected)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/locations?grouping={asked}");
+            var places = await response.Content.ReadFromJsonAsync<LocationsResponse>(Cancellation.Token);
+
+            places.Should().NotBeNull();
+            places.Grouping.Should().Be(expected);
+        }
+    }
+
+    [Theory]
+    [InlineData("grouping=continent")]
+    [InlineData("grouping=country_code%3B+DROP+TABLE+events")]
+    [InlineData("limit=0")]
+    [InlineData("limit=101")]
+    [InlineData("limit=-1")]
+    [InlineData("offset=-1")]
+    public async Task Asking_For_An_Impossible_Place_List_Is_Refused(string query)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/locations?{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [Fact]
+    public async Task A_Member_Can_Read_What_The_Audience_Read_On()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/devices");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var devices = await response.Content.ReadFromJsonAsync<DevicesResponse>(Cancellation.Token);
+
+            devices.Should().NotBeNull();
+            devices.Devices.Should().BeEmpty();
+            devices.Visitors.Should().Be(0);
+            devices.To.Should().BeAfter(devices.From);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("?grouping=control")]
+    [InlineData("?grouping=destination")]
+    [InlineData("?grouping=DESTINATION")]
+    public async Task A_Member_Can_Read_What_The_Audience_Operated(string query)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/actions{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var actions = await response.Content.ReadFromJsonAsync<ActionsResponse>(Cancellation.Token);
+
+            actions.Should().NotBeNull();
+            actions.Controls.Should().BeEmpty();
+            actions.Presses.Should().Be(0);
+            actions.TotalControls.Should().Be(0);
+            actions.To.Should().BeAfter(actions.From);
+        }
+    }
+
+    /// <summary>
+    /// The answer names what it gathered by rather than repeating the caller's spelling, on the
+    /// same terms as a place list.
+    /// </summary>
+    [Theory]
+    [InlineData("Control", "control")]
+    [InlineData("DESTINATION", "destination")]
+    public async Task A_Control_List_Names_What_It_Gathered_By(string asked, string expected)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/actions?grouping={asked}");
+            var actions = await response.Content.ReadFromJsonAsync<ActionsResponse>(Cancellation.Token);
+
+            actions.Should().NotBeNull();
+            actions.Grouping.Should().Be(expected);
+        }
+    }
+
+    [Theory]
+    [InlineData("grouping=element")]
+    [InlineData("grouping=action_label%3B+DROP+TABLE+events")]
+    [InlineData("limit=0")]
+    [InlineData("limit=101")]
+    [InlineData("limit=-1")]
+    [InlineData("offset=-1")]
+    public async Task Asking_For_An_Impossible_Control_List_Is_Refused(string query)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/actions?{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("?grouping=browser")]
+    [InlineData("?grouping=system")]
+    [InlineData("?grouping=SYSTEM")]
+    public async Task A_Member_Can_Read_What_Software_The_Audience_Used(string query)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/software{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var software = await response.Content.ReadFromJsonAsync<SoftwareResponse>(Cancellation.Token);
+
+            software.Should().NotBeNull();
+            software.Names.Should().BeEmpty();
+            software.Visitors.Should().Be(0);
+            software.TotalNames.Should().Be(0);
+            software.To.Should().BeAfter(software.From);
+        }
+    }
+
+    /// <summary>
+    /// The answer names what it grouped by rather than repeating the caller's spelling, on the
+    /// same terms as a place list.
+    /// </summary>
+    [Theory]
+    [InlineData("Browser", "browser")]
+    [InlineData("SYSTEM", "system")]
+    public async Task A_Software_List_Names_What_It_Grouped_By(string asked, string expected)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/software?grouping={asked}");
+            var software = await response.Content.ReadFromJsonAsync<SoftwareResponse>(Cancellation.Token);
+
+            software.Should().NotBeNull();
+            software.Grouping.Should().Be(expected);
+        }
+    }
+
+    [Theory]
+    [InlineData("grouping=device")]
+    [InlineData("grouping=browser_family%3B+DROP+TABLE+events")]
+    [InlineData("limit=0")]
+    [InlineData("limit=101")]
+    [InlineData("limit=-1")]
+    [InlineData("offset=-1")]
+    public async Task Asking_For_An_Impossible_Software_List_Is_Refused(string query)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/software?{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    /// <summary>
+    /// How many readings could be measured is answered beside every figure, so a website with no
+    /// browser tracker on it reads as unmeasured rather than as an audience that did nothing.
+    /// </summary>
+    [Fact]
+    public async Task A_Member_Can_Read_How_The_Pages_Were_Read()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/engagement");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var reading = await response.Content.ReadFromJsonAsync<EngagementResponse>(Cancellation.Token);
+
+            reading.Should().NotBeNull();
+            reading.Readings.Should().Be(0);
+            reading.Measured.Should().Be(0);
+            reading.MedianEngagedMs.Should().Be(0);
+            reading.Depths.Should().NotBeNull();
+            reading.To.Should().BeAfter(reading.From);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("?ranking=attention")]
+    [InlineData("?ranking=depth")]
+    [InlineData("?ranking=DEPTH")]
+    public async Task A_Member_Can_Read_Which_Pages_Held_Attention(string query)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/engagement/pages{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var pages = await response.Content.ReadFromJsonAsync<PageEngagementResponse>(Cancellation.Token);
+
+            pages.Should().NotBeNull();
+            pages.Pages.Should().BeEmpty();
+            pages.TotalPages.Should().Be(0);
+            pages.LongestMedianEngagedMs.Should().Be(0);
+            pages.To.Should().BeAfter(pages.From);
+        }
+    }
+
+    /// <summary>
+    /// The answer names what it ordered by rather than repeating the caller's spelling, on the
+    /// same terms as a place list names what it grouped by.
+    /// </summary>
+    [Theory]
+    [InlineData("Attention", "attention")]
+    [InlineData("DEPTH", "depth")]
+    public async Task A_Reading_List_Names_What_It_Ordered_By(string asked, string expected)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync(
+                $"/api/sites/{site.Id}/engagement/pages?ranking={asked}");
+
+            var pages = await response.Content.ReadFromJsonAsync<PageEngagementResponse>(Cancellation.Token);
+
+            pages.Should().NotBeNull();
+            pages.Ranking.Should().Be(expected);
+        }
+    }
+
+    [Theory]
+    [InlineData("ranking=visitors")]
+    [InlineData("ranking=median_engaged_ms%3B+DROP+TABLE+events")]
+    [InlineData("limit=0")]
+    [InlineData("limit=101")]
+    [InlineData("limit=-1")]
+    [InlineData("offset=-1")]
+    public async Task Asking_For_An_Impossible_Reading_List_Is_Refused(string query)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/engagement/pages?{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [Fact]
+    public async Task A_Member_Can_Read_How_The_Visits_Went()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/visits/totals");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var totals = await response.Content.ReadFromJsonAsync<VisitTotalsResponse>(Cancellation.Token);
+
+            totals.Should().NotBeNull();
+            totals.Visits.Should().Be(0);
+            totals.SinglePageVisits.Should().Be(0);
+            totals.PageViews.Should().Be(0);
+            totals.To.Should().BeAfter(totals.From);
+        }
+    }
+
+    [Theory]
+    [InlineData("", "entry")]
+    [InlineData("?position=entry", "entry")]
+    [InlineData("?position=exit", "exit")]
+    [InlineData("?position=EXIT", "exit")]
+    public async Task A_Member_Can_Read_Where_Visits_Began_And_Ended(string query, string expected)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/visits/pages{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var pages = await response.Content.ReadFromJsonAsync<VisitPagesResponse>(Cancellation.Token);
+
+            pages.Should().NotBeNull();
+            pages.Position.Should().Be(expected);
+            pages.Pages.Should().BeEmpty();
+        }
+    }
+
+    [Theory]
+    [InlineData("position=middle")]
+    [InlineData("position=exit_path%3B+DROP+TABLE+events")]
+    [InlineData("limit=0")]
+    [InlineData("limit=101")]
+    [InlineData("offset=-1")]
+    public async Task Asking_For_An_Impossible_Arrival_List_Is_Refused(string query)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/visits/pages?{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [Fact]
+    public async Task A_Member_Can_Read_The_Pages_One_Visit_Went_Through()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+        const string visit = "2f8a1c0b4d6e7f905a1b2c3d4e5f6071:1777628415250";
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/visits/{visit}/journey");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var journey = await response.Content.ReadFromJsonAsync<VisitJourneyResponse>(Cancellation.Token);
+
+            journey.Should().NotBeNull();
+            journey.Visit.Should().Be(visit);
+            journey.Steps.Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// A visit's identity arrives from an address somebody typed, so anything that is not one is
+    /// refused where it arrives rather than answered with an empty list.
+    /// </summary>
+    [Theory]
+    [InlineData("nonsense")]
+    [InlineData("2f8a1c0b4d6e7f905a1b2c3d4e5f6071")]
+    [InlineData("2f8a1c0b4d6e7f905a1b2c3d4e5f6071:yesterday")]
+    [InlineData("2f8a1c0b4d6e7f905a1b2c3d4e5f6071%3B+DROP+TABLE+events%3A1777628415250")]
+    public async Task Asking_For_Something_That_Is_Not_A_Visit_Is_Refused(string visit)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/visits/{visit}/journey");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
     /// <summary>
     /// The same answer as a site that was never created, so the endpoint cannot be used to test
     /// which identifiers on an install are real.
@@ -168,13 +598,31 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
         }
     }
 
-    [Fact]
-    public async Task Nobody_Signed_In_Is_Refused_A_Site_They_Would_Otherwise_Be_Allowed()
+    /// <summary>
+    /// Every address behind the dashboard's door is shut to somebody who has not opened it, and a
+    /// new one is protected unless it says otherwise — so the list grows with the endpoints rather
+    /// than being written once and forgotten.
+    /// </summary>
+    [Theory]
+    [InlineData("overview")]
+    [InlineData("pages")]
+    [InlineData("actions")]
+    [InlineData("locations")]
+    [InlineData("devices")]
+    [InlineData("software")]
+    [InlineData("engagement")]
+    [InlineData("engagement/pages")]
+    [InlineData("visits")]
+    [InlineData("visits/totals")]
+    [InlineData("visits/pages")]
+    [InlineData("visits/2f8a1c0b4d6e7f905a1b2c3d4e5f6071:1777628415250/journey")]
+    [InlineData("traffic")]
+    public async Task Nobody_Signed_In_Is_Refused_A_Site_They_Would_Otherwise_Be_Allowed(string question)
     {
         var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
         using var browser = await Browser.OpenAsync(stack);
 
-        var response = await browser.GetAsync($"/api/sites/{site.Id}/overview");
+        var response = await browser.GetAsync($"/api/sites/{site.Id}/{question}");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }

@@ -89,6 +89,313 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     }
 
     /// <inheritdoc />
+    public async Task<SiteActions> GetSiteActionsAsync(
+        TenantScope scope,
+        SiteActionsQuery query,
+        CancellationToken cancellationToken)
+    {
+        var controls = ImmutableArray.CreateBuilder<SiteActionRow>();
+        var totalPresses = 0L;
+        var totalControls = 0L;
+        var mostPresses = 0L;
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            // The statement reads the kind out as text, so anything this table does not hold is a
+            // control described in terms this product does not recognise.
+            controls.Add(new SiteActionRow(
+                reader.GetString(0),
+                StoredNames.ControlKinds.TryGetValue(reader.GetString(1), out var control)
+                    ? control
+                    : ControlKind.Unknown,
+                reader.GetInt64(2),
+                reader.GetInt64(3)));
+
+            // The same on every row, and nowhere else to read them from. A slice with nothing in
+            // it returns no rows at all, and nought is the honest answer for all three.
+            totalPresses = reader.GetInt64(4);
+            totalControls = reader.GetInt64(5);
+            mostPresses = reader.GetInt64(6);
+        }
+
+        return new SiteActions(totalPresses, totalControls, mostPresses, controls.DrainToImmutable());
+    }
+
+    /// <inheritdoc />
+    public async Task<SiteLocations> GetSiteLocationsAsync(
+        TenantScope scope,
+        SiteLocationsQuery query,
+        CancellationToken cancellationToken)
+    {
+        var places = ImmutableArray.CreateBuilder<SiteLocationRow>();
+        var totalVisitors = 0L;
+        var totalPlaces = 0L;
+        var mostVisitors = 0L;
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            places.Add(new SiteLocationRow(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetInt64(2),
+                reader.GetInt64(3)));
+
+            // The same on every row, and nowhere else to read them from. A slice with nothing in
+            // it returns no rows at all, and nought is the honest answer for all three.
+            totalVisitors = reader.GetInt64(4);
+            totalPlaces = reader.GetInt64(5);
+            mostVisitors = reader.GetInt64(6);
+        }
+
+        return new SiteLocations(totalVisitors, totalPlaces, mostVisitors, places.DrainToImmutable());
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<SiteDeviceKindRow>> GetSiteDeviceKindsAsync(
+        TenantScope scope,
+        SiteDeviceKindsQuery query,
+        CancellationToken cancellationToken)
+    {
+        var devices = new List<SiteDeviceKindRow>();
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            // The statement reads the kind out as text and leaves it empty where nothing was
+            // established, so anything this table does not hold is the unresolved group.
+            devices.Add(new SiteDeviceKindRow(
+                StoredNames.DeviceClasses.TryGetValue(reader.GetString(0), out var device)
+                    ? device
+                    : DeviceClass.Unknown,
+                reader.GetInt64(1),
+                reader.GetInt64(2)));
+        }
+
+        return devices;
+    }
+
+    /// <inheritdoc />
+    public async Task<SiteSoftware> GetSiteSoftwareAsync(
+        TenantScope scope,
+        SiteSoftwareQuery query,
+        CancellationToken cancellationToken)
+    {
+        var names = ImmutableArray.CreateBuilder<SiteSoftwareRow>();
+        var totalVisitors = 0L;
+        var totalNames = 0L;
+        var mostVisitors = 0L;
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            names.Add(new SiteSoftwareRow(reader.GetString(0), reader.GetInt64(1), reader.GetInt64(2)));
+
+            // The same on every row, and nowhere else to read them from. A slice with nothing in
+            // it returns no rows at all, and nought is the honest answer for all three.
+            totalVisitors = reader.GetInt64(3);
+            totalNames = reader.GetInt64(4);
+            mostVisitors = reader.GetInt64(5);
+        }
+
+        return new SiteSoftware(totalVisitors, totalNames, mostVisitors, names.DrainToImmutable());
+    }
+
+    /// <inheritdoc />
+    public async Task<SiteEngagement> GetSiteEngagementAsync(
+        TenantScope scope,
+        SiteEngagementQuery query,
+        CancellationToken cancellationToken)
+    {
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        // An aggregate with no grouping always produces exactly one row, including over an empty
+        // window, where it produces zeroes.
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? new SiteEngagement(
+                reader.GetInt64(0),
+                reader.GetInt64(1),
+                reader.GetInt32(2),
+                reader.GetInt64(3),
+                new ScrollReach(
+                    reader.GetInt64(4),
+                    reader.GetInt64(5),
+                    reader.GetInt64(6),
+                    reader.GetInt64(7)))
+            : new SiteEngagement(0, 0, 0, 0, default);
+    }
+
+    /// <inheritdoc />
+    public async Task<SitePageEngagement> GetSitePageEngagementAsync(
+        TenantScope scope,
+        SitePageEngagementQuery query,
+        CancellationToken cancellationToken)
+    {
+        var pages = ImmutableArray.CreateBuilder<SitePageEngagementRow>();
+        var totalPages = 0L;
+        var longestMedianEngagedMs = 0;
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            pages.Add(new SitePageEngagementRow(
+                reader.GetString(0),
+                reader.GetInt64(1),
+                reader.GetInt32(2),
+                reader.GetInt32(3),
+                reader.GetInt64(4)));
+
+            // The same on every row, and nowhere else to read them from. A slice with nothing in
+            // it returns no rows at all, and nought is the honest answer for both.
+            totalPages = reader.GetInt64(5);
+            longestMedianEngagedMs = reader.GetInt32(6);
+        }
+
+        return new SitePageEngagement(totalPages, longestMedianEngagedMs, pages.DrainToImmutable());
+    }
+
+    /// <inheritdoc />
+    public async Task<SiteVisitShape> GetSiteVisitShapeAsync(
+        TenantScope scope,
+        SiteVisitShapeQuery query,
+        CancellationToken cancellationToken)
+    {
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        // An aggregate with no grouping always produces exactly one row, including over a window
+        // holding no visits at all, where it produces zeroes.
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? new SiteVisitShape(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2))
+            : default;
+    }
+
+    /// <inheritdoc />
+    public async Task<SiteVisitFlow> GetSiteVisitFlowAsync(
+        TenantScope scope,
+        SiteVisitFlowQuery query,
+        CancellationToken cancellationToken)
+    {
+        var pages = ImmutableArray.CreateBuilder<SiteVisitFlowRow>();
+        var totalVisits = 0L;
+        var totalPaths = 0L;
+        var mostVisits = 0L;
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            pages.Add(new SiteVisitFlowRow(reader.GetString(0), reader.GetInt64(1)));
+
+            // The same on every row, and nowhere else to read them from. A slice with nothing in
+            // it returns no rows at all, and nought is the honest answer for all three.
+            totalVisits = reader.GetInt64(2);
+            totalPaths = reader.GetInt64(3);
+            mostVisits = reader.GetInt64(4);
+        }
+
+        return new SiteVisitFlow(totalVisits, totalPaths, mostVisits, pages.DrainToImmutable());
+    }
+
+    /// <inheritdoc />
+    public async Task<ImmutableArray<VisitStep>> GetSiteVisitJourneyAsync(
+        TenantScope scope,
+        SiteVisitJourneyQuery query,
+        CancellationToken cancellationToken)
+    {
+        var steps = ImmutableArray.CreateBuilder<VisitStep>();
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            // The statement lays arrivals and presses end to end in one ordered list and marks
+            // which each row is. A press carries no reading and an arrival carries no control, so
+            // every row is read for the half of the shape that belongs to it.
+            steps.Add(new VisitStep(
+                reader.GetDateTimeOffset(0),
+                reader.GetString(2),
+                Observed(reader.GetInt16(3)),
+                Observed(reader.GetInt32(4)),
+                Observed(reader.GetInt16(5)),
+                reader.GetByte(1) == 1 ? Operated(reader) : null));
+        }
+
+        return steps.DrainToImmutable();
+    }
+
+    /// <summary>
+    /// Turns the statement's "not observed" back into nothing.
+    /// </summary>
+    /// <remarks>
+    /// The statement carries what it could not measure as minus one rather than as nothing, because
+    /// the store's counting functions refuse a condition that might be nothing. Every figure it
+    /// applies to is one no surface can report as negative, so the two states stay distinct all the
+    /// way from the column to the screen.
+    /// </remarks>
+    private static int? Observed(int value) => value < 0 ? null : value;
+
+    /// <summary>
+    /// Reads the control a press was on.
+    /// </summary>
+    /// <remarks>
+    /// The kind and the sort of place it pointed at both arrive as text, so anything the stored
+    /// vocabulary does not hold reads as unrecognised rather than as a failure. A row written by a
+    /// later release of this product must not stop an earlier one from showing the visit.
+    /// </remarks>
+    /// <param name="reader">The open row.</param>
+    /// <returns>What was operated.</returns>
+    private static VisitPress Operated(ClickHouseDataReader reader) =>
+        new(
+            reader.GetString(6),
+            StoredNames.ControlKinds.TryGetValue(reader.GetString(7), out var control)
+                ? control
+                : ControlKind.Unknown,
+            NothingIfEmpty(reader.GetString(8)),
+            StoredNames.TargetKinds.TryGetValue(reader.GetString(9), out var target)
+                ? target
+                : TargetKind.None);
+
+    /// <summary>
+    /// Renders a column the store holds as empty rather than as absent.
+    /// </summary>
+    /// <param name="value">The text.</param>
+    /// <returns>The text, or nothing where there was none.</returns>
+    private static string? NothingIfEmpty(string value) => value.Length == 0 ? null : value;
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<TrafficBreakdownRow>> GetTrafficBreakdownAsync(
         TenantScope scope,
         TrafficBreakdownQuery query,

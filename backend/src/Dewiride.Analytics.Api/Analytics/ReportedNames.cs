@@ -61,6 +61,51 @@ internal static class ReportedNames
         }.ToFrozenDictionary();
 
     /// <summary>
+    /// Wire name for each kind of device.
+    /// </summary>
+    /// <remarks>
+    /// <c>unknown</c> is reported like any other kind rather than left out. Much of what reaches a
+    /// website is not a device at all, and an answer that quietly dropped those visits would
+    /// describe a different audience from the one that was there.
+    /// </remarks>
+    public static FrozenDictionary<DeviceClass, string> Devices { get; } =
+        new Dictionary<DeviceClass, string>
+        {
+            [DeviceClass.Unknown] = "unknown",
+            [DeviceClass.Phone] = "phone",
+            [DeviceClass.Tablet] = "tablet",
+            [DeviceClass.Desktop] = "desktop",
+            [DeviceClass.Other] = "other",
+        }.ToFrozenDictionary();
+
+    /// <summary>
+    /// Wire name for each kind of control a visitor operated.
+    /// </summary>
+    /// <remarks>
+    /// <c>unknown</c> is reported like any other kind. A site may build a control out of anything
+    /// it likes and describe it in terms this product does not recognise; the presses still
+    /// happened, and leaving them out would report a quieter page than the one people used.
+    /// </remarks>
+    public static FrozenDictionary<ControlKind, string> Controls { get; } =
+        new Dictionary<ControlKind, string>
+        {
+            [ControlKind.Unknown] = "unknown",
+            [ControlKind.Link] = "link",
+            [ControlKind.Button] = "button",
+            [ControlKind.Field] = "field",
+        }.ToFrozenDictionary();
+
+    /// <summary>Wire name for each sort of place an operated control pointed at.</summary>
+    public static FrozenDictionary<TargetKind, string> Targets { get; } =
+        new Dictionary<TargetKind, string>
+        {
+            [TargetKind.None] = "none",
+            [TargetKind.Internal] = "internal",
+            [TargetKind.External] = "external",
+            [TargetKind.Contact] = "contact",
+        }.ToFrozenDictionary();
+
+    /// <summary>
     /// Wire name for each capture surface.
     /// </summary>
     /// <remarks>

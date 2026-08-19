@@ -1,3 +1,4 @@
+using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Domain.Telemetry;
 
 namespace Dewiride.Analytics.Application.Ingest;
@@ -54,6 +55,18 @@ public sealed record IngestCommand
     /// <summary>Whether the client reported itself as being under automation control.</summary>
     public bool? DeclaredWebDriver { get; init; }
 
+    /// <summary>The kind of control that was operated.</summary>
+    public ControlKind ActionControl { get; init; }
+
+    /// <summary>What the operated control said it was. The site's own writing.</summary>
+    public string? ActionLabel { get; init; }
+
+    /// <summary>Where the operated control pointed.</summary>
+    public string? ActionTarget { get; init; }
+
+    /// <summary>What sort of place <see cref="ActionTarget"/> describes.</summary>
+    public TargetKind ActionTargetKind { get; init; }
+
     /// <summary>Correlation identifier echoed back from the served HTML.</summary>
     public string? CorrelationId { get; init; }
 }
@@ -73,6 +86,16 @@ public sealed record IngestContext
 
     /// <summary>User-agent header as received.</summary>
     public string? UserAgent { get; init; }
+
+    /// <summary>
+    /// What the client volunteered about itself besides its user agent.
+    /// </summary>
+    /// <remarks>
+    /// Written by the client like the user agent is, and here for the same reason the user agent
+    /// is: it arrives on the transport rather than in the payload, so a reporter cannot assert it
+    /// on somebody else's behalf without the request genuinely having carried it.
+    /// </remarks>
+    public ClientHints Hints { get; init; } = ClientHints.None;
 
     /// <summary>Network address the request came from.</summary>
     public string? IpAddress { get; init; }

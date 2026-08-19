@@ -15,18 +15,11 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
 /// and every value is bound.
 /// </para>
 /// <para>
-/// The grouping is the standard one — a visitor's activity is one visit until they fall silent for
-/// longer than the idle timeout — expressed as a running total of how many silences have been
-/// crossed. There is no session function in the store, so this idiom is the implementation, and
-/// keeping it in one statement means a visit is defined in exactly one place.
-/// </para>
-/// <para>
-/// A visit watched by both a tracker in the browser and a reporter on the site's own server holds
-/// two accounts of every page it asked for, and counting both would tell the classifier that
-/// everybody reads each page twice at machine speed. The second sighting of a page is therefore
-/// set aside — see <see cref="Analytics.ReconciledEvents"/> — and it is the browser's copy that goes,
-/// because the report from the request path is the one carrying the status the site answered with,
-/// which is most of what identifies something probing for a way in.
+/// The grouping itself, and the marking of a page's second reporter, are written in
+/// <see cref="VisitGrouping"/> rather than here, because more than one statement now needs them
+/// and a visit has to mean the same thing in all of them. What belongs to this statement alone is
+/// what it makes of a visit once it has one: the evidence the detection engine is allowed to
+/// reason about, and nothing else.
 /// </para>
 /// <para>
 /// Activity is read a full idle timeout past the end of the window. That is what makes "this visit
@@ -147,45 +140,7 @@ public static class SessionSqlCompiler
                   AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {idle_seconds:Int64} * 1000, 'UTC')
             ),
             {{ReconciledEvents.Reconciliation}},
-            ordered AS
-            (
-                SELECT
-                    *,
-                    dateDiff('second', lagInFrame(server_ts, 1, server_ts) OVER visit, server_ts) AS since_previous
-                FROM identified
-                WHERE visitor_key != ''
-                WINDOW visit AS (PARTITION BY visitor_key ORDER BY server_ts ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
-            ),
-            grouped AS
-            (
-                SELECT
-                    *,
-                    sum(toUInt8(since_previous > {idle_seconds:Int64})) OVER (
-                        PARTITION BY visitor_key
-                        ORDER BY server_ts
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS visit_ordinal
-                FROM ordered
-            ),
-            sighted AS
-            (
-                SELECT
-                    *,
-                    row_number() OVER (
-                        PARTITION BY visitor_key, visit_ordinal, path, kind, {{ReconciledEvents.FromVisitorBrowser}}
-                        ORDER BY server_ts, event_id) AS sighting,
-                    sum(toUInt8(kind = 'PageView' AND {{ReconciledEvents.FromRequestPath}})) OVER (
-                        PARTITION BY visitor_key, visit_ordinal, path) AS sightings_from_path
-                FROM grouped
-            ),
-            counted AS
-            (
-                SELECT
-                    *,
-                    kind = 'PageView'
-                        AND {{ReconciledEvents.FromVisitorBrowser}}
-                        AND sighting <= sightings_from_path AS is_second_sighting
-                FROM sighted
-            )
+            {{VisitGrouping.Of(VisitGrouping.EveryVisitor)}}
         SELECT
             concat(visitor_key, ':', toString(toUnixTimestamp64Milli(min(server_ts)))) AS session_key,
             min(server_ts) AS started_at,

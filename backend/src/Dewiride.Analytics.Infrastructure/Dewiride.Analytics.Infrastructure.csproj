@@ -21,7 +21,23 @@
     <PackageReference Include="OpenIddict.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+    <!--
+      Reads the MaxMind DB binary format, which is what DB-IP publishes its free geolocation data
+      in. The reader only: no database ships with this product, and none of MaxMind's own are used.
+    -->
+    <PackageReference Include="MaxMind.Db" />
+  </ItemGroup>
+
+  <!--
+    The reference-data reader is internal because nothing outside this assembly should reach a
+    downloaded file directly — the rest of the product asks INetworkLookup. Its own tests are the
+    exception: what is worth pinning about it is how it copes with a half-million-line file from
+    somebody else's server, which cannot be asked through the port.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dewiride.Analytics.Integration.Tests" />
   </ItemGroup>
 
 </Project>

@@ -2,13 +2,16 @@
 
 import { Bot, ChevronRight, Info, type LucideIcon, UserRound } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
+import { useState } from 'react';
 import { VerdictBadge } from '@/components/dashboard/verdict-badge';
+import { VisitJourney } from '@/components/dashboard/visit-journey';
 import { Card } from '@/components/ui/card';
 import { byWeight, reasonKey, reasonValues } from '@/lib/analytics/verdicts';
 import type { SignalDirection, Visit, VisitReason } from '@/lib/api/schemas';
 import { cn } from '@/lib/styling';
 
 interface VisitListProps {
+  readonly siteId: string;
   readonly visits: readonly Visit[];
   /** The site's own zone, so a visit is stamped with the time it happened where the site is. */
   readonly timeZoneId: string;
@@ -34,7 +37,7 @@ const TINTS: Readonly<Record<SignalDirection, string>> = {
  * A product whose whole proposition is that a number can be explained has to be able to explain
  * one, and a conclusion shown without the case against it is an assertion rather than a finding.
  */
-export function VisitList({ visits, timeZoneId }: VisitListProps) {
+export function VisitList({ siteId, visits, timeZoneId }: VisitListProps) {
   const t = useTranslations('dashboard.visits');
 
   return (
@@ -50,15 +53,22 @@ export function VisitList({ visits, timeZoneId }: VisitListProps) {
 
       <div className="flex flex-col">
         {visits.map((visit) => (
-          <VisitRow key={visit.id} visit={visit} timeZoneId={timeZoneId} />
+          <VisitRow key={visit.id} siteId={siteId} visit={visit} timeZoneId={timeZoneId} />
         ))}
       </div>
     </Card>
   );
 }
 
-function VisitRow({ visit, timeZoneId }: { readonly visit: Visit; readonly timeZoneId: string }) {
+interface VisitRowProps {
+  readonly siteId: string;
+  readonly visit: Visit;
+  readonly timeZoneId: string;
+}
+
+function VisitRow({ siteId, visit, timeZoneId }: VisitRowProps) {
   const t = useTranslations('dashboard.visits');
+  const [opened, setOpened] = useState(false);
   const strengths = useTranslations('verdicts.strength');
   const surfaceNames = useTranslations('verdicts.surface');
   const format = useFormatter();
@@ -68,7 +78,10 @@ function VisitRow({ visit, timeZoneId }: { readonly visit: Visit; readonly timeZ
   const seenBy = [...new Set(visit.surfaces.map((surface) => surfaceNames(surface)))];
 
   return (
-    <details className="group border-t border-border first:border-t-0">
+    <details
+      className="group border-t border-border first:border-t-0"
+      onToggle={(event) => setOpened(event.currentTarget.open)}
+    >
       <summary
         className={cn(
           'flex cursor-pointer list-none items-center gap-3 py-3',
@@ -108,6 +121,14 @@ function VisitRow({ visit, timeZoneId }: { readonly visit: Visit; readonly timeZ
             {t('seenBy', { surfaces: format.list(seenBy) })}
           </p>
         ) : null}
+
+        <VisitJourney
+          siteId={siteId}
+          visit={visit.id}
+          pageCount={visit.pageCount}
+          timeZoneId={timeZoneId}
+          open={opened}
+        />
 
         <Evidence title={t('supporting')} reasons={visit.supporting} />
 

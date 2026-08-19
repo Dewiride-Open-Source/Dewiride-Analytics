@@ -1,10 +1,18 @@
 import type { AnalyticsWindow } from '@/lib/analytics/period';
 import { discardResource, readResource, submitResource } from './client';
 import {
+  type ActionGrouping,
+  type Actions,
+  actionsSchema,
+  type Devices,
+  devicesSchema,
   type Installation,
   issuedServerKeySchema,
   type IssuedServerKey,
   installationSchema,
+  type LocationGrouping,
+  type Locations,
+  locationsSchema,
   type Overview,
   overviewSchema,
   type Pages,
@@ -17,11 +25,28 @@ import {
   type ServerKey,
   serverKeysSchema,
   type Site,
+  type SiteSettings,
+  siteSettingsSchema,
   sitesSchema,
+  type Engagement,
+  type EngagementRanking,
+  engagementSchema,
+  type PageEngagement,
+  pageEngagementSchema,
+  type Software,
+  type SoftwareGrouping,
+  softwareSchema,
   type Traffic,
   trafficSchema,
   type Visits,
   visitsSchema,
+  type VisitJourney,
+  visitJourneySchema,
+  type VisitPages,
+  visitPagesSchema,
+  type VisitPosition,
+  type VisitTotals,
+  visitTotalsSchema,
 } from './schemas';
 
 /**
@@ -104,6 +129,144 @@ export function readPages(
   return readResource(`${siteAddress(siteId)}/pages?${asked}&${period(window)}`, pagesSchema);
 }
 
+/**
+ * One slice of the places a period's audience was in, busiest first.
+ *
+ * Read exactly like the page list, including the figures that describe the whole period rather
+ * than the slice, so both cards can be moved through on the same terms.
+ */
+export function readLocations(
+  siteId: string,
+  window: AnalyticsWindow,
+  grouping: LocationGrouping,
+  limit: number,
+  offset: number,
+): Promise<Locations> {
+  const asked = new URLSearchParams({
+    grouping,
+    limit: String(limit),
+    offset: String(offset),
+  });
+
+  return readResource(
+    `${siteAddress(siteId)}/locations?${asked}&${period(window)}`,
+    locationsSchema,
+  );
+}
+
+/**
+ * How a period's audience divides between kinds of device.
+ *
+ * Nothing to page through: the kinds are a closed set of five, so the whole answer arrives at
+ * once and the rows add up to the total beside them.
+ */
+export function readDevices(siteId: string, window: AnalyticsWindow): Promise<Devices> {
+  return readResource(`${siteAddress(siteId)}/devices?${period(window)}`, devicesSchema);
+}
+
+/**
+ * One slice of the browsers or operating systems a period's audience used, commonest first.
+ *
+ * Read exactly like the page and place lists, including the figures that describe the whole
+ * period rather than the slice.
+ */
+export function readSoftware(
+  siteId: string,
+  window: AnalyticsWindow,
+  grouping: SoftwareGrouping,
+  limit: number,
+  offset: number,
+): Promise<Software> {
+  const asked = new URLSearchParams({
+    grouping,
+    limit: String(limit),
+    offset: String(offset),
+  });
+
+  return readResource(`${siteAddress(siteId)}/software?${asked}&${period(window)}`, softwareSchema);
+}
+
+/**
+ * One slice of what a period's visitors operated, most pressed first.
+ *
+ * Read exactly like the page, place and software lists, including the figures that describe the
+ * whole period rather than the slice.
+ */
+export function readActions(
+  siteId: string,
+  window: AnalyticsWindow,
+  grouping: ActionGrouping,
+  limit: number,
+  offset: number,
+): Promise<Actions> {
+  const asked = new URLSearchParams({
+    grouping,
+    limit: String(limit),
+    offset: String(offset),
+  });
+
+  return readResource(`${siteAddress(siteId)}/actions?${asked}&${period(window)}`, actionsSchema);
+}
+
+/** What a website collects, as far as its owner decides it. */
+export function readSiteSettings(siteId: string): Promise<SiteSettings> {
+  return readResource(`${siteAddress(siteId)}/settings`, siteSettingsSchema);
+}
+
+/**
+ * Changes what a website collects.
+ *
+ * A setting left out is left as it was, so this sends only what is being changed.
+ */
+export function updateSiteSettings(
+  siteId: string,
+  settings: Partial<SiteSettings>,
+  proof: string,
+): Promise<SiteSettings> {
+  return submitResource(
+    `${siteAddress(siteId)}/settings`,
+    'PUT',
+    proof,
+    siteSettingsSchema,
+    settings,
+  );
+}
+
+/**
+ * How a period's pages were actually read.
+ *
+ * One answer about one period rather than a list, and it carries how much of the period it could
+ * be taken from alongside what it found.
+ */
+export function readEngagement(siteId: string, window: AnalyticsWindow): Promise<Engagement> {
+  return readResource(`${siteAddress(siteId)}/engagement?${period(window)}`, engagementSchema);
+}
+
+/**
+ * One slice of a period's pages ranked by how they were read, rather than by how often.
+ *
+ * Read exactly like the page, place and software lists, including the figures that describe the
+ * whole period rather than the slice.
+ */
+export function readPageEngagement(
+  siteId: string,
+  window: AnalyticsWindow,
+  ranking: EngagementRanking,
+  limit: number,
+  offset: number,
+): Promise<PageEngagement> {
+  const asked = new URLSearchParams({
+    ranking,
+    limit: String(limit),
+    offset: String(offset),
+  });
+
+  return readResource(
+    `${siteAddress(siteId)}/engagement/pages?${asked}&${period(window)}`,
+    pageEngagementSchema,
+  );
+}
+
 /** Judged visits over a period, grouped by what generated them. */
 export function readTraffic(siteId: string, window: AnalyticsWindow): Promise<Traffic> {
   return readResource(`${siteAddress(siteId)}/traffic?${period(window)}`, trafficSchema);
@@ -123,6 +286,54 @@ export function readVisits(
   const asked = new URLSearchParams({ limit: String(limit) });
 
   return readResource(`${siteAddress(siteId)}/visits?${asked}&${period(window)}`, visitsSchema);
+}
+
+/**
+ * How a period's visits went: how many there were, and how many were a single page.
+ *
+ * Counted from activity rather than from what the engine has judged, so it keeps step with the
+ * headline totals instead of trailing them.
+ */
+export function readVisitTotals(siteId: string, window: AnalyticsWindow): Promise<VisitTotals> {
+  return readResource(`${siteAddress(siteId)}/visits/totals?${period(window)}`, visitTotalsSchema);
+}
+
+/**
+ * One slice of the pages a period's visits began or ended on, commonest first.
+ *
+ * Read exactly like the other lists, including the figures that describe the whole period rather
+ * than the slice.
+ */
+export function readVisitPages(
+  siteId: string,
+  window: AnalyticsWindow,
+  position: VisitPosition,
+  limit: number,
+  offset: number,
+): Promise<VisitPages> {
+  const asked = new URLSearchParams({
+    position,
+    limit: String(limit),
+    offset: String(offset),
+  });
+
+  return readResource(
+    `${siteAddress(siteId)}/visits/pages?${asked}&${period(window)}`,
+    visitPagesSchema,
+  );
+}
+
+/**
+ * The pages one visit went through, in order.
+ *
+ * No period: a visit's identity already says when it began, and this is the whole of one visit
+ * rather than a slice of a period.
+ */
+export function readVisitJourney(siteId: string, visit: string): Promise<VisitJourney> {
+  return readResource(
+    `${siteAddress(siteId)}/visits/${encodeURIComponent(visit)}/journey`,
+    visitJourneySchema,
+  );
 }
 
 /** The keys a website's own server may report with. */

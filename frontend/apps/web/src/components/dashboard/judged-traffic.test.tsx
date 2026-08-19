@@ -79,18 +79,45 @@ const CRAWLER = {
   contradicting: [],
 };
 
-/** Answers both questions the section asks, in whichever order they arrive. */
-function engineWith(groups: readonly unknown[], visits: readonly unknown[]) {
+/** The pages one opened visit turns out to have gone through. */
+const JOURNEY = [
+  {
+    at: '2026-08-17T09:14:00+00:00',
+    path: '/posts/hello',
+    statusCode: 200,
+    engagedMs: 74_000,
+    depthPercent: 82,
+    press: null,
+  },
+];
+
+/**
+ * Answers every question the section asks, in whichever order they arrive.
+ *
+ * A journey is asked for under the same address as the visit list and has to be recognised first,
+ * or the list's own answer would be handed back for it.
+ */
+function engineWith(
+  groups: readonly unknown[],
+  visits: readonly unknown[],
+  journeys: { asked: number } = { asked: 0 },
+) {
   const sessions = groups.length === 0 ? 0 : 10;
 
-  return engineDoing(async (path) =>
-    respondWith(
+  return engineDoing(async (path) => {
+    if (path.includes('/journey')) {
+      journeys.asked += 1;
+
+      return respondWith(200, { visit: 'visit-reader', steps: JOURNEY });
+    }
+
+    return respondWith(
       200,
       path.includes('/visits')
         ? { from: FROM, to: TO, visits }
         : { from: FROM, to: TO, sessions, pageViews: 120, groups },
-    ),
-  );
+    );
+  });
 }
 
 function show() {
@@ -227,6 +254,32 @@ describe('one visit and the case behind it', () => {
     await userEvent.click(await screen.findByText('64 pages'));
 
     expect(screen.getByText('Seen by your own server')).toBeInTheDocument();
+  });
+
+  /**
+   * The concrete half of a verdict. A conclusion somebody can check for themselves is worth more
+   * than one they have to take on trust, which is the whole reason a visit opens at all.
+   */
+  it('shows the pages a visit went through once it is opened', async () => {
+    engineWith(GROUPS, [READER, CRAWLER]);
+
+    show();
+
+    await userEvent.click(await screen.findByText('3 pages'));
+
+    expect(await screen.findByText('/posts/hello')).toBeInTheDocument();
+    expect(screen.getByText('1m 14s')).toBeInTheDocument();
+  });
+
+  it('asks for no journey until somebody opens a visit', async () => {
+    const journeys = { asked: 0 };
+    engineWith(GROUPS, [READER, CRAWLER], journeys);
+
+    show();
+
+    await screen.findByText('3 pages');
+
+    expect(journeys.asked).toBe(0);
   });
 
   it('shows nothing the engine calls by a name of its own', async () => {

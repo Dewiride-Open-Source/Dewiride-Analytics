@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   captureSurfaceSchema,
+  deviceKindSchema,
   evidenceStrengthSchema,
   signalDirectionSchema,
   trafficCategorySchema,
@@ -48,6 +49,7 @@ const categories = declared(REPORTED_NAMES, /\[TrafficCategory\.\w+\] = "([^"]+)
 const strengths = declared(REPORTED_NAMES, /\[EvidenceStrength\.\w+\] = "([^"]+)"/g);
 const surfaces = declared(REPORTED_NAMES, /\[IngestSurface\.\w+\] = "([^"]+)"/g);
 const directions = declared(REPORTED_NAMES, /\[SignalDirection\.\w+\] = "([^"]+)"/g);
+const devices = declared(REPORTED_NAMES, /\[DeviceClass\.\w+\] = "([^"]+)"/g);
 
 /** What the catalogue holds at a dotted path, whether that is a sentence or a group of them. */
 function wordsAt(dotted: string): unknown {
@@ -106,11 +108,16 @@ describe('the engine vocabulary', () => {
     expect(isWritten(wordsAt(`verdicts.surface.${surface}`))).toBe(true);
   });
 
+  it.each(devices)('has a name for the kind of device %s', (device) => {
+    expect(isWritten(wordsAt(`dashboard.devices.kind.${device}`))).toBe(true);
+  });
+
   it('is accepted whole by the shapes the answers are checked against', () => {
     expect([...trafficCategorySchema.options].sort()).toEqual([...categories].sort());
     expect([...evidenceStrengthSchema.options].sort()).toEqual([...strengths].sort());
     expect([...captureSurfaceSchema.options].sort()).toEqual([...surfaces].sort());
     expect([...signalDirectionSchema.options].sort()).toEqual([...directions].sort());
+    expect([...deviceKindSchema.options].sort()).toEqual([...devices].sort());
   });
 
   it('carries no sentence for an observation the engine cannot report', () => {
@@ -123,9 +130,10 @@ describe('the engine vocabulary', () => {
     expect(orphaned).toEqual([]);
   });
 
-  it('names no category, strength or surface the engine cannot report', () => {
+  it('names no category, strength, surface or device the engine cannot report', () => {
     expect([...sentencesUnder('verdicts.category')].sort()).toEqual([...categories].sort());
     expect([...sentencesUnder('verdicts.strength')].sort()).toEqual([...strengths].sort());
     expect([...sentencesUnder('verdicts.surface')].sort()).toEqual([...surfaces].sort());
+    expect([...sentencesUnder('dashboard.devices.kind')].sort()).toEqual([...devices].sort());
   });
 });

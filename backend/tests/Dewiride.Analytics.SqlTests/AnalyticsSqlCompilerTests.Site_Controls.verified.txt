@@ -1,0 +1,38 @@
+﻿--- statement ---
+WITH
+    pressed AS
+    (
+        SELECT action_label, action_control, action_target, visitor_key
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND kind = 'Action'
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    )
+SELECT
+    name,
+    control,
+    presses,
+    visitors,
+    toInt64(sum(presses) OVER ()) AS total_presses,
+    toInt64(count() OVER ()) AS total_controls,
+    toInt64(max(presses) OVER ()) AS most_presses
+FROM
+(
+    SELECT
+        action_label AS name,
+        toString(action_control) AS control,
+        toInt64(count()) AS presses,
+        toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS visitors
+    FROM pressed
+    GROUP BY name, control
+)
+ORDER BY presses DESC, name, control
+LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777593600000
+to_ms = 1778198400000
+limit = 10
+offset = 0

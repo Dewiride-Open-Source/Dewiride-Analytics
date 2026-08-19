@@ -2,6 +2,7 @@ using System.Collections.Frozen;
 using Dewiride.Analytics.Api.Analytics;
 using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Application.Analytics;
+using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
@@ -9,6 +10,7 @@ using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Infrastructure.Tenancy;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Dewiride.Analytics.Api.Endpoints;
 
@@ -41,6 +43,68 @@ internal static class SiteEndpoints
     /// </summary>
     private const int DefaultPages = 10;
 
+    /// <summary>Places returned when the caller does not say how many they want.</summary>
+    private const int DefaultPlaces = 10;
+
+    /// <summary>
+    /// How a place list is grouped when the caller does not say.
+    /// </summary>
+    /// <remarks>
+    /// Countries. They are the reliable half of the answer, and the one a reader can hold in
+    /// their head — a site with traffic from thirty countries has traffic from several hundred
+    /// towns.
+    /// </remarks>
+    private const string DefaultGrouping = "country";
+
+    /// <summary>Software names returned when the caller does not say how many they want.</summary>
+    private const int DefaultNames = 10;
+
+    /// <summary>
+    /// How a software list is grouped when the caller does not say.
+    /// </summary>
+    /// <remarks>
+    /// Browsers. They are the half of the answer that changes what somebody would do about it —
+    /// an operating system is rarely something a site is built or tested against on its own.
+    /// </remarks>
+    private const string DefaultSoftwareGrouping = "browser";
+
+    /// <summary>Controls returned when the caller does not say how many.</summary>
+    private const int DefaultControls = 10;
+
+    /// <summary>
+    /// How a list of presses is gathered when the caller does not say.
+    /// </summary>
+    /// <remarks>
+    /// By the control. What was pressed is the question; where the presses led is a narrower one
+    /// that only has an answer on a site that links off itself.
+    /// </remarks>
+    private const string DefaultActionGrouping = "control";
+
+    /// <summary>Pages returned from the reading list when the caller does not say how many.</summary>
+    private const int DefaultReadPages = 10;
+
+    /// <summary>
+    /// What a reading list is ordered by when the caller does not say.
+    /// </summary>
+    /// <remarks>
+    /// Attention. It is the figure somebody came to the question for, and the one a page can be
+    /// improved against — how far down a page a reader got is a property of how long the page is
+    /// as much as of what it was worth.
+    /// </remarks>
+    private const string DefaultRanking = "attention";
+
+    /// <summary>Pages returned from an arrival or departure list when the caller does not say how many.</summary>
+    private const int DefaultVisitPages = 10;
+
+    /// <summary>
+    /// Which end of a visit is counted when the caller does not say.
+    /// </summary>
+    /// <remarks>
+    /// Where visits began. It is the half somebody can act on — a page people arrive at is a page
+    /// worth writing more of — while where they left is mostly a description of where a site ends.
+    /// </remarks>
+    private const string DefaultPosition = "entry";
+
     /// <summary>
     /// What each role is called on the wire.
     /// </summary>
@@ -62,6 +126,93 @@ internal static class SiteEndpoints
             ["pageviews"] = TimeSeriesMetric.PageViews,
             ["visitors"] = TimeSeriesMetric.Visitors,
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// What a place list may be grouped by, by the word used on the wire.
+    /// </summary>
+    /// <remarks>
+    /// Written out rather than derived from the enumeration, so renaming a member in C# cannot
+    /// change an address the dashboard already asks for. Anything not in this table is refused
+    /// before it reaches the compiler, which is a second answer to the same question the compiler
+    /// already settles by taking its column from a fixed table of its own.
+    /// </remarks>
+    private static readonly FrozenDictionary<string, LocationGrouping> Groupings =
+        new Dictionary<string, LocationGrouping>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["country"] = LocationGrouping.Country,
+            ["town"] = LocationGrouping.Town,
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly FrozenDictionary<LocationGrouping, string> GroupingNames =
+        Groupings.ToFrozenDictionary(entry => entry.Value, entry => entry.Key);
+
+    /// <summary>
+    /// What a software list may be grouped by, by the word used on the wire.
+    /// </summary>
+    /// <remarks>
+    /// Written out for the same reason the place groupings are, and refused here before the
+    /// compiler is reached for the same reason.
+    /// </remarks>
+    private static readonly FrozenDictionary<string, SoftwareGrouping> SoftwareGroupings =
+        new Dictionary<string, SoftwareGrouping>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["browser"] = SoftwareGrouping.Browser,
+            ["system"] = SoftwareGrouping.OperatingSystem,
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly FrozenDictionary<SoftwareGrouping, string> SoftwareGroupingNames =
+        SoftwareGroupings.ToFrozenDictionary(entry => entry.Value, entry => entry.Key);
+
+    /// <summary>
+    /// How a list of presses may be gathered, by the word used on the wire.
+    /// </summary>
+    /// <remarks>
+    /// Written out for the same reason the place groupings are, and refused here before the
+    /// compiler is reached for the same reason.
+    /// </remarks>
+    private static readonly FrozenDictionary<string, ActionGrouping> ActionGroupings =
+        new Dictionary<string, ActionGrouping>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["control"] = ActionGrouping.Control,
+            ["destination"] = ActionGrouping.Destination,
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly FrozenDictionary<ActionGrouping, string> ActionGroupingNames =
+        ActionGroupings.ToFrozenDictionary(entry => entry.Value, entry => entry.Key);
+
+    /// <summary>
+    /// What a reading list may be ordered by, by the word used on the wire.
+    /// </summary>
+    /// <remarks>
+    /// Written out for the same reason the place groupings are, and refused here before the
+    /// compiler is reached for the same reason.
+    /// </remarks>
+    private static readonly FrozenDictionary<string, EngagementRanking> Rankings =
+        new Dictionary<string, EngagementRanking>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["attention"] = EngagementRanking.Attention,
+            ["depth"] = EngagementRanking.Depth,
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly FrozenDictionary<EngagementRanking, string> RankingNames =
+        Rankings.ToFrozenDictionary(entry => entry.Value, entry => entry.Key);
+
+    /// <summary>
+    /// Which end of a visit an arrival list may count, by the word used on the wire.
+    /// </summary>
+    /// <remarks>
+    /// Written out for the same reason the place groupings are, and refused here before the
+    /// compiler is reached for the same reason.
+    /// </remarks>
+    private static readonly FrozenDictionary<string, VisitPosition> Positions =
+        new Dictionary<string, VisitPosition>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["entry"] = VisitPosition.Entry,
+            ["exit"] = VisitPosition.Exit,
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly FrozenDictionary<VisitPosition, string> PositionNames =
+        Positions.ToFrozenDictionary(entry => entry.Value, entry => entry.Key);
 
     private static readonly FrozenDictionary<string, TimeGranularity> Granularities =
         new Dictionary<string, TimeGranularity>(StringComparer.OrdinalIgnoreCase)
@@ -107,6 +258,30 @@ internal static class SiteEndpoints
             .WithName("SitePages")
             .WithSummary("Returns the busiest pages on a website over a period.");
 
+        routes.MapGet("/api/sites/{siteId:guid}/actions", ActionsAsync)
+            .WithName("SiteActions")
+            .WithSummary("Returns what a website's visitors operated over a period.");
+
+        routes.MapGet("/api/sites/{siteId:guid}/locations", LocationsAsync)
+            .WithName("SiteLocations")
+            .WithSummary("Returns where a website's audience was over a period.");
+
+        routes.MapGet("/api/sites/{siteId:guid}/devices", DevicesAsync)
+            .WithName("SiteDevices")
+            .WithSummary("Returns what kinds of device a website's audience read on over a period.");
+
+        routes.MapGet("/api/sites/{siteId:guid}/software", SoftwareAsync)
+            .WithName("SiteSoftware")
+            .WithSummary("Returns the browsers or operating systems a website's audience used over a period.");
+
+        routes.MapGet("/api/sites/{siteId:guid}/engagement", EngagementAsync)
+            .WithName("SiteEngagement")
+            .WithSummary("Returns how a website's pages were read over a period.");
+
+        routes.MapGet("/api/sites/{siteId:guid}/engagement/pages", PageEngagementAsync)
+            .WithName("SitePageEngagement")
+            .WithSummary("Returns a website's pages ranked by how they were read over a period.");
+
         routes.MapGet("/api/sites/{siteId:guid}/traffic", TrafficAsync)
             .WithName("SiteTraffic")
             .WithSummary("Returns judged visits grouped by what generated them.");
@@ -114,6 +289,18 @@ internal static class SiteEndpoints
         routes.MapGet("/api/sites/{siteId:guid}/visits", VisitsAsync)
             .WithName("SiteVisits")
             .WithSummary("Returns individual judged visits and the evidence behind each verdict.");
+
+        routes.MapGet("/api/sites/{siteId:guid}/visits/totals", VisitTotalsAsync)
+            .WithName("SiteVisitTotals")
+            .WithSummary("Returns how many visits a website had over a period and how many were a single page.");
+
+        routes.MapGet("/api/sites/{siteId:guid}/visits/pages", VisitPagesAsync)
+            .WithName("SiteVisitPages")
+            .WithSummary("Returns the pages a website's visits began or ended on over a period.");
+
+        routes.MapGet("/api/sites/{siteId:guid}/visits/{visitKey}/journey", VisitJourneyAsync)
+            .WithName("SiteVisitJourney")
+            .WithSummary("Returns the pages one visit went through, in order.");
     }
 
     private static async Task<Results<Ok<PagesResponse>, NotFound, ProblemHttpResult>> PagesAsync(
@@ -123,19 +310,188 @@ internal static class SiteEndpoints
         TimeProvider clock,
         CancellationToken cancellationToken)
     {
-        var limit = parameters.Limit ?? DefaultPages;
-        var offset = parameters.Offset ?? 0;
-
-        if (limit < 1 || limit > SitePagesQuery.MostPages)
+        if (!TryReadSlice(
+                new ListRequest(parameters.Limit, parameters.Offset, parameters.From, parameters.To),
+                new ListBounds(DefaultPages, SitePagesQuery.MostPages, "pages"),
+                clock,
+                out var slice,
+                out var refusal))
         {
-            return Unusable($"Ask for between 1 and {SitePagesQuery.MostPages} pages at a time.");
+            return Unusable(refusal);
         }
 
-        if (offset < 0)
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
         {
-            return Unusable("Start the list at the beginning or further along it, never before it.");
+            return TypedResults.NotFound();
         }
 
+        var pages = await telemetry
+            .GetSitePagesAsync(scope, new SitePagesQuery(slice.Range, slice.Limit, slice.Offset), cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(
+            new PagesResponse(
+                slice.Range.From,
+                slice.Range.To,
+                pages.TotalPageViews,
+                pages.TotalPaths,
+                pages.MostPageViews,
+                [.. pages.Pages.Select(page => new PageRow(page.Path, page.PageViews, page.Visitors))]));
+    }
+
+    /// <summary>
+    /// Describes the control a step was a press on, where it was one.
+    /// </summary>
+    /// <param name="press">What was operated, or nothing where the step is an arrival.</param>
+    /// <returns>The control, in the vocabulary the dashboard reads.</returns>
+    private static VisitPressed? Operated(VisitPress? press) =>
+        press is null
+            ? null
+            : new VisitPressed(
+                press.Value.Name,
+                ReportedNames.Controls[press.Value.Control],
+                press.Value.Target,
+                ReportedNames.Targets[press.Value.TargetKind]);
+
+    /// <summary>
+    /// Answers what a website's visitors operated.
+    /// </summary>
+    /// <remarks>
+    /// Everything the caller supplied is checked before the site is resolved, so a malformed
+    /// request is refused identically whether or not the site exists.
+    /// </remarks>
+    private static async Task<Results<Ok<ActionsResponse>, NotFound, ProblemHttpResult>> ActionsAsync(
+        [AsParameters] ActionsParameters parameters,
+        ITenantScopeProvider scopes,
+        ITelemetryQueries telemetry,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!ActionGroupings.TryGetValue(parameters.Grouping ?? DefaultActionGrouping, out var grouping))
+        {
+            return Unusable("Gather the list by control or by destination.");
+        }
+
+        if (!TryReadSlice(
+                new ListRequest(parameters.Limit, parameters.Offset, parameters.From, parameters.To),
+                new ListBounds(DefaultControls, SiteActionsQuery.MostControls, "controls"),
+                clock,
+                out var slice,
+                out var refusal))
+        {
+            return Unusable(refusal);
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var actions = await telemetry
+            .GetSiteActionsAsync(
+                scope,
+                new SiteActionsQuery(slice.Range, grouping, slice.Limit, slice.Offset),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(
+            new ActionsResponse(
+                slice.Range.From,
+                slice.Range.To,
+                ActionGroupingNames[grouping],
+                actions.TotalPresses,
+                actions.TotalControls,
+                actions.MostPresses,
+                [
+                    .. actions.Controls.Select(control => new ActionRow(
+                        control.Name,
+                        ReportedNames.Controls[control.Control],
+                        control.Presses,
+                        control.Visitors)),
+                ]));
+    }
+
+    /// <summary>
+    /// Answers where a website's audience was.
+    /// </summary>
+    /// <remarks>
+    /// Everything the caller supplied is checked before the site is resolved, so a malformed
+    /// request is refused identically whether or not the site exists. Checking in the other order
+    /// would turn a bad grouping into a way of finding out which identifiers on an install are
+    /// real.
+    /// </remarks>
+    private static async Task<Results<Ok<LocationsResponse>, NotFound, ProblemHttpResult>> LocationsAsync(
+        [AsParameters] LocationsParameters parameters,
+        ITenantScopeProvider scopes,
+        ITelemetryQueries telemetry,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!Groupings.TryGetValue(parameters.Grouping ?? DefaultGrouping, out var grouping))
+        {
+            return Unusable("Group the places by country or by town.");
+        }
+
+        if (!TryReadSlice(
+                new ListRequest(parameters.Limit, parameters.Offset, parameters.From, parameters.To),
+                new ListBounds(DefaultPlaces, SiteLocationsQuery.MostPlaces, "places"),
+                clock,
+                out var slice,
+                out var refusal))
+        {
+            return Unusable(refusal);
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var places = await telemetry
+            .GetSiteLocationsAsync(
+                scope,
+                new SiteLocationsQuery(slice.Range, grouping, slice.Limit, slice.Offset),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(
+            new LocationsResponse(
+                slice.Range.From,
+                slice.Range.To,
+                GroupingNames[grouping],
+                places.TotalVisitors,
+                places.TotalPlaces,
+                places.MostVisitors,
+                [
+                    .. places.Places.Select(place => new LocationRow(
+                        place.Place,
+                        place.CountryCode,
+                        place.Visitors,
+                        place.PageViews)),
+                ]));
+    }
+
+    /// <summary>
+    /// Answers what a website's audience read on.
+    /// </summary>
+    /// <remarks>
+    /// Every visitor is on exactly one row, so the caller is told the total once and the rows add
+    /// up to it. Nothing is paged: there are five kinds and there always will be until the engine
+    /// learns a sixth.
+    /// </remarks>
+    private static async Task<Results<Ok<DevicesResponse>, NotFound, ProblemHttpResult>> DevicesAsync(
+        [AsParameters] OverviewParameters parameters,
+        ITenantScopeProvider scopes,
+        ITelemetryQueries telemetry,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
         if (!RequestedWindow.TryResolve(
                 parameters.From,
                 parameters.To,
@@ -154,19 +510,367 @@ internal static class SiteEndpoints
             return TypedResults.NotFound();
         }
 
-        var pages = await telemetry
-            .GetSitePagesAsync(scope, new SitePagesQuery(range, limit, offset), cancellationToken)
+        var devices = await telemetry
+            .GetSiteDeviceKindsAsync(scope, new SiteDeviceKindsQuery(range), cancellationToken)
             .ConfigureAwait(false);
 
         return TypedResults.Ok(
-            new PagesResponse(
+            new DevicesResponse(
                 range.From,
                 range.To,
-                pages.TotalPageViews,
-                pages.TotalPaths,
-                pages.MostPageViews,
-                [.. pages.Pages.Select(page => new PageRow(page.Path, page.PageViews, page.Visitors))]));
+                devices.Sum(device => device.Visitors),
+                [
+                    .. devices.Select(device => new DeviceRow(
+                        ReportedNames.Devices[device.Device],
+                        device.Visitors,
+                        device.PageViews)),
+                ]));
     }
+
+    /// <summary>
+    /// Answers what software a website's audience used.
+    /// </summary>
+    /// <remarks>
+    /// Everything the caller supplied is checked before the site is resolved, so a malformed
+    /// request is refused identically whether or not the site exists.
+    /// </remarks>
+    private static async Task<Results<Ok<SoftwareResponse>, NotFound, ProblemHttpResult>> SoftwareAsync(
+        [AsParameters] SoftwareParameters parameters,
+        ITenantScopeProvider scopes,
+        ITelemetryQueries telemetry,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!SoftwareGroupings.TryGetValue(parameters.Grouping ?? DefaultSoftwareGrouping, out var grouping))
+        {
+            return Unusable("Group the list by browser or by system.");
+        }
+
+        if (!TryReadSlice(
+                new ListRequest(parameters.Limit, parameters.Offset, parameters.From, parameters.To),
+                new ListBounds(DefaultNames, SiteSoftwareQuery.MostNames, "names"),
+                clock,
+                out var slice,
+                out var refusal))
+        {
+            return Unusable(refusal);
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var software = await telemetry
+            .GetSiteSoftwareAsync(
+                scope,
+                new SiteSoftwareQuery(slice.Range, grouping, slice.Limit, slice.Offset),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(
+            new SoftwareResponse(
+                slice.Range.From,
+                slice.Range.To,
+                SoftwareGroupingNames[grouping],
+                software.TotalVisitors,
+                software.TotalNames,
+                software.MostVisitors,
+                [
+                    .. software.Names.Select(name => new SoftwareRow(
+                        name.Name,
+                        name.Visitors,
+                        name.PageViews)),
+                ]));
+    }
+
+    /// <summary>
+    /// Answers how a website's pages were read.
+    /// </summary>
+    /// <remarks>
+    /// How many readings could be measured is answered beside every figure. Only the browser
+    /// tracker observes any of this, so a website measured solely from its own server answers with
+    /// nothing measured — which the dashboard is obliged to show as such rather than as an audience
+    /// that did nothing.
+    /// </remarks>
+    private static async Task<Results<Ok<EngagementResponse>, NotFound, ProblemHttpResult>> EngagementAsync(
+        [AsParameters] OverviewParameters parameters,
+        ITenantScopeProvider scopes,
+        ITelemetryQueries telemetry,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!RequestedWindow.TryResolve(
+                parameters.From,
+                parameters.To,
+                RequestedWindow.Longest,
+                clock,
+                out var range,
+                out var refusal))
+        {
+            return Unusable(refusal);
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var reading = await telemetry
+            .GetSiteEngagementAsync(scope, new SiteEngagementQuery(range), cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(
+            new EngagementResponse(
+                range.From,
+                range.To,
+                reading.TotalReadings,
+                reading.MeasuredReadings,
+                reading.MedianEngagedMs,
+                reading.InteractedReadings,
+                new DepthBands(
+                    reading.Reach.Top,
+                    reading.Reach.Quarter,
+                    reading.Reach.Half,
+                    reading.Reach.Whole)));
+    }
+
+    /// <summary>
+    /// Answers which of a website's pages held attention.
+    /// </summary>
+    /// <remarks>
+    /// Everything the caller supplied is checked before the site is resolved, so a malformed
+    /// request is refused identically whether or not the site exists.
+    /// </remarks>
+    private static async Task<Results<Ok<PageEngagementResponse>, NotFound, ProblemHttpResult>> PageEngagementAsync(
+        [AsParameters] PageEngagementParameters parameters,
+        ITenantScopeProvider scopes,
+        ITelemetryQueries telemetry,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!Rankings.TryGetValue(parameters.Ranking ?? DefaultRanking, out var ranking))
+        {
+            return Unusable("Order the pages by attention or by depth.");
+        }
+
+        if (!TryReadSlice(
+                new ListRequest(parameters.Limit, parameters.Offset, parameters.From, parameters.To),
+                new ListBounds(DefaultReadPages, SitePageEngagementQuery.MostPages, "pages"),
+                clock,
+                out var slice,
+                out var refusal))
+        {
+            return Unusable(refusal);
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var pages = await telemetry
+            .GetSitePageEngagementAsync(
+                scope,
+                new SitePageEngagementQuery(slice.Range, ranking, slice.Limit, slice.Offset),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(
+            new PageEngagementResponse(
+                slice.Range.From,
+                slice.Range.To,
+                RankingNames[ranking],
+                pages.TotalPages,
+                pages.LongestMedianEngagedMs,
+                [
+                    .. pages.Pages.Select(page => new PageEngagementRow(
+                        page.Path,
+                        page.Readings,
+                        page.MedianEngagedMs,
+                        page.MedianScrollDepthPercent,
+                        page.InteractedReadings)),
+                ]));
+    }
+
+    /// <summary>
+    /// Answers how many visits a website had, and how many were a single page.
+    /// </summary>
+    /// <remarks>
+    /// Answered from activity rather than from stored verdicts, so it keeps step with the headline
+    /// totals instead of waiting for a visit to be judged. Only visits that have finished are
+    /// counted, which is why the boundaries carry an instant as well as a timeout.
+    /// </remarks>
+    private static async Task<Results<Ok<VisitTotalsResponse>, NotFound, ProblemHttpResult>> VisitTotalsAsync(
+        [AsParameters] OverviewParameters parameters,
+        ITenantScopeProvider scopes,
+        ITelemetryQueries telemetry,
+        IOptions<ClassificationOptions> classification,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!RequestedWindow.TryResolve(
+                parameters.From,
+                parameters.To,
+                RequestedWindow.Longest,
+                clock,
+                out var range,
+                out var refusal))
+        {
+            return Unusable(refusal);
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var shape = await telemetry
+            .GetSiteVisitShapeAsync(
+                scope,
+                new SiteVisitShapeQuery(range, Boundaries(classification.Value, clock)),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(
+            new VisitTotalsResponse(
+                range.From,
+                range.To,
+                shape.Visits,
+                shape.SinglePageVisits,
+                shape.PageViews));
+    }
+
+    /// <summary>
+    /// Answers which pages a website's visits began or ended on.
+    /// </summary>
+    /// <remarks>
+    /// Everything the caller supplied is checked before the site is resolved, so a malformed
+    /// request is refused identically whether or not the site exists.
+    /// </remarks>
+    private static async Task<Results<Ok<VisitPagesResponse>, NotFound, ProblemHttpResult>> VisitPagesAsync(
+        [AsParameters] VisitPagesParameters parameters,
+        ITenantScopeProvider scopes,
+        ITelemetryQueries telemetry,
+        IOptions<ClassificationOptions> classification,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!Positions.TryGetValue(parameters.Position ?? DefaultPosition, out var position))
+        {
+            return Unusable("Count the pages visits started on or the pages they ended on.");
+        }
+
+        if (!TryReadSlice(
+                new ListRequest(parameters.Limit, parameters.Offset, parameters.From, parameters.To),
+                new ListBounds(DefaultVisitPages, SiteVisitFlowQuery.MostPages, "pages"),
+                clock,
+                out var slice,
+                out var refusal))
+        {
+            return Unusable(refusal);
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var flow = await telemetry
+            .GetSiteVisitFlowAsync(
+                scope,
+                new SiteVisitFlowQuery(
+                    slice.Range,
+                    Boundaries(classification.Value, clock),
+                    position,
+                    slice.Limit,
+                    slice.Offset),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(
+            new VisitPagesResponse(
+                slice.Range.From,
+                slice.Range.To,
+                PositionNames[position],
+                flow.TotalVisits,
+                flow.TotalPaths,
+                flow.MostVisits,
+                [.. flow.Pages.Select(page => new VisitPageRow(page.Path, page.Visits))]));
+    }
+
+    /// <summary>
+    /// Answers which pages one visit went through.
+    /// </summary>
+    /// <remarks>
+    /// The identity is read before the site is resolved, so a value that names no visit is refused
+    /// identically whether or not the site exists. What comes back names the visit in the engine's
+    /// own spelling of it rather than in the caller's, so nothing a caller wrote is echoed.
+    /// </remarks>
+    private static async Task<Results<Ok<VisitJourneyResponse>, NotFound, ProblemHttpResult>> VisitJourneyAsync(
+        [AsParameters] VisitJourneyParameters parameters,
+        ITenantScopeProvider scopes,
+        ITelemetryQueries telemetry,
+        IOptions<ClassificationOptions> classification,
+        CancellationToken cancellationToken)
+    {
+        if (!VisitKey.TryParse(parameters.VisitKey, out var visit))
+        {
+            return Unusable("Ask for a visit by the identifier the visit list gives it.");
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var steps = await telemetry
+            .GetSiteVisitJourneyAsync(
+                scope,
+                new SiteVisitJourneyQuery(
+                    visit,
+                    classification.Value.IdleTimeout,
+                    SiteVisitJourneyQuery.MostSteps),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(
+            new VisitJourneyResponse(
+                visit.ToString(),
+                [
+                    .. steps.Select(step => new VisitJourneyStep(
+                        step.At,
+                        step.Path,
+                        step.StatusCode,
+                        step.EngagedMs,
+                        step.ScrollDepthPercent,
+                        Operated(step.Press))),
+                ]));
+    }
+
+    /// <summary>
+    /// What counts as one visit, and which visits have finished.
+    /// </summary>
+    /// <remarks>
+    /// The idle timeout is the engine's own setting rather than a second copy of it, so the visits
+    /// these answers count are the visits the engine is judging. A visit is treated as finished
+    /// once it has been silent for a full timeout, which is the point at which falling silent has
+    /// been observed rather than assumed.
+    /// </remarks>
+    private static VisitBoundaries Boundaries(ClassificationOptions settings, TimeProvider clock) =>
+        new(settings.IdleTimeout, clock.GetUtcNow() - settings.IdleTimeout);
 
     private static async Task<Results<Ok<TrafficResponse>, NotFound, ProblemHttpResult>> TrafficAsync(
         [AsParameters] OverviewParameters parameters,
@@ -383,6 +1087,92 @@ internal static class SiteEndpoints
                 [.. points.Select(point => new SeriesPoint(point.BucketStart, point.Value))]));
     }
 
+    /// <summary>
+    /// What a list request asked for, before any of it has been checked.
+    /// </summary>
+    /// <param name="Limit">How many rows to return, or nothing to take the list's own default.</param>
+    /// <param name="Offset">How many leading rows to pass over, or nothing for none.</param>
+    /// <param name="From">Inclusive start of the window.</param>
+    /// <param name="To">Exclusive end of the window.</param>
+    private readonly record struct ListRequest(
+        int? Limit,
+        int? Offset,
+        DateTimeOffset? From,
+        DateTimeOffset? To);
+
+    /// <summary>
+    /// What one list allows, and what its rows are called when a request for them is refused.
+    /// </summary>
+    /// <param name="Fallback">How many rows to return when the caller does not say.</param>
+    /// <param name="Most">How many rows one request may ask for.</param>
+    /// <param name="Rows">What the rows are called, for the sentence a refusal answers with.</param>
+    private readonly record struct ListBounds(int Fallback, int Most, string Rows);
+
+    /// <summary>
+    /// A checked list request: how much to return, from where, over which window.
+    /// </summary>
+    /// <param name="Limit">How many rows to return.</param>
+    /// <param name="Offset">How many leading rows to pass over.</param>
+    /// <param name="Range">The window to count over.</param>
+    private readonly record struct ListSlice(int Limit, int Offset, TimeRange Range);
+
+    /// <summary>
+    /// Checks the paging and the window a list request asked for.
+    /// </summary>
+    /// <param name="asked">What the caller supplied.</param>
+    /// <param name="bounds">What this particular list allows.</param>
+    /// <param name="clock">Where now comes from.</param>
+    /// <param name="slice">The checked request, where it was usable.</param>
+    /// <param name="refusal">Why it was not, where it was not.</param>
+    /// <returns><see langword="true"/> when the request can be answered as asked.</returns>
+    /// <remarks>
+    /// Every list on the dashboard is read a slice at a time under identical rules, so they are
+    /// written here once. Called before the site is resolved, so a malformed request is refused
+    /// identically whether or not the site exists: checking in the other order would turn a bad
+    /// limit into a way of finding out which identifiers on an install are real.
+    /// </remarks>
+    private static bool TryReadSlice(
+        ListRequest asked,
+        ListBounds bounds,
+        TimeProvider clock,
+        out ListSlice slice,
+        out string? refusal)
+    {
+        slice = default;
+
+        var limit = asked.Limit ?? bounds.Fallback;
+        var offset = asked.Offset ?? 0;
+
+        if (limit < 1 || limit > bounds.Most)
+        {
+            refusal = $"Ask for between 1 and {bounds.Most} {bounds.Rows} at a time.";
+
+            return false;
+        }
+
+        if (offset < 0)
+        {
+            refusal = "Start the list at the beginning or further along it, never before it.";
+
+            return false;
+        }
+
+        if (!RequestedWindow.TryResolve(
+                asked.From,
+                asked.To,
+                RequestedWindow.Longest,
+                clock,
+                out var range,
+                out refusal))
+        {
+            return false;
+        }
+
+        slice = new ListSlice(limit, offset, range);
+
+        return true;
+    }
+
     private static ProblemHttpResult Unusable(string? detail) =>
         TypedResults.Problem(
             title: "That request could not be answered as asked.",
@@ -432,6 +1222,57 @@ internal readonly record struct PagesParameters(
     [FromQuery] int? Offset);
 
 /// <summary>
+/// What the locations endpoint reads from the path and the query string.
+/// </summary>
+/// <param name="SiteId">The site to count over.</param>
+/// <param name="Grouping">What each row should stand for: <c>country</c> or <c>town</c>.</param>
+/// <param name="From">Inclusive start of the window.</param>
+/// <param name="To">Exclusive end of the window.</param>
+/// <param name="Limit">How many places to return.</param>
+/// <param name="Offset">How many of the busiest places to pass over first.</param>
+internal readonly record struct LocationsParameters(
+    Guid SiteId,
+    [FromQuery] string? Grouping,
+    [FromQuery] DateTimeOffset? From,
+    [FromQuery] DateTimeOffset? To,
+    [FromQuery] int? Limit,
+    [FromQuery] int? Offset);
+
+/// <summary>
+/// What the software endpoint reads from the path and the query string.
+/// </summary>
+/// <param name="SiteId">The site to count over.</param>
+/// <param name="Grouping">What each row should stand for: <c>browser</c> or <c>system</c>.</param>
+/// <param name="From">Inclusive start of the window.</param>
+/// <param name="To">Exclusive end of the window.</param>
+/// <param name="Limit">How many names to return.</param>
+/// <param name="Offset">How many of the commonest names to pass over first.</param>
+internal readonly record struct SoftwareParameters(
+    Guid SiteId,
+    [FromQuery] string? Grouping,
+    [FromQuery] DateTimeOffset? From,
+    [FromQuery] DateTimeOffset? To,
+    [FromQuery] int? Limit,
+    [FromQuery] int? Offset);
+
+/// <summary>
+/// What the operated-controls endpoint reads from the path and the query string.
+/// </summary>
+/// <param name="SiteId">The site to count over.</param>
+/// <param name="Grouping">What to gather by: <c>control</c> or <c>destination</c>.</param>
+/// <param name="From">Inclusive start of the period. Defaults to a week before the end.</param>
+/// <param name="To">Exclusive end of the period. Defaults to now.</param>
+/// <param name="Limit">How many rows to return. Defaults to a screenful.</param>
+/// <param name="Offset">How many of the most pressed to pass over first. Defaults to none.</param>
+internal readonly record struct ActionsParameters(
+    Guid SiteId,
+    [FromQuery] string? Grouping,
+    [FromQuery] DateTimeOffset? From,
+    [FromQuery] DateTimeOffset? To,
+    [FromQuery] int? Limit,
+    [FromQuery] int? Offset);
+
+/// <summary>
 /// What the visits endpoint reads from the path and the query string.
 /// </summary>
 /// <param name="SiteId">The site to list visits for.</param>
@@ -443,3 +1284,48 @@ internal readonly record struct VisitsParameters(
     [FromQuery] DateTimeOffset? From,
     [FromQuery] DateTimeOffset? To,
     [FromQuery] int? Limit);
+
+/// <summary>
+/// What the page-reading endpoint reads from the path and the query string.
+/// </summary>
+/// <param name="SiteId">The site to count over.</param>
+/// <param name="Ranking">What to order the pages by: <c>attention</c> or <c>depth</c>.</param>
+/// <param name="From">Inclusive start of the window.</param>
+/// <param name="To">Exclusive end of the window.</param>
+/// <param name="Limit">How many pages to return.</param>
+/// <param name="Offset">How many of the leading pages to pass over first.</param>
+internal readonly record struct PageEngagementParameters(
+    Guid SiteId,
+    [FromQuery] string? Ranking,
+    [FromQuery] DateTimeOffset? From,
+    [FromQuery] DateTimeOffset? To,
+    [FromQuery] int? Limit,
+    [FromQuery] int? Offset);
+
+/// <summary>
+/// What the arrival and departure list reads from the path and the query string.
+/// </summary>
+/// <param name="SiteId">The site to count over.</param>
+/// <param name="Position">Which end of a visit to count: <c>entry</c> or <c>exit</c>.</param>
+/// <param name="From">Inclusive start of the window.</param>
+/// <param name="To">Exclusive end of the window.</param>
+/// <param name="Limit">How many pages to return.</param>
+/// <param name="Offset">How many of the commonest pages to pass over first.</param>
+internal readonly record struct VisitPagesParameters(
+    Guid SiteId,
+    [FromQuery] string? Position,
+    [FromQuery] DateTimeOffset? From,
+    [FromQuery] DateTimeOffset? To,
+    [FromQuery] int? Limit,
+    [FromQuery] int? Offset);
+
+/// <summary>
+/// What the journey endpoint reads from the path.
+/// </summary>
+/// <remarks>
+/// No window: a visit's identity already says when it began, and a journey is the whole of one
+/// visit rather than a slice of a period.
+/// </remarks>
+/// <param name="SiteId">The site the visit belongs to.</param>
+/// <param name="VisitKey">The visit, as the visit list names it.</param>
+internal readonly record struct VisitJourneyParameters(Guid SiteId, string? VisitKey);

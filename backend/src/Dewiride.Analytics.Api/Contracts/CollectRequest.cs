@@ -60,6 +60,21 @@ public sealed record CollectRequest
     /// <summary>Whether the browser reports itself as being driven by automation.</summary>
     public bool? WebDriver { get; init; }
 
+    /// <summary>
+    /// What sort of thing was operated, as the page describes it: its declared role, or failing
+    /// that the element it is. Resolved against a closed set on the way in.
+    /// </summary>
+    public string? Element { get; init; }
+
+    /// <summary>What the operated control said it was. Never the contents of a field.</summary>
+    public string? Label { get; init; }
+
+    /// <summary>Where the operated control pointed: a path here, a host anywhere else.</summary>
+    public string? Target { get; init; }
+
+    /// <summary>What sort of place <see cref="Target"/> describes.</summary>
+    public string? TargetKind { get; init; }
+
     /// <summary>Identifier stamped into the served page, echoed back so the two can be matched.</summary>
     public string? CorrelationId { get; init; }
 }

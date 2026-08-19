@@ -20,7 +20,68 @@ internal static class WireVocabulary
             ["pageview"] = EventKind.PageView,
             ["engagement"] = EventKind.Engagement,
             ["exit"] = EventKind.Exit,
+            ["action"] = EventKind.Action,
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// What sort of control a reported word describes.
+    /// </summary>
+    /// <remarks>
+    /// A page describes its own controls, in a vocabulary that is open and partly of its own
+    /// invention: it may declare a role for a screen reader, and where it declares none the
+    /// element it used has to answer instead. Both spellings are resolved here into the closed
+    /// set the store holds, and anything unrecognised resolves to <see cref="ControlKind.Unknown"/>
+    /// rather than being kept — a column of whatever other people's markup happened to say is a
+    /// column nothing can be built on.
+    /// </remarks>
+    public static readonly FrozenDictionary<string, ControlKind> Controls =
+        new Dictionary<string, ControlKind>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["a"] = ControlKind.Link,
+            ["link"] = ControlKind.Link,
+            ["button"] = ControlKind.Button,
+            ["summary"] = ControlKind.Button,
+            ["tab"] = ControlKind.Button,
+            ["menuitem"] = ControlKind.Button,
+            ["input"] = ControlKind.Field,
+            ["select"] = ControlKind.Field,
+            ["textarea"] = ControlKind.Field,
+            ["checkbox"] = ControlKind.Field,
+            ["radio"] = ControlKind.Field,
+            ["switch"] = ControlKind.Field,
+            ["textbox"] = ControlKind.Field,
+            ["searchbox"] = ControlKind.Field,
+            ["combobox"] = ControlKind.Field,
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>What sort of place a reported word describes.</summary>
+    public static readonly FrozenDictionary<string, TargetKind> Targets =
+        new Dictionary<string, TargetKind>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["internal"] = TargetKind.Internal,
+            ["external"] = TargetKind.External,
+            ["contact"] = TargetKind.Contact,
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Resolves what sort of control was operated.
+    /// </summary>
+    /// <param name="declared">The word the page used, if it used one.</param>
+    /// <returns>The kind, or <see cref="ControlKind.Unknown"/> for anything not recognised.</returns>
+    public static ControlKind ResolveControl(string? declared) =>
+        declared is not null && Controls.TryGetValue(declared, out var control)
+            ? control
+            : ControlKind.Unknown;
+
+    /// <summary>
+    /// Resolves what sort of place a control pointed at.
+    /// </summary>
+    /// <param name="declared">The word the tracker used, if it used one.</param>
+    /// <returns>The kind, or <see cref="TargetKind.None"/> where it pointed nowhere.</returns>
+    public static TargetKind ResolveTarget(string? declared) =>
+        declared is not null && Targets.TryGetValue(declared, out var target)
+            ? target
+            : TargetKind.None;
 
     /// <summary>
     /// The reporters this product ships, by the word each one names itself with.

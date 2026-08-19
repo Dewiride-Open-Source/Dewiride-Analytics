@@ -25,6 +25,20 @@ interface Page {
   readonly close: () => void;
 }
 
+/**
+ * One thing the beacon asked to listen for.
+ *
+ * The options are kept with it because a listener watching a press on its way down is only taken
+ * off by asking for it back the same way. Without them the beacon from one test is still watching
+ * during the next, and files its reports against that one.
+ */
+interface Hook {
+  readonly target: EventTarget;
+  readonly type: string;
+  readonly listener: EventListenerOrEventListenerObject | null;
+  readonly options: boolean | AddEventListenerOptions | undefined;
+}
+
 const SITE = '0199c8f4-6c1e-7a3b-9d21-5f0b8e2a4c77';
 const COLLECTOR = 'https://analytics.example.com/collect';
 
@@ -37,7 +51,7 @@ const COLLECTOR = 'https://analytics.example.com/collect';
 export function openPage(): Page {
   const sent: Sent[] = [];
   const bodies: unknown[] = [];
-  const hooked: [EventTarget, string, EventListenerOrEventListenerObject | null][] = [];
+  const hooked: Hook[] = [];
   let accepted = true;
 
   function record(body: unknown) {
@@ -71,7 +85,7 @@ export function openPage(): Page {
     const original = target.addEventListener.bind(target);
 
     vi.spyOn(target, 'addEventListener').mockImplementation((type, listener, options) => {
-      hooked.push([target, type, listener]);
+      hooked.push({ target, type, listener, options });
       original(type, listener, options);
     });
   }
@@ -84,11 +98,12 @@ export function openPage(): Page {
       accepted = false;
     },
     close: () => {
-      for (const [target, type, listener] of hooked) {
-        target.removeEventListener(type, listener);
+      for (const { target, type, listener, options } of hooked) {
+        target.removeEventListener(type, listener, options);
       }
 
       hooked.length = 0;
+      document.body.innerHTML = '';
       delete (window as { __dwMeasuring?: boolean }).__dwMeasuring;
       vi.unstubAllGlobals();
       vi.restoreAllMocks();
@@ -108,6 +123,25 @@ export function stampResponse(timings: readonly { name: string; description: str
       ? ([{ serverTiming: timings }] as unknown as PerformanceEntryList)
       : ([] as PerformanceEntryList),
   );
+}
+
+/**
+ * Puts markup on the page and presses the part of it marked with `data-press`.
+ *
+ * The press is raised on the element itself, which is how a browser raises one: it travels down
+ * from the top of the document to whatever was hit and then back up again. Anything watching on
+ * the way down sees it whether or not the page lets it travel back.
+ */
+export function press(markup: string): void {
+  document.body.innerHTML = markup;
+
+  const pressed = document.body.querySelector('[data-press]');
+
+  if (!pressed) {
+    throw new Error('The markup marks nothing to press.');
+  }
+
+  pressed.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 }
 
 /** Puts the page in front of somebody, or takes it away, and tells the beacon. */

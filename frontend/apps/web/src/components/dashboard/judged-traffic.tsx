@@ -64,7 +64,7 @@ export function JudgedTraffic({ site, window }: JudgedTrafficProps) {
       {visits.isError ? <FailureNotice error={visits.error} /> : null}
 
       {visits.data && visits.data.visits.length > 0 ? (
-        <VisitList visits={visits.data.visits} timeZoneId={site.timeZoneId} />
+        <VisitList siteId={site.id} visits={visits.data.visits} timeZoneId={site.timeZoneId} />
       ) : null}
     </>
   );

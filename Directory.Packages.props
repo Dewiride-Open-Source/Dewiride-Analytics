@@ -57,6 +57,17 @@
     <PackageVersion Include="ClickHouse.Driver" Version="1.3.0" />
   </ItemGroup>
 
+  <ItemGroup Label="Reference data">
+    <!--
+      Reads the MaxMind DB binary format. The reader only — it bundles no data, and MaxMind's own
+      GeoLite2 databases stay excluded: their EULA requires destroying superseded copies within
+      thirty days and forbids third-party disclosure, neither of which a self-hostable artifact
+      can honour. The geolocation data this product reads is DB-IP Lite (CC BY 4.0), published in
+      this same format, downloaded at run time rather than vendored.
+    -->
+    <PackageVersion Include="MaxMind.Db" Version="5.1.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Runtime infrastructure">
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />

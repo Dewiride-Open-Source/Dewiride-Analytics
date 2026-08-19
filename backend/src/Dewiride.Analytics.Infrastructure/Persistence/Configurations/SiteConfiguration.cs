@@ -59,6 +59,7 @@ public sealed class SiteConfiguration : IEntityTypeConfiguration<Site>
 
         builder.Property(site => site.CreatedAt).IsRequired();
         builder.Property(site => site.RetainQueryStrings).IsRequired();
+        builder.Property(site => site.CaptureClicks).IsRequired();
 
         // Mapped from the backing field, because the public member exposes the list read-only and
         // the aggregate replaces its contents through a method rather than a setter. The

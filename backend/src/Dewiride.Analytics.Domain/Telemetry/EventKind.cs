@@ -22,4 +22,10 @@ public enum EventKind
     /// closing engaged-time and scroll-depth totals.
     /// </summary>
     Exit = 3,
+
+    /// <summary>
+    /// A control on a page was operated: what it was, what it said, and where it pointed.
+    /// Reported only by the browser tracker, and only for sites that have it switched on.
+    /// </summary>
+    Action = 4,
 }

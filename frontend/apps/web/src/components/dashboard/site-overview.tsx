@@ -1,6 +1,6 @@
 'use client';
 
-import { Code2, KeyRound } from 'lucide-react';
+import { Code2, KeyRound, SlidersHorizontal } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { JudgedTraffic } from '@/components/dashboard/judged-traffic';
@@ -8,7 +8,13 @@ import { MetricCard, MetricCardSkeleton } from '@/components/dashboard/metric-ca
 import { PeriodSwitch } from '@/components/dashboard/period-switch';
 import { ServerKeys } from '@/components/dashboard/server-keys';
 import { SiteSwitch } from '@/components/dashboard/site-switch';
+import { SiteActions } from '@/components/dashboard/site-actions';
+import { SiteDevices } from '@/components/dashboard/site-devices';
+import { SiteFlow } from '@/components/dashboard/site-flow';
+import { SiteLocations } from '@/components/dashboard/site-locations';
 import { SitePages } from '@/components/dashboard/site-pages';
+import { SiteReading } from '@/components/dashboard/site-reading';
+import { SiteSettings } from '@/components/dashboard/site-settings';
 import { TrackingCode } from '@/components/dashboard/tracking-code';
 import { type TrafficDay, TrafficChart } from '@/components/dashboard/traffic-chart';
 import { Button } from '@/components/ui/button';
@@ -32,10 +38,12 @@ export function SiteOverview({ site, sites, onChoose }: SiteOverviewProps) {
   const metrics = useTranslations('dashboard.metrics');
   const install = useTranslations('install');
   const serverKeys = useTranslations('serverKeys');
+  const settings = useTranslations('siteSettings');
   const format = useFormatter();
   const [period, setPeriod] = useState<PeriodDays>(DEFAULT_PERIOD);
   const [showingCode, setShowingCode] = useState(false);
   const [showingKeys, setShowingKeys] = useState(false);
+  const [showingSettings, setShowingSettings] = useState(false);
 
   // Resolved once per period rather than on every render: the window is part of the name each
   // answer is cached under, and one that moved with the clock would never find a cached answer.
@@ -54,6 +62,7 @@ export function SiteOverview({ site, sites, onChoose }: SiteOverviewProps) {
   );
   const totals = overview.data;
   const silent = totals !== undefined && totals.pageViews === 0 && totals.visitors === 0;
+  const listing = `${site.id}:${window.from}:${window.to}`;
 
   return (
     <div className="flex flex-col gap-6">
@@ -83,6 +92,10 @@ export function SiteOverview({ site, sites, onChoose }: SiteOverviewProps) {
           <Button tone="secondary" size="sm" onClick={() => setShowingKeys(true)}>
             <KeyRound aria-hidden className="size-4" />
             {serverKeys('action')}
+          </Button>
+          <Button tone="secondary" size="sm" onClick={() => setShowingSettings(true)}>
+            <SlidersHorizontal aria-hidden className="size-4" />
+            {settings('action')}
           </Button>
           <PeriodSwitch value={period} onChange={setPeriod} />
         </div>
@@ -135,11 +148,33 @@ export function SiteOverview({ site, sites, onChoose }: SiteOverviewProps) {
             <div className="h-72 animate-pulse rounded-lg border border-border bg-surface-muted" />
           )}
 
-          <SitePages
-            key={`${site.id}:${window.from}:${window.to}`}
+          {/*
+            Both lists are given a key that changes with the website and the period, so choosing
+            either starts each list at its own beginning instead of leaving somebody on a
+            screenful that no longer exists.
+          */}
+          {/*
+            Where the readers were and what they read on are two halves of the same question and
+            sit side by side from a wide screen down, one above the other on anything narrower.
+          */}
+          <div className="grid gap-6 xl:grid-cols-2 xl:items-start">
+            <SiteLocations key={`places:${listing}`} siteId={site.id} window={window} />
+
+            <SiteDevices key={`devices:${listing}`} siteId={site.id} window={window} />
+          </div>
+
+          <SitePages key={`pages:${listing}`} siteId={site.id} window={window} />
+
+          <SiteReading
+            key={`reading:${listing}`}
             siteId={site.id}
             window={window}
+            onShowCode={() => setShowingCode(true)}
           />
+
+          <SiteFlow key={`flow:${listing}`} siteId={site.id} window={window} />
+
+          <SiteActions key={`presses:${listing}`} siteId={site.id} window={window} />
 
           <JudgedTraffic site={site} window={window} />
         </>
@@ -158,6 +193,13 @@ export function SiteOverview({ site, sites, onChoose }: SiteOverviewProps) {
         siteId={site.id}
         siteDomain={site.domain}
         timeZoneId={site.timeZoneId}
+      />
+
+      <SiteSettings
+        open={showingSettings}
+        onClose={() => setShowingSettings(false)}
+        siteId={site.id}
+        siteDomain={site.domain}
       />
     </div>
   );

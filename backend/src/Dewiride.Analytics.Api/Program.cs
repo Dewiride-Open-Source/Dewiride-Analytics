@@ -43,6 +43,7 @@ app.MapServerCollect();
 app.MapAccount();
 app.MapSites();
 app.MapServerKeys();
+app.MapSiteSettings();
 app.MapHealth();
 
 // The description covers a contract that is published in the open anyway, and a self-hoster

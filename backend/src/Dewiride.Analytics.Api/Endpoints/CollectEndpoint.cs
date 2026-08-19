@@ -148,6 +148,10 @@ internal static class CollectEndpoint
             HadPointerInteraction = request.PointerInteraction,
             HadKeyboardInteraction = request.KeyboardInteraction,
             DeclaredWebDriver = request.WebDriver,
+            ActionControl = WireVocabulary.ResolveControl(request.Element),
+            ActionLabel = request.Label,
+            ActionTarget = request.Target,
+            ActionTargetKind = WireVocabulary.ResolveTarget(request.TargetKind),
             CorrelationId = request.CorrelationId,
         };
 
@@ -157,8 +161,8 @@ internal static class CollectEndpoint
     private static ProblemHttpResult Malformed() =>
         TypedResults.Problem(
             title: "The report could not be read.",
-            detail: "Send a JSON object with a siteId, a kind of pageview, engagement or exit, "
-                + "and an absolute http or https url.",
+            detail: "Send a JSON object with a siteId, a kind of pageview, engagement, exit or "
+                + "action, and an absolute http or https url.",
             statusCode: StatusCodes.Status400BadRequest);
 
     private static ProblemHttpResult TooLarge() =>

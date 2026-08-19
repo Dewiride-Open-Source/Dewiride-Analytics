@@ -63,6 +63,19 @@ public sealed class SiteStorageTests(AnalyticsStackFixture stack)
     }
 
     [Fact]
+    public async Task Click_Capture_Survives_The_Round_Trip()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(
+            stack,
+            domain: "presses.example",
+            configure: created => created.SetClickCapture(false));
+
+        var stored = await ReadAsync(site.Id);
+
+        stored.CaptureClicks.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task A_Time_Zone_Identifier_Survives_The_Round_Trip()
     {
         var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: "zones.example", timeZoneId: "Asia/Kolkata");
@@ -86,6 +99,7 @@ public sealed class SiteStorageTests(AnalyticsStackFixture stack)
             configure: created =>
             {
                 created.SetQueryStringRetention(true);
+                created.SetClickCapture(false);
                 created.ReplaceAllowedOrigins(origins);
             });
 
@@ -97,6 +111,7 @@ public sealed class SiteStorageTests(AnalyticsStackFixture stack)
         snapshot.Should().NotBeNull();
         snapshot.Domain.Should().Be("catalog.example");
         snapshot.RetainQueryStrings.Should().BeTrue();
+        snapshot.CaptureClicks.Should().BeFalse();
         snapshot.AllowedOrigins.Should().Equal("docs.example.com");
     }
 

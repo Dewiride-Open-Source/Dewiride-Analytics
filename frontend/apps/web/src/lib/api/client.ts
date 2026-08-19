@@ -22,6 +22,9 @@ export async function readResource<T>(path: string, shape: ZodType<T>): Promise<
   return interpret(response, shape);
 }
 
+/** The ways this dashboard asks the engine to change something. */
+type ChangingMethod = 'POST' | 'PUT' | 'DELETE';
+
 /**
  * Submits something to the engine.
  *
@@ -31,7 +34,7 @@ export async function readResource<T>(path: string, shape: ZodType<T>): Promise<
  */
 export async function submitResource<T>(
   path: string,
-  method: 'POST' | 'DELETE',
+  method: ChangingMethod,
   proof: string,
   shape: ZodType<T>,
   body?: unknown,
@@ -56,7 +59,7 @@ export async function submitResource<T>(
  */
 export async function discardResource(
   path: string,
-  method: 'POST' | 'DELETE',
+  method: ChangingMethod,
   proof: string,
 ): Promise<void> {
   const response = await send(path, {

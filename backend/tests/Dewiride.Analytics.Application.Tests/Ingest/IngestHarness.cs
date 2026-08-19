@@ -25,18 +25,24 @@ internal sealed class IngestHarness
     /// <summary>Identifier of the site the harness resolves.</summary>
     public static readonly Guid SiteId = new("0197c0de-0000-7000-8000-000000000001");
 
+    /// <summary>What the network lookup resolves the harness's address to.</summary>
+    public static readonly NetworkAttributes Somewhere =
+        new("IN", "MH", "Pune", 24560, "Bharti Airtel");
+
     private readonly ISiteCatalog _catalog = Substitute.For<ISiteCatalog>();
     private readonly IVisitorKeyFactory _visitorKeys = Substitute.For<IVisitorKeyFactory>();
+    private readonly INetworkLookup _network = Substitute.For<INetworkLookup>();
     private readonly RecordingSink _sink = new();
 
-    private IngestHarness(SiteSnapshot? site, string? visitorKey)
+    private IngestHarness(SiteSnapshot? site, string? visitorKey, NetworkAttributes network)
     {
         _catalog.FindAsync(SiteId, Arg.Any<CancellationToken>()).Returns(site);
         _visitorKeys
             .Derive(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<DateTimeOffset>())
             .Returns(visitorKey);
+        _network.Resolve(Arg.Any<string?>()).Returns(network);
 
-        Ingestor = new EventIngestor(_catalog, _visitorKeys, _sink, new FakeTimeProvider(Now));
+        Ingestor = new EventIngestor(_catalog, _visitorKeys, _network, _sink, new FakeTimeProvider(Now));
     }
 
     /// <summary>The subject under test.</summary>
@@ -51,27 +57,34 @@ internal sealed class IngestHarness
     /// <summary>Builds a harness whose site catalog resolves one site.</summary>
     /// <param name="domain">The site's primary hostname.</param>
     /// <param name="retainQueryStrings">Whether the site keeps query strings.</param>
+    /// <param name="captureClicks">Whether the site records the controls its visitors operate.</param>
     /// <param name="allowedOrigins">Origins the site permits, or empty for its own domain only.</param>
     /// <param name="visitorKey">The key the visitor-key factory returns.</param>
+    /// <param name="network">What the address resolves to, or nothing when it resolves to nothing.</param>
     /// <returns>The harness.</returns>
     public static IngestHarness ForSite(
         string domain = "example.com",
         bool retainQueryStrings = false,
+        bool captureClicks = true,
         IEnumerable<string>? allowedOrigins = null,
-        string? visitorKey = "9f2a1c4e8b6d0a3f") =>
+        string? visitorKey = "9f2a1c4e8b6d0a3f",
+        NetworkAttributes? network = null) =>
         new(
             new SiteSnapshot
             {
                 Id = SiteId,
                 Domain = domain,
                 RetainQueryStrings = retainQueryStrings,
+                CaptureClicks = captureClicks,
                 AllowedOrigins = allowedOrigins?.ToImmutableArray() ?? [],
             },
-            visitorKey);
+            visitorKey,
+            network ?? Somewhere);
 
     /// <summary>Builds a harness whose site catalog resolves nothing.</summary>
     /// <returns>The harness.</returns>
-    public static IngestHarness WithNoSuchSite() => new(site: null, visitorKey: null);
+    public static IngestHarness WithNoSuchSite() =>
+        new(site: null, visitorKey: null, network: NetworkAttributes.Unresolved);
 
     /// <summary>Runs one ingest.</summary>
     /// <param name="command">The report.</param>
@@ -98,7 +111,11 @@ internal sealed class IngestHarness
     public static IngestContext BrowserRequest(string? origin = "https://example.com") => new()
     {
         Surface = IngestSurface.BrowserTracker,
-        UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        // A whole one rather than an abbreviation. Its later half is where a browser names
+        // itself, so a shortened string would make every test about what a visit was made on
+        // agree with the wrong answer.
+        UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            + "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         IpAddress = "203.0.113.7",
         RequestOrigin = origin,
     };

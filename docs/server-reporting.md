@@ -18,6 +18,7 @@ middleware. This is the endpoint those report to.
 | Requests to paths that do not exist | no              | **yes**              |
 | Engaged time, scroll depth          | **yes**         | no                   |
 | Pointer and keyboard presence       | **yes**         | no                   |
+| What a visitor operated             | **yes**         | no                   |
 | Viewport, declared automation       | **yes**         | no                   |
 
 Neither replaces the other, and the surface is recorded on every event so a classification can be
@@ -85,11 +86,14 @@ Recognised `surface` values: `cloudflare-worker`, `wordpress-plugin`, `netlify-e
 
 | Field           | Required | Meaning                                                                                                                                                                                                       |
 | --------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kind`          | yes      | `pageview`, `engagement` or `exit`. A server surface reports `pageview`.                                                                                                                                      |
+| `kind`          | yes      | `pageview`, `engagement`, `exit` or `action`. A server surface reports `pageview`: it never sees a page being read or a control being operated.                                                               |
 | `url`           | yes      | Absolute `http` or `https` URL of the page requested. Its hostname must be one the site covers.                                                                                                               |
 | `referrer`      | no       | The referring URL the visitor's browser sent.                                                                                                                                                                 |
 | `ipAddress`     | no       | The **visitor's** address, not the reporter's. Absent means the reporter could not determine one; present but unparseable is refused.                                                                         |
 | `userAgent`     | no       | The **visitor's** user agent, not the reporter's.                                                                                                                                                             |
+| `mobile`        | no       | The visitor's `Sec-CH-UA-Mobile` header, forwarded exactly as sent — `?1` or `?0`. Anything else means the visitor's browser said nothing, which is the ordinary case outside Chromium.                       |
+| `platform`      | no       | The visitor's `Sec-CH-UA-Platform` header, as sent.                                                                                                                                                           |
+| `brands`        | no       | The visitor's `Sec-CH-UA` header, as sent.                                                                                                                                                                    |
 | `statusCode`    | no       | Status the site returned.                                                                                                                                                                                     |
 | `contentType`   | no       | Content type of the response.                                                                                                                                                                                 |
 | `responseBytes` | no       | Bytes sent in the response.                                                                                                                                                                                   |
@@ -98,8 +102,15 @@ Recognised `surface` values: `cloudflare-worker`, `wordpress-plugin`, `netlify-e
 | `correlationId` | no       | Names this one delivery, so the browser's account of the same page can be matched to it. See [Naming the delivery](#naming-the-delivery) — a reporter that runs alongside the browser tracker should send it. |
 
 Fields the browser observes and a server cannot — viewport, engaged time, scroll depth, pointer
-and keyboard presence, declared automation — are absent from this shape on purpose. There is no
+and keyboard presence, declared automation, and what a visitor operated — are absent from this
+shape on purpose. There is no
 way to assert them here, and the store records them as _not observed_ rather than as zero.
+
+The three headers above are forwarded rather than interpreted, and only those three. They are the
+low-entropy client hints, which a browser sends unasked and to any origin, and they are what lets
+a visit reported from your server still be attributed to a phone rather than to a computer. Do not
+request the high-entropy ones on this product's behalf: they name the exact device and build, which
+is the part that would help identify a person, and nothing here reads them.
 
 ### Naming the delivery
 

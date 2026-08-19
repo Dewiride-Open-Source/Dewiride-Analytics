@@ -34,6 +34,9 @@ public sealed record SiteSnapshot
     /// <summary>Whether query strings are kept on this site's events.</summary>
     public required bool RetainQueryStrings { get; init; }
 
+    /// <summary>Whether the controls visitors operate on this site are recorded.</summary>
+    public required bool CaptureClicks { get; init; }
+
     /// <summary>
     /// Origins permitted to report for this site. Empty means the site's own domain and its
     /// subdomains only.

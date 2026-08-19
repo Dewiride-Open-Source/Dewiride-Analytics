@@ -1,4 +1,5 @@
 using Dewiride.Analytics.Application.Ingest;
+using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Domain.Telemetry;
 using Microsoft.Net.Http.Headers;
 
@@ -21,6 +22,27 @@ internal static class RequestObservation
     private const int MaxUserAgentLength = 1024;
 
     /// <summary>
+    /// Longest client hint examined. These are single tokens or a short bracketed list, and
+    /// nothing beyond this length could be either.
+    /// </summary>
+    private const int MaxHintLength = 256;
+
+    /// <summary>Whether the client is on a handheld device.</summary>
+    private const string MobileHeader = "Sec-CH-UA-Mobile";
+
+    /// <summary>Which platform the client is on.</summary>
+    private const string PlatformHeader = "Sec-CH-UA-Platform";
+
+    /// <summary>Which browser brands the client answers to.</summary>
+    private const string BrandsHeader = "Sec-CH-UA";
+
+    /// <summary>How a structured-header boolean spells true.</summary>
+    private const string HintTrue = "?1";
+
+    /// <summary>And false.</summary>
+    private const string HintFalse = "?0";
+
+    /// <summary>
     /// Builds the server-side half of an ingest.
     /// </summary>
     /// <param name="context">The current request.</param>
@@ -30,9 +52,44 @@ internal static class RequestObservation
     {
         Surface = surface,
         UserAgent = Header(context, HeaderNames.UserAgent, MaxUserAgentLength),
+        Hints = ReadHints(context),
         IpAddress = ClientAddress(context),
         RequestOrigin = Header(context, HeaderNames.Origin) ?? Header(context, HeaderNames.Referer),
     };
+
+    /// <summary>
+    /// Reads what the browser volunteered about itself.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only the three low-entropy hints, which a browser sends unasked and to any origin. Nothing
+    /// is requested: asking would mean sending back a header inviting the browser to describe
+    /// itself more precisely on the next request, and the extra precision is exactly the part that
+    /// would help identify a person.
+    /// </para>
+    /// <para>
+    /// Absent on most of the web, and that is expected rather than a fault. Only one family of
+    /// browsers implements these, and they are sent only over a secure connection — so an
+    /// installation being tried out over plain HTTP sees none of them and falls back to the user
+    /// agent, which is what the rest of the world does anyway.
+    /// </para>
+    /// </remarks>
+    private static ClientHints ReadHints(HttpContext context)
+    {
+        var mobile = Header(context, MobileHeader, MaxHintLength);
+
+        return new ClientHints
+        {
+            Mobile = mobile switch
+            {
+                HintTrue => true,
+                HintFalse => false,
+                _ => null,
+            },
+            Platform = Header(context, PlatformHeader, MaxHintLength),
+            Brands = Header(context, BrandsHeader, MaxHintLength),
+        };
+    }
 
     /// <summary>
     /// Returns the address the request came from, in its most readable form.

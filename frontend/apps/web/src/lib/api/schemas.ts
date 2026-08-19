@@ -83,6 +83,252 @@ export const pagesSchema = z.object({
   pages: z.array(sitePageSchema),
 });
 
+/** What a row of a place list stands for. */
+export const locationGroupingSchema = z.enum(['country', 'town']);
+
+export const siteLocationSchema = z.object({
+  place: z.string(),
+  countryCode: z.string(),
+  visitors: z.number().int(),
+  pageViews: z.number().int(),
+});
+
+/**
+ * One slice of the places a period's audience was in.
+ *
+ * Counted per person rather than per page, so a country is ranked by how many readers were in it
+ * rather than by how much browsing they did. The figures beside the rows describe the whole
+ * period on the same terms as the page list, so a share stays true on the fourth screenful.
+ *
+ * A place that resolved to nothing is a row with an empty name rather than an absence. A site
+ * behind a proxy that does not pass its visitors' addresses through resolves nothing at all, and
+ * it needs to be able to see that.
+ */
+export const locationsSchema = z.object({
+  from: timestamp,
+  to: timestamp,
+  grouping: locationGroupingSchema,
+  visitors: z.number().int(),
+  totalPlaces: z.number().int(),
+  mostVisitors: z.number().int(),
+  places: z.array(siteLocationSchema),
+});
+
+/**
+ * The kinds of device the engine tells apart.
+ *
+ * A closed set, and `unknown` is one of its members rather than a gap in it: much of what reaches
+ * a website is not a device at all, and each of these names a phrase in the message catalogue.
+ */
+export const deviceKindSchema = z.enum(['phone', 'tablet', 'desktop', 'other', 'unknown']);
+
+export const siteDeviceSchema = z.object({
+  kind: deviceKindSchema,
+  visitors: z.number().int(),
+  pageViews: z.number().int(),
+});
+
+/**
+ * How a period's audience divides between kinds of device.
+ *
+ * Unpaged, because the kinds are five. Every visitor is on exactly one row, which is what lets
+ * the card state one total and draw shares that add up to it.
+ */
+export const devicesSchema = z.object({
+  from: timestamp,
+  to: timestamp,
+  visitors: z.number().int(),
+  devices: z.array(siteDeviceSchema),
+});
+
+/** What a row of a software list stands for. */
+export const softwareGroupingSchema = z.enum(['browser', 'system']);
+
+export const siteSoftwareSchema = z.object({
+  name: z.string(),
+  visitors: z.number().int(),
+  pageViews: z.number().int(),
+});
+
+/**
+ * One slice of the software a period's audience used.
+ *
+ * Left open where the device kinds are closed: browsers are released, renamed and forked, and a
+ * name arriving that this dashboard has never seen is a name to show rather than an error. The
+ * engine spells it from its own catalogue, never from what the client claimed.
+ */
+export const softwareSchema = z.object({
+  from: timestamp,
+  to: timestamp,
+  grouping: softwareGroupingSchema,
+  visitors: z.number().int(),
+  totalNames: z.number().int(),
+  mostVisitors: z.number().int(),
+  names: z.array(siteSoftwareSchema),
+});
+
+/** What a row of a list of operated controls stands for. */
+export const actionGroupingSchema = z.enum(['control', 'destination']);
+
+/**
+ * What sort of thing a visitor operated.
+ *
+ * Closed, because the engine resolves whatever a page called its control into this set on the way
+ * in. A page may describe its controls however it likes; none of its spelling is stored, and none
+ * of it reaches a screen.
+ */
+export const controlKindSchema = z.enum(['unknown', 'link', 'button', 'field']);
+
+export const siteActionSchema = z.object({
+  name: z.string(),
+  control: controlKindSchema,
+  presses: z.number().int(),
+  visitors: z.number().int(),
+});
+
+/**
+ * One slice of what a period's visitors operated, most pressed first.
+ *
+ * Read exactly like the page, place and software lists: the figures beside the rows describe the
+ * whole period rather than the slice, so a share and a bar mean the same thing on every screenful.
+ */
+export const actionsSchema = z.object({
+  from: timestamp,
+  to: timestamp,
+  grouping: actionGroupingSchema,
+  presses: z.number().int(),
+  totalControls: z.number().int(),
+  mostPresses: z.number().int(),
+  controls: z.array(siteActionSchema),
+});
+
+/** What a website collects, as far as its owner decides it. */
+export const siteSettingsSchema = z.object({
+  captureClicks: z.boolean(),
+});
+
+/**
+ * How a period's pages were actually read.
+ *
+ * Only the browser tracker can observe any of this, so how many readings could be measured
+ * arrives beside how many there were: every other figure is taken over the measured ones alone,
+ * and a website measured only from its own server has nothing measured rather than nobody
+ * engaged.
+ */
+export const engagementSchema = z.object({
+  from: timestamp,
+  to: timestamp,
+  readings: z.number().int(),
+  measured: z.number().int(),
+  medianEngagedMs: z.number().int(),
+  interacted: z.number().int(),
+  depths: z.object({
+    top: z.number().int(),
+    quarter: z.number().int(),
+    half: z.number().int(),
+    whole: z.number().int(),
+  }),
+});
+
+/** What a reading list is ordered by. */
+export const engagementRankingSchema = z.enum(['attention', 'depth']);
+
+export const pageEngagementRowSchema = z.object({
+  path: z.string(),
+  readings: z.number().int(),
+  medianEngagedMs: z.number().int(),
+  medianDepthPercent: z.number().int(),
+  interacted: z.number().int(),
+});
+
+/**
+ * One slice of a period's pages ranked by how they were read.
+ *
+ * Only pages at least one reading could be measured on are on the list at all, so the total
+ * beside it is smaller than the number of pages that had traffic.
+ */
+export const pageEngagementSchema = z.object({
+  from: timestamp,
+  to: timestamp,
+  ranking: engagementRankingSchema,
+  totalPages: z.number().int(),
+  longestMedianEngagedMs: z.number().int(),
+  pages: z.array(pageEngagementRowSchema),
+});
+
+/**
+ * How a period's finished visits were shaped.
+ *
+ * A visit is one reader's activity up to the first half-hour of silence. Only visits that had
+ * finished when the question was asked are counted: one still under way has an unfinished page
+ * count, and a handful of those would decide the answer on a quiet website.
+ */
+export const visitTotalsSchema = z.object({
+  from: timestamp,
+  to: timestamp,
+  visits: z.number().int(),
+  singlePageVisits: z.number().int(),
+  pageViews: z.number().int(),
+});
+
+/** Which end of a visit a page list stands for. */
+export const visitPositionSchema = z.enum(['entry', 'exit']);
+
+export const visitPageRowSchema = z.object({
+  path: z.string(),
+  visits: z.number().int(),
+});
+
+/**
+ * One slice of the pages a period's visits began or ended on.
+ *
+ * Counted per visit rather than per page view, so a busy page is not a common doorway unless
+ * people actually arrived through it.
+ */
+export const visitPagesSchema = z.object({
+  from: timestamp,
+  to: timestamp,
+  position: visitPositionSchema,
+  totalVisits: z.number().int(),
+  totalPaths: z.number().int(),
+  mostVisits: z.number().int(),
+  pages: z.array(visitPageRowSchema),
+});
+
+/** What sort of place an operated control pointed at. */
+export const targetKindSchema = z.enum(['none', 'internal', 'external', 'contact']);
+
+/** One control a visitor operated, as it appears inside a visit. */
+export const visitPressSchema = z.object({
+  name: z.string(),
+  control: controlKindSchema,
+  target: z.string().nullable(),
+  targetKind: targetKindSchema,
+});
+
+/**
+ * One thing a visit did: arriving at a page, or operating a control on one.
+ *
+ * The three measurements are absent rather than nought where nothing observed them. A step only a
+ * website's own server saw has no attention, which is a different fact from a reader who left
+ * immediately, and the two are kept apart all the way to the screen. A step carrying a press is a
+ * press rather than an arrival, which is what tells the two apart.
+ */
+export const visitJourneyStepSchema = z.object({
+  at: timestamp,
+  path: z.string(),
+  statusCode: z.number().int().nullable(),
+  engagedMs: z.number().int().nullable(),
+  depthPercent: z.number().int().nullable(),
+  press: visitPressSchema.nullable(),
+});
+
+/** What one visit did, in the order it did it. */
+export const visitJourneySchema = z.object({
+  visit: z.string(),
+  steps: z.array(visitJourneyStepSchema),
+});
+
 /**
  * What generated a visit.
  *
@@ -216,6 +462,33 @@ export type Series = z.infer<typeof seriesSchema>;
 export type SeriesMetric = Series['metric'];
 export type SitePage = z.infer<typeof sitePageSchema>;
 export type Pages = z.infer<typeof pagesSchema>;
+export type LocationGrouping = z.infer<typeof locationGroupingSchema>;
+export type SiteLocation = z.infer<typeof siteLocationSchema>;
+export type Locations = z.infer<typeof locationsSchema>;
+export type DeviceKind = z.infer<typeof deviceKindSchema>;
+export type SiteDevice = z.infer<typeof siteDeviceSchema>;
+export type Devices = z.infer<typeof devicesSchema>;
+export type ActionGrouping = z.infer<typeof actionGroupingSchema>;
+
+export type ControlKind = z.infer<typeof controlKindSchema>;
+
+export type SiteAction = z.infer<typeof siteActionSchema>;
+
+export type Actions = z.infer<typeof actionsSchema>;
+
+export type SiteSettings = z.infer<typeof siteSettingsSchema>;
+
+export type TargetKind = z.infer<typeof targetKindSchema>;
+
+export type VisitPress = z.infer<typeof visitPressSchema>;
+
+export type SoftwareGrouping = z.infer<typeof softwareGroupingSchema>;
+export type SiteSoftware = z.infer<typeof siteSoftwareSchema>;
+export type Software = z.infer<typeof softwareSchema>;
+export type Engagement = z.infer<typeof engagementSchema>;
+export type EngagementRanking = z.infer<typeof engagementRankingSchema>;
+export type PageEngagementRow = z.infer<typeof pageEngagementRowSchema>;
+export type PageEngagement = z.infer<typeof pageEngagementSchema>;
 export type TrafficCategory = z.infer<typeof trafficCategorySchema>;
 export type EvidenceStrength = z.infer<typeof evidenceStrengthSchema>;
 export type CaptureSurface = z.infer<typeof captureSurfaceSchema>;
@@ -225,5 +498,11 @@ export type Traffic = z.infer<typeof trafficSchema>;
 export type VisitReason = z.infer<typeof visitReasonSchema>;
 export type Visit = z.infer<typeof visitSchema>;
 export type Visits = z.infer<typeof visitsSchema>;
+export type VisitTotals = z.infer<typeof visitTotalsSchema>;
+export type VisitPosition = z.infer<typeof visitPositionSchema>;
+export type VisitPageRow = z.infer<typeof visitPageRowSchema>;
+export type VisitPages = z.infer<typeof visitPagesSchema>;
+export type VisitJourneyStep = z.infer<typeof visitJourneyStepSchema>;
+export type VisitJourney = z.infer<typeof visitJourneySchema>;
 export type ServerKey = z.infer<typeof serverKeySchema>;
 export type IssuedServerKey = z.infer<typeof issuedServerKeySchema>;

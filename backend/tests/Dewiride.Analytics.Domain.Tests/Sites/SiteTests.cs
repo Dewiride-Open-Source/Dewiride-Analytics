@@ -77,6 +77,29 @@ public sealed class SiteTests
         site.RetainQueryStrings.Should().BeFalse();
     }
 
+    /// <summary>
+    /// On, so that what somebody sees on the dashboard is what the product does out of the box.
+    /// What is kept of a press is the site's own name for its own control, and there is a switch
+    /// for anybody who would rather it were not kept at all.
+    /// </summary>
+    [Fact]
+    public void Constructor_Leaves_Click_Capture_On()
+    {
+        var site = NewSite();
+
+        site.CaptureClicks.Should().BeTrue();
+    }
+
+    [Fact]
+    public void SetClickCapture_Turns_Capture_Off()
+    {
+        var site = NewSite();
+
+        site.SetClickCapture(false);
+
+        site.CaptureClicks.Should().BeFalse();
+    }
+
     [Fact]
     public void Constructor_Leaves_The_Origin_List_Empty()
     {

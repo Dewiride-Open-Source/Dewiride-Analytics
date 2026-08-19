@@ -1,0 +1,86 @@
+﻿--- statement ---
+WITH
+    windowed AS
+    (
+        SELECT
+            surface,
+            path,
+            visitor_key,
+            correlation_id,
+            engaged_ms,
+            scroll_depth_percent,
+            had_pointer_interaction,
+            had_keyboard_interaction
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    ),
+    echoed AS
+    (
+        SELECT
+            minIf(visitor_key, surface IN ('BrowserTracker', 'NoScriptPixel')) AS browser_key,
+            minIf(visitor_key, surface NOT IN ('BrowserTracker', 'NoScriptPixel')) AS reported_key
+        FROM windowed
+        WHERE correlation_id != ''
+          AND visitor_key != ''
+        GROUP BY correlation_id
+        HAVING browser_key != ''
+           AND reported_key != ''
+    ),
+    linked AS
+    (
+        SELECT
+            reported_key,
+            min(browser_key) AS browser_key
+        FROM echoed
+        GROUP BY reported_key
+    ),
+    identified AS
+    (
+        SELECT
+            windowed.* EXCEPT (visitor_key),
+            if(linked.browser_key != '' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'), linked.browser_key, windowed.visitor_key) AS visitor_key
+        FROM windowed
+        LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
+    ),
+    readings AS
+    (
+        SELECT
+            path,
+            toInt32(ifNull(max(engaged_ms), -1)) AS engaged_ms,
+            toInt16(ifNull(max(scroll_depth_percent), -1)) AS depth,
+            max(had_pointer_interaction = 'Yes' OR had_keyboard_interaction = 'Yes') AS interacted
+        FROM identified
+        WHERE visitor_key != ''
+        GROUP BY visitor_key, path
+    )
+SELECT
+    path,
+    measured,
+    median_engaged_ms,
+    median_depth,
+    interacted,
+    toInt64(count() OVER ()) AS total_pages,
+    toInt32(max(median_engaged_ms) OVER ()) AS longest_median_engaged_ms
+FROM
+(
+    SELECT
+        path,
+        toInt64(countIf(engaged_ms >= 0)) AS measured,
+        toInt32(quantileExactIf(0.5)(engaged_ms, engaged_ms >= 0)) AS median_engaged_ms,
+        toInt32(quantileExactIf(0.5)(depth, depth >= 0)) AS median_depth,
+        toInt64(countIf(interacted)) AS interacted
+    FROM readings
+    GROUP BY path
+    HAVING measured > 0
+)
+ORDER BY median_engaged_ms DESC, path
+LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777593600000
+to_ms = 1778198400000
+limit = 10
+offset = 0

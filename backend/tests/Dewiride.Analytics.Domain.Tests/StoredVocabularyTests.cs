@@ -45,9 +45,25 @@ public sealed class StoredVocabularyTests
     }
 
     [Fact]
-    public void Event_Kinds_Are_The_Three_A_Surface_May_Report()
+    public void Event_Kinds_Are_The_Four_A_Surface_May_Report()
     {
-        Enum.GetNames<EventKind>().Should().BeEquivalentTo("Unknown", "PageView", "Engagement", "Exit");
+        Enum.GetNames<EventKind>()
+            .Should()
+            .BeEquivalentTo("Unknown", "PageView", "Engagement", "Exit", "Action");
+    }
+
+    /// <summary>
+    /// The stored value of an enumeration is its number, so a member that changed number would
+    /// reinterpret every row already written under the old one.
+    /// </summary>
+    [Fact]
+    public void Every_Event_Kind_Has_The_Number_Its_Rows_Were_Written_Under()
+    {
+        ((int)EventKind.Unknown).Should().Be(0);
+        ((int)EventKind.PageView).Should().Be(1);
+        ((int)EventKind.Engagement).Should().Be(2);
+        ((int)EventKind.Exit).Should().Be(3);
+        ((int)EventKind.Action).Should().Be(4);
     }
 
     [Fact]

@@ -43,6 +43,13 @@ public sealed class Site
     /// </summary>
     public bool RetainQueryStrings { get; private set; }
 
+    /// <summary>
+    /// Whether the controls visitors operate are recorded. On by default: what somebody pressed
+    /// is the question the tracker is installed to answer, and what is kept of it is the site's
+    /// own name for its own control rather than anything about the person pressing it.
+    /// </summary>
+    public bool CaptureClicks { get; private set; } = true;
+
     private readonly List<string> _allowedOrigins = [];
 
     /// <summary>
@@ -90,6 +97,7 @@ public sealed class Site
         DisplayName = Domain;
         TimeZoneId = timeZoneId;
         CreatedAt = createdAt;
+        CaptureClicks = true;
     }
 
     /// <summary>Sets the name shown in the dashboard.</summary>
@@ -104,6 +112,10 @@ public sealed class Site
     /// <summary>Sets whether query strings are retained on collected events.</summary>
     /// <param name="retain">Whether to retain them.</param>
     public void SetQueryStringRetention(bool retain) => RetainQueryStrings = retain;
+
+    /// <summary>Sets whether the controls visitors operate are recorded.</summary>
+    /// <param name="capture">Whether to record them.</param>
+    public void SetClickCapture(bool capture) => CaptureClicks = capture;
 
     /// <summary>Replaces the set of origins permitted to submit events.</summary>
     /// <param name="origins">The permitted origins. Null or empty restores the default.</param>

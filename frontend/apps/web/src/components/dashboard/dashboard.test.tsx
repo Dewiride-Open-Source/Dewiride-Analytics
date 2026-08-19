@@ -69,6 +69,23 @@ function engineWith(sites: unknown, overview: unknown) {
       return respondWith(200, { from: FROM, to: TO, sessions: 0, pageViews: 0, groups: [] });
     }
 
+    // Named before the visit list, which its address begins with.
+    if (path.includes('/visits/totals')) {
+      return respondWith(200, { from: FROM, to: TO, visits: 0, singlePageVisits: 0, pageViews: 0 });
+    }
+
+    if (path.includes('/visits/pages')) {
+      return respondWith(200, {
+        from: FROM,
+        to: TO,
+        position: 'entry',
+        totalVisits: 0,
+        totalPaths: 0,
+        mostVisits: 0,
+        pages: [],
+      });
+    }
+
     if (path.includes('/visits')) {
       return respondWith(200, { from: FROM, to: TO, visits: [] });
     }

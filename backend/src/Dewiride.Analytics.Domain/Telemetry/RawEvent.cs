@@ -95,6 +95,43 @@ public sealed record RawEvent
     /// </summary>
     public string? IpAddress { get; init; }
 
+    /// <summary>
+    /// ISO 3166-1 alpha-2 country the address resolved to, or null when it did not resolve.
+    /// </summary>
+    /// <remarks>
+    /// Every attribute in this group is derived from <see cref="IpAddress"/> at the moment the
+    /// event is accepted, and that timing is not an implementation detail. The address is erased
+    /// 72 hours later by a column policy in the store, so an attribute not resolved on the way in
+    /// can never be resolved afterwards — there is nothing left to resolve it from.
+    /// </remarks>
+    public string? CountryCode { get; init; }
+
+    /// <summary>State, province or region, where the data has one for the address.</summary>
+    public string? Subdivision { get; init; }
+
+    /// <summary>
+    /// Town or city the address resolved to.
+    /// </summary>
+    /// <remarks>
+    /// An estimate rather than an observation: address ranges are allocated to networks, not to
+    /// streets, and the answer is frequently the nearest sizeable town rather than where the
+    /// visitor is. Anything displaying it has to say so.
+    /// </remarks>
+    public string? City { get; init; }
+
+    /// <summary>Autonomous system the address belongs to, or zero when it did not resolve.</summary>
+    public uint AutonomousSystem { get; init; }
+
+    /// <summary>
+    /// Who runs that autonomous system — an internet provider, a hosting company, a university.
+    /// </summary>
+    /// <remarks>
+    /// A fact about the network rather than about the visitor, and one of the few strong ones
+    /// available: a request from a hosting network is not somebody reading at home, whatever its
+    /// user agent claims.
+    /// </remarks>
+    public string? NetworkOwner { get; init; }
+
     /// <summary>Browser viewport width in CSS pixels, where the surface can observe it.</summary>
     public int? ViewportWidth { get; init; }
 
@@ -106,6 +143,32 @@ public sealed record RawEvent
 
     /// <summary>Client's UTC offset in minutes, where declared.</summary>
     public short? TimezoneOffsetMinutes { get; init; }
+
+    /// <summary>What kind of device the visit was made from, as far as anything could tell.</summary>
+    public DeviceClass DeviceClass { get; init; }
+
+    /// <summary>
+    /// Browser family, without a version — <c>Chrome</c>, <c>Safari</c>, <c>Firefox</c>.
+    /// </summary>
+    /// <remarks>
+    /// The family only. A version number changes every few weeks, would make this column's stored
+    /// set unbounded, and narrows a visitor far more than knowing which browser they favour.
+    /// </remarks>
+    public string? BrowserFamily { get; init; }
+
+    /// <summary>Operating system family, without a version.</summary>
+    public string? OperatingSystem { get; init; }
+
+    /// <summary>
+    /// Whether the client declared itself to be on a handheld device.
+    /// </summary>
+    /// <remarks>
+    /// Taken from the low-entropy hint browsers send of their own accord rather than from the
+    /// user-agent string. Retained separately from <see cref="DeviceClass"/> because the two
+    /// disagreeing is informative in itself: a user agent claiming a browser that always sends
+    /// this hint, on a request that carries none, has been written by hand.
+    /// </remarks>
+    public bool? DeclaredMobile { get; init; }
 
     /// <summary>
     /// Engaged time on the page in milliseconds, accumulated only while the tab was
@@ -134,6 +197,26 @@ public sealed record RawEvent
     /// falsifiable, so it is treated as one weak signal among many rather than a verdict.
     /// </summary>
     public bool? DeclaredWebDriver { get; init; }
+
+    /// <summary>
+    /// The kind of control that was operated, for an <see cref="EventKind.Action"/>.
+    /// </summary>
+    public ControlKind ActionControl { get; init; }
+
+    /// <summary>
+    /// What the operated control said it was: its own accessible name, or failing that the text
+    /// it reads as on the screen. The site's own writing, never anything a visitor entered.
+    /// </summary>
+    public string? ActionLabel { get; init; }
+
+    /// <summary>
+    /// Where the operated control pointed: a path for somewhere on the same site, a host alone
+    /// for anywhere else, and nothing at all for an address to write to or ring.
+    /// </summary>
+    public string? ActionTarget { get; init; }
+
+    /// <summary>What sort of place <see cref="ActionTarget"/> describes.</summary>
+    public TargetKind ActionTargetKind { get; init; }
 
     /// <summary>
     /// Correlation identifier stamped into the served HTML by a server-side surface, echoed

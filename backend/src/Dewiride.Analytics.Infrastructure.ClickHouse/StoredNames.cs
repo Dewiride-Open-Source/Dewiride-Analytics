@@ -31,7 +31,34 @@ internal static class StoredNames
             [EventKind.PageView] = "PageView",
             [EventKind.Engagement] = "Engagement",
             [EventKind.Exit] = "Exit",
+            [EventKind.Action] = "Action",
         }.ToFrozenDictionary();
+
+    /// <summary>Stored name for each kind of control.</summary>
+    public static FrozenDictionary<ControlKind, string> ControlKindNames { get; } =
+        new Dictionary<ControlKind, string>
+        {
+            [ControlKind.Unknown] = "Unknown",
+            [ControlKind.Link] = "Link",
+            [ControlKind.Button] = "Button",
+            [ControlKind.Field] = "Field",
+        }.ToFrozenDictionary();
+
+    /// <summary>Kind of control for each stored name.</summary>
+    public static FrozenDictionary<string, ControlKind> ControlKinds { get; } = Invert(ControlKindNames);
+
+    /// <summary>Stored name for each kind of place a control pointed at.</summary>
+    public static FrozenDictionary<TargetKind, string> TargetKindNames { get; } =
+        new Dictionary<TargetKind, string>
+        {
+            [TargetKind.None] = "None",
+            [TargetKind.Internal] = "Internal",
+            [TargetKind.External] = "External",
+            [TargetKind.Contact] = "Contact",
+        }.ToFrozenDictionary();
+
+    /// <summary>Kind of place for each stored name.</summary>
+    public static FrozenDictionary<string, TargetKind> TargetKinds { get; } = Invert(TargetKindNames);
 
     /// <summary>Stored name for each capture surface.</summary>
     public static FrozenDictionary<IngestSurface, string> SurfaceNames { get; } =
@@ -52,6 +79,20 @@ internal static class StoredNames
 
     /// <summary>Capture surface for each stored name.</summary>
     public static FrozenDictionary<string, IngestSurface> Surfaces { get; } = Invert(SurfaceNames);
+
+    /// <summary>Stored name for each kind of device.</summary>
+    public static FrozenDictionary<DeviceClass, string> DeviceClassNames { get; } =
+        new Dictionary<DeviceClass, string>
+        {
+            [DeviceClass.Unknown] = "Unknown",
+            [DeviceClass.Phone] = "Phone",
+            [DeviceClass.Tablet] = "Tablet",
+            [DeviceClass.Desktop] = "Desktop",
+            [DeviceClass.Other] = "Other",
+        }.ToFrozenDictionary();
+
+    /// <summary>Kind of device for each stored name.</summary>
+    public static FrozenDictionary<string, DeviceClass> DeviceClasses { get; } = Invert(DeviceClassNames);
 
     /// <summary>
     /// The surfaces reporting from the visitor's own browser, written as a list a statement can

@@ -15,11 +15,13 @@ namespace Dewiride.Analytics.Application.Ingest;
 /// </remarks>
 /// <param name="siteCatalog">Resolves the site a report claims to belong to.</param>
 /// <param name="visitorKeyFactory">Derives the daily-rotated visitor key.</param>
+/// <param name="networkLookup">Resolves where the visitor's address is and whose network it is on.</param>
 /// <param name="eventSink">Durable storage for accepted events.</param>
 /// <param name="timeProvider">Source of the authoritative server timestamp.</param>
 public sealed class EventIngestor(
     ISiteCatalog siteCatalog,
     IVisitorKeyFactory visitorKeyFactory,
+    INetworkLookup networkLookup,
     IEventSink eventSink,
     TimeProvider timeProvider)
 {
@@ -35,6 +37,19 @@ public sealed class EventIngestor(
     /// used to carry a payload.
     /// </summary>
     private const int MaxLanguageLength = 35;
+
+    /// <summary>
+    /// Longest control name stored. A control is named in a few words; the tracker cuts it to
+    /// this and the cut is applied again here, because the tracker runs on somebody else's page
+    /// and nothing it sends is a promise.
+    /// </summary>
+    private const int MaxActionLabelLength = 64;
+
+    /// <summary>
+    /// Longest control destination stored. Generous for a path on the site and far past the
+    /// longest possible hostname.
+    /// </summary>
+    private const int MaxActionTargetLength = 512;
 
     /// <summary>Longest correlation identifier accepted.</summary>
     private const int MaxCorrelationIdLength = 64;
@@ -53,6 +68,15 @@ public sealed class EventIngestor(
 
     /// <summary>Largest meaningful scroll depth.</summary>
     private const byte MaxScrollDepthPercent = 100;
+
+    /// <summary>
+    /// Longest town name stored. Generous enough for the longest real one and short enough that
+    /// nothing arriving from the reference data can become a payload.
+    /// </summary>
+    private const int MaxPlaceNameLength = 96;
+
+    /// <summary>Longest network owner stored. The column holds a small set of repeated values.</summary>
+    private const int MaxNetworkOwnerLength = 96;
 
     /// <summary>
     /// Validates a report and, if it is acceptable, writes it.
@@ -80,6 +104,15 @@ public sealed class EventIngestor(
             return IngestOutcome.Rejected;
         }
 
+        // Turned off, so the report is dropped where it arrives rather than stored and filtered
+        // out of every later question. A setting that governs what is kept has to govern what is
+        // written, or turning it off leaves everything already collected in place and collects
+        // more.
+        if (command.Kind == EventKind.Action && !site.CaptureClicks)
+        {
+            return IngestOutcome.Rejected;
+        }
+
         var receivedAt = timeProvider.GetUtcNow();
         var rawEvent = BuildEvent(command, context, site, url, receivedAt);
 
@@ -96,6 +129,17 @@ public sealed class EventIngestor(
     {
         var clientTimestamp = ToTimestamp(command.ClientTimestampUnixMs);
         var referrer = Truncate(command.Referrer, MaxReferrerLength);
+
+        // Only a report about an operated control may describe one. Anything else claiming to is
+        // a caller filling in fields that do not belong to what it says it is reporting, and the
+        // claim is dropped rather than stored beside a page view nobody would expect to carry it.
+        var operated = command.Kind == EventKind.Action;
+
+        // Resolved here rather than by a later job, because the address it is resolved from is
+        // erased 72 hours after this row is written. An attribute missed on the way in cannot be
+        // recovered afterwards: there would be nothing left to recover it from.
+        var network = networkLookup.Resolve(context.IpAddress);
+        var client = ClientProfiler.Profile(context.UserAgent, context.Hints);
 
         return new RawEvent
         {
@@ -117,15 +161,28 @@ public sealed class EventIngestor(
             ContentType = Truncate(context.ContentType, MaxContentTypeLength),
             ResponseBytes = context.ResponseBytes,
             IpAddress = context.IpAddress,
+            CountryCode = NullIfEmpty(network.CountryCode),
+            Subdivision = Truncate(network.Subdivision, MaxPlaceNameLength),
+            City = Truncate(network.City, MaxPlaceNameLength),
+            AutonomousSystem = network.AutonomousSystem,
+            NetworkOwner = Truncate(network.NetworkOwner, MaxNetworkOwnerLength),
             ViewportWidth = command.ViewportWidth,
             ViewportHeight = command.ViewportHeight,
             Language = Truncate(command.Language, MaxLanguageLength),
             TimezoneOffsetMinutes = command.TimezoneOffsetMinutes,
+            DeviceClass = client.Device,
+            BrowserFamily = NullIfEmpty(client.BrowserFamily),
+            OperatingSystem = NullIfEmpty(client.OperatingSystem),
+            DeclaredMobile = context.Hints.Mobile,
             EngagedMs = command.EngagedMs,
             ScrollDepthPercent = command.ScrollDepthPercent,
             HadPointerInteraction = command.HadPointerInteraction,
             HadKeyboardInteraction = command.HadKeyboardInteraction,
             DeclaredWebDriver = command.DeclaredWebDriver,
+            ActionControl = operated ? command.ActionControl : ControlKind.Unknown,
+            ActionLabel = operated ? Truncate(command.ActionLabel, MaxActionLabelLength) : null,
+            ActionTarget = operated ? Truncate(command.ActionTarget, MaxActionTargetLength) : null,
+            ActionTargetKind = operated ? command.ActionTargetKind : TargetKind.None,
             CorrelationId = Truncate(command.CorrelationId, MaxCorrelationIdLength),
         };
     }

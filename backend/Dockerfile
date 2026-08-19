@@ -55,6 +55,13 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=build /app .
 
+# Where the downloaded country, town and network data is kept, created here rather than left to
+# the volume mounted over it. Docker takes a new named volume's ownership from the directory it
+# covers, and a directory that only exists because the mount created it belongs to root — which
+# the account below is not, so every download would fail with a permission error on a path the
+# service was explicitly told to use.
+RUN mkdir -p /var/lib/dewiride/reference && chown -R $APP_UID:$APP_UID /var/lib/dewiride
+
 # Runs as the unprivileged account the base image provides, never as root.
 USER $APP_UID
 

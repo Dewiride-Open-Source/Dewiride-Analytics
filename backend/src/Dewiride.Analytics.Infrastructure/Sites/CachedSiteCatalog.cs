@@ -20,6 +20,18 @@ namespace Dewiride.Analytics.Infrastructure.Sites;
 /// <param name="cache">Cache used to hold resolved sites.</param>
 public sealed class CachedSiteCatalog(ControlPlaneDbContext database, HybridCache cache) : ISiteCatalog
 {
+    /// <summary>
+    /// Where one site's settings are held.
+    /// </summary>
+    /// <remarks>
+    /// Written here rather than at each use because whatever changes a site has to throw the same
+    /// entry away, and a second spelling of this would leave a saved setting waiting out the
+    /// minute below before it took effect.
+    /// </remarks>
+    /// <param name="siteId">The site.</param>
+    /// <returns>The cache entry's name.</returns>
+    internal static string CacheKey(Guid siteId) => $"site:{siteId}";
+
     private static readonly HybridCacheEntryOptions CacheOptions = new()
     {
         Expiration = TimeSpan.FromMinutes(1),
@@ -29,7 +41,7 @@ public sealed class CachedSiteCatalog(ControlPlaneDbContext database, HybridCach
     /// <inheritdoc />
     public async Task<SiteSnapshot?> FindAsync(Guid siteId, CancellationToken cancellationToken) =>
         await cache.GetOrCreateAsync(
-            $"site:{siteId}",
+            CacheKey(siteId),
             (database, siteId),
             static async (state, token) => await state.database.Sites
                 .AsNoTracking()
@@ -43,6 +55,7 @@ public sealed class CachedSiteCatalog(ControlPlaneDbContext database, HybridCach
                     Id = site.Id,
                     Domain = site.Domain,
                     RetainQueryStrings = site.RetainQueryStrings,
+                    CaptureClicks = site.CaptureClicks,
                     AllowedOrigins = site.AllowedOrigins.ToImmutableArray(),
                 })
                 .FirstOrDefaultAsync(token)

@@ -27,13 +27,43 @@ what does not.
 **Working now**
 
 - The whole stack starts with one command and comes up healthy on a laptop.
-- A collection endpoint accepts page views and engagement reports, stamps its own authoritative
+- A collection endpoint accepts page views, engagement reports and clicks, stamps its own authoritative
   timestamp alongside the reported one, and writes them to the telemetry store.
 - Sign-in, several accounts on one installation, and three roles with a real membership check.
 - A dashboard showing page views, daily visitors, a daily traffic graph and the pages a period's
   traffic went to, for a website you own. A site running both the tracker and its own server's
   reports is counted once per page delivered rather than once per report, so running the product
   properly does not double what it tells you.
+- Where your readers are, by country and by town, ranked by how many people were in each place
+  rather than by how much browsing they did. Towns are named as an estimate, because that is what
+  they are. The country, town and network-operator data is fetched from
+  [DB-IP](https://db-ip.com) and [iptoasn.com](https://iptoasn.com) after the product starts,
+  rather than shipped inside it, and an installation with no route to the internet counts traffic
+  exactly the same and reports every country as not known.
+- What your readers use: the split between computers, phones and tablets, and the browsers and
+  operating systems behind it. Every one of those is worked out from what a browser volunteers
+  about itself and from its user agent, so the visits that say nothing are counted as not known
+  rather than guessed at — on most sites those are the visits that were never a person.
+- How your pages are actually read: the typical time a page holds somebody, how far down they got,
+  and how many did anything at all — for the whole site, and page by page. Only a browser can see
+  any of this, so every figure states how many of a period's readings it could be taken from, and a
+  site measured only from its own server reads as unmeasured rather than as an audience that did
+  nothing. The tracker reports how a reading is going while it is still going, so a reader whose
+  browser is closed without warning still counts for what they had read by then.
+- How people move through your site: the pages visits begin and end on, how many pages a visit
+  takes, and how many visits read a single page and nothing else. Worked out from the traffic
+  itself rather than from what has been judged, so it keeps step with the headline totals — and
+  only visits that have actually finished are counted, because one still under way has not decided
+  yet how many pages it will read.
+- The path any one visitor took. Open a judged visit and it lists the pages in order, with how long
+  each held them, how far down they got, and — where your own server reported the request — what
+  your site answered with. A sweep for a way in reads as what it is: a handful of addresses that do
+  not exist, asked for in under a second, with nothing measuring how any of them was read.
+- What people clicked: every link, button and field somebody uses, ranked by how often — and,
+  separately, the places off your site that readers followed a link to. What is kept of a click is
+  your own wording on the control and where it pointed; never anything a visitor typed, and nothing
+  at all about where on the screen they pressed. It is on by default, it can be switched off for a
+  website from the dashboard, and a `data-dw-ignore` attribute keeps any part of a page out of it.
 - A tracker you paste into your own site, and an image fallback for readers whose browsers run no
   scripts. The dashboard hands you both lines with your address already filled in.
 - A collection endpoint your own server can report to, so the traffic that never runs a script —

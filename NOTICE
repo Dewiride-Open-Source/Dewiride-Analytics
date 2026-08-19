@@ -35,8 +35,11 @@ available at https://www.apache.org/licenses/LICENSE-2.0
   xUnit.net v3                    https://github.com/xunit/xunit
   AwesomeAssertions               https://github.com/AwesomeAssertions/AwesomeAssertions
 
-  uap-core                        https://github.com/ua-parser/uap-core
-                                  User-agent parsing regexes
+  MaxMind DB Reader               https://github.com/maxmind/MaxMind-DB-Reader-dotnet
+                                  Copyright MaxMind, Inc.
+                                  The reader for the MaxMind DB binary format. It bundles no
+                                  data, and none of MaxMind's own databases are used — see
+                                  "Not bundled" below.
 
 
 ================================================================================
@@ -73,7 +76,7 @@ PostgreSQL License
 Data sets — attribution required IN THE USER INTERFACE
 ================================================================================
 
-  DB-IP Lite (IP-to-Country / IP-to-ASN)
+  DB-IP IP-to-City Lite
   https://db-ip.com/db/lite.php
   Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0)
   https://creativecommons.org/licenses/by/4.0/
@@ -81,14 +84,19 @@ Data sets — attribution required IN THE USER INTERFACE
     IMPORTANT: The CC BY 4.0 terms for DB-IP Lite require a visible link back to
     db-ip.com on every page that displays or uses results derived from this database.
     This is a per-page obligation, not a file-level one. In this product that link is
-    rendered by the shared network-intelligence attribution component and its text
-    lives in the message catalogue under `attribution.dbip`. Do not remove it, and do
-    not remove it from a new screen that shows geographic, ASN or network-owner data.
+    rendered on the locations card and its text lives in the message catalogue under
+    `dashboard.locations.attribution`. Do not remove it, and do not omit it from a new
+    screen that shows country, town, or any other data derived from this database.
+
+    Fetched at runtime into a volume, never vendored into this repository. If you fork
+    this project, keep it that way.
 
   ip2asn (iptoasn.com)
   https://iptoasn.com
   Released into the public domain under the Open Data Commons Public Domain Dedication
-  and Licence (PDDL-1.0). No attribution obligation; listed for provenance.
+  and Licence (PDDL-1.0). No attribution obligation; listed for provenance. Supplies the
+  autonomous system and network operator behind a visitor's address, and is likewise
+  fetched at runtime rather than vendored.
 
 
 ================================================================================
@@ -123,5 +131,9 @@ Not bundled
   the database to third parties without prior written consent, which is incompatible with
   a self-hostable open-source artifact. DB-IP Lite is used instead.
 
-  Matomo device-detector data (LGPL-3.0), consumed via DeviceDetector.NET, is not vendored
-  into this repository. It is downloaded as an optional runtime data pack.
+  Matomo device-detector data (LGPL-3.0), and the ua-parser regex set it is often paired
+  with, are not used. Working out whether a visit came from a phone, a tablet or a computer
+  is done in this repository's own code, from the low-entropy hints a browser volunteers and
+  from an ordered set of plain substring tests over a curated catalogue. Nothing about that
+  problem was worth a copyleft data file or a pattern set that runs against attacker-supplied
+  text.

@@ -81,6 +81,10 @@ namespace Dewiride.Analytics.Migrations.Postgres.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<bool>("CaptureClicks")
+                        .HasColumnType("boolean")
+                        .HasColumnName("capture_clicks");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");

@@ -160,6 +160,62 @@ public sealed class CollectEndpointTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// The page describes its own controls in an open vocabulary, partly of its own invention. The
+    /// words it uses are resolved into the closed set the store holds, and anything unrecognised
+    /// becomes a press on something the product cannot name rather than a refusal.
+    /// </summary>
+    [Theory]
+    [InlineData("button", "Button")]
+    [InlineData("a", "Link")]
+    [InlineData("input", "Field")]
+    [InlineData("menuitem", "Button")]
+    [InlineData("blancmange", "Unknown")]
+    [InlineData(null, "Unknown")]
+    public async Task What_A_Page_Calls_Its_Control_Is_Resolved_Into_A_Closed_Set(
+        string? declared,
+        string expected)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        using var client = stack.CreateClient();
+
+        var report = Report(site.Id, $"https://{site.Domain}/posts/hello");
+        report["kind"] = "action";
+        report["element"] = declared;
+        report["label"] = "Subscribe";
+
+        var response = await PostAsync(client, report, site.Domain);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await StoredControlAsync(site.Id)).Should().Be(expected);
+    }
+
+    /// <summary>
+    /// A site that has turned recording off has its presses dropped where they arrive. Storing
+    /// them and leaving them out of every later question would collect exactly what it asked not
+    /// to have collected.
+    /// </summary>
+    [Fact]
+    public async Task A_Press_Reported_For_A_Site_That_Records_None_Is_Never_Stored()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(
+            stack,
+            domain: Domain(),
+            configure: created => created.SetClickCapture(false));
+
+        using var client = stack.CreateClient();
+
+        var report = Report(site.Id, $"https://{site.Domain}/posts/hello");
+        report["kind"] = "action";
+        report["element"] = "button";
+        report["label"] = "Subscribe";
+
+        var response = await PostAsync(client, report, site.Domain);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await StoredCountAsync(site.Id)).Should().Be(0);
+    }
+
+    /// <summary>
     /// A malformed body is the one thing answered plainly, because it is a mistake by whoever is
     /// writing an integration and telling them nothing helps nobody.
     /// </summary>
@@ -357,6 +413,12 @@ public sealed class CollectEndpointTests(AnalyticsStackFixture stack)
 
         return await client.SendAsync(request, Cancellation.Token);
     }
+
+    private async Task<string?> StoredControlAsync(Guid siteId) =>
+        await TelemetryStore.ScalarAsync<string>(
+            Client,
+            "SELECT toString(action_control) FROM events WHERE site_id = {site_id:UUID} LIMIT 1",
+            TelemetryStore.Bind("site_id", siteId));
 
     private async Task<ulong> StoredCountAsync(Guid siteId) =>
         await TelemetryStore.ScalarAsync<ulong>(

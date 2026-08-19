@@ -24,6 +24,7 @@ public sealed class SiteSnapshotTests
             Id = Guid.Parse("0197c0de-0000-7000-8000-000000000001"),
             Domain = "example.com",
             RetainQueryStrings = true,
+            CaptureClicks = true,
             AllowedOrigins = ["docs.example.com", "cdn.example.com"],
         };
 
@@ -44,6 +45,7 @@ public sealed class SiteSnapshotTests
             Id = Guid.Parse("0197c0de-0000-7000-8000-000000000002"),
             Domain = "example.com",
             RetainQueryStrings = false,
+            CaptureClicks = false,
             AllowedOrigins = [],
         };
 
@@ -79,6 +81,7 @@ public sealed class SiteSnapshotTests
             Id = id,
             Domain = "example.com",
             RetainQueryStrings = true,
+            CaptureClicks = true,
             AllowedOrigins = origins,
         };
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stampedIdentifier } from './beacon';
-import { goTo, only, openPage, type Sent, stampResponse, visibility } from './harness';
+import { goTo, only, openPage, press, type Sent, stampResponse, visibility } from './harness';
 
 let page: ReturnType<typeof openPage>;
 
@@ -305,5 +305,294 @@ describe('how far down the page the reader got', () => {
     visibility('hidden');
 
     expect(only(page.sent, 'exit')['scrollDepthPercent']).toBe(75);
+  });
+});
+
+describe('saying how a reading is going before it has ended', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * A phone that dismisses the tab, a machine put to sleep, a process shut down to free memory:
+   * none of them raises anything the beacon can listen for. Without a report on the way through,
+   * the readers who stayed longest would be exactly the ones who counted for nothing.
+   */
+  it('reports what a page is worth so far, without waiting for the reader to leave', () => {
+    vi.useFakeTimers();
+    page.open();
+
+    vi.advanceTimersByTime(15000);
+
+    expect(only(page.sent, 'engagement')).toHaveProperty('engagedMs');
+  });
+
+  it('carries how far down the reader got and whether they touched the page', () => {
+    vi.useFakeTimers();
+    page.open();
+
+    window.dispatchEvent(new Event('pointerdown'));
+    vi.advanceTimersByTime(15000);
+
+    const report = only(page.sent, 'engagement');
+
+    expect(report['pointerInteraction']).toBe(true);
+    expect(report['keyboardInteraction']).toBe(false);
+    expect(report).toHaveProperty('scrollDepthPercent');
+  });
+
+  /** Reports are running totals, so the store can take the largest and lose nothing to a gap. */
+  it('reports totals that only ever grow', () => {
+    vi.useFakeTimers();
+    page.open();
+
+    vi.advanceTimersByTime(15000);
+    vi.advanceTimersByTime(30000);
+
+    const [first, second] = page.sent
+      .filter((report) => report['kind'] === 'engagement')
+      .map((report) => report['engagedMs'] as number);
+
+    expect(second).toBeGreaterThanOrEqual(first as number);
+  });
+
+  it('says so less often the longer somebody stays, rather than at a fixed drumbeat', () => {
+    vi.useFakeTimers();
+    page.open();
+
+    const reported = () => page.sent.filter((report) => report['kind'] === 'engagement').length;
+
+    vi.advanceTimersByTime(15000);
+    expect(reported()).toBe(1);
+
+    vi.advanceTimersByTime(15000);
+    expect(reported(), 'the second report came as quickly as the first').toBe(1);
+
+    vi.advanceTimersByTime(15000);
+    expect(reported()).toBe(2);
+  });
+
+  it('says nothing about a page that is no longer in front of anybody', () => {
+    vi.useFakeTimers();
+    page.open();
+
+    visibility('hidden');
+    vi.advanceTimersByTime(600000);
+
+    expect(page.sent.filter((report) => report['kind'] === 'engagement')).toHaveLength(0);
+  });
+
+  it('takes it up again when the reader comes back', () => {
+    vi.useFakeTimers();
+    page.open();
+
+    visibility('hidden');
+    visibility('visible');
+    vi.advanceTimersByTime(15000);
+
+    expect(only(page.sent, 'engagement')).toBeDefined();
+  });
+
+  /** A page reached without a reload is a new reading, and is measured from the beginning. */
+  it('begins again for a page the site moved itself to', () => {
+    vi.useFakeTimers();
+    page.open();
+
+    vi.advanceTimersByTime(15000);
+    vi.advanceTimersByTime(30000);
+
+    goTo('/posts/second');
+    vi.advanceTimersByTime(15000);
+
+    const addresses = page.sent
+      .filter((report) => report['kind'] === 'engagement')
+      .map((report) => report['url'] as string);
+
+    expect(addresses[addresses.length - 1]).toContain('/posts/second');
+    expect(addresses).toHaveLength(3);
+  });
+});
+
+describe('what somebody pressed on the page', () => {
+  /** Every press of a control, without the site having to name one in advance. */
+  function pressed(): Sent[] {
+    return page.sent.filter((report) => report['kind'] === 'action');
+  }
+
+  it('names the control, what it said, and the page it was on', () => {
+    page.open();
+
+    press('<button data-press>Subscribe</button>');
+
+    const click = only(page.sent, 'action');
+
+    expect(click['element']).toBe('button');
+    expect(click['label']).toBe('Subscribe');
+    expect(click['url']).toContain('/posts/hello');
+  });
+
+  /**
+   * A press lands on whatever is under the finger, which is usually a fragment of the thing
+   * somebody meant to press. Reporting the fragment would answer a question nobody asked.
+   */
+  it('attributes a press to the control rather than to the scrap of it that was hit', () => {
+    page.open();
+
+    press('<button><span data-press>Subscribe</span></button>');
+
+    expect(only(page.sent, 'action')['element']).toBe('button');
+  });
+
+  it('keeps a page on the same site in full, so which page they went to can be answered', () => {
+    page.open();
+
+    press('<a data-press href="/pricing">Pricing</a>');
+
+    const click = only(page.sent, 'action');
+
+    expect(click['target']).toBe('/pricing');
+    expect(click['targetKind']).toBe('internal');
+  });
+
+  /**
+   * The rest of an address off the site is written by whoever wrote the link and can carry
+   * anything at all, including who followed it. Where they went is the host and nothing more.
+   */
+  it('keeps only the host of somewhere off the site', () => {
+    page.open();
+
+    press('<a data-press href="https://github.com/dewiride/analytics?from=jane">Source</a>');
+
+    const click = only(page.sent, 'action');
+
+    expect(click['target']).toBe('github.com');
+    expect(click['targetKind']).toBe('external');
+  });
+
+  it('records that an address to write to was used, and never the address itself', () => {
+    page.open();
+
+    press('<a data-press href="mailto:jane@example.com">Email me</a>');
+
+    const click = only(page.sent, 'action');
+
+    expect(click['targetKind']).toBe('contact');
+    expect(click).not.toHaveProperty('target');
+    expect(JSON.stringify(click)).not.toContain('jane@example.com');
+  });
+
+  it('prefers the name a control is given to the text inside it', () => {
+    page.open();
+
+    press('<button data-press aria-label="Close" title="Dismiss"><span>x</span></button>');
+
+    expect(only(page.sent, 'action')['label']).toBe('Close');
+  });
+
+  /** What somebody typed is theirs. The name of the field is the site's own writing. */
+  it('never reads what somebody typed into a field', () => {
+    page.open();
+
+    press('<input data-press type="text" value="jane@example.com" aria-label="Email address">');
+
+    const click = only(page.sent, 'action');
+
+    expect(click['element']).toBe('input');
+    expect(click['label']).toBe('Email address');
+    expect(JSON.stringify(click)).not.toContain('jane@example.com');
+  });
+
+  it('says nothing at all about a part of the page the site marked as private', () => {
+    page.open();
+
+    press('<div data-dw-ignore><button data-press>Delete everything Jane wrote</button></div>');
+
+    expect(pressed()).toHaveLength(0);
+  });
+
+  it('says nothing about a press that landed on the page rather than on anything in it', () => {
+    page.open();
+
+    press('<p data-press>Just some words.</p>');
+
+    expect(pressed()).toHaveLength(0);
+  });
+
+  /**
+   * A browser answers a press on a field's own name by raising a second press on the field. Both
+   * reach the same watcher, and counting both would report one tick of a box as two.
+   */
+  it('counts one tick of a labelled box once', () => {
+    page.open();
+
+    press(
+      '<label data-press for="letters">Send me letters</label><input id="letters" type="checkbox">',
+    );
+
+    expect(pressed()).toHaveLength(1);
+  });
+
+  it('keeps a long label down to something that is still a name', () => {
+    page.open();
+
+    press(`<button data-press>${'first '.repeat(40)}</button>`);
+
+    expect((only(page.sent, 'action')['label'] as string).length).toBe(64);
+  });
+
+  it('measures a page that handles its own presses and stops them going any further', () => {
+    page.open();
+
+    document.body.innerHTML = '<div><button data-press>Subscribe</button></div>';
+    document.body.firstElementChild?.addEventListener('click', (event) => event.stopPropagation());
+    document.body
+      .querySelector('[data-press]')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(only(page.sent, 'action')['label']).toBe('Subscribe');
+  });
+
+  it('leaves out where a press pointed when it pointed nowhere', () => {
+    page.open();
+
+    press('<button data-press>Subscribe</button>');
+
+    const click = only(page.sent, 'action');
+
+    expect(click).not.toHaveProperty('target');
+    expect(click).not.toHaveProperty('targetKind');
+  });
+
+  it('says nothing about an address the browser itself cannot read', () => {
+    page.open();
+
+    press('<a data-press href="http://[">Broken</a>');
+
+    const click = only(page.sent, 'action');
+
+    expect(click['element']).toBe('a');
+    expect(click).not.toHaveProperty('targetKind');
+  });
+
+  /**
+   * The whole of what one press says, pinned.
+   *
+   * Where on the screen it landed, how hard, how long it was held and which button was used all
+   * describe the reader rather than the reading, and none of them is here. Written as the complete
+   * set rather than as a list of absences, so a field added later has to be argued for.
+   */
+  it('says what was pressed and nothing whatever about the person pressing it', () => {
+    page.open();
+
+    press('<button data-press>Subscribe</button>');
+
+    expect(Object.keys(only(page.sent, 'action')).sort()).toStrictEqual([
+      'clientTimestamp',
+      'element',
+      'kind',
+      'label',
+      'siteId',
+      'url',
+    ]);
   });
 });

@@ -1,0 +1,152 @@
+﻿--- statement ---
+WITH
+    windowed AS
+    (
+        SELECT
+            event_id,
+            surface,
+            visitor_key,
+            correlation_id,
+            server_ts,
+            kind,
+            path,
+            status_code,
+            engaged_ms,
+            scroll_depth_percent,
+            action_control,
+            action_label,
+            action_target,
+            action_target_kind
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    ),
+    echoed AS
+    (
+        SELECT
+            minIf(visitor_key, surface IN ('BrowserTracker', 'NoScriptPixel')) AS browser_key,
+            minIf(visitor_key, surface NOT IN ('BrowserTracker', 'NoScriptPixel')) AS reported_key
+        FROM windowed
+        WHERE correlation_id != ''
+          AND visitor_key != ''
+        GROUP BY correlation_id
+        HAVING browser_key != ''
+           AND reported_key != ''
+    ),
+    linked AS
+    (
+        SELECT
+            reported_key,
+            min(browser_key) AS browser_key
+        FROM echoed
+        GROUP BY reported_key
+    ),
+    identified AS
+    (
+        SELECT
+            windowed.* EXCEPT (visitor_key),
+            if(linked.browser_key != '' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'), linked.browser_key, windowed.visitor_key) AS visitor_key
+        FROM windowed
+        LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
+    ),
+    ordered AS
+    (
+        SELECT
+            *,
+            dateDiff('second', lagInFrame(server_ts, 1, server_ts) OVER visit, server_ts) AS since_previous
+        FROM identified
+        WHERE visitor_key = {visitor_key:String}
+        WINDOW visit AS (PARTITION BY visitor_key ORDER BY server_ts ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
+    ),
+    grouped AS
+    (
+        SELECT
+            *,
+            sum(toUInt8(since_previous > {idle_seconds:Int64})) OVER (
+                PARTITION BY visitor_key
+                ORDER BY server_ts
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS visit_ordinal
+        FROM ordered
+    ),
+    sighted AS
+    (
+        SELECT
+            *,
+            row_number() OVER (
+                PARTITION BY visitor_key, visit_ordinal, path, kind, surface IN ('BrowserTracker', 'NoScriptPixel')
+                ORDER BY server_ts, event_id) AS sighting,
+            sum(toUInt8(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) OVER (
+                PARTITION BY visitor_key, visit_ordinal, path) AS sightings_from_path
+        FROM grouped
+    ),
+    counted AS
+    (
+        SELECT
+            *,
+            kind = 'PageView'
+                AND surface IN ('BrowserTracker', 'NoScriptPixel')
+                AND sighting <= sightings_from_path AS is_second_sighting
+        FROM sighted
+    ),
+    stepped AS
+    (
+        SELECT
+            *,
+            sum(toUInt8(kind = 'PageView' AND NOT is_second_sighting)) OVER (
+                PARTITION BY path
+                ORDER BY server_ts, event_id
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS step
+        FROM counted
+        WHERE visit_ordinal = 0
+    ),
+    pages AS
+    (
+        SELECT
+            min(server_ts) AS at,
+            toUInt8(0) AS press,
+            path,
+            toInt16(ifNull(max(status_code), -1)) AS status_code,
+            toInt32(ifNull(max(engaged_ms), -1)) AS engaged_ms,
+            toInt16(ifNull(max(scroll_depth_percent), -1)) AS depth,
+            '' AS label,
+            'Unknown' AS control,
+            '' AS target,
+            'None' AS target_kind
+        FROM stepped
+        WHERE kind != 'Action'
+        GROUP BY path, step
+    ),
+    pressed AS
+    (
+        SELECT
+            server_ts AS at,
+            toUInt8(1) AS press,
+            path,
+            toInt16(-1) AS status_code,
+            toInt32(-1) AS engaged_ms,
+            toInt16(-1) AS depth,
+            action_label AS label,
+            toString(action_control) AS control,
+            action_target AS target,
+            toString(action_target_kind) AS target_kind
+        FROM stepped
+        WHERE kind = 'Action'
+    )
+SELECT at, press, path, status_code, engaged_ms, depth, label, control, target, target_kind
+FROM
+(
+    SELECT * FROM pages
+    UNION ALL
+    SELECT * FROM pressed
+)
+ORDER BY at, press, path
+LIMIT {limit:UInt32}
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777626000000
+to_ms = 1777712400000
+idle_seconds = 1800
+visitor_key = '2f8a1c0b4d6e7f905a1b2c3d4e5f6071'
+limit = 200

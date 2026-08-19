@@ -107,20 +107,118 @@
       "table": "Show these figures as a table",
       "columnDay": "Day"
     },
+    "list": {
+      "previous": "Previous",
+      "next": "Next",
+      "showing": "{first}–{last} of {total}"
+    },
+    "duration": {
+      "short": "{seconds}s",
+      "long": "{minutes}m {seconds}s"
+    },
     "pages": {
       "title": "Pages",
       "total": "{count, plural, one {# page view} other {# page views}}",
       "views": "{count, plural, one {# view} other {# views}}",
       "visitors": "{count, plural, one {# visitor} other {# visitors}}",
       "nav": {
-        "label": "More pages",
-        "previous": "Previous",
-        "next": "Next",
-        "showing": "{first}–{last} of {total}"
+        "label": "More pages"
       },
       "empty": {
         "title": "No pages read yet",
         "body": "Once somebody opens a page, the ones people read most appear here."
+      }
+    },
+    "locations": {
+      "title": "Where your readers are",
+      "total": "{count, plural, one {# visitor} other {# visitors}}",
+      "visitors": "{count, plural, one {# visitor} other {# visitors}}",
+      "views": "{count, plural, one {# view} other {# views}}",
+      "unknown": "Somewhere we couldn't place",
+      "unknownTownIn": "Elsewhere in {country}",
+      "mostlyUnplaced": "Most visits arrived without an address to place. That usually means something sits in front of Dewiride Analytics and isn't passing the visitor's address along.",
+      "attribution": "Locations from <source>DB-IP</source>.",
+      "estimate": "Towns are an estimate — usually the nearest sizeable one.",
+      "grouping": {
+        "label": "Show places as",
+        "country": "Countries",
+        "town": "Towns"
+      },
+      "nav": {
+        "label": "More places"
+      },
+      "empty": {
+        "title": "No readers placed yet",
+        "body": "Once somebody visits, the countries and towns they read from appear here."
+      }
+    },
+    "devices": {
+      "title": "What your readers use",
+      "total": "{count, plural, one {# visitor} other {# visitors}}",
+      "visitors": "{count, plural, one {# visitor} other {# visitors}}",
+      "views": "{count, plural, one {# view} other {# views}}",
+      "unknown": "Not known",
+      "mostlyUnknown": "Most visits carried nothing that names a device. Who's visiting, further down, says what they were.",
+      "view": {
+        "label": "Show readers by",
+        "device": "Devices",
+        "browser": "Browsers",
+        "system": "Systems"
+      },
+      "kind": {
+        "phone": "Phones",
+        "tablet": "Tablets",
+        "desktop": "Computers",
+        "other": "Something else",
+        "unknown": "Not known"
+      },
+      "nav": {
+        "browsers": "More browsers",
+        "systems": "More systems"
+      },
+      "empty": {
+        "title": "No devices seen yet",
+        "body": "Once somebody visits, what they read on appears here."
+      }
+    },
+    "reading": {
+      "title": "How your pages are read",
+      "coverage": "Measured on {measured} of {readings} page reads",
+      "coverageAll": "Measured on all {readings} page reads",
+      "typical": {
+        "label": "Typical time on a page",
+        "note": "Counted only while the page was actually on screen."
+      },
+      "interacted": {
+        "label": "Readers who did something",
+        "note": "Clicked, tapped or typed at least once."
+      },
+      "depth": {
+        "label": "How far down readers got",
+        "top": "Just the top",
+        "quarter": "A quarter down",
+        "half": "Half way down",
+        "whole": "Nearly all the way"
+      },
+      "reads": "{count, plural, one {# read} other {# reads}}",
+      "down": "{percent}% down",
+      "view": {
+        "label": "Show pages by",
+        "overall": "Overall",
+        "attention": "Time",
+        "depth": "How far"
+      },
+      "nav": {
+        "label": "More pages"
+      },
+      "unmeasured": {
+        "title": "Nothing here could be measured",
+        "body": "Nothing that reached your site this period ran the code on your pages. That is normal for crawlers, and for anything your own server reported.",
+        "action": "Get your tracking code"
+      },
+      "empty": {
+        "title": "No pages read yet",
+        "body": "Once somebody reads a page, how long they stayed and how far they got appears here."
       }
     },
     "traffic": {
@@ -136,7 +234,7 @@
     },
     "visits": {
       "title": "Recent visits",
-      "caption": "The last {count, plural, one {visit} other {# visits}} to finish. Open one to see what it was judged on.",
+      "caption": "The last {count, plural, one {visit} other {# visits}} to finish. Open one to see the pages it went through, what people clicked, and what it was judged on.",
       "pages": "{count, plural, one {# page} other {# pages}}",
       "seenBy": "Seen by {surfaces}",
       "supporting": "What we saw",
@@ -150,6 +248,86 @@
     "noSites": {
       "title": "No website yet",
       "body": "Add a website to this account and its traffic will appear here."
+    },
+    "flow": {
+      "title": "How people move through your site",
+      "caption": "{count, plural, one {# visit that has finished} other {# visits that have finished}}",
+      "perVisit": {
+        "label": "Pages per visit",
+        "note": "Counted per sitting, not per person."
+      },
+      "singlePage": {
+        "label": "Read only one page"
+      },
+      "visits": "{count, plural, one {# visit} other {# visits}}",
+      "view": {
+        "label": "Show pages visits",
+        "entry": "Started on",
+        "exit": "Left from"
+      },
+      "nav": {
+        "label": "More pages"
+      },
+      "empty": {
+        "title": "No finished visits yet",
+        "body": "Once somebody has been round your site and moved on, where they arrived and where they left appears here."
+      }
+    },
+    "journey": {
+      "title": "What happened in this visit",
+      "down": "{percent}% down",
+      "unmeasured": "Not measured",
+      "unwatched": "Nothing here ran the code on your pages, so how long each one held anybody is unknown.",
+      "shortened": "Showing the first {shown} of {total} pages.",
+      "status": {
+        "redirected": "Sent elsewhere",
+        "missing": "Not found",
+        "refused": "Refused",
+        "failed": "Error"
+      },
+      "empty": "Nothing was recorded for this visit.",
+      "failed": "This visit could not be loaded.",
+      "pressed": "Clicked {name}",
+      "pressedUnnamed": "Clicked something unnamed",
+      "toHost": "went to {host}",
+      "toContact": "opened your contact link",
+      "control": {
+        "link": "Link",
+        "button": "Button",
+        "field": "Box to fill in",
+        "unknown": "Other"
+      }
+    },
+    "presses": {
+      "title": "What people clicked",
+      "caption": {
+        "control": "{count, plural, one {# click} other {# clicks}}",
+        "destination": "{count, plural, one {# click that led off your site} other {# clicks that led off your site}}"
+      },
+      "presses": "{count, plural, one {# click} other {# clicks}}",
+      "unnamed": "Unnamed",
+      "control": {
+        "link": "Link",
+        "button": "Button",
+        "field": "Box to fill in",
+        "unknown": "Other"
+      },
+      "view": {
+        "label": "Show clicks by",
+        "control": "What they clicked",
+        "destination": "Where it took them"
+      },
+      "none": {
+        "control": "Nothing was clicked in this period.",
+        "destination": "Nobody has followed a link away from your site yet."
+      },
+      "nav": {
+        "label": "More clicks"
+      },
+      "empty": {
+        "title": "No clicks yet",
+        "body": "Once somebody uses a link or a button on one of your pages, it appears here with how often it was clicked."
+      }
     }
   },
   "verdicts": {
@@ -308,5 +486,15 @@
       "no": "Keep"
     },
     "close": "Close"
+  },
+  "siteSettings": {
+    "action": "Settings",
+    "title": "Settings",
+    "close": "Close",
+    "body": "What {site} measures.",
+    "presses": {
+      "label": "Record what people click",
+      "hint": "Your own wording on the button or link is kept — never anything a visitor types."
+    }
   }
 }

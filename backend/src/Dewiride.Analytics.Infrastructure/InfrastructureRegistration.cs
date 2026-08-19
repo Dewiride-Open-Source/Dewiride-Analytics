@@ -7,6 +7,7 @@ using Dewiride.Analytics.Infrastructure.Accounts;
 using Dewiride.Analytics.Infrastructure.Classification;
 using Dewiride.Analytics.Infrastructure.Health;
 using Dewiride.Analytics.Infrastructure.Identity;
+using Dewiride.Analytics.Infrastructure.Network;
 using Dewiride.Analytics.Infrastructure.Persistence;
 using Dewiride.Analytics.Infrastructure.Sites;
 using Dewiride.Analytics.Infrastructure.Telemetry;
@@ -93,6 +94,7 @@ public static class InfrastructureRegistration
         builder.Services.AddScoped<ISiteCatalog, CachedSiteCatalog>();
         builder.Services.AddScoped<ISiteDirectory, SiteDirectory>();
         builder.Services.AddScoped<ISiteRoster, SiteRoster>();
+        builder.Services.AddScoped<ISiteSettings, SiteSettings>();
         builder.Services.AddScoped<IIngestKeyCatalog, CachedIngestKeyCatalog>();
         builder.Services.AddScoped<IIngestKeyDirectory, IngestKeyDirectory>();
         builder.Services.AddScoped<IInstallation, Installation>();
@@ -102,6 +104,8 @@ public static class InfrastructureRegistration
         builder.Services.AddSingleton<IVisitorKeyFactory, RotatingSaltVisitorKeyFactory>();
         builder.Services.AddHostedService<VisitorKeySaltRotationService>();
 
+        AddVisitorContext(builder);
+
         builder.Services.AddHealthChecks()
             .AddCheck<ControlPlaneHealthCheck>(
                 ControlPlaneHealthCheck.Name,
@@ -109,6 +113,69 @@ public static class InfrastructureRegistration
 
         return builder;
     }
+
+    /// <summary>
+    /// Adds the lookup that turns a visitor's address into a place and a network, and the service
+    /// that keeps its data current.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The lookup is a singleton holding a memory-mapped database, and is asked once per accepted
+    /// event. Anything shorter-lived would re-open a hundred and twenty megabytes per page view.
+    /// </para>
+    /// <para>
+    /// The download client keeps the framework's own default timeout, which bounds reaching the
+    /// server and getting a reply out of it. It deliberately does not bound reading that reply:
+    /// the refresher takes the response as soon as its headers arrive, and the timeout is
+    /// documented as applying only up to that point. What bounds the hundred and twenty megabytes
+    /// afterwards is <see cref="ReferenceDataOptions.DownloadTimeout"/>, which is stated in
+    /// minutes and is the one somebody can raise.
+    /// </para>
+    /// </remarks>
+    /// <param name="builder">The host application builder.</param>
+    private static void AddVisitorContext(IHostApplicationBuilder builder)
+    {
+        // Checked when the host starts rather than when the first refresh runs, so a setting
+        // somebody mistyped in an environment file is a refusal to start with a sentence
+        // explaining it, and not a service that silently never resolves anybody's country.
+        builder.Services.AddOptions<ReferenceDataOptions>()
+            .Bind(builder.Configuration.GetSection(ReferenceDataOptions.SectionName))
+            .Validate(
+                settings => !string.IsNullOrWhiteSpace(settings.Directory),
+                $"{ReferenceDataOptions.SectionName}:Directory must name a directory to keep the "
+                + "downloaded visitor reference data in.")
+            .Validate(
+                settings => IsFetchable(settings.PlacesUrl) && IsFetchable(settings.NetworksUrl),
+                $"{ReferenceDataOptions.SectionName}:PlacesUrl and NetworksUrl must both be "
+                + "absolute http or https addresses.")
+            .Validate(
+                settings => settings.RefreshInterval >= TimeSpan.FromMinutes(5),
+                $"{ReferenceDataOptions.SectionName}:RefreshInterval must be at least five "
+                + "minutes. The data behind it is republished monthly and hourly.")
+            .Validate(
+                settings => settings.DownloadTimeout >= TimeSpan.FromSeconds(30),
+                $"{ReferenceDataOptions.SectionName}:DownloadTimeout must be at least thirty "
+                + "seconds. The place database is around a hundred and twenty megabytes.")
+            .ValidateOnStart();
+
+        builder.Services.AddHttpClient(ReferenceDataRefresher.HttpClientName);
+
+        builder.Services.AddSingleton<ReferenceDataStore>();
+        builder.Services.AddSingleton<INetworkLookup, ReferenceDataNetworkLookup>();
+        builder.Services.AddHostedService<ReferenceDataRefresher>();
+    }
+
+    /// <summary>
+    /// Whether an address is one the refresher could actually fetch from.
+    /// </summary>
+    /// <remarks>
+    /// A file path would be accepted by a looser check and then fail every night in a log nobody
+    /// reads. Both defaults are public addresses, and an installation pointing these at a mirror
+    /// of its own is still pointing them at a web server.
+    /// </remarks>
+    private static bool IsFetchable(string address) =>
+        Uri.TryCreate(address, UriKind.Absolute, out var parsed)
+        && (parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps);
 
     /// <summary>
     /// Adds the account store and the authorisation-server store.

@@ -1,0 +1,130 @@
+﻿--- statement ---
+WITH
+    windowed AS
+    (
+        SELECT
+            event_id,
+            surface,
+            visitor_key,
+            correlation_id,
+            server_ts,
+            kind,
+            path
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {idle_seconds:Int64} * 1000, 'UTC')
+    ),
+    echoed AS
+    (
+        SELECT
+            minIf(visitor_key, surface IN ('BrowserTracker', 'NoScriptPixel')) AS browser_key,
+            minIf(visitor_key, surface NOT IN ('BrowserTracker', 'NoScriptPixel')) AS reported_key
+        FROM windowed
+        WHERE correlation_id != ''
+          AND visitor_key != ''
+        GROUP BY correlation_id
+        HAVING browser_key != ''
+           AND reported_key != ''
+    ),
+    linked AS
+    (
+        SELECT
+            reported_key,
+            min(browser_key) AS browser_key
+        FROM echoed
+        GROUP BY reported_key
+    ),
+    identified AS
+    (
+        SELECT
+            windowed.* EXCEPT (visitor_key),
+            if(linked.browser_key != '' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'), linked.browser_key, windowed.visitor_key) AS visitor_key
+        FROM windowed
+        LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
+    ),
+    ordered AS
+    (
+        SELECT
+            *,
+            dateDiff('second', lagInFrame(server_ts, 1, server_ts) OVER visit, server_ts) AS since_previous
+        FROM identified
+        WHERE visitor_key != ''
+        WINDOW visit AS (PARTITION BY visitor_key ORDER BY server_ts ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
+    ),
+    grouped AS
+    (
+        SELECT
+            *,
+            sum(toUInt8(since_previous > {idle_seconds:Int64})) OVER (
+                PARTITION BY visitor_key
+                ORDER BY server_ts
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS visit_ordinal
+        FROM ordered
+    ),
+    sighted AS
+    (
+        SELECT
+            *,
+            row_number() OVER (
+                PARTITION BY visitor_key, visit_ordinal, path, kind, surface IN ('BrowserTracker', 'NoScriptPixel')
+                ORDER BY server_ts, event_id) AS sighting,
+            sum(toUInt8(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) OVER (
+                PARTITION BY visitor_key, visit_ordinal, path) AS sightings_from_path
+        FROM grouped
+    ),
+    counted AS
+    (
+        SELECT
+            *,
+            kind = 'PageView'
+                AND surface IN ('BrowserTracker', 'NoScriptPixel')
+                AND sighting <= sightings_from_path AS is_second_sighting
+        FROM sighted
+    ),
+    reconstructed AS
+    (
+        SELECT
+            min(server_ts) AS started_at,
+            max(server_ts) AS ended_at,
+            toInt64(countIf(is_page)) AS page_count,
+            argMinIf(path, (server_ts, event_id), is_page) AS entry_path,
+            argMaxIf(path, (server_ts, event_id), is_page) AS exit_path
+        FROM
+        (
+            SELECT
+                *,
+                kind = 'PageView' AND NOT is_second_sighting AS is_page
+            FROM counted
+        )
+        GROUP BY visitor_key, visit_ordinal
+        HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+           AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+           AND ended_at < fromUnixTimestamp64Milli({settled_ms:Int64}, 'UTC')
+           AND page_count > 0
+    )
+SELECT
+    path,
+    visits,
+    toInt64(sum(visits) OVER ()) AS total_visits,
+    toInt64(count() OVER ()) AS total_paths,
+    toInt64(max(visits) OVER ()) AS most_visits
+FROM
+(
+    SELECT
+        entry_path AS path,
+        toInt64(count()) AS visits
+    FROM reconstructed
+    GROUP BY path
+)
+ORDER BY visits DESC, path
+LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777593600000
+to_ms = 1778198400000
+idle_seconds = 1800
+settled_ms = 1778196600000
+limit = 10
+offset = 0

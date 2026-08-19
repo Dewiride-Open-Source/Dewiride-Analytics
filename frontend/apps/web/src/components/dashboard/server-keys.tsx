@@ -185,7 +185,16 @@ function KeyList({ keys, loading, timeZoneId, busyWith, onRemove }: KeyListProps
     return <div className="h-16 animate-pulse rounded-lg border border-border bg-surface-muted" />;
   }
 
-  if (!keys || keys.length === 0) {
+  /*
+    Nothing at all where the list could not be read. "There are none" and "we could not find out"
+    are different answers, and printing the first under a notice that says the second tells
+    somebody their keys are gone when they may be perfectly fine.
+  */
+  if (keys === undefined) {
+    return null;
+  }
+
+  if (keys.length === 0) {
     return <p className="text-sm text-foreground-muted">{t('list.empty')}</p>;
   }
 

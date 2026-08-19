@@ -161,6 +161,30 @@ describe('the keys a website’s own server reports with', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument();
   });
 
+  /**
+   * "There are none" and "we could not find out" are different answers, and shown together the
+   * first one tells somebody their keys are gone when they may be perfectly fine.
+   */
+  it('does not also claim there is nothing there', async () => {
+    engineDoing(async () => respondWith(500, { title: 'Nope' }));
+
+    renderScreen(
+      <ServerKeys
+        open
+        onClose={() => {}}
+        siteId={SITE}
+        siteDomain="example.com"
+        timeZoneId="Etc/UTC"
+      />,
+    );
+
+    await screen.findByRole('alert');
+
+    expect(
+      screen.queryByText('Nothing is reporting from your server yet.'),
+    ).not.toBeInTheDocument();
+  });
+
   it('says plainly when nothing is reporting yet', async () => {
     show();
 

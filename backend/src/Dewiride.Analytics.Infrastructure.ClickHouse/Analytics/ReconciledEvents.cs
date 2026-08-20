@@ -106,9 +106,19 @@ internal static class ReconciledEvents
     /// </param>
     /// <returns>The two expressions, ready to place at that depth.</returns>
     /// <remarks>
+    /// <para>
+    /// The browser's half is credited with a delivery it never announced but plainly saw. A tracker
+    /// only reports how a page is being read from the page itself, so a progress or departure
+    /// report naming an address is evidence that the address was delivered — and it is the report
+    /// announcing the arrival, sent first and often while the page is already closing, that is the
+    /// one most easily lost on the way. One is added rather than one per report, so a page read for
+    /// half an hour and reported on thirty times is still the single delivery it was.
+    /// </para>
+    /// <para>
     /// Activity carrying no visitor key is counted as it arrives. Nothing about it says which
     /// visitor asked for the page, so there is no second sighting to recognise, and folding those
     /// together would discard views rather than duplicates.
+    /// </para>
     /// </remarks>
     public static string DeliveredPageViews(int indent)
     {
@@ -117,6 +127,7 @@ internal static class ReconciledEvents
         return $"""
             greatest(
             {pad}    countIf(kind = 'PageView' AND {FromVisitorBrowser}),
+            {pad}    toUInt64(countIf(kind != 'PageView' AND {FromVisitorBrowser}) > 0),
             {pad}    countIf(kind = 'PageView' AND {FromRequestPath})) AS delivered,
             {pad}if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
             """;

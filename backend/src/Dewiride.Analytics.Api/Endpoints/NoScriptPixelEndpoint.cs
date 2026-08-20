@@ -61,7 +61,13 @@ internal static class NoScriptPixelEndpoint
     {
         ArgumentNullException.ThrowIfNull(routes);
 
-        routes.MapGet("/collect/pixel.gif", HandleAsync)
+        // HEAD is mapped beside GET because this address is one somebody checks. It is printed on
+        // the screen that hands over the tracking snippet, so it gets asked whether it is serving
+        // — by a person with curl, and by whatever watches the installation afterwards. Left to
+        // itself a request whose method matches no route is answered by the fallback policy that
+        // shuts every endpoint by default, so the check on a perfectly healthy install came back
+        // saying the collector had refused it.
+        routes.MapMethods("/collect/pixel.gif", [HttpMethods.Get, HttpMethods.Head], HandleAsync)
             .WithName("NoScriptPixel")
             .WithSummary("Records one page view for a reader whose browser runs no scripts.")
             .WithDescription(
@@ -85,7 +91,10 @@ internal static class NoScriptPixelEndpoint
         var observation = RequestObservation.From(context, IngestSurface.NoScriptPixel);
         var page = PageAddress(parameters.Url, observation.RequestOrigin);
 
-        if (page is not null)
+        // A request for the headers alone is somebody checking that this address answers, not a
+        // page being read, and counting it would let a monitor asking every half minute
+        // manufacture a site's busiest reader.
+        if (page is not null && !HttpMethods.IsHead(context.Request.Method))
         {
             await ingestor
                 .IngestAsync(

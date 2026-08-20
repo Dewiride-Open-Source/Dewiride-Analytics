@@ -17,7 +17,22 @@ namespace Dewiride.Analytics.Classification;
 public readonly record struct RulesetVersion(int Major, int Minor) : IComparable<RulesetVersion>
 {
     /// <summary>The ruleset currently compiled into this build.</summary>
-    public static RulesetVersion Current => new(1, 0);
+    /// <remarks>
+    /// <para>
+    /// Three, because a visit is now told what it did on pages nobody reported it arriving at, and
+    /// what it did is read once per page instead of once per report. Both move sessions between
+    /// categories: a reader whose arrival report was lost had asked for nothing and was answered
+    /// with "not enough to say" under two, and is a reader under three; and a visit whose reading
+    /// was counted once for every report that mentioned it looked more like a person than it was.
+    /// </para>
+    /// <para>
+    /// The detectors are the same ones. What changed is what they are shown — which is the same
+    /// thing from a customer's side, because it is the same visit answered differently. Verdicts
+    /// are kept per ruleset, so both answers stay on record and history is re-judged rather than
+    /// rewritten.
+    /// </para>
+    /// </remarks>
+    public static RulesetVersion Current => new(3, 0);
 
     /// <summary>Compares two ruleset versions by major then minor component.</summary>
     /// <param name="other">The version to compare against.</param>

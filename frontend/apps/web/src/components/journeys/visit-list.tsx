@@ -3,29 +3,31 @@
 import { Bot, ChevronRight, Info, type LucideIcon, UserRound } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
 import { useState } from 'react';
-import { RankedNav } from '@/components/dashboard/ranked-list';
 import { VerdictBadge } from '@/components/dashboard/verdict-badge';
 import { VisitJourney } from '@/components/dashboard/visit-journey';
 import { Card } from '@/components/ui/card';
+import { Pagination } from '@/components/ui/pagination';
+import { PAGE_SIZES } from '@/lib/analytics/journeys';
 import { byWeight, reasonKey, reasonValues } from '@/lib/analytics/verdicts';
 import type { SignalDirection, Visit, VisitReason } from '@/lib/api/schemas';
 import { cn } from '@/lib/styling';
 
 interface VisitListProps {
   readonly siteId: string;
-  /** The slice on screen, newest first, as the engine returned it. */
+  /** The page on screen, newest first, as the engine returned it. */
   readonly visits: readonly Visit[];
-  /** How many visits the period holds altogether, across every slice. */
+  /** How many journeys the period holds altogether, after anything narrowed away. */
   readonly totalVisits: number;
   /** The site's own zone, so a visit is stamped with the time it happened where the site is. */
   readonly timeZoneId: string;
-  /** How far down the list this slice begins. */
+  /** How far down the list this page begins. */
   readonly offset: number;
-  /** How many a press moves by. */
-  readonly step: number;
-  /** Whether the next slice is still on its way, so the controls do not invite a second press. */
+  /** How many rows a page holds. */
+  readonly perPage: number;
+  /** Whether the next page is still on its way, so the controls do not invite a second press. */
   readonly busy: boolean;
   readonly onMove: (offset: number) => void;
+  readonly onResize: (perPage: number) => void;
 }
 
 /** What each observation is marked with: somebody, something, or a qualifier on either. */
@@ -42,14 +44,14 @@ const TINTS: Readonly<Record<SignalDirection, string>> = {
 };
 
 /**
- * Every visit a period holds, newest first, a screenful at a time, each openable to show what it
- * was judged on.
+ * Every journey a period holds, newest first, a page at a time, each openable to show what it was
+ * judged on.
  *
  * Every verdict on this list can be taken apart, including the evidence that pointed away from it.
  * A product whose whole proposition is that a number can be explained has to be able to explain
  * one, and a conclusion shown without the case against it is an assertion rather than a finding.
- * That is also why the list pages rather than stopping: a verdict nobody can reach is a verdict
- * nobody can question.
+ * That is also why every page of the list is reachable rather than only the next one: a verdict
+ * nobody can reach is a verdict nobody can question.
  */
 export function VisitList({
   siteId,
@@ -57,33 +59,31 @@ export function VisitList({
   totalVisits,
   timeZoneId,
   offset,
-  step,
+  perPage,
   busy,
   onMove,
+  onResize,
 }: VisitListProps) {
-  const t = useTranslations('dashboard.visits');
+  const t = useTranslations('journeys.list');
 
   return (
     <Card className="flex flex-col gap-3 p-5 sm:p-6">
-      <header className="flex flex-col gap-1">
-        <h2 className="text-base font-semibold text-foreground">{t('title')}</h2>
-        <p className="text-xs text-foreground-subtle">{t('caption', { count: totalVisits })}</p>
-      </header>
-
       <div className="flex flex-col">
         {visits.map((visit) => (
           <VisitRow key={visit.id} siteId={siteId} visit={visit} timeZoneId={timeZoneId} />
         ))}
       </div>
 
-      <RankedNav
+      <Pagination
         label={t('nav.label')}
+        total={totalVisits}
+        perPage={perPage}
         offset={offset}
         shown={visits.length}
-        total={totalVisits}
-        step={step}
+        sizes={PAGE_SIZES}
         busy={busy}
         onMove={onMove}
+        onResize={onResize}
       />
     </Card>
   );
@@ -96,7 +96,7 @@ interface VisitRowProps {
 }
 
 function VisitRow({ siteId, visit, timeZoneId }: VisitRowProps) {
-  const t = useTranslations('dashboard.visits');
+  const t = useTranslations('journeys.list');
   const [opened, setOpened] = useState(false);
   const strengths = useTranslations('verdicts.strength');
   const surfaceNames = useTranslations('verdicts.surface');

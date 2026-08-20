@@ -40,6 +40,16 @@ internal static class ReportedNames
             [TrafficCategory.Unknown] = "unknown",
         }.ToFrozenDictionary();
 
+    /// <summary>
+    /// Traffic category for each wire name.
+    /// </summary>
+    /// <remarks>
+    /// The same table read backwards, for the one direction that takes a name from a caller: a
+    /// request to narrow a list of visits to certain conclusions. Built from the table above rather
+    /// than written out a second time, so what may be asked for is exactly what may be answered.
+    /// </remarks>
+    public static FrozenDictionary<string, TrafficCategory> CategoriesByName { get; } = Invert(Categories);
+
     /// <summary>Wire name for each evidence strength.</summary>
     public static FrozenDictionary<EvidenceStrength, string> Strengths { get; } =
         new Dictionary<EvidenceStrength, string>
@@ -50,6 +60,9 @@ internal static class ReportedNames
             [EvidenceStrength.Strong] = "strong",
             [EvidenceStrength.Verified] = "verified",
         }.ToFrozenDictionary();
+
+    /// <summary>Evidence strength for each wire name.</summary>
+    public static FrozenDictionary<string, EvidenceStrength> StrengthsByName { get; } = Invert(Strengths);
 
     /// <summary>Wire name for the direction a piece of evidence points.</summary>
     public static FrozenDictionary<SignalDirection, string> Directions { get; } =
@@ -129,4 +142,14 @@ internal static class ReportedNames
             [IngestSurface.LogImport] = "log-import",
             [IngestSurface.ServerSide] = "server-side",
         }.ToFrozenDictionary();
+
+    /// <summary>
+    /// Reads a table backwards, so what a caller may name is exactly what may be reported.
+    /// </summary>
+    /// <typeparam name="TValue">The set being named.</typeparam>
+    /// <param name="names">The wire name for each member.</param>
+    /// <returns>The member for each wire name.</returns>
+    private static FrozenDictionary<string, TValue> Invert<TValue>(FrozenDictionary<TValue, string> names)
+        where TValue : notnull =>
+        names.ToFrozenDictionary(entry => entry.Value, entry => entry.Key, StringComparer.Ordinal);
 }

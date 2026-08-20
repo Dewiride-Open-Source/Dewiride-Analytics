@@ -8,9 +8,12 @@ import { ThemeSwitch } from '@/components/chrome/theme-switch';
 import { AddSite } from '@/components/dashboard/add-site';
 import { SiteSwitch } from '@/components/dashboard/site-switch';
 import { Button } from '@/components/ui/button';
+import { Link, usePathname } from '@/i18n/navigation';
 import { useChosenSite } from '@/lib/analytics/chosen-site';
 import { useSession, useSignOut } from '@/lib/queries/session';
 import { useSites } from '@/lib/queries/sites';
+import { SECTIONS } from '@/lib/routes';
+import { cn } from '@/lib/styling';
 
 /**
  * The bar across the top of every screen, signed in or not.
@@ -31,6 +34,7 @@ export function AppHeader() {
   const sites = useSites(Boolean(user));
   const { site, choose } = useChosenSite(sites.data);
   const [adding, setAdding] = useState(false);
+  const here = usePathname();
 
   function show(siteId: string) {
     choose(siteId);
@@ -81,6 +85,43 @@ export function AppHeader() {
           ) : null}
         </div>
       </div>
+
+      {/*
+        A row of its own rather than squeezed in beside the picker. On a phone the bar above is
+        already full, and a way between the screens that only appears on a wide window is a way
+        half the people using the product never find.
+      */}
+      {user ? (
+        <nav
+          aria-label={t('header.sections')}
+          className="border-t border-border/60 bg-background/40"
+        >
+          <ul className="mx-auto flex max-w-6xl items-center gap-1 px-2 sm:px-4">
+            {SECTIONS.map((section) => {
+              const current = here === section.path;
+
+              return (
+                <li key={section.path}>
+                  <Link
+                    href={section.path}
+                    aria-current={current ? 'page' : undefined}
+                    className={cn(
+                      'relative flex h-11 items-center rounded-sm px-3 text-sm font-medium transition-colors',
+                      'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent-strong',
+                      'after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full',
+                      current
+                        ? 'text-foreground after:bg-accent'
+                        : 'text-foreground-muted hover:text-foreground',
+                    )}
+                  >
+                    {t(`header.section.${section.name}`)}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+      ) : null}
 
       <AddSite
         open={adding}

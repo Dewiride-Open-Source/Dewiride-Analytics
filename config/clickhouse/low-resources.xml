@@ -38,7 +38,19 @@
   <background_move_pool_size>2</background_move_pool_size>
   <max_thread_pool_size>200</max_thread_pool_size>
 
-  <max_concurrent_queries>8</max_concurrent_queries>
+  <!--
+    How many questions may be in flight at once, and it is counted in questions rather than in
+    work: the profile file caps each one at two threads and a gigabyte, so a higher figure here
+    permits more small questions at once rather than bigger ones.
+
+    It has to clear what one dashboard asks. Opening a website's overview puts twelve independent
+    questions to this server at the same moment — the headline totals, two daily series, and one
+    for each card below them — and anything past the ceiling is refused outright rather than made
+    to wait. A second browser tab doubles it, and the collector and the classifier are asking
+    their own questions throughout. Eight was below what a single reader needs, which showed up as
+    several cards on a healthy install reporting that something had gone wrong.
+  -->
+  <max_concurrent_queries>64</max_concurrent_queries>
 
   <!--
     These thresholds are how many pool slots must stay free before a merge tree will start a

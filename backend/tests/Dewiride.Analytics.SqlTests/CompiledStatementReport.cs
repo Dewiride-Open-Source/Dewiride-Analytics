@@ -41,6 +41,11 @@ internal static class CompiledStatementReport
     private static string Describe(object value) => value switch
     {
         Guid identifier => identifier.ToString(),
+        // Written out in full. A catalogue bound as an array is a value this statement depends on
+        // for its answer, and a count of its entries would let a change to what is in it pass an
+        // approved file unchanged.
+        string[] entries => $"[{string.Join(", ", entries.Select(entry => $"'{entry}'"))}]",
+        uint[] numbers => $"[{string.Join(", ", numbers.Select(number => number.ToString(CultureInfo.InvariantCulture)))}]",
         long number => number.ToString(CultureInfo.InvariantCulture),
         string text => $"'{text}'",
         _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,

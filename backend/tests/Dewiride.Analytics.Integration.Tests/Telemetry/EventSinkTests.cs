@@ -19,7 +19,7 @@ public sealed class EventSinkTests(AnalyticsStackFixture stack)
     public async Task Every_Field_On_An_Event_Comes_Back_As_It_Went_In()
     {
         var siteId = Guid.NewGuid();
-        var observed = new DateTimeOffset(2026, 5, 1, 12, 30, 45, TimeSpan.Zero);
+        var observed = Recently();
 
         await Sink.WriteAsync(
             Full(siteId, observed),
@@ -173,6 +173,24 @@ public sealed class EventSinkTests(AnalyticsStackFixture stack)
             TelemetryStore.Bind("site_id", siteId));
 
         return rows.Should().ContainSingle().Subject;
+    }
+
+    /// <summary>
+    /// A moment inside the window the store keeps an address for.
+    /// </summary>
+    /// <remarks>
+    /// The address is cleared 72 hours after the event it belongs to, so an event stamped with a
+    /// fixed date has its address taken away the moment the store gets round to tidying the part
+    /// it landed in — and the field this test exists to prove comes back empty for a reason that
+    /// has nothing to do with the sink. Truncated to whole milliseconds, which is what the column
+    /// holds.
+    /// </remarks>
+    /// <returns>The moment.</returns>
+    private static DateTimeOffset Recently()
+    {
+        var now = TimeProvider.System.GetUtcNow();
+
+        return now.AddTicks(-(now.Ticks % TimeSpan.TicksPerMillisecond));
     }
 
     private static RawEvent Minimal(Guid siteId) => new()

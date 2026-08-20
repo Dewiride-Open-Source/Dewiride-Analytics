@@ -37,10 +37,15 @@ what does not.
 - A dashboard showing page views, daily visitors, a daily traffic graph and the pages a period's
   traffic went to, for a website you own. A site running both the tracker and its own server's
   reports is counted once per page delivered rather than once per report, so running the product
-  properly does not double what it tells you.
-- Where your readers are, by country and by town, ranked by how many people were in each place
-  rather than by how much browsing they did. Towns are named as an estimate, because that is what
-  they are. The country, town and network-operator data is fetched from
+  properly does not double what it tells you. Traffic arriving through a pool of rented addresses
+  is counted as the one operator it is, rather than as a fresh person on every request. A page
+  counts as read the moment anything at all is reported about it, so a reader whose arrival never
+  reached us still counts for the page they were on — once, however long they stayed.
+- Where your readers are, by country, by town, and by the network they arrived over, ranked by how
+  many people were in each place rather than by how much browsing they did. Towns are named as an
+  estimate, because that is what they are; the network view is there because a hundred rented
+  servers in one datacentre read as an ordinary country until the network is named. The country,
+  town and network-operator data is fetched from
   [DB-IP](https://db-ip.com) and [iptoasn.com](https://iptoasn.com) after the product starts,
   rather than shipped inside it, and an installation with no route to the internet counts traffic
   exactly the same and reports every country as not known.
@@ -75,17 +80,25 @@ what does not.
   status your site returned. Keys are created and withdrawn in the dashboard; the wire format is
   in [`docs/server-reporting.md`](docs/server-reporting.md).
 
-- Traffic that has been judged: activity is grouped into visits, each finished visit is examined,
+- Traffic that has been judged: activity is grouped into visits — once each, from the visit's own
+  beginning rather than from wherever the engine happened to resume — each finished visit is examined,
   and the answer — somebody reading, a crawler that says it is an AI one, a search crawler, a sweep
   for a way in, or an honest "not enough to say" — is stored with the specific reasons behind it,
   including the ones that pointed the other way. A crawler's name is never treated as proof of who
   sent it; until the address it came from has been checked against what the operator publishes, the
-  answer says it is only a claim. The verdicts are stamped with the rules that produced them, so a
-  number can still be explained after the rules improve.
-- A breakdown of who a period's visitors were, and the case behind every individual verdict, on the
-  dashboard. Each observation is a written sentence rather than a code, and the strength of the
-  evidence is a band shown beside the category — never a percentage. A judged visit only appears
-  once it has finished, so that part of the dashboard trails the headline totals and says so.
+  answer says it is only a claim. "Not enough to say" is kept for a visit that never named a page
+  at all, rather than for one whose arrival went missing — everything a visit reported about a page
+  is weighed, whether or not the report announcing the page arrived. The verdicts are stamped with
+  the rules that produced them, so a number can still be explained after the rules improve.
+- A breakdown of who a period's visitors were on the dashboard, and every individual visit on a
+  screen of its own — **User journey** — with the whole case behind each verdict. Narrow it to the
+  visits you came for: what generated them, how much evidence stands behind saying so, and how much
+  of the site they read. Only the conclusions your own traffic actually reached are offered, with
+  how many of each there were. The list is paged with numbers you can jump straight to and a choice
+  of how many to show at once, because a verdict nobody can reach is a verdict nobody can question.
+  Each observation is a written sentence rather than a code, and the strength of the evidence is a
+  band shown beside the category — never a percentage. A judged visit only appears once it has
+  finished, so that screen trails the headline totals and says so.
 
 **Not built yet**
 
@@ -145,6 +158,30 @@ run the pieces outside containers.
 To stop: `docker compose down`. To start over from nothing, including wiping the data:
 `docker compose down --volumes`.
 
+### When the tracker is installed and nothing appears
+
+A website only accepts reports from its own address and addresses below it. That check is what
+stops a stranger writing traffic into your numbers — the site identifier is printed in the source
+of every page it measures, so anyone can read one — but it also means a site registered as
+`example.com` discards everything sent from `localhost` while you develop against it, and the
+collector answers exactly as it does for a report it accepted. Nothing is visibly wrong; the
+dashboard simply stays at zero.
+
+To see why, set `ENGINE_LOG_LEVEL=Debug` in `.env` and restart the engine:
+
+```bash
+docker compose up -d api
+docker compose logs -f api
+```
+
+Every refused report then names the address it came from and the address the website is
+registered as. Put the setting back to `Information` afterwards: the collector answers anybody,
+so a line per refused report is a log whose size is decided by whoever is scanning the internet
+that day.
+
+While developing against a website you run locally, register a second website whose address is
+`localhost` and use that one's tracking code.
+
 ### Memory
 
 Roughly 2.5 GB with all four services running, most of which is the telemetry store. Its caches
@@ -161,6 +198,14 @@ onto a smaller machine.
 | localhost:8123                          | ClickHouse — the traffic itself    |
 
 Change any of them in `.env` if something else on your machine already has the port.
+
+All four answer on this machine only. That matters on a rented server rather than a laptop:
+Docker publishes a port by inserting its own forwarding rules ahead of the ones `ufw` and
+`firewalld` manage, so a port published without an address answers the whole internet no matter
+what the firewall was told to allow. If you put the product on a server, run a reverse proxy in
+front of the dashboard to terminate TLS — signing in sets a cookie the browser only sends back
+over the connection that set it — and leave the two stores where they are. `WEB_BIND` in `.env`
+is there for the one case that needs it: a proxy running on a different machine.
 
 ## What's inside
 

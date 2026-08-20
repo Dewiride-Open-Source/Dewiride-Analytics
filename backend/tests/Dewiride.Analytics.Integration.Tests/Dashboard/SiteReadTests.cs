@@ -215,6 +215,76 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
         }
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("?grouping=kind")]
+    [InlineData("?grouping=site")]
+    [InlineData("?grouping=page")]
+    [InlineData("?grouping=PAGE")]
+    public async Task A_Member_Can_Read_Where_The_Visitors_Came_From(string query)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/sources{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var sources = await response.Content.ReadFromJsonAsync<SourcesResponse>(Cancellation.Token);
+
+            sources.Should().NotBeNull();
+            sources.Sources.Should().BeEmpty();
+            sources.Visitors.Should().Be(0);
+            sources.TotalSources.Should().Be(0);
+            sources.To.Should().BeAfter(sources.From);
+        }
+    }
+
+    /// <summary>
+    /// The answer names what it grouped by rather than repeating the caller's spelling, on the
+    /// same terms as a place list.
+    /// </summary>
+    [Theory]
+    [InlineData("Kind", "kind")]
+    [InlineData("Site", "site")]
+    [InlineData("PAGE", "page")]
+    public async Task A_Source_List_Names_What_It_Grouped_By(string asked, string expected)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/sources?grouping={asked}");
+            var sources = await response.Content.ReadFromJsonAsync<SourcesResponse>(Cancellation.Token);
+
+            sources.Should().NotBeNull();
+            sources.Grouping.Should().Be(expected);
+        }
+    }
+
+    [Theory]
+    [InlineData("grouping=channel")]
+    [InlineData("grouping=referrer_domain%3B+DROP+TABLE+events")]
+    [InlineData("limit=0")]
+    [InlineData("limit=101")]
+    [InlineData("limit=-1")]
+    [InlineData("offset=-1")]
+    public async Task Asking_For_An_Impossible_Source_List_Is_Refused(string query)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/sources?{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
     [Fact]
     public async Task A_Member_Can_Read_What_The_Audience_Read_On()
     {
@@ -608,6 +678,7 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
     [InlineData("pages")]
     [InlineData("actions")]
     [InlineData("locations")]
+    [InlineData("sources")]
     [InlineData("devices")]
     [InlineData("software")]
     [InlineData("engagement")]

@@ -83,11 +83,27 @@ const SWEPT = [
   },
 ];
 
-function engineWith(steps: readonly unknown[], asked: { count: number } = { count: 0 }) {
+/** What a visit says about its visitor when nothing about them was established. */
+const NOTHING_KNOWN = {
+  source: '',
+  kind: 'direct',
+  countryCode: '',
+  town: '',
+  network: '',
+  device: 'unknown',
+  browser: '',
+  system: '',
+};
+
+function engineWith(
+  steps: readonly unknown[],
+  asked: { count: number } = { count: 0 },
+  context: Record<string, string> = NOTHING_KNOWN,
+) {
   return engineDoing(async () => {
     asked.count += 1;
 
-    return respondWith(200, { visit: VISIT, steps });
+    return respondWith(200, { visit: VISIT, context, steps });
   });
 }
 
@@ -332,5 +348,188 @@ describe('the pages one visit went through', () => {
 
     expect(await screen.findByText('/<img src=x onerror=alert(1)>')).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+});
+
+describe('who the visit was', () => {
+  /** Everything resolved: a reader sent by a search engine, placed, and on named software. */
+  const KNOWN = {
+    source: 'Google',
+    kind: 'search',
+    countryCode: 'IN',
+    town: 'Pune',
+    network: 'Jio Platforms',
+    device: 'phone',
+    browser: 'Chrome',
+    system: 'Android',
+  };
+
+  function showing(context: Record<string, string>) {
+    engineWith(READ, { count: 0 }, context);
+    show(2);
+  }
+
+  it('names the site that sent them', async () => {
+    showing(KNOWN);
+
+    expect(await screen.findByText('Google')).toBeInTheDocument();
+  });
+
+  /**
+   * A name alone leaves the reader to know which of them are search engines, which is the whole
+   * reason the catalogue exists.
+   */
+  it('says what kind of thing sent them', async () => {
+    showing(KNOWN);
+
+    expect(await screen.findByText('A search engine')).toBeInTheDocument();
+  });
+
+  /**
+   * Kept apart from search. Somebody who arrived having been told about a page did not read a
+   * list of results and choose it.
+   */
+  it('keeps an assistant apart from a search engine', async () => {
+    showing({ ...KNOWN, source: 'Perplexity', kind: 'assistant' });
+
+    expect(await screen.findByText('An AI assistant')).toBeInTheDocument();
+    expect(screen.queryByText('A search engine')).not.toBeInTheDocument();
+  });
+
+  it('says so plainly when nothing named a sender', async () => {
+    showing({ ...KNOWN, source: '', kind: 'direct' });
+
+    expect(await screen.findByText('Came straight here')).toBeInTheDocument();
+  });
+
+  /** A great many town names belong to more than one country. */
+  it('writes a town with its country beside it', async () => {
+    showing(KNOWN);
+
+    expect(await screen.findByText('Pune, India')).toBeInTheDocument();
+  });
+
+  it('writes the country alone when nothing narrowed it to a town', async () => {
+    showing({ ...KNOWN, town: '' });
+
+    expect(await screen.findByText('India')).toBeInTheDocument();
+  });
+
+  /** A stored code is a wire format. Nobody reads "IN" as a country. */
+  it('never shows a country as its stored code', async () => {
+    showing(KNOWN);
+
+    await screen.findByText('Pune, India');
+
+    expect(screen.queryByText('IN')).not.toBeInTheDocument();
+  });
+
+  it('names the software the visit was read with', async () => {
+    showing(KNOWN);
+
+    expect(await screen.findByText('Chrome on Android')).toBeInTheDocument();
+  });
+
+  /** "Chrome on Android" says more than "a phone" does, so the kind of device is the fallback. */
+  it('falls back to the kind of device when nothing named the software', async () => {
+    showing({ ...KNOWN, browser: '', system: '' });
+
+    expect(await screen.findByText('A phone')).toBeInTheDocument();
+  });
+
+  it('names whose network the visit came over', async () => {
+    showing(KNOWN);
+
+    expect(await screen.findByText('Jio Platforms')).toBeInTheDocument();
+  });
+
+  /**
+   * A panel of four facts reading "not known" describes its own gaps rather than the visit. What
+   * went unobserved is said once, in a sentence, and the empty facts are left out.
+   */
+  it('leaves out what nothing established, and says so once', async () => {
+    showing({
+      source: '',
+      kind: 'direct',
+      countryCode: '',
+      town: '',
+      network: '',
+      device: 'unknown',
+      browser: '',
+      system: '',
+    });
+
+    expect(
+      await screen.findByText('Nothing in this visit said where it was or what it was read on.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Where')).not.toBeInTheDocument();
+    expect(screen.queryByText('Read on')).not.toBeInTheDocument();
+  });
+
+  it('says nothing of the sort once a place and a browser are known', async () => {
+    showing(KNOWN);
+
+    await screen.findByText('Pune, India');
+
+    expect(
+      screen.queryByText('Nothing in this visit said where it was or what it was read on.'),
+    ).not.toBeInTheDocument();
+  });
+
+  /** The licence behind the place data asks for a link back wherever its results appear. */
+  it('credits the place data whenever it shows a place', async () => {
+    showing(KNOWN);
+
+    expect(await screen.findByRole('link', { name: 'DB-IP' })).toHaveAttribute(
+      'href',
+      'https://db-ip.com',
+    );
+  });
+
+  it('credits nothing when it could place nobody', async () => {
+    showing({ ...KNOWN, countryCode: '', town: '' });
+
+    await screen.findByText('Google');
+
+    expect(screen.queryByRole('link', { name: 'DB-IP' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * The address a visit arrived from is written by whoever visited. A clickable one would put a
+   * stranger's destination a mis-click away from somebody reading their own numbers.
+   */
+  it('never makes the sending site clickable', async () => {
+    showing({ ...KNOWN, source: 'attacker.test', kind: 'link', countryCode: '', town: '' });
+
+    expect(await screen.findByText('attacker.test')).toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+});
+
+describe('naming what sent a visit', () => {
+  /**
+   * An arrival that named nowhere is already written as what it is, and a kind underneath would
+   * spend a line agreeing with itself.
+   */
+  it('does not restate an arrival that named nowhere', async () => {
+    engineWith(
+      READ,
+      { count: 0 },
+      {
+        source: '',
+        kind: 'direct',
+        countryCode: 'IN',
+        town: 'Pune',
+        network: '',
+        device: 'phone',
+        browser: 'Chrome',
+        system: 'Android',
+      },
+    );
+
+    show(2);
+
+    expect(await screen.findByText('Came straight here')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing named a sender')).not.toBeInTheDocument();
   });
 });

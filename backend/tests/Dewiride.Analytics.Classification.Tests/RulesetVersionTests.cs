@@ -114,9 +114,18 @@ public sealed class RulesetVersionTests
         shuffled.Order().Should().Equal(new RulesetVersion(1, 2), new(1, 10), new(2, 0), new(10, 0));
     }
 
+    /// <summary>
+    /// A deliberate statement rather than a restatement of the constant.
+    /// </summary>
+    /// <remarks>
+    /// Verdicts are filed under the ruleset that produced them, so moving this is a decision with
+    /// consequences a customer can see: the same visit is judged one way under the old rules and
+    /// another way under the new, and both answers stay on record. Failing here is the point —
+    /// it obliges whoever changed the rules to say so here as well.
+    /// </remarks>
     [Fact]
-    public void The_Compiled_Ruleset_Is_The_First_Released_One()
+    public void The_Compiled_Ruleset_Is_The_One_That_Counts_A_Page_From_Every_Report_About_It()
     {
-        RulesetVersion.Current.Should().Be(new RulesetVersion(1, 0));
+        RulesetVersion.Current.Should().Be(new RulesetVersion(3, 0));
     }
 }

@@ -39,6 +39,13 @@ public sealed record SessionWindow
     public required Guid SiteId { get; init; }
 
     /// <summary>Only visits that began at or after this instant are returned.</summary>
+    /// <remarks>
+    /// A visit already under way at this instant is not one that began at it. Activity is read from
+    /// an idle timeout earlier so that such a visit is recognised as having started before the
+    /// window and left out, rather than being returned as a second, shorter visit beginning
+    /// wherever the window happens to open. A caller may therefore move this forward into the
+    /// middle of a visit it has already been given without being handed the remainder as a new one.
+    /// </remarks>
     public required DateTimeOffset From { get; init; }
 
     /// <summary>

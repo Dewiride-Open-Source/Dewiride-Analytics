@@ -1,3 +1,4 @@
+import type { JourneyFilters } from '@/lib/analytics/journeys';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
 import type {
   EngagementRanking,
@@ -5,6 +6,7 @@ import type {
   SeriesMetric,
   ActionGrouping,
   SoftwareGrouping,
+  SourceGrouping,
   VisitPosition,
 } from '@/lib/api/schemas';
 
@@ -37,6 +39,16 @@ export function locationsKey(
   offset: number,
 ) {
   return ['sites', siteId, 'locations', window.from, window.to, grouping, limit, offset] as const;
+}
+
+export function sourcesKey(
+  siteId: string,
+  window: AnalyticsWindow,
+  grouping: SourceGrouping,
+  limit: number,
+  offset: number,
+) {
+  return ['sites', siteId, 'sources', window.from, window.to, grouping, limit, offset] as const;
 }
 
 export function devicesKey(siteId: string, window: AnalyticsWindow) {
@@ -77,8 +89,32 @@ export function trafficKey(siteId: string, window: AnalyticsWindow) {
   return ['sites', siteId, 'traffic', window.from, window.to] as const;
 }
 
-export function visitsKey(siteId: string, window: AnalyticsWindow, limit: number, offset: number) {
-  return ['sites', siteId, 'visits', window.from, window.to, limit, offset] as const;
+/**
+ * One slice of a website's judged visits.
+ *
+ * What the reader narrowed to is part of the name, because it is part of the question: two slices
+ * asked for at the same offset under different narrowings are two different answers, and an answer
+ * kept under one name would be handed back for the other.
+ */
+export function visitsKey(
+  siteId: string,
+  window: AnalyticsWindow,
+  limit: number,
+  offset: number,
+  filters: JourneyFilters,
+) {
+  return [
+    'sites',
+    siteId,
+    'visits',
+    window.from,
+    window.to,
+    limit,
+    offset,
+    [...filters.categories].sort().join(','),
+    filters.leastStrength ?? '',
+    filters.leastPages,
+  ] as const;
 }
 
 export function serverKeysKey(siteId: string) {

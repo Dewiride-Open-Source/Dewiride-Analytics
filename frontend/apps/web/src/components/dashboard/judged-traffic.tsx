@@ -1,15 +1,15 @@
 'use client';
 
-import { ScanSearch } from 'lucide-react';
+import { ArrowRight, ScanSearch } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
 import { TrafficBreakdown } from '@/components/dashboard/traffic-breakdown';
-import { VisitList } from '@/components/dashboard/visit-list';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
+import { Link } from '@/i18n/navigation';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
 import type { Site } from '@/lib/api/schemas';
-import { useTraffic, useVisits } from '@/lib/queries/sites';
+import { useTraffic } from '@/lib/queries/sites';
+import { JOURNEYS } from '@/lib/routes';
 
 interface JudgedTrafficProps {
   readonly site: Site;
@@ -17,29 +17,15 @@ interface JudgedTrafficProps {
 }
 
 /**
- * How many visits to put on screen at once.
+ * How a period's traffic divides between the people a website is for and everything else.
  *
- * Every one of them carries its whole case, so a screenful is a slice rather than the whole
- * period: a hundred of them at once is a slower screen nobody scrolls to the end of. The rest are
- * a press away rather than out of reach.
- */
-const PER_PAGE = 25;
-
-/**
- * Everything the engine has decided about a website's traffic over a period.
- *
- * The breakdown and the list are asked for together rather than one after the other, so the
- * slower of the two decides how long the screen takes rather than the two of them added up.
- *
- * How far down the list somebody has read is kept here, and the screen above gives this a key that
- * changes with the website and the period — so choosing either starts the new list at its most
- * recent visit rather than at whichever screenful was open of the old one.
+ * The summary lives here, on the screen somebody opens first. Every individual visit behind it has
+ * a screen of its own, because reading them one at a time is a different activity from looking at
+ * the totals — and this is the way through to it.
  */
 export function JudgedTraffic({ site, window }: JudgedTrafficProps) {
   const t = useTranslations('dashboard.traffic');
-  const [offset, setOffset] = useState(0);
   const traffic = useTraffic(site.id, window);
-  const visits = useVisits(site.id, window, PER_PAGE, offset);
 
   if (traffic.isError) {
     return <FailureNotice error={traffic.error} />;
@@ -68,20 +54,13 @@ export function JudgedTraffic({ site, window }: JudgedTrafficProps) {
     <>
       <TrafficBreakdown groups={traffic.data.groups} sessions={traffic.data.sessions} />
 
-      {visits.isError ? <FailureNotice error={visits.error} /> : null}
-
-      {visits.data && visits.data.visits.length > 0 ? (
-        <VisitList
-          siteId={site.id}
-          visits={visits.data.visits}
-          totalVisits={visits.data.totalVisits}
-          timeZoneId={site.timeZoneId}
-          offset={offset}
-          step={PER_PAGE}
-          busy={visits.isFetching}
-          onMove={setOffset}
-        />
-      ) : null}
+      <Link
+        href={JOURNEYS}
+        className="inline-flex items-center gap-1.5 self-start rounded-md text-sm font-medium text-accent-strong hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong"
+      >
+        {t('everyVisit')}
+        <ArrowRight aria-hidden className="size-4" />
+      </Link>
     </>
   );
 }

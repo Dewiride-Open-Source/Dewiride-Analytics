@@ -1,8 +1,8 @@
 namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 
 /// <summary>
-/// Groups a visitor's reconciled activity into visits, and marks every report that is a second
-/// account of a page another surface already reported.
+/// Groups a visitor's reconciled activity into visits and into the pages those visits went to,
+/// and marks every report that is a second account of a page another surface already reported.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -21,6 +21,22 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// identifies something probing for a way in.
 /// </para>
 /// <para>
+/// A page the visit went to is every report about one arrival at it, folded into one. A report is
+/// about a page whether or not it announces one: the tracker sends progress and departure reports
+/// naming the page they were measured on, and one of those is evidence that the page was delivered
+/// — the script that sent it was running on the page. Reports travel by a transport that
+/// acknowledges nothing, from pages frequently in the act of being closed, and the report
+/// announcing the arrival is the first of them and the one most easily lost. So a page a visit only
+/// ever reported reading is a page the visit read, and counting nothing for it discards the
+/// strongest evidence this product ever holds that somebody was there.
+/// </para>
+/// <para>
+/// A page cannot be counted twice this way. A path the visit announced arriving at counts once per
+/// announcement whatever else was reported about it, and a path it announced no arrival at counts
+/// once altogether. Where both halves announced the same arrival it is the request path's report
+/// that stands for it, because that one carries the status the site answered with.
+/// </para>
+/// <para>
 /// Expects a preceding <c>identified</c> selection — see
 /// <see cref="ReconciledEvents.Reconciliation"/> — carrying at least <c>event_id</c>,
 /// <c>server_ts</c>, <c>kind</c>, <c>path</c>, <c>surface</c> and <c>visitor_key</c>, and an
@@ -37,7 +53,7 @@ internal static class VisitGrouping
     /// this assembly and never by a caller: where it narrows to a single visitor, that visitor's
     /// key travels as a bound value and only the parameter's name appears here.
     /// </param>
-    /// <returns>The four expressions, ending in <c>counted</c>.</returns>
+    /// <returns>The six expressions, ending in <c>opened</c>.</returns>
     public static string Of(string visitors) => $$"""
         ordered AS
             (
@@ -77,6 +93,27 @@ internal static class VisitGrouping
                         AND {{ReconciledEvents.FromVisitorBrowser}}
                         AND sighting <= sightings_from_path AS is_second_sighting
                 FROM sighted
+            ),
+            paged AS
+            (
+                SELECT
+                    *,
+                    greatest(
+                        toUInt64(1),
+                        sum(toUInt8(kind = 'PageView' AND NOT is_second_sighting)) OVER (
+                            PARTITION BY visitor_key, visit_ordinal, path
+                            ORDER BY server_ts, event_id
+                            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)) AS page_ordinal
+                FROM counted
+            ),
+            opened AS
+            (
+                SELECT
+                    *,
+                    row_number() OVER (
+                        PARTITION BY visitor_key, visit_ordinal, path, page_ordinal
+                        ORDER BY is_second_sighting, kind != 'PageView', server_ts, event_id) = 1 AS opens_page
+                FROM paged
             )
         """;
 

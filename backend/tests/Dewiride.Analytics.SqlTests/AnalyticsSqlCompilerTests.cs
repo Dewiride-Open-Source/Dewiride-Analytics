@@ -1,6 +1,7 @@
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Tenancy;
+using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
@@ -26,6 +27,12 @@ public sealed class AnalyticsSqlCompilerTests
 
     /// <summary>A visit identity of the shape the engine derives: a hexadecimal key and an instant.</summary>
     private static readonly VisitKey Visit = new("2f8a1c0b4d6e7f905a1b2c3d4e5f6071", From.AddHours(9));
+
+    /// <summary>Two conclusions as the store spells them, for the narrowing a visit list allows.</summary>
+    private static readonly string[] NarrowedCategories = ["LikelyHuman", "KnownAiCrawler"];
+
+    /// <summary>Every band at or above strong, which is what a floor on the evidence means.</summary>
+    private static readonly string[] StrongEvidenceAndAbove = ["Strong", "Verified"];
 
     [Fact]
     public Task Overview()
@@ -85,12 +92,56 @@ public sealed class AnalyticsSqlCompilerTests
         return Verify(CompiledStatementReport.Render(statement));
     }
 
+    /// <summary>
+    /// A network is not a place, so a row carries no country. Carrying one would divide a company's
+    /// datacentres into a row per country, which is the answer this grouping exists to escape.
+    /// </summary>
+    [Fact]
+    public Task Site_Networks()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteLocationsQuery(Window(), LocationGrouping.Network, 10));
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
     [Fact]
     public Task Site_Towns()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteLocationsQuery(Window(), LocationGrouping.Town, 10));
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Site_Source_Kinds()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteSourcesQuery(Window(), SourceGrouping.Kind, "example.com", 10));
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Site_Sending_Sites()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteSourcesQuery(Window(), SourceGrouping.Site, "example.com", 10));
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Site_Sending_Pages()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteSourcesQuery(Window(), SourceGrouping.Page, "example.com", 10));
 
         return Verify(CompiledStatementReport.Render(statement));
     }
@@ -328,7 +379,7 @@ public sealed class AnalyticsSqlCompilerTests
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
-            new SiteVisitJourneyQuery(Visit, IdleTimeout, 200));
+            new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200));
 
         return Verify(CompiledStatementReport.Render(statement));
     }
@@ -380,6 +431,107 @@ public sealed class AnalyticsSqlCompilerTests
     public void Starting_The_Visit_List_Before_Its_Beginning_Is_Refused()
     {
         var act = () => new JudgedSessionsQuery(Window(), 10, -1);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    /// <summary>
+    /// What the reader narrowed to is bound like every other value, so a list of conclusions never
+    /// reaches the statement as text.
+    /// </summary>
+    [Fact]
+    public void Narrowing_The_Visit_List_Binds_What_Was_Asked_For()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new JudgedSessionsQuery(Window(), 10)
+            {
+                Categories = [TrafficCategory.LikelyHuman, TrafficCategory.KnownAiCrawler],
+                LeastStrength = EvidenceStrength.Moderate,
+                LeastPages = 1,
+            });
+
+        statement.Sql.Should().NotContain("LikelyHuman").And.NotContain("Moderate");
+
+        statement.Parameters.Should().ContainSingle(parameter => parameter.Name == "categories")
+            .Which.Value.Should().BeEquivalentTo(NarrowedCategories);
+
+        statement.Parameters.Should().ContainSingle(parameter => parameter.Name == "least_pages")
+            .Which.Value.Should().Be(1U);
+    }
+
+    /// <summary>
+    /// A floor on the evidence means every band at or above it, written out as the set the store
+    /// spells them by rather than compared as a number the store happens to have recorded.
+    /// </summary>
+    [Fact]
+    public void Asking_For_Strong_Evidence_Includes_Everything_Above_It()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new JudgedSessionsQuery(Window(), 10) { LeastStrength = EvidenceStrength.Strong });
+
+        statement.Parameters.Should().ContainSingle(parameter => parameter.Name == "strengths")
+            .Which.Value.Should().BeEquivalentTo(StrongEvidenceAndAbove);
+    }
+
+    /// <summary>
+    /// Nothing asked for is every visit, and the statement says so rather than being assembled a
+    /// second way: one shape of statement is one plan for the store and one text to approve.
+    /// </summary>
+    [Fact]
+    public void Narrowing_By_Nothing_Leaves_The_Statement_Unchanged()
+    {
+        var narrowed = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new JudgedSessionsQuery(Window(), 10) { Categories = [TrafficCategory.LikelyHuman] });
+
+        var whole = AnalyticsSqlCompiler.Compile(Scope(), new JudgedSessionsQuery(Window(), 10));
+
+        whole.Sql.Should().Be(narrowed.Sql);
+
+        whole.Parameters.Should().ContainSingle(parameter => parameter.Name == "categories")
+            .Which.Value.Should().BeEquivalentTo(Array.Empty<string>());
+    }
+
+    /// <summary>
+    /// A visit is kept or dropped on the verdict a reader would be shown. Narrowing before the
+    /// reduction to one row per visit would find a visit by a conclusion newer rules have already
+    /// replaced.
+    /// </summary>
+    [Fact]
+    public void Narrowing_Happens_After_Each_Visit_Is_Reduced_To_One_Verdict()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new JudgedSessionsQuery(Window(), 10) { Categories = [TrafficCategory.LikelyHuman] });
+
+        statement.Sql.IndexOf("LIMIT 1 BY session_key", StringComparison.Ordinal).Should()
+            .BeLessThan(statement.Sql.IndexOf("toString(category) IN", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(int.MinValue)]
+    public void Asking_For_Fewer_Than_No_Pages_Is_Refused(int leastPages)
+    {
+        var act = () => new JudgedSessionsQuery(Window(), 10) { LeastPages = leastPages };
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void Narrowing_To_A_Category_The_Engine_Cannot_Reach_Is_Refused()
+    {
+        var act = () => new JudgedSessionsQuery(Window(), 10) { Categories = [(TrafficCategory)9999] };
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void Narrowing_To_A_Strength_The_Engine_Does_Not_Report_Is_Refused()
+    {
+        var act = () => new JudgedSessionsQuery(Window(), 10) { LeastStrength = (EvidenceStrength)9999 };
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
@@ -485,6 +637,7 @@ public sealed class AnalyticsSqlCompilerTests
     [InlineData("greatest(")]
     [InlineData("countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel'))")]
     [InlineData("countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))")]
+    [InlineData("toUInt64(countIf(kind != 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')) > 0)")]
     [InlineData("if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views")]
     public void The_Page_List_Counts_Deliveries_On_The_Same_Terms_As_The_Headline(string arithmetic)
     {
@@ -493,6 +646,23 @@ public sealed class AnalyticsSqlCompilerTests
 
         pages.Sql.Should().Contain(arithmetic);
         overview.Sql.Should().Contain(arithmetic);
+    }
+
+    /// <summary>
+    /// A tracker only reports how a page is being read from the page itself, so a progress report
+    /// is evidence the page was delivered even when the report announcing the delivery was lost.
+    /// One delivery is credited however many progress reports arrived, because a page read for
+    /// half an hour and reported on thirty times was still delivered once.
+    /// </summary>
+    [Fact]
+    public void A_Page_Only_Ever_Reported_As_Read_Still_Counts_As_Delivered_Once()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new OverviewQuery(Window()));
+
+        statement.Sql.Should().Contain(
+            "toUInt64(countIf(kind != 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')) > 0)");
+        statement.Sql.Should().NotContain(
+            "countIf(kind != 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),");
     }
 
     [Theory]
@@ -597,6 +767,223 @@ public sealed class AnalyticsSqlCompilerTests
             new SiteLocationsQuery(Window(), grouping, 10));
 
         statement.Sql.Should().Contain(expected);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(SiteSourcesQuery.MostSources + 1)]
+    public void Asking_For_An_Impossible_Number_Of_Sources_Is_Refused(int limit)
+    {
+        var act = () => new SiteSourcesQuery(Window(), SourceGrouping.Site, "example.com", limit);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void Starting_The_Source_List_Before_Its_Beginning_Is_Refused()
+    {
+        var act = () => new SiteSourcesQuery(Window(), SourceGrouping.Site, "example.com", 10, -1);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    /// <summary>
+    /// Without an address to exclude, the site being measured is its own busiest source: every
+    /// page after the first in a visit was reached from it. A question that cannot say which site
+    /// it is about cannot be asked at all.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void A_Source_List_Without_The_Site_Own_Address_Is_Refused(string domain)
+    {
+        var act = () => new SiteSourcesQuery(Window(), SourceGrouping.Site, domain, 10);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    /// <summary>
+    /// The same rule the place list follows and for the same reason: shares taken against a
+    /// screenful would overstate every row, and a bar drawn against whatever led one slice would
+    /// start every slice full.
+    /// </summary>
+    [Theory]
+    [InlineData("sum(visitors) OVER ()")]
+    [InlineData("count() OVER ()")]
+    [InlineData("max(visitors) OVER ()")]
+    public void The_Source_List_Describes_The_Whole_Window_Rather_Than_The_Slice(string figure)
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteSourcesQuery(Window(), SourceGrouping.Site, "example.com", 10, 40));
+
+        statement.Sql.Should().Contain(figure);
+    }
+
+    [Fact]
+    public void The_Source_List_Orders_Totally_So_Slices_Neither_Repeat_Nor_Skip()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteSourcesQuery(Window(), SourceGrouping.Page, "example.com", 10, 40));
+
+        statement.Sql.Should().Contain("ORDER BY visitors DESC, source, site");
+        statement.Sql.Should().Contain("LIMIT {limit:UInt32} OFFSET {offset:UInt32}");
+        statement.Parameters.Select(parameter => parameter.Name)
+            .Should().Equal(
+                "site_id",
+                "from_ms",
+                "to_ms",
+                "site_domain",
+                "second_levels",
+                "source_keys",
+                "source_names",
+                "source_channels",
+                "limit",
+                "offset");
+    }
+
+    /// <summary>
+    /// The measured site is not one of its own sources, and neither is anything below it: a site
+    /// reachable at two names, or spread across a documentation subdomain and a main one, would
+    /// otherwise head its own list. This is the rule the collector applies when it decides whose
+    /// traffic a report is, and the address is bound rather than written into the statement.
+    /// </summary>
+    [Theory]
+    [InlineData(SourceGrouping.Site)]
+    [InlineData(SourceGrouping.Page)]
+    public void A_Site_Is_Never_Its_Own_Source(SourceGrouping grouping)
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteSourcesQuery(Window(), grouping, "example.com", 10));
+
+        statement.Sql.Should().Contain("referrer_domain != {site_domain:String}");
+        statement.Sql.Should().Contain("endsWith(referrer_domain, concat('.', {site_domain:String}))");
+        statement.Sql.Should().NotContain("example.com");
+
+        statement.Parameters.Should()
+            .ContainSingle(parameter => parameter.Name == "site_domain")
+            .Which.Value.Should().Be("example.com");
+    }
+
+    /// <summary>
+    /// Only a visit's first page names anywhere else, so the source is settled once for the whole
+    /// visitor. Taking each report's own answer would file one arrival from a search engine as one
+    /// arrival from the search engine and a dozen from the site being measured.
+    /// </summary>
+    [Theory]
+    [InlineData(SourceGrouping.Site)]
+    [InlineData(SourceGrouping.Page)]
+    public void A_Visitor_Is_Credited_To_One_Source_However_Many_Pages_They_Read(SourceGrouping grouping)
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteSourcesQuery(Window(), grouping, "example.com", 10));
+
+        statement.Sql.Should().Contain("anyIf(source, source != '')");
+        statement.Sql.Should().Contain("GROUP BY visitor_key");
+    }
+
+    /// <summary>
+    /// Which expression a source list groups on comes from a fixed table in the compiler, and a
+    /// page row carries nothing after the question mark: that part is somebody else's site
+    /// carrying somebody else's state, and which article sent the readers is answered without it.
+    /// </summary>
+    [Theory]
+    [InlineData(SourceGrouping.Site, "anyIf(source_site, source_site != '') AS source")]
+    [InlineData(SourceGrouping.Page, "anyIf(concat(source_site, path(source_address)), source_site != '') AS source")]
+    [InlineData(SourceGrouping.Kind, "anyIf(source_channel, source_site != '') AS source")]
+    public void A_Source_List_Groups_On_An_Expression_Named_In_The_Compiler(
+        SourceGrouping grouping,
+        string expected)
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteSourcesQuery(Window(), grouping, "example.com", 10));
+
+        statement.Sql.Should().Contain(expected);
+    }
+
+    /// <summary>
+    /// One site answers on many addresses, and a list that treats each as its own row reports the
+    /// busiest source of a site's traffic at a fraction of its size on each of a dozen rows.
+    /// </summary>
+    [Fact]
+    public void A_Leading_Www_Is_Not_A_Different_Site()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteSourcesQuery(Window(), SourceGrouping.Site, "example.com", 10));
+
+        statement.Sql.Should().Contain("startsWith(referrer_domain, 'www.')");
+        statement.Sql.Should().Contain("substring(referrer_domain, 5)");
+    }
+
+    /// <summary>
+    /// A site is recognised by the label in front of its public suffix, so one search engine's
+    /// country addresses are one row. That is also what keeps the lookup safe: a referrer is
+    /// written by whoever visited the site, and matching any label would let somebody who
+    /// registers <c>google.attacker.test</c> file their traffic under Google's name on a
+    /// stranger's dashboard.
+    /// </summary>
+    [Fact]
+    public void A_Site_Is_Recognised_By_The_Label_In_Front_Of_Its_Suffix()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteSourcesQuery(Window(), SourceGrouping.Site, "example.com", 10));
+
+        statement.Sql.Should().Contain("has({second_levels:Array(String)}, arrayElement(labels, -2))");
+        statement.Sql.Should().Contain("arrayElement(labels, -3)");
+        statement.Sql.Should().Contain("arrayElement(labels, -2)) AS sending_name");
+    }
+
+    /// <summary>
+    /// The catalogue is bound rather than written into the statement, so an approved statement
+    /// stays the shape of the question instead of a hundred hostnames — and so that nothing in it
+    /// can be mistaken for text a caller supplied.
+    /// </summary>
+    [Fact]
+    public void The_Catalogue_Of_Sending_Sites_Is_Bound_Rather_Than_Written_In()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteSourcesQuery(Window(), SourceGrouping.Kind, "example.com", 10));
+
+        statement.Sql.Should().NotContain("google").And.NotContain("duckduckgo");
+
+        var keys = statement.Parameters.Single(parameter => parameter.Name == "source_keys");
+
+        keys.Value.Should().BeOfType<string[]>().Which.Should().Contain("google");
+    }
+
+    /// <summary>
+    /// Three arrays read in step, so an entry added to one without the others would name a site
+    /// nothing can look up or give it a kind that belongs to a different site.
+    /// </summary>
+    [Fact]
+    public void Every_Catalogued_Site_Has_A_Name_And_A_Kind()
+    {
+        TrafficSources.Keys.Should().HaveCount(TrafficSources.Names.Length);
+        TrafficSources.Keys.Should().HaveCount(TrafficSources.Channels.Length);
+        TrafficSources.Keys.Should().OnlyHaveUniqueItems();
+        TrafficSources.Names.Should().AllSatisfy(name => name.Should().NotBeNullOrWhiteSpace());
+    }
+
+    /// <summary>
+    /// Every key reaches the store inside a bound array, but a key carrying a quotation mark would
+    /// still be a mistake nobody would notice until a customer's list went blank.
+    /// </summary>
+    [Fact]
+    public void No_Catalogued_Key_Holds_Anything_But_A_Hostname()
+    {
+        TrafficSources.Keys.Should().AllSatisfy(key =>
+            key.Should().MatchRegex("^[a-z0-9.-]+$"));
+
+        TrafficSources.SecondLevelSuffixes.Should().AllSatisfy(suffix =>
+            suffix.Should().MatchRegex("^[a-z]+$"));
     }
 
     [Theory]
@@ -1025,7 +1412,7 @@ public sealed class AnalyticsSqlCompilerTests
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
-            new SiteVisitJourneyQuery(Visit, IdleTimeout, 200));
+            new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200));
 
         statement.Sql.Should().Contain("WHERE visitor_key = {visitor_key:String}");
         statement.Sql.Should().NotContain(Visit.VisitorKey);
@@ -1043,7 +1430,7 @@ public sealed class AnalyticsSqlCompilerTests
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
-            new SiteVisitJourneyQuery(Visit, IdleTimeout, 200));
+            new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200));
 
         statement.Sql.Should().Contain("WHERE visit_ordinal = 0");
         statement.Parameters.Should().ContainSingle(parameter =>
@@ -1059,9 +1446,9 @@ public sealed class AnalyticsSqlCompilerTests
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
-            new SiteVisitJourneyQuery(Visit, IdleTimeout, 200));
+            new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200));
 
-        statement.Sql.Should().Contain("GROUP BY path, step");
+        statement.Sql.Should().Contain("GROUP BY path, page_ordinal");
         statement.Sql.Should().Contain("ORDER BY at, press, path");
     }
 
@@ -1075,7 +1462,7 @@ public sealed class AnalyticsSqlCompilerTests
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
-            new SiteVisitJourneyQuery(Visit, IdleTimeout, 200));
+            new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200));
 
         statement.Sql.Should().Contain("WHERE kind != 'Action'");
         statement.Sql.Should().Contain("WHERE kind = 'Action'");
@@ -1091,7 +1478,7 @@ public sealed class AnalyticsSqlCompilerTests
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
-            new SiteVisitJourneyQuery(Visit, IdleTimeout, 200));
+            new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200));
 
         statement.Sql.Should().Contain("toUInt8(0) AS press");
         statement.Sql.Should().Contain("toUInt8(1) AS press");
@@ -1110,7 +1497,7 @@ public sealed class AnalyticsSqlCompilerTests
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
-            new SiteVisitJourneyQuery(Visit, IdleTimeout, 200));
+            new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200));
 
         statement.Sql.Should().Contain(expected);
     }

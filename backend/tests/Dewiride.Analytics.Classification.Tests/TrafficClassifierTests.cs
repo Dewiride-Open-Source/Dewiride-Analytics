@@ -238,4 +238,73 @@ public sealed class TrafficClassifierTests
 
         second.Should().BeEquivalentTo(first);
     }
+
+    /// <summary>
+    /// The case this product got wrong in the field, and the reason the ruleset moved to two.
+    /// </summary>
+    /// <remarks>
+    /// A real browser driven by a script, reading for forty-five seconds and scrolling most of the
+    /// way down, arriving from a rented server. Every behavioural reading says person. Calling it
+    /// one is the single mistake a product about traffic authenticity cannot make.
+    /// </remarks>
+    [Fact]
+    public void A_Visit_That_Reads_Like_A_Person_From_A_Rented_Server_Is_Not_Called_A_Person()
+    {
+        var verdict = TrafficClassifier.Current().Classify(Visits.AReaderFromARentedServer());
+
+        verdict.Category.Should().NotBe(TrafficCategory.LikelyHuman);
+    }
+
+    [Fact]
+    public void The_Same_Visit_From_A_Household_Network_Is_Still_A_Person()
+    {
+        var verdict = TrafficClassifier.Current().Classify(Visits.AReader());
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+    }
+
+    /// <summary>
+    /// The reading happened and is not thrown away for being inconvenient. It is kept, shown as
+    /// pointing the other way, and the verdict is stated less firmly because of it.
+    /// </summary>
+    [Fact]
+    public void What_It_Did_Is_Kept_As_Evidence_Against_The_Verdict()
+    {
+        var verdict = TrafficClassifier.Current().Classify(Visits.AReaderFromARentedServer());
+
+        verdict.Contradicting.Should().Contain(signal => signal.Code == SignalCodes.ReadTime);
+    }
+
+    [Fact]
+    public void Where_It_Came_From_Is_Given_As_The_Reason()
+    {
+        var verdict = TrafficClassifier.Current().Classify(Visits.AReaderFromARentedServer());
+
+        verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.HostingNetwork);
+    }
+
+    /// <summary>
+    /// One observation, however good, does not reach the firmest band on its own — and evidence
+    /// pointing the other way holds it back further. Rule twelve, enforced rather than intended.
+    /// </summary>
+    [Fact]
+    public void It_Is_Not_Stated_More_Firmly_Than_One_Observation_Supports()
+    {
+        var verdict = TrafficClassifier.Current().Classify(Visits.AReaderFromARentedServer());
+
+        verdict.Strength.Should().BeOneOf(EvidenceStrength.Weak, EvidenceStrength.Moderate);
+        verdict.Strength.Should().NotBe(EvidenceStrength.Verified);
+    }
+
+    /// <summary>
+    /// Behaviour never reaches the band reserved for an identity confirmed against an operator's
+    /// published addresses, and a datacentre is behaviour like any other.
+    /// </summary>
+    [Fact]
+    public void Arriving_From_A_Datacentre_Never_Reaches_Verified()
+    {
+        var verdict = TrafficClassifier.Current().Classify(Visits.AReaderFromARentedServer());
+
+        verdict.Strength.Should().NotBe(EvidenceStrength.Verified);
+    }
 }

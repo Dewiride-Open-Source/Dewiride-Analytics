@@ -1,4 +1,5 @@
 using Dewiride.Analytics.Application.Ingest;
+using Microsoft.Extensions.Logging;
 
 namespace Dewiride.Analytics.Application.Tests.Ingest;
 
@@ -123,5 +124,78 @@ public sealed class EventIngestorOriginTests
             IngestHarness.BrowserRequest("https://Example.COM:8443"));
 
         outcome.Should().Be(IngestOutcome.Accepted);
+    }
+
+    /// <summary>
+    /// The refusal is silent to the sender and has to stay that way, so the only account of it is
+    /// the one the machine's owner can read. Without it the whole diagnosis of "the snippet is
+    /// installed and the dashboard shows nothing" is reading the source.
+    /// </summary>
+    [Fact]
+    public async Task A_Refused_Origin_Says_Why_In_The_Log()
+    {
+        var harness = IngestHarness.ForSite(domain: "example.com");
+
+        await harness.IngestAsync(
+            IngestHarness.PageView("http://localhost:3000/posts/hello"),
+            IngestHarness.BrowserRequest("http://localhost:3000"));
+
+        var written = harness.Logged.Should().ContainSingle().Subject;
+
+        written.Level.Should().Be(LogLevel.Debug);
+        written.Message.Should().Contain("localhost").And.Contain("example.com");
+    }
+
+    /// <summary>
+    /// An identifier nobody has registered is the other half of the same silence, and is reported
+    /// separately: it is the answer for a snippet carrying a stale identifier, where the address
+    /// the report came from is beside the point.
+    /// </summary>
+    [Fact]
+    public async Task An_Unknown_Site_Says_So_In_The_Log()
+    {
+        var harness = IngestHarness.WithNoSuchSite();
+
+        await harness.IngestAsync(IngestHarness.PageView());
+
+        var written = harness.Logged.Should().ContainSingle().Subject;
+
+        written.Level.Should().Be(LogLevel.Debug);
+        written.Message.Should().Contain(IngestHarness.SiteId.ToString());
+    }
+
+    /// <summary>
+    /// The host in that line is written by whoever sent the request, and a log is read one record
+    /// to a line by people and by collectors alike — so a newline in it would let a stranger write
+    /// whatever they liked into the operator's own record of what happened.
+    /// </summary>
+    [Fact]
+    public async Task A_Refused_Origin_Cannot_Forge_A_Line_In_The_Log()
+    {
+        var harness = IngestHarness.ForSite(domain: "example.com");
+
+        await harness.IngestAsync(
+            IngestHarness.PageView("https://elsewhere.test/posts/hello"),
+            IngestHarness.BrowserRequest("evil.test\nfail: everything is broken"));
+
+        var written = harness.Logged.Should().ContainSingle().Subject;
+
+        written.Message.Should().NotContain("\n").And.NotContain("\r");
+        written.Message.Should().Contain("evil.test");
+    }
+
+    /// <summary>
+    /// Nothing is written for a report that was stored. A line per accepted page view would turn
+    /// the log into a second, worse copy of the telemetry store.
+    /// </summary>
+    [Fact]
+    public async Task An_Accepted_Report_Writes_Nothing_To_The_Log()
+    {
+        var harness = IngestHarness.ForSite(domain: "example.com");
+
+        var outcome = await harness.IngestAsync(IngestHarness.PageView());
+
+        outcome.Should().Be(IngestOutcome.Accepted);
+        harness.Logged.Should().BeEmpty();
     }
 }

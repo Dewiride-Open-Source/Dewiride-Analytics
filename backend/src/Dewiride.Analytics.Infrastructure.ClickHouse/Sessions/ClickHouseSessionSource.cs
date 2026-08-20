@@ -68,6 +68,8 @@ internal sealed class ClickHouseSessionSource(IClickHouseClient client) : ISessi
         HadPointerInteraction = Watched(reader, Column.PointerObserved, Column.PointerSeen),
         HadKeyboardInteraction = Watched(reader, Column.KeyboardObserved, Column.KeyboardSeen),
         DeclaredWebDriver = Watched(reader, Column.WebDriverObserved, Column.WebDriverSeen),
+        AutonomousSystem = reader.GetFieldValue<uint>(Column.AutonomousSystem),
+        NetworkOwner = NullIfEmpty(reader.GetString(Column.NetworkOwner)),
     };
 
     private static ImmutableArray<ObservedRequest> ToRequests(Tuple<long, string, short?>[] rows) =>

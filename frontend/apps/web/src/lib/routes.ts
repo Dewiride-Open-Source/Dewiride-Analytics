@@ -1,7 +1,8 @@
 import type { Session } from '@/lib/api/schemas';
 
-/** The three screens that exist, named once. */
+/** The four screens that exist, named once. */
 export const DASHBOARD = '/';
+export const JOURNEYS = '/journeys';
 export const SIGN_IN = '/sign-in';
 export const SET_UP = '/set-up';
 
@@ -15,7 +16,19 @@ const COLLECT = '/collect';
  * reaches the framework's own bare page. A new screen has to be added here as well as given a
  * file, and a test fails if one is left out.
  */
-export const SCREENS: ReadonlySet<string> = new Set([DASHBOARD, SIGN_IN, SET_UP]);
+export const SCREENS: ReadonlySet<string> = new Set([DASHBOARD, JOURNEYS, SIGN_IN, SET_UP]);
+
+/**
+ * The screens somebody moves between once they are signed in, in the order the bar lists them.
+ *
+ * Two, and they answer two different questions: how much traffic a website had, and who each of
+ * its visitors was. The second is a screen of its own rather than a card at the foot of the first,
+ * because it is the one people come back to and work through rather than glance at.
+ */
+export const SECTIONS = [
+  { path: DASHBOARD, name: 'overview' },
+  { path: JOURNEYS, name: 'journeys' },
+] as const;
 
 /**
  * Whether an address belongs to the engine rather than to a screen.

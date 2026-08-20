@@ -7,7 +7,12 @@
   "header": {
     "signedInAs": "Signed in as {name}",
     "signOut": "Sign out",
-    "signingOut": "Signing out"
+    "signingOut": "Signing out",
+    "sections": "Sections",
+    "section": {
+      "overview": "Overview",
+      "journeys": "User journey"
+    }
   },
   "theme": {
     "label": "Appearance",
@@ -111,7 +116,9 @@
     "list": {
       "previous": "Previous",
       "next": "Next",
-      "showing": "{first}–{last} of {total}"
+      "showing": "{first}–{last} of {total}",
+      "page": "Page {number}",
+      "perPage": "Show"
     },
     "duration": {
       "short": "{seconds}s",
@@ -143,7 +150,8 @@
       "grouping": {
         "label": "Show places as",
         "country": "Countries",
-        "town": "Towns"
+        "town": "Towns",
+        "network": "Networks"
       },
       "nav": {
         "label": "More places"
@@ -151,6 +159,36 @@
       "empty": {
         "title": "No readers placed yet",
         "body": "Once somebody visits, the countries and towns they read from appear here."
+      },
+      "unknownNetwork": "Network not known",
+      "networksNote": "A network is who owns the connection a visit arrived over. Several visitors from one company’s datacentre are usually one program, not an audience.",
+      "attributionNetworks": "Networks from <source>iptoasn.com</source>."
+    },
+    "sources": {
+      "title": "Where your visitors come from",
+      "total": "{count, plural, one {# visitor} other {# visitors}}",
+      "visitors": "{count, plural, one {# visitor} other {# visitors}}",
+      "views": "{count, plural, one {# view} other {# views}}",
+      "direct": "Came straight here",
+      "mostlyDirect": "Most visitors came straight here — typed in, bookmarked, or from an app or a message that keeps the link private.",
+      "grouping": {
+        "label": "Show sources as",
+        "kind": "Overall",
+        "site": "Sites",
+        "page": "Pages"
+      },
+      "nav": {
+        "label": "More sources"
+      },
+      "empty": {
+        "title": "Nothing has sent visitors yet",
+        "body": "When somebody follows a link to your site, where they came from appears here."
+      },
+      "kind": {
+        "search": "Search engines",
+        "assistant": "AI assistants",
+        "social": "Social networks",
+        "link": "Links from other sites"
       }
     },
     "devices": {
@@ -228,20 +266,10 @@
       "sessions": "{count, plural, one {# visit} other {# visits}}",
       "pages": "{count, plural, one {# page} other {# pages}}",
       "pending": "Visits still under way aren't counted here yet.",
+      "everyVisit": "Look at each visit on its own",
       "empty": {
         "title": "Nothing judged yet",
         "body": "A visit is judged once it has finished, so the first ones appear about half an hour after they end."
-      }
-    },
-    "visits": {
-      "title": "Visits",
-      "caption": "{count, plural, one {# visit} other {# visits}} in this period, newest first. Open one to see the pages it went through, what people clicked, and what it was judged on.",
-      "pages": "{count, plural, one {# page} other {# pages}}",
-      "seenBy": "Seen by {surfaces}",
-      "supporting": "What we saw",
-      "contradicting": "Pointing the other way",
-      "nav": {
-        "label": "More visits"
       }
     },
     "empty": {
@@ -279,6 +307,30 @@
     },
     "journey": {
       "title": "What happened in this visit",
+      "about": {
+        "title": "Who this was",
+        "from": "Came from",
+        "direct": "Came straight here",
+        "place": "Where",
+        "readOn": "Read on",
+        "network": "Network",
+        "on": "{browser} on {system}",
+        "estimate": "The town is an estimate from the network the visit came over, not a position from a device.",
+        "unobserved": "Nothing in this visit said where it was or what it was read on.",
+        "kind": {
+          "search": "A search engine",
+          "assistant": "An AI assistant",
+          "social": "A social network",
+          "link": "A link on another site"
+        },
+        "device": {
+          "phone": "A phone",
+          "tablet": "A tablet",
+          "desktop": "A computer",
+          "other": "Something else",
+          "unknown": "Not known"
+        }
+      },
       "down": "{percent}% down",
       "unmeasured": "Not measured",
       "unwatched": "Nothing here ran the code on your pages, so how long each one held anybody is unknown.",
@@ -331,6 +383,44 @@
       "empty": {
         "title": "No clicks yet",
         "body": "Once somebody uses a link or a button on one of your pages, it appears here with how often it was clicked."
+      }
+    }
+  },
+  "journeys": {
+    "title": "User journey",
+    "caption": "Everyone and everything that visited {site}, newest first. Open one to see the pages it went to, what it did there, and what it was judged on.",
+    "filters": {
+      "title": "Narrow this down",
+      "clear": "Clear",
+      "categories": "What generated it",
+      "strength": "How sure we are",
+      "strengthAny": "Any",
+      "strengthWeak": "Slight signs or stronger",
+      "strengthModerate": "Some signs or stronger",
+      "strengthStrong": "Strong signs",
+      "pages": "Pages read",
+      "pagesAny": "Any",
+      "pagesOne": "One or more",
+      "pagesMany": "More than one"
+    },
+    "list": {
+      "pages": "{count, plural, one {# page} other {# pages}}",
+      "seenBy": "Seen by {surfaces}",
+      "supporting": "What we saw",
+      "contradicting": "Pointing the other way",
+      "nav": {
+        "label": "Pages of visits"
+      }
+    },
+    "empty": {
+      "none": {
+        "title": "Nothing judged yet",
+        "body": "A visit is judged once it has finished, so the first ones appear about half an hour after they end."
+      },
+      "narrowed": {
+        "title": "No visits like that",
+        "body": "Nothing in this period matches what you picked. Widen it, or look at a longer period.",
+        "action": "Show every visit"
       }
     }
   },
@@ -420,6 +510,9 @@
       "script_executed": "A real browser ran your tracking code.",
       "images_only": "Pictures on the page were fetched but nothing was run — a browser with scripts turned off.",
       "no_language_declared": "It did not say which language it prefers. Browsers always do."
+    },
+    "network": {
+      "hosting": "It came from a computer rented at {operator}, not from a home or office connection."
     }
   },
   "problems": {

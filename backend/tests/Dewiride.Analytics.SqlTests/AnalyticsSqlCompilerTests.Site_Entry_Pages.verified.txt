@@ -82,21 +82,36 @@ WITH
                 AND sighting <= sightings_from_path AS is_second_sighting
         FROM sighted
     ),
+    paged AS
+    (
+        SELECT
+            *,
+            greatest(
+                toUInt64(1),
+                sum(toUInt8(kind = 'PageView' AND NOT is_second_sighting)) OVER (
+                    PARTITION BY visitor_key, visit_ordinal, path
+                    ORDER BY server_ts, event_id
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)) AS page_ordinal
+        FROM counted
+    ),
+    opened AS
+    (
+        SELECT
+            *,
+            row_number() OVER (
+                PARTITION BY visitor_key, visit_ordinal, path, page_ordinal
+                ORDER BY is_second_sighting, kind != 'PageView', server_ts, event_id) = 1 AS opens_page
+        FROM paged
+    ),
     reconstructed AS
     (
         SELECT
             min(server_ts) AS started_at,
             max(server_ts) AS ended_at,
-            toInt64(countIf(is_page)) AS page_count,
-            argMinIf(path, (server_ts, event_id), is_page) AS entry_path,
-            argMaxIf(path, (server_ts, event_id), is_page) AS exit_path
-        FROM
-        (
-            SELECT
-                *,
-                kind = 'PageView' AND NOT is_second_sighting AS is_page
-            FROM counted
-        )
+            toInt64(countIf(opens_page)) AS page_count,
+            argMinIf(path, (server_ts, event_id), opens_page) AS entry_path,
+            argMaxIf(path, (server_ts, event_id), opens_page) AS exit_path
+        FROM opened
         GROUP BY visitor_key, visit_ordinal
         HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
            AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')

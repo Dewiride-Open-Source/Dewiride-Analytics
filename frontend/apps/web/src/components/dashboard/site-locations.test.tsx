@@ -35,12 +35,20 @@ const MANY = Array.from({ length: 23 }, (_, rank) => ({
 }));
 
 /** The period held more readers than the rows listed, as it does on any real site. */
+function groupingIn(path: string): string {
+  if (path.includes('grouping=network')) {
+    return 'network';
+  }
+
+  return path.includes('grouping=town') ? 'town' : 'country';
+}
+
 function engineWith(places: readonly unknown[], visitors = 40, totalPlaces = places.length) {
   return engineDoing(async (path) =>
     respondWith(200, {
       from: FROM,
       to: TO,
-      grouping: path.includes('grouping=town') ? 'town' : 'country',
+      grouping: groupingIn(path),
       visitors,
       totalPlaces,
       mostVisitors: 24,
@@ -334,5 +342,66 @@ describe('moving through the whole list of places', () => {
     await screen.findByText('1–10 of 23');
 
     expect(engine.count).toBe(2);
+  });
+});
+
+describe('the networks visits arrived over', () => {
+  /** One company's datacentre, and two household networks. */
+  const NETWORKS = [
+    { place: 'Alibaba Cloud', countryCode: '', visitors: 99, pageViews: 109 },
+    { place: 'Reliance Jio Infocomm Limited', countryCode: '', visitors: 3, pageViews: 8 },
+    { place: '', countryCode: '', visitors: 2, pageViews: 4 },
+  ];
+
+  async function showingNetworks() {
+    engineWith(NETWORKS, 104);
+    renderScreen(<SiteLocations siteId={SITE_ID} window={WINDOW} />);
+
+    await screen.findByRole('radio', { name: 'Networks' });
+    await userEvent.click(screen.getByRole('radio', { name: 'Networks' }));
+  }
+
+  /**
+   * The view that answers the question countries hide: a rented server reports the country it is
+   * racked in, so a hundred of them read as an audience there.
+   */
+  it('names the network each visit came over', async () => {
+    await showingNetworks();
+
+    expect(await screen.findByText('Alibaba Cloud')).toBeInTheDocument();
+  });
+
+  it('says what a network is, since it is not a place', async () => {
+    await showingNetworks();
+
+    expect(
+      await screen.findByText(/one company.s datacentre are usually one program/),
+    ).toBeInTheDocument();
+  });
+
+  it('says so plainly when a network could not be established', async () => {
+    await showingNetworks();
+
+    expect(await screen.findByText('Network not known')).toBeInTheDocument();
+  });
+
+  /** A network is not a place, so a row must not be dressed up with a country beside it. */
+  it('never puts a country beside a network', async () => {
+    await showingNetworks();
+
+    await screen.findByText('Alibaba Cloud');
+
+    expect(screen.queryByText(/, India/)).not.toBeInTheDocument();
+  });
+
+  /** The routing data carries its own licence, and the place data's credit does not cover it. */
+  it('credits the routing data rather than the place data', async () => {
+    await showingNetworks();
+
+    expect(await screen.findByRole('link', { name: 'iptoasn.com' })).toHaveAttribute(
+      'href',
+      'https://iptoasn.com',
+    );
+    expect(screen.queryByRole('link', { name: 'DB-IP' })).not.toBeInTheDocument();
   });
 });

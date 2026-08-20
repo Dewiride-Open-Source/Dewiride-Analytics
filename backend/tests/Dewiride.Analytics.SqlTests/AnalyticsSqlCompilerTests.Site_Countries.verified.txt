@@ -2,7 +2,7 @@
 WITH
     windowed AS
     (
-        SELECT kind, surface, path, visitor_key, correlation_id, country_code, city
+        SELECT kind, surface, path, visitor_key, correlation_id, country_code, city, network_owner, autonomous_system
         FROM events
         WHERE site_id = {site_id:UUID}
           AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
@@ -42,6 +42,8 @@ WITH
             visitor_key,
             anyIf(country_code, country_code != '') AS country_code,
             anyIf(city, city != '') AS city,
+            anyIf(network_owner, network_owner != '') AS network_owner,
+            max(autonomous_system) AS autonomous_system,
             toInt64(sum(page_views)) AS page_views
         FROM
         (
@@ -50,8 +52,11 @@ WITH
                 path,
                 anyIf(country_code, country_code != '') AS country_code,
                 anyIf(city, city != '') AS city,
+                anyIf(network_owner, network_owner != '') AS network_owner,
+                max(autonomous_system) AS autonomous_system,
                 greatest(
                     countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),
+                    toUInt64(countIf(kind != 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')) > 0),
                     countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) AS delivered,
                 if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
             FROM identified
@@ -72,7 +77,7 @@ FROM
 (
     SELECT
         country_code AS place,
-        country_code,
+        country_code AS country_code,
         toInt64(count()) AS visitors,
         toInt64(sum(page_views)) AS page_views
     FROM located

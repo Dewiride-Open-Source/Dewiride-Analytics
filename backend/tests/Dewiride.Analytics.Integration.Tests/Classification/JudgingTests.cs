@@ -31,6 +31,15 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
 
     private const string Scanner = "python-requests/2.32.3";
 
+    /// <summary>
+    /// Alibaba's international network, which is where a live installation's hundred phantom
+    /// readers turned out to be sitting.
+    /// </summary>
+    private const uint RentedNetwork = 45102;
+
+    /// <summary>An Indian mobile carrier, and a network nobody rents a server on.</summary>
+    private const uint HouseholdNetwork = 55836;
+
     /// <summary>The present moment, taken from the host's own clock rather than the machine's.</summary>
     private DateTimeOffset Now => stack.Services.GetRequiredService<TimeProvider>().GetUtcNow();
 
@@ -58,6 +67,201 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         visits.Should().ContainSingle();
         visits[0].Verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
         visits[0].PageCount.Should().Be(2);
+    }
+
+    /// <summary>
+    /// The case a live installation got wrong: a real browser reading a real page from a rented
+    /// server. Everything the engine watches says person; only where it came from says otherwise,
+    /// and that has to survive the whole round trip through both stores to reach the verdict.
+    /// </summary>
+    [Fact]
+    public async Task Somebody_Reading_From_A_Rented_Server_Is_Not_Called_A_Person()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Rented(Page(site.Id, "scraper", at, "/", Chrome)),
+            Rented(Page(site.Id, "scraper", at.AddMinutes(2), "/posts/hello", Chrome)),
+            Rented(Read(site.Id, "scraper", at.AddMinutes(4), Chrome)));
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().NotBe(TrafficCategory.LikelyHuman);
+        visits[0].Verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.HostingNetwork);
+    }
+
+    /// <summary>
+    /// The reading happened and is not thrown away for being inconvenient — it is carried through
+    /// both stores and shown as the case against the verdict.
+    /// </summary>
+    [Fact]
+    public async Task What_A_Rented_Server_Did_Is_Kept_As_Evidence_Against_The_Verdict()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Rented(Page(site.Id, "scraper", at, "/", Chrome)),
+            Rented(Read(site.Id, "scraper", at.AddMinutes(4), Chrome)));
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits[0].Verdict.Contradicting.Should().Contain(signal => signal.Code == SignalCodes.ReadTime);
+        visits[0].Verdict.Strength.Should().NotBe(EvidenceStrength.Verified);
+    }
+
+    /// <summary>
+    /// The shape a live installation was actually in: one program reading a site through a pool of
+    /// rented addresses, every one of its reports arriving from a different one.
+    /// </summary>
+    /// <remarks>
+    /// Counted by address it became a hundred visitors, and each report about a page landed under
+    /// a different one of them — so the reading of a page sat in one visit and the page itself in
+    /// another, and the visit holding the reading was told there was too little to go on. The keys
+    /// here are derived by the running install's own factory rather than written by hand, because
+    /// what is being proved is the derivation.
+    /// </remarks>
+    [Fact]
+    public async Task A_Pool_Of_Rented_Addresses_Is_One_Visit_Rather_Than_A_Page_And_A_Reading()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        var arrived = RentedVisitor(site.Id, "47.238.1.1");
+        var left = RentedVisitor(site.Id, "8.219.64.13");
+
+        await WriteAsync(
+            Rented(Page(site.Id, arrived, at, "/posts/hello", Chrome)),
+            Rented(Read(site.Id, left, at.AddMinutes(4), Chrome, "/posts/hello")));
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].PageCount.Should().Be(1);
+        visits[0].Verdict.Category.Should().NotBe(TrafficCategory.InsufficientEvidence);
+    }
+
+    /// <summary>
+    /// The same two addresses on a network that carries households are two visitors, because there
+    /// an address is a home rather than a lease.
+    /// </summary>
+    [Fact]
+    public async Task Two_Ordinary_Addresses_Are_Still_Two_Visitors()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        var one = HouseholdVisitor(site.Id, "203.0.113.7");
+        var another = HouseholdVisitor(site.Id, "203.0.113.8");
+
+        await WriteAsync(
+            Page(site.Id, one, at, "/posts/hello", Chrome),
+            Page(site.Id, another, at, "/posts/hello", Chrome));
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().HaveCount(2);
+    }
+
+    /// <summary>
+    /// The report announcing an arrival is sent first, on load, and is the one most easily lost.
+    /// What follows it names the page it was measured on, and a tracker only measures a page from
+    /// the page itself — so the visit read what its reports say it read, and is judged on that
+    /// rather than answered with "too little to go on".
+    /// </summary>
+    [Fact]
+    public async Task A_Reader_Whose_Arrival_Was_Never_Reported_Is_Still_Judged()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+
+        await WriteAsync(Read(site.Id, "reader", Yesterday, Chrome, "/posts/hello"));
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].PageCount.Should().Be(1);
+        visits[0].Verdict.Category.Should().NotBe(TrafficCategory.InsufficientEvidence);
+    }
+
+    /// <summary>
+    /// A tracker restates how long a page has held somebody every time it reports, so each report
+    /// contains the last one with more on the end. Adding them together would credit a quarter of
+    /// an hour's reading with an afternoon of it, and every excess minute points toward a person.
+    /// </summary>
+    [Fact]
+    public async Task Reading_Time_Is_What_The_Page_Held_Somebody_Rather_Than_What_Was_Reported()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "reader", at, "/posts/hello", Chrome),
+            Read(site.Id, "reader", at.AddSeconds(15), Chrome, "/posts/hello") with { EngagedMs = 15_000 },
+            Read(site.Id, "reader", at.AddSeconds(45), Chrome, "/posts/hello") with { EngagedMs = 45_000 },
+            Read(site.Id, "reader", at.AddSeconds(90), Chrome, "/posts/hello") with { EngagedMs = 90_000 });
+
+        var found = await ReadSessionsAsync(site.Id);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.PageCount.Should().Be(1);
+        found[0].Evidence.EngagedMs.Should().Be(90_000);
+    }
+
+    /// <summary>
+    /// A reader who comes back to an article later in the same visit was there twice, and each
+    /// arrival holds its own reading.
+    /// </summary>
+    [Fact]
+    public async Task Returning_To_A_Page_Is_A_Second_Arrival_With_Its_Own_Reading()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "reader", at, "/posts/hello", Chrome),
+            Read(site.Id, "reader", at.AddSeconds(20), Chrome, "/posts/hello") with { EngagedMs = 20_000 },
+            Page(site.Id, "reader", at.AddMinutes(1), "/pricing", Chrome),
+            Page(site.Id, "reader", at.AddMinutes(2), "/posts/hello", Chrome),
+            Read(site.Id, "reader", at.AddMinutes(2).AddSeconds(30), Chrome, "/posts/hello") with { EngagedMs = 30_000 });
+
+        var found = await ReadSessionsAsync(site.Id);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.PageCount.Should().Be(3);
+        found[0].Evidence.EngagedMs.Should().Be(50_000);
+    }
+
+    /// <summary>
+    /// A household network is not in the catalogue and produces nothing, so the same visit from a
+    /// person's own connection is still a person.
+    /// </summary>
+    [Fact]
+    public async Task The_Same_Visit_From_A_Household_Network_Is_Still_A_Person()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "reader", at, "/", Chrome) with { AutonomousSystem = HouseholdNetwork },
+            Read(site.Id, "reader", at.AddMinutes(4), Chrome) with { AutonomousSystem = HouseholdNetwork });
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
     }
 
     /// <summary>
@@ -103,6 +307,59 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         var breakdown = await BreakdownAsync(site);
 
         breakdown.Sum(group => group.Sessions).Should().Be(1);
+    }
+
+    /// <summary>
+    /// The engine's bookmark stops at the earliest visit still under way rather than at the end of
+    /// the stretch it just read, so a later window routinely opens part-way through a visit that
+    /// has already been judged. What is left of that visit is not a visit: handing it back as one
+    /// wrote the same reader down twice, the second time with too little left in them to say
+    /// anything at all.
+    /// </summary>
+    [Fact]
+    public async Task What_Is_Left_Of_A_Visit_Already_Under_Way_Is_Not_A_Second_Visit()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "straddling", at, "/", Chrome),
+            Read(site.Id, "straddling", at.AddMinutes(6), Chrome),
+            Read(site.Id, "straddling", at.AddMinutes(12), Chrome));
+
+        var whole = await ReadSessionsAsync(site.Id, at.AddMinutes(-1));
+        var remainder = await ReadSessionsAsync(site.Id, at.AddMinutes(3));
+
+        whole.Should().ContainSingle()
+            .Which.Evidence.StartedAt.Should().BeCloseTo(at, TimeSpan.FromSeconds(1));
+
+        remainder.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The same thing end to end: a run that resumes from the middle of a visit it has already
+    /// judged leaves the one verdict it reached the first time.
+    /// </summary>
+    [Fact]
+    public async Task Resuming_Inside_A_Judged_Visit_Does_Not_Judge_It_Again()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "resumed", at, "/", Chrome),
+            Read(site.Id, "resumed", at.AddMinutes(6), Chrome),
+            Read(site.Id, "resumed", at.AddMinutes(12), Chrome));
+
+        await JudgeAsync(site);
+
+        await ResetBookmarkAsync(site.Id);
+        await ResumePointAsync(site.Id, at.AddMinutes(3));
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle().Which.PageCount.Should().Be(1);
     }
 
     /// <summary>
@@ -332,6 +589,46 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
 
     private static string Domain() => $"{Guid.NewGuid():n}.example.com";
 
+    /// <summary>
+    /// Who the install itself says a request from a rented address is, using the same factory the
+    /// collector uses.
+    /// </summary>
+    /// <param name="siteId">The site being visited.</param>
+    /// <param name="address">The address the request arrived from.</param>
+    /// <returns>The visitor key.</returns>
+    private string RentedVisitor(Guid siteId, string address) =>
+        VisitorKeyFor(siteId, address, RentedNetwork);
+
+    /// <summary>The same, for an address on a network that carries households.</summary>
+    /// <param name="siteId">The site being visited.</param>
+    /// <param name="address">The address the request arrived from.</param>
+    /// <returns>The visitor key.</returns>
+    private string HouseholdVisitor(Guid siteId, string address) =>
+        VisitorKeyFor(siteId, address, HouseholdNetwork);
+
+    /// <summary>
+    /// Derives a key the way the collector would.
+    /// </summary>
+    /// <remarks>
+    /// Under the salt the install holds now, whatever moment the activity is written at. What
+    /// these tests are about is whether two addresses reduce to the same visitor, which is a
+    /// question about one day's salt rather than about which day it belongs to — and a fresh
+    /// install has generated no salt for any day but today.
+    /// </remarks>
+    /// <param name="siteId">The site being visited.</param>
+    /// <param name="address">The address the request arrived from.</param>
+    /// <param name="autonomousSystem">The network that address is on.</param>
+    /// <returns>The visitor key.</returns>
+    private string VisitorKeyFor(Guid siteId, string address, uint autonomousSystem)
+    {
+        var derived = stack.Services.GetRequiredService<IVisitorKeyFactory>()
+            .Derive(siteId, VisitorConnection.Identifying(address, autonomousSystem), Chrome, Now);
+
+        derived.Should().NotBeNull("today's salt is the one a running install always holds");
+
+        return derived;
+    }
+
     private Task WriteAsync(params RawEvent[] events) =>
         stack.Services.GetRequiredService<IEventSink>().WriteBatchAsync(events, Cancellation.Token);
 
@@ -369,13 +666,16 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         await database.SaveChangesAsync(Cancellation.Token).ConfigureAwait(false);
     }
 
-    private async Task<IReadOnlyList<ObservedSession>> ReadSessionsAsync(Guid siteId) =>
+    private Task<IReadOnlyList<ObservedSession>> ReadSessionsAsync(Guid siteId) =>
+        ReadSessionsAsync(siteId, Now.AddDays(-2));
+
+    private async Task<IReadOnlyList<ObservedSession>> ReadSessionsAsync(Guid siteId, DateTimeOffset from) =>
         await stack.Services.GetRequiredService<ISessionSource>()
             .ReadAsync(
                 new SessionWindow
                 {
                     SiteId = siteId,
-                    From = Now.AddDays(-2),
+                    From = from,
                     To = Now.AddMinutes(-30),
                     IdleTimeout = TimeSpan.FromMinutes(30),
                     MaxRequestsPerSession = 1000,
@@ -414,8 +714,13 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
             ViewportWidth = 1440,
         };
 
-    private static RawEvent Read(Guid siteId, string visitor, DateTimeOffset at, string userAgent) =>
-        Page(siteId, visitor, at, "/", userAgent) with
+    private static RawEvent Read(
+        Guid siteId,
+        string visitor,
+        DateTimeOffset at,
+        string userAgent,
+        string path = "/") =>
+        Page(siteId, visitor, at, path, userAgent) with
         {
             Kind = EventKind.Exit,
             EngagedMs = 30_000,
@@ -424,6 +729,10 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
             HadKeyboardInteraction = false,
             DeclaredWebDriver = false,
         };
+
+    /// <summary>The same activity, arriving from a computer rented in a datacentre.</summary>
+    private static RawEvent Rented(RawEvent observed) =>
+        observed with { AutonomousSystem = RentedNetwork, NetworkOwner = "ALIBABA-CN-NET Alibaba US Technology Co., Ltd." };
 
     /// <summary>
     /// One request as a surface in the request path sees it: a status code, no viewport, and no

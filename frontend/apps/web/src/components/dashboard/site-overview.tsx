@@ -14,6 +14,7 @@ import { SiteLocations } from '@/components/dashboard/site-locations';
 import { SitePages } from '@/components/dashboard/site-pages';
 import { SiteReading } from '@/components/dashboard/site-reading';
 import { SiteSettings } from '@/components/dashboard/site-settings';
+import { SiteSources } from '@/components/dashboard/site-sources';
 import { TrackingCode } from '@/components/dashboard/tracking-code';
 import { type TrafficDay, TrafficChart } from '@/components/dashboard/traffic-chart';
 import { Button } from '@/components/ui/button';
@@ -150,6 +151,13 @@ export function SiteOverview({ site }: SiteOverviewProps) {
             either starts each list at its own beginning instead of leaving somebody on a
             screenful that no longer exists.
           */}
+          {/*
+            Where the visitors came from sits directly under the chart, above everything about what
+            they then did. It is the first thing somebody looks for after seeing the shape of a
+            week — a rise is a question, and this is where its answer usually is.
+          */}
+          <SiteSources key={`sources:${listing}`} siteId={site.id} window={window} />
+
           {/*
             Where the readers were and what they read on are two halves of the same question and
             sit side by side from a wide screen down, one above the other on anything narrower.

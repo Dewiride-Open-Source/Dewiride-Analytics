@@ -1,3 +1,6 @@
+using System.Collections.Immutable;
+using Dewiride.Analytics.Classification;
+
 namespace Dewiride.Analytics.Application.Analytics;
 
 /// <summary>
@@ -247,6 +250,117 @@ public enum LocationGrouping
     /// the answer is frequently the nearest sizeable town rather than where the visitor is.
     /// </remarks>
     Town = 2,
+
+    /// <summary>
+    /// One row per network the visitors came over.
+    /// </summary>
+    /// <remarks>
+    /// The one grouping here that answers a question about authenticity rather than about an
+    /// audience. A country tells a publisher who is reading them; a network tells them whether
+    /// those readers are people at all, because a hundred readers arriving from one company's
+    /// datacentre are not a hundred readers. Countries are the answer that hides this: a rented
+    /// server in Singapore reports Singapore, truthfully, and reads as a Singaporean audience.
+    /// </remarks>
+    Network = 3,
+}
+
+/// <summary>
+/// Where a site's visitors came from before they arrived.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Counted per visitor rather than per page, on the same terms as <see cref="SiteLocationsQuery"/>
+/// and for the same reason: where somebody came from is a fact about their arrival, and counting
+/// it once per page would rank sources by how much the people they sent went on to read.
+/// </para>
+/// <para>
+/// One visitor is settled on one source. Only the first page of a visit carries an address from
+/// somewhere else — every page after it was reached from the site itself — so the site's own
+/// address is excluded and whatever remains is the source for everything that visitor did. A
+/// visitor who left, followed a link back from somewhere else and returned within the same day
+/// has two sources and is credited to one of them; that is a limit of counting people rather than
+/// arrivals, and is the same trade every other per-visitor figure on the dashboard makes.
+/// </para>
+/// <para>
+/// A visitor whose arrival named nowhere is a row rather than an omission. Typing an address in,
+/// opening a bookmark, following a link from an application, and arriving from a site that
+/// withholds the address all look identical here, and on most sites they are together the largest
+/// row on the list — so a list that quietly dropped them would make every share on it wrong.
+/// </para>
+/// </remarks>
+public sealed record SiteSourcesQuery : AnalyticsQuery
+{
+    /// <summary>Most sources any one question may ask for.</summary>
+    public const int MostSources = 100;
+
+    /// <summary>Asks for a slice of the sources in a window.</summary>
+    /// <param name="range">The window to count over.</param>
+    /// <param name="grouping">Whether to group by the sending site or by the sending page.</param>
+    /// <param name="siteDomain">
+    /// The measured site's own address. Traffic from it and from anything below it is a reader
+    /// moving between pages rather than a source, and takes no part.
+    /// </param>
+    /// <param name="limit">How many sources to return, at most <see cref="MostSources"/>.</param>
+    /// <param name="offset">How many of the busiest sources to pass over first.</param>
+    /// <exception cref="ArgumentException">The site's own address is missing.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The limit is outside its bounds, or the offset is negative.</exception>
+    public SiteSourcesQuery(
+        TimeRange range,
+        SourceGrouping grouping,
+        string siteDomain,
+        int limit,
+        int offset = 0)
+        : base(range)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(siteDomain);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, MostSources);
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+
+        Grouping = grouping;
+        SiteDomain = siteDomain;
+        Limit = limit;
+        Offset = offset;
+    }
+
+    /// <summary>What each row stands for.</summary>
+    public SourceGrouping Grouping { get; }
+
+    /// <summary>The measured site's own address, whose traffic is not a source.</summary>
+    public string SiteDomain { get; }
+
+    /// <summary>How many sources to return.</summary>
+    public int Limit { get; }
+
+    /// <summary>How many of the busiest sources to pass over first.</summary>
+    public int Offset { get; }
+}
+
+/// <summary>What one row of a source list stands for.</summary>
+public enum SourceGrouping
+{
+    /// <summary>One row per sending site.</summary>
+    Site = 1,
+
+    /// <summary>
+    /// One row per sending page.
+    /// </summary>
+    /// <remarks>
+    /// The address of the page a link was on, without whatever followed a question mark in it.
+    /// What is wanted is which article sent the readers; the rest of that address is somebody
+    /// else's site carrying somebody else's state, and it is not needed to answer the question.
+    /// </remarks>
+    Page = 2,
+
+    /// <summary>
+    /// One row per kind of source.
+    /// </summary>
+    /// <remarks>
+    /// A closed set of five, from <see cref="SourceChannel"/>. It answers the question a list of
+    /// hostnames cannot — how much of an audience search brings — which otherwise needs the reader
+    /// to already know which of the names on the list are search engines and to add them up.
+    /// </remarks>
+    Kind = 3,
 }
 
 /// <summary>
@@ -523,16 +637,20 @@ public sealed record SiteVisitJourneyQuery : AnalyticsQuery
     /// <summary>Asks for the pages one visit went through.</summary>
     /// <param name="visit">Which visit.</param>
     /// <param name="idleTimeout">How long a visitor may be quiet before their next activity is a new visit.</param>
+    /// <param name="siteDomain">The measured site's own address, so it is never one of its own sources.</param>
     /// <param name="limit">How many steps to return, at most <see cref="MostSteps"/>.</param>
+    /// <exception cref="ArgumentException">The site's address is missing.</exception>
     /// <exception cref="ArgumentOutOfRangeException">The limit is outside its bounds.</exception>
-    public SiteVisitJourneyQuery(VisitKey visit, TimeSpan idleTimeout, int limit)
+    public SiteVisitJourneyQuery(VisitKey visit, TimeSpan idleTimeout, string siteDomain, int limit)
         : base(new TimeRange(visit.StartedAt, visit.StartedAt + LongestVisit))
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(siteDomain);
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, MostSteps);
 
         Visit = visit;
         IdleTimeout = idleTimeout;
+        SiteDomain = siteDomain;
         Limit = limit;
     }
 
@@ -541,6 +659,16 @@ public sealed record SiteVisitJourneyQuery : AnalyticsQuery
 
     /// <summary>How long a visitor may be quiet before their next activity is a new visit.</summary>
     public TimeSpan IdleTimeout { get; }
+
+    /// <summary>
+    /// The measured site's own address.
+    /// </summary>
+    /// <remarks>
+    /// Read from the site catalogue rather than from the request, on the same terms as
+    /// <see cref="SiteSourcesQuery.SiteDomain"/>: it decides which referrer counts as somewhere
+    /// else, and a caller who could name it could decide what a visit is said to have come from.
+    /// </remarks>
+    public string SiteDomain { get; }
 
     /// <summary>How many steps to return.</summary>
     public int Limit { get; }
@@ -561,8 +689,19 @@ public sealed record TrafficBreakdownQuery(TimeRange Range) : AnalyticsQuery(Ran
 /// <summary>
 /// Individual visits with the evidence behind each verdict, newest first.
 /// </summary>
+/// <remarks>
+/// The three narrowings below are asked of the verdict rather than of the activity behind it, so
+/// they cost nothing beyond the rows they leave out and they mean exactly what the reader sees:
+/// what generated the visit, how much weight stands behind saying so, and how much of the site it
+/// went to. Everything the caller may narrow by is a member of a closed set or a whole number, and
+/// none of it reaches a statement as text.
+/// </remarks>
 public sealed record JudgedSessionsQuery : AnalyticsQuery
 {
+    private readonly ImmutableArray<TrafficCategory> categories = [];
+    private readonly EvidenceStrength? leastStrength;
+    private readonly int leastPages;
+
     /// <summary>
     /// Most visits any one question may ask for.
     /// </summary>
@@ -595,4 +734,67 @@ public sealed record JudgedSessionsQuery : AnalyticsQuery
 
     /// <summary>How many of the most recent visits to pass over first.</summary>
     public int Offset { get; }
+
+    /// <summary>
+    /// Which conclusions to return, or empty for all of them.
+    /// </summary>
+    /// <remarks>
+    /// A set rather than one category, because the categories a reader thinks of as one thing —
+    /// every kind of crawler, say — are several here and stay several. Collapsing them into groups
+    /// on the way in would put a coarser vocabulary in front of the one the verdicts are stored in.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">A member is not a category the engine reaches.</exception>
+    public ImmutableArray<TrafficCategory> Categories
+    {
+        get => categories;
+
+        init
+        {
+            if (!value.IsDefaultOrEmpty && value.Any(category => !Enum.IsDefined(category)))
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(value),
+                    "Narrow to categories the engine can conclude.");
+            }
+
+            categories = value.IsDefault ? [] : value;
+        }
+    }
+
+    /// <summary>
+    /// The least weight a verdict must carry to be returned, or nothing for any weight at all.
+    /// </summary>
+    /// <remarks>
+    /// A floor rather than an exact band. "Show me the ones there is real evidence for" is the
+    /// question people actually have, and a band on its own answers a narrower one.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">The band is not one the engine reaches.</exception>
+    public EvidenceStrength? LeastStrength
+    {
+        get => leastStrength;
+
+        init
+        {
+            if (value is not null && !Enum.IsDefined(value.Value))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), "Narrow to a strength the engine reports.");
+            }
+
+            leastStrength = value;
+        }
+    }
+
+    /// <summary>The fewest pages a visit must have gone to, or nought for every visit.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">The figure is negative.</exception>
+    public int LeastPages
+    {
+        get => leastPages;
+
+        init
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(value);
+
+            leastPages = value;
+        }
+    }
 }

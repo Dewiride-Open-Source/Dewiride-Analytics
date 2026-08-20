@@ -18,10 +18,12 @@ WITH
             scroll_depth_percent,
             had_pointer_interaction,
             had_keyboard_interaction,
-            declared_web_driver
+            declared_web_driver,
+            autonomous_system,
+            network_owner
         FROM events
         WHERE site_id = {site_id:UUID}
-          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64} - {idle_seconds:Int64} * 1000, 'UTC')
           AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {idle_seconds:Int64} * 1000, 'UTC')
     ),
     echoed AS
@@ -90,29 +92,60 @@ WITH
                 AND surface IN ('BrowserTracker', 'NoScriptPixel')
                 AND sighting <= sightings_from_path AS is_second_sighting
         FROM sighted
+    ),
+    paged AS
+    (
+        SELECT
+            *,
+            greatest(
+                toUInt64(1),
+                sum(toUInt8(kind = 'PageView' AND NOT is_second_sighting)) OVER (
+                    PARTITION BY visitor_key, visit_ordinal, path
+                    ORDER BY server_ts, event_id
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)) AS page_ordinal
+        FROM counted
+    ),
+    opened AS
+    (
+        SELECT
+            *,
+            row_number() OVER (
+                PARTITION BY visitor_key, visit_ordinal, path, page_ordinal
+                ORDER BY is_second_sighting, kind != 'PageView', server_ts, event_id) = 1 AS opens_page
+        FROM paged
+    ),
+    attended AS
+    (
+        SELECT
+            *,
+            max(engaged_ms) OVER (
+                PARTITION BY visitor_key, visit_ordinal, path, page_ordinal) AS page_engaged_ms
+        FROM opened
     )
 SELECT
     concat(visitor_key, ':', toString(toUnixTimestamp64Milli(min(server_ts)))) AS session_key,
     min(server_ts) AS started_at,
     max(server_ts) AS ended_at,
     toBool(max(server_ts) < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')) AS is_closed,
-    toUInt32(countIf(kind = 'PageView' AND NOT is_second_sighting)) AS page_count,
+    toUInt32(countIf(opens_page)) AS page_count,
     groupArraySortedIf({max_requests:UInt32})(
         (toUnixTimestamp64Milli(server_ts), path, status_code),
-        kind = 'PageView' AND NOT is_second_sighting) AS requests,
+        opens_page) AS requests,
     groupUniqArray(toString(surface)) AS surfaces,
     anyIf(user_agent, user_agent != '') AS user_agent,
     anyIf(language, language != '') AS language,
     max(viewport_width) AS viewport_width,
-    sum(engaged_ms) AS engaged_ms,
+    sumIf(page_engaged_ms, opens_page) AS engaged_ms,
     max(scroll_depth_percent) AS max_scroll_depth_percent,
     toUInt32(countIf(had_pointer_interaction != 'Unobserved')) AS pointer_observed,
     toUInt32(countIf(had_pointer_interaction = 'Yes')) AS pointer_seen,
     toUInt32(countIf(had_keyboard_interaction != 'Unobserved')) AS keyboard_observed,
     toUInt32(countIf(had_keyboard_interaction = 'Yes')) AS keyboard_seen,
     toUInt32(countIf(declared_web_driver != 'Unobserved')) AS web_driver_observed,
-    toUInt32(countIf(declared_web_driver = 'Yes')) AS web_driver_seen
-FROM counted
+    toUInt32(countIf(declared_web_driver = 'Yes')) AS web_driver_seen,
+    max(autonomous_system) AS autonomous_system,
+    anyIf(network_owner, network_owner != '') AS network_owner
+FROM attended
 GROUP BY visitor_key, visit_ordinal
 HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
    AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')

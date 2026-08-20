@@ -1,11 +1,22 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from 'next-themes';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppHeader } from '@/components/chrome/app-header';
+import type * as Navigation from '@/i18n/navigation';
 import type { Site } from '@/lib/api/schemas';
 import { engineDoing, respondWith } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
+
+/**
+ * Which screen the browser is on comes from the framework's own router, and there is no router in
+ * a document. The bar is told it is on the overview, which is the state the marker has to be right
+ * about.
+ */
+vi.mock('@/i18n/navigation', async (original) => ({
+  ...(await original<typeof Navigation>()),
+  usePathname: () => '/',
+}));
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -101,6 +112,50 @@ describe('the bar across the top', () => {
       expect(screen.queryByText('Signed in as Ada Lovelace')).not.toBeInTheDocument(),
     );
     expect(engine.count).toBeGreaterThan(1);
+  });
+
+  /**
+   * The two screens are two views of the same website, so moving between them is part of the
+   * chrome rather than a link buried at the foot of one of them.
+   */
+  it('offers the way between the screens once somebody is signed in', async () => {
+    engineWith([SITE]);
+
+    withTheme(<AppHeader />);
+
+    const sections = await screen.findByRole('navigation', { name: 'Sections' });
+
+    expect(within(sections).getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/');
+    expect(within(sections).getByRole('link', { name: 'User journey' })).toHaveAttribute(
+      'href',
+      '/journeys',
+    );
+  });
+
+  it('marks the screen being looked at', async () => {
+    engineWith([SITE]);
+
+    withTheme(<AppHeader />);
+
+    const sections = await screen.findByRole('navigation', { name: 'Sections' });
+
+    expect(within(sections).getByRole('link', { name: 'Overview' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(within(sections).getByRole('link', { name: 'User journey' })).not.toHaveAttribute(
+      'aria-current',
+    );
+  });
+
+  it('offers no way between screens before anybody is signed in', async () => {
+    engineDoing(async () => respondWith(200, { setupCompleted: false, user: null, token: 'p' }));
+
+    withTheme(<AppHeader />);
+
+    await screen.findByText('Dewiride Analytics');
+
+    expect(screen.queryByRole('navigation', { name: 'Sections' })).not.toBeInTheDocument();
   });
 
   it('offers no website picker before anybody is signed in', async () => {

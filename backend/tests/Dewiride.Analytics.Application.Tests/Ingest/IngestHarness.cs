@@ -3,6 +3,7 @@ using Dewiride.Analytics.Application.Ingest;
 using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Domain.Telemetry;
+using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Extensions.Time.Testing;
 using NSubstitute;
 
@@ -33,20 +34,50 @@ internal sealed class IngestHarness
     private readonly IVisitorKeyFactory _visitorKeys = Substitute.For<IVisitorKeyFactory>();
     private readonly INetworkLookup _network = Substitute.For<INetworkLookup>();
     private readonly RecordingSink _sink = new();
+    private readonly FakeLogger<EventIngestor> _logger = new();
 
     private IngestHarness(SiteSnapshot? site, string? visitorKey, NetworkAttributes network)
     {
         _catalog.FindAsync(SiteId, Arg.Any<CancellationToken>()).Returns(site);
         _visitorKeys
-            .Derive(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<DateTimeOffset>())
+            .Derive(
+                Arg.Any<Guid>(),
+                Arg.Do<string?>(value => Connection = value),
+                Arg.Any<string?>(),
+                Arg.Any<DateTimeOffset>())
             .Returns(visitorKey);
         _network.Resolve(Arg.Any<string?>()).Returns(network);
 
-        Ingestor = new EventIngestor(_catalog, _visitorKeys, _network, _sink, new FakeTimeProvider(Now));
+        Ingestor = new EventIngestor(
+            _catalog,
+            _visitorKeys,
+            _network,
+            _sink,
+            new FakeTimeProvider(Now),
+            _logger);
     }
 
     /// <summary>The subject under test.</summary>
     public EventIngestor Ingestor { get; }
+
+    /// <summary>
+    /// What the ingestor last asked for a visitor key to be derived from.
+    /// </summary>
+    /// <remarks>
+    /// The key itself is a hash and says nothing about what went into it, so what a test can hold
+    /// the ingestor to is what it handed over — which is the whole of the decision it makes about
+    /// who a report was about.
+    /// </remarks>
+    public string? Connection { get; private set; }
+
+    /// <summary>
+    /// What the ingestor wrote to the log while it worked.
+    /// </summary>
+    /// <remarks>
+    /// The collector answers a refused report exactly as it answers an accepted one, so the log
+    /// is the only place a refusal's reason exists and the only thing a test can hold it to.
+    /// </remarks>
+    public IReadOnlyList<FakeLogRecord> Logged => _logger.Collector.GetSnapshot();
 
     /// <summary>Events the ingestor stored, in the order it stored them.</summary>
     public IReadOnlyList<RawEvent> Stored => _sink.Written;
@@ -107,18 +138,22 @@ internal sealed class IngestHarness
 
     /// <summary>Builds the server-side half of a browser request.</summary>
     /// <param name="origin">Value of the Origin header, or null when the browser sent none.</param>
+    /// <param name="address">The address the request arrived from.</param>
     /// <returns>What the server observed.</returns>
-    public static IngestContext BrowserRequest(string? origin = "https://example.com") => new()
-    {
-        Surface = IngestSurface.BrowserTracker,
-        // A whole one rather than an abbreviation. Its later half is where a browser names
-        // itself, so a shortened string would make every test about what a visit was made on
-        // agree with the wrong answer.
-        UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            + "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        IpAddress = "203.0.113.7",
-        RequestOrigin = origin,
-    };
+    public static IngestContext BrowserRequest(
+        string? origin = "https://example.com",
+        string address = "203.0.113.7") =>
+        new()
+        {
+            Surface = IngestSurface.BrowserTracker,
+            // A whole one rather than an abbreviation. Its later half is where a browser names
+            // itself, so a shortened string would make every test about what a visit was made on
+            // agree with the wrong answer.
+            UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                + "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            IpAddress = address,
+            RequestOrigin = origin,
+        };
 
     private sealed class RecordingSink : IEventSink
     {

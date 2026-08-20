@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Collections.Immutable;
 using Dewiride.Analytics.Api.Analytics;
 using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Api.Security;
@@ -56,6 +57,20 @@ internal static class SiteEndpoints
     /// towns.
     /// </remarks>
     private const string DefaultGrouping = "country";
+
+    /// <summary>Sources returned when the caller does not say how many they want.</summary>
+    private const int DefaultSources = 10;
+
+    /// <summary>
+    /// How a source list is grouped when the caller does not say.
+    /// </summary>
+    /// <remarks>
+    /// By kind. It is five rows that answer the question outright — how much of an audience search
+    /// brings, and how much arrives by nothing that named itself — where a list of hostnames
+    /// answers it only for a reader who already knows which of the names are search engines and is
+    /// willing to add them up.
+    /// </remarks>
+    private const string DefaultSourceGrouping = "kind";
 
     /// <summary>Software names returned when the caller does not say how many they want.</summary>
     private const int DefaultNames = 10;
@@ -142,10 +157,29 @@ internal static class SiteEndpoints
         {
             ["country"] = LocationGrouping.Country,
             ["town"] = LocationGrouping.Town,
+            ["network"] = LocationGrouping.Network,
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     private static readonly FrozenDictionary<LocationGrouping, string> GroupingNames =
         Groupings.ToFrozenDictionary(entry => entry.Value, entry => entry.Key);
+
+    /// <summary>
+    /// What a source list may be grouped by, by the word used on the wire.
+    /// </summary>
+    /// <remarks>
+    /// Written out for the same reason the place groupings are, and refused here before the
+    /// compiler is reached for the same reason.
+    /// </remarks>
+    private static readonly FrozenDictionary<string, SourceGrouping> SourceGroupings =
+        new Dictionary<string, SourceGrouping>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["kind"] = SourceGrouping.Kind,
+            ["site"] = SourceGrouping.Site,
+            ["page"] = SourceGrouping.Page,
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly FrozenDictionary<SourceGrouping, string> SourceGroupingNames =
+        SourceGroupings.ToFrozenDictionary(entry => entry.Value, entry => entry.Key);
 
     /// <summary>
     /// What a software list may be grouped by, by the word used on the wire.
@@ -283,6 +317,10 @@ internal static class SiteEndpoints
         routes.MapGet("/api/sites/{siteId:guid}/locations", LocationsAsync)
             .WithName("SiteLocations")
             .WithSummary("Returns where a website's audience was over a period.");
+
+        routes.MapGet("/api/sites/{siteId:guid}/sources", SourcesAsync)
+            .WithName("SiteSources")
+            .WithSummary("Returns where a website's visitors came from over a period.");
 
         routes.MapGet("/api/sites/{siteId:guid}/devices", DevicesAsync)
             .WithName("SiteDevices")
@@ -451,7 +489,7 @@ internal static class SiteEndpoints
     {
         if (!Groupings.TryGetValue(parameters.Grouping ?? DefaultGrouping, out var grouping))
         {
-            return Unusable("Group the places by country or by town.");
+            return Unusable("Group the places by country, by town or by network.");
         }
 
         if (!TryReadSlice(
@@ -492,6 +530,90 @@ internal static class SiteEndpoints
                         place.CountryCode,
                         place.Visitors,
                         place.PageViews)),
+                ]));
+    }
+
+    /// <summary>
+    /// Answers where a website's visitors came from before they arrived.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Everything the caller supplied is checked before the site is resolved, on the same terms as
+    /// every other list here: checking in the other order would turn a bad grouping into a way of
+    /// finding out which identifiers on an install are real.
+    /// </para>
+    /// <para>
+    /// The site's own address is read here and handed to the question, because traffic from the
+    /// measured site is a reader moving between its pages rather than a source. It is taken from
+    /// what is stored against the site and never from the request, so a caller cannot decide whose
+    /// traffic gets left out of somebody else's list.
+    /// </para>
+    /// </remarks>
+    /// <param name="parameters">What the caller asked for.</param>
+    /// <param name="scopes">Resolves the caller's authority over the site.</param>
+    /// <param name="sites">Resolves the site's own address.</param>
+    /// <param name="telemetry">The telemetry store.</param>
+    /// <param name="clock">The clock the default window is measured back from.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The slice, a refusal, or nothing where the caller may not read this site.</returns>
+    private static async Task<Results<Ok<SourcesResponse>, NotFound, ProblemHttpResult>> SourcesAsync(
+        [AsParameters] SourcesParameters parameters,
+        ITenantScopeProvider scopes,
+        ISiteCatalog sites,
+        ITelemetryQueries telemetry,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!SourceGroupings.TryGetValue(parameters.Grouping ?? DefaultSourceGrouping, out var grouping))
+        {
+            return Unusable("Group the sources by kind, by site or by page.");
+        }
+
+        if (!TryReadSlice(
+                new ListRequest(parameters.Limit, parameters.Offset, parameters.From, parameters.To),
+                new ListBounds(DefaultSources, SiteSourcesQuery.MostSources, "sources"),
+                clock,
+                out var slice,
+                out var refusal))
+        {
+            return Unusable(refusal);
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var site = await sites.FindAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (site is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var sources = await telemetry
+            .GetSiteSourcesAsync(
+                scope,
+                new SiteSourcesQuery(slice.Range, grouping, site.Domain, slice.Limit, slice.Offset),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(
+            new SourcesResponse(
+                slice.Range.From,
+                slice.Range.To,
+                SourceGroupingNames[grouping],
+                sources.TotalVisitors,
+                sources.TotalSources,
+                sources.MostVisitors,
+                [
+                    .. sources.Sources.Select(source => new SourceRow(
+                        source.Source,
+                        source.Site,
+                        source.Visitors,
+                        source.PageViews)),
                 ]));
     }
 
@@ -838,6 +960,7 @@ internal static class SiteEndpoints
     private static async Task<Results<Ok<VisitJourneyResponse>, NotFound, ProblemHttpResult>> VisitJourneyAsync(
         [AsParameters] VisitJourneyParameters parameters,
         ITenantScopeProvider scopes,
+        ISiteCatalog sites,
         ITelemetryQueries telemetry,
         IOptions<ClassificationOptions> classification,
         CancellationToken cancellationToken)
@@ -854,12 +977,20 @@ internal static class SiteEndpoints
             return TypedResults.NotFound();
         }
 
-        var steps = await telemetry
+        var site = await sites.FindAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (site is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var journey = await telemetry
             .GetSiteVisitJourneyAsync(
                 scope,
                 new SiteVisitJourneyQuery(
                     visit,
                     classification.Value.IdleTimeout,
+                    site.Domain,
                     SiteVisitJourneyQuery.MostSteps),
                 cancellationToken)
             .ConfigureAwait(false);
@@ -867,8 +998,9 @@ internal static class SiteEndpoints
         return TypedResults.Ok(
             new VisitJourneyResponse(
                 visit.ToString(),
+                Established(journey.Context),
                 [
-                    .. steps.Select(step => new VisitJourneyStep(
+                    .. journey.Steps.Select(step => new VisitJourneyStep(
                         step.At,
                         step.Path,
                         step.StatusCode,
@@ -877,6 +1009,26 @@ internal static class SiteEndpoints
                         Operated(step.Press))),
                 ]));
     }
+
+    /// <summary>
+    /// Reports what could be established about the visitor behind a visit.
+    /// </summary>
+    /// <remarks>
+    /// The kind of source is spelled by the same vocabulary the source lists use, so one visit and
+    /// the list it appears on describe the same arrival with the same word.
+    /// </remarks>
+    /// <param name="context">What was established.</param>
+    /// <returns>The account, as the wire carries it.</returns>
+    private static VisitContextResponse Established(VisitContext context) =>
+        new(
+            context.SendingSite,
+            TrafficSources.Spelling(context.Channel),
+            context.CountryCode,
+            context.Town,
+            context.NetworkOwner,
+            ReportedNames.Devices[context.Device],
+            context.Browser,
+            context.OperatingSystem);
 
     /// <summary>
     /// What counts as one visit, and which visits have finished.
@@ -934,6 +1086,14 @@ internal static class SiteEndpoints
                 ]));
     }
 
+    /// <summary>
+    /// Answers with individual judged visits and the case behind each verdict.
+    /// </summary>
+    /// <remarks>
+    /// Everything the caller supplied — the paging, the window, and what they narrowed to — is
+    /// checked before the site is resolved, so a malformed request is refused identically whether
+    /// or not the site exists.
+    /// </remarks>
     private static async Task<Results<Ok<VisitsResponse>, NotFound, ProblemHttpResult>> VisitsAsync(
         [AsParameters] VisitsParameters parameters,
         ITenantScopeProvider scopes,
@@ -951,6 +1111,11 @@ internal static class SiteEndpoints
             return Unusable(refusal);
         }
 
+        if (!TryReadNarrowing(parameters, out var narrowing, out refusal))
+        {
+            return Unusable(refusal);
+        }
+
         var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
 
         if (scope is null)
@@ -961,7 +1126,12 @@ internal static class SiteEndpoints
         var visits = await telemetry
             .GetJudgedSessionsAsync(
                 scope,
-                new JudgedSessionsQuery(slice.Range, slice.Limit, slice.Offset),
+                new JudgedSessionsQuery(slice.Range, slice.Limit, slice.Offset)
+                {
+                    Categories = narrowing.Categories,
+                    LeastStrength = narrowing.LeastStrength,
+                    LeastPages = narrowing.LeastPages,
+                },
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -971,6 +1141,79 @@ internal static class SiteEndpoints
                 slice.Range.To,
                 visits.TotalVisits,
                 [.. visits.Visits.Select(Describe)]));
+    }
+
+    /// <summary>
+    /// What a caller narrowed a list of visits to.
+    /// </summary>
+    /// <param name="Categories">Which conclusions to return, or empty for all of them.</param>
+    /// <param name="LeastStrength">The lowest band worth returning, or nothing for every band.</param>
+    /// <param name="LeastPages">The fewest pages a visit must have gone to.</param>
+    private readonly record struct VisitNarrowing(
+        ImmutableArray<TrafficCategory> Categories,
+        EvidenceStrength? LeastStrength,
+        int LeastPages);
+
+    /// <summary>
+    /// Reads what a caller narrowed a list of visits to, refusing anything outside the vocabulary.
+    /// </summary>
+    /// <remarks>
+    /// Every name is resolved through the same table the answers are written with, so a value this
+    /// product does not report cannot be asked for either. Nothing supplied here reaches a
+    /// statement as text: what comes out is a member of a closed set or a whole number.
+    /// </remarks>
+    /// <param name="asked">What the caller supplied.</param>
+    /// <param name="narrowing">What it means, where it was usable.</param>
+    /// <param name="refusal">Why it was not, where it was not.</param>
+    /// <returns><see langword="true"/> when the request can be answered as asked.</returns>
+    private static bool TryReadNarrowing(
+        VisitsParameters asked,
+        out VisitNarrowing narrowing,
+        out string? refusal)
+    {
+        narrowing = default;
+
+        var categories = ImmutableArray.CreateBuilder<TrafficCategory>();
+
+        foreach (var name in asked.Category ?? [])
+        {
+            if (!ReportedNames.CategoriesByName.TryGetValue(name, out var category))
+            {
+                refusal = "Narrow to the conclusions this product reaches, or leave it out for all of them.";
+
+                return false;
+            }
+
+            categories.Add(category);
+        }
+
+        EvidenceStrength? leastStrength = null;
+
+        if (!string.IsNullOrEmpty(asked.Strength))
+        {
+            if (!ReportedNames.StrengthsByName.TryGetValue(asked.Strength, out var strength))
+            {
+                refusal = "Narrow to a strength of evidence this product reports, or leave it out for any.";
+
+                return false;
+            }
+
+            leastStrength = strength;
+        }
+
+        var leastPages = asked.MinPages ?? 0;
+
+        if (leastPages < 0)
+        {
+            refusal = "Ask for visits that went to no pages or more.";
+
+            return false;
+        }
+
+        narrowing = new VisitNarrowing(categories.DrainToImmutable(), leastStrength, leastPages);
+        refusal = null;
+
+        return true;
     }
 
     private static VisitSummary Describe(JudgedSession visit) => new(
@@ -1400,6 +1643,23 @@ internal readonly record struct LocationsParameters(
     [FromQuery] int? Offset);
 
 /// <summary>
+/// What the sources endpoint reads from the path and the query string.
+/// </summary>
+/// <param name="SiteId">The site to count over.</param>
+/// <param name="Grouping">What each row should stand for: <c>site</c> or <c>page</c>.</param>
+/// <param name="From">Inclusive start of the window.</param>
+/// <param name="To">Exclusive end of the window.</param>
+/// <param name="Limit">How many sources to return.</param>
+/// <param name="Offset">How many of the busiest sources to pass over first.</param>
+internal readonly record struct SourcesParameters(
+    Guid SiteId,
+    [FromQuery] string? Grouping,
+    [FromQuery] DateTimeOffset? From,
+    [FromQuery] DateTimeOffset? To,
+    [FromQuery] int? Limit,
+    [FromQuery] int? Offset);
+
+/// <summary>
 /// What the software endpoint reads from the path and the query string.
 /// </summary>
 /// <param name="SiteId">The site to count over.</param>
@@ -1441,12 +1701,20 @@ internal readonly record struct ActionsParameters(
 /// <param name="To">Exclusive end of the period. Defaults to now.</param>
 /// <param name="Limit">How many visits to return. Defaults to a screenful.</param>
 /// <param name="Offset">How many of the most recent visits to pass over first. Defaults to none.</param>
+/// <param name="Category">
+/// Which conclusions to return, named once each. Absent for all of them.
+/// </param>
+/// <param name="Strength">The lowest band of evidence worth returning. Absent for every band.</param>
+/// <param name="MinPages">The fewest pages a visit must have gone to. Defaults to none.</param>
 internal readonly record struct VisitsParameters(
     Guid SiteId,
     [FromQuery] DateTimeOffset? From,
     [FromQuery] DateTimeOffset? To,
     [FromQuery] int? Limit,
-    [FromQuery] int? Offset);
+    [FromQuery] int? Offset,
+    [FromQuery] string[]? Category,
+    [FromQuery] string? Strength,
+    [FromQuery] int? MinPages);
 
 /// <summary>
 /// What the page-reading endpoint reads from the path and the query string.

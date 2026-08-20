@@ -28,19 +28,19 @@ public sealed class RotatingSaltVisitorKeyFactory(VisitorKeySaltStore saltStore)
     private const int DayLengthBytes = 4;
 
     /// <summary>
-    /// Separates the address from the user agent. A byte that cannot appear in either input, so an
-    /// address ending one way and a user agent beginning another cannot produce the same message
-    /// as a different pair and be grouped as one visitor.
+    /// Separates the connection from the user agent. A byte that cannot appear in either input, so
+    /// a connection ending one way and a user agent beginning another cannot produce the same
+    /// message as a different pair and be grouped as one visitor.
     /// </summary>
     private const byte FieldSeparator = 0x1F;
 
     /// <inheritdoc />
-    public string? Derive(Guid siteId, string? ipAddress, string? userAgent, DateTimeOffset observedAt)
+    public string? Derive(Guid siteId, string? connection, string? userAgent, DateTimeOffset observedAt)
     {
-        // With neither an address nor a user agent there is nothing distinguishing to hash, and a
+        // With neither a connection nor a user agent there is nothing distinguishing to hash, and a
         // key derived from the site alone would group every such visitor into one fictitious
         // person. Returning null says "this activity cannot be grouped", which is true.
-        if (string.IsNullOrEmpty(ipAddress) && string.IsNullOrEmpty(userAgent))
+        if (string.IsNullOrEmpty(connection) && string.IsNullOrEmpty(userAgent))
         {
             return null;
         }
@@ -55,16 +55,16 @@ public sealed class RotatingSaltVisitorKeyFactory(VisitorKeySaltStore saltStore)
             return null;
         }
 
-        var addressLength = Encoding.UTF8.GetByteCount(ipAddress ?? string.Empty);
+        var connectionLength = Encoding.UTF8.GetByteCount(connection ?? string.Empty);
         var agentLength = Encoding.UTF8.GetByteCount(userAgent ?? string.Empty);
-        var messageLength = SiteIdLengthBytes + DayLengthBytes + addressLength + 1 + agentLength;
+        var messageLength = SiteIdLengthBytes + DayLengthBytes + connectionLength + 1 + agentLength;
 
         var buffer = ArrayPool<byte>.Shared.Rent(messageLength);
 
         try
         {
             var message = buffer.AsSpan(0, messageLength);
-            WriteMessage(message, siteId, day, ipAddress, userAgent, addressLength);
+            WriteMessage(message, siteId, day, connection, userAgent, connectionLength);
 
             Span<byte> digest = stackalloc byte[DigestLengthBytes];
             HMACSHA256.HashData(salt, message, digest);
@@ -81,17 +81,17 @@ public sealed class RotatingSaltVisitorKeyFactory(VisitorKeySaltStore saltStore)
         Span<byte> message,
         Guid siteId,
         DateOnly day,
-        string? ipAddress,
+        string? connection,
         string? userAgent,
-        int addressLength)
+        int connectionLength)
     {
         siteId.TryWriteBytes(message);
         BinaryPrimitives.WriteInt32LittleEndian(message[SiteIdLengthBytes..], day.DayNumber);
 
         var offset = SiteIdLengthBytes + DayLengthBytes;
-        Encoding.UTF8.GetBytes(ipAddress ?? string.Empty, message[offset..]);
+        Encoding.UTF8.GetBytes(connection ?? string.Empty, message[offset..]);
 
-        offset += addressLength;
+        offset += connectionLength;
         message[offset] = FieldSeparator;
 
         Encoding.UTF8.GetBytes(userAgent ?? string.Empty, message[(offset + 1)..]);

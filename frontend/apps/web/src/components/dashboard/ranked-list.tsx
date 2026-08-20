@@ -208,6 +208,13 @@ interface ListEmptyProps {
   readonly icon: LucideIcon;
   readonly title: string;
   readonly body: string;
+  /**
+   * The one thing that would change the state, where there is one.
+   *
+   * Inside the card rather than under it, because it belongs to the message: an action floating
+   * beneath a bordered box reads as belonging to whatever comes next on the screen.
+   */
+  readonly action?: ReactNode;
 }
 
 /**
@@ -217,7 +224,7 @@ interface ListEmptyProps {
  * apology. Every list on the dashboard wears the same one so that a quiet website reads as a
  * quiet website rather than as four different kinds of nothing.
  */
-export function ListEmpty({ icon: Icon, title, body }: ListEmptyProps) {
+export function ListEmpty({ icon: Icon, title, body, action }: ListEmptyProps) {
   return (
     <Card className="flex flex-col items-center gap-2 px-6 py-14 text-center">
       <span
@@ -228,6 +235,7 @@ export function ListEmpty({ icon: Icon, title, body }: ListEmptyProps) {
       </span>
       <h2 className="text-base font-semibold text-foreground">{title}</h2>
       <p className="max-w-sm text-sm text-foreground-muted">{body}</p>
+      {action === undefined ? null : <div className="mt-4">{action}</div>}
     </Card>
   );
 }

@@ -132,11 +132,11 @@ public sealed class SiteVisitsTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// A reader whose page view never arrived says where somebody was but not what they arrived at,
-    /// so there is no doorway to name.
+    /// A reader whose page view never arrived still reported which page they were reading, and the
+    /// tracker only reports that from the page itself — so the page they named is the doorway.
     /// </summary>
     [Fact]
-    public async Task A_Visit_That_Asked_For_No_Page_Is_No_Part_Of_The_Count()
+    public async Task A_Visit_Whose_Only_Report_Is_A_Reading_Enters_At_The_Page_It_Read()
     {
         var siteId = Guid.NewGuid();
 
@@ -145,8 +145,10 @@ public sealed class SiteVisitsTests(AnalyticsStackFixture stack)
             Asked(siteId, Midnight.AddHours(2), "visitor-b", "/"));
 
         var shape = await ShapeOf(siteId);
+        var entries = await FlowOf(siteId, VisitPosition.Entry);
 
-        shape.Visits.Should().Be(1);
+        shape.Visits.Should().Be(2);
+        entries.Pages.Should().ContainSingle().Which.Should().Be(new SiteVisitFlowRow("/", 2));
     }
 
     /// <summary>
@@ -554,15 +556,133 @@ public sealed class SiteVisitsTests(AnalyticsStackFixture stack)
             new SiteVisitFlowQuery(Window(), Boundaries(null), position, limit, offset),
             Cancellation.Token);
 
+    [Fact]
+    public async Task A_Visit_Is_Named_By_The_Site_That_Sent_It()
+    {
+        var siteId = Guid.CreateVersion7();
+        await WriteAsync(
+            Asked(siteId, Midnight, "reader", "/posts/hello") with
+            {
+                Referrer = "https://www.google.co.in/search?q=analytics",
+                ReferrerDomain = "www.google.co.in",
+            });
+
+        var visit = await VisitOf(siteId, "reader", Midnight);
+
+        visit.Context.SendingSite.Should().Be("Google");
+        visit.Context.Channel.Should().Be(SourceChannel.Search);
+    }
+
+    /// <summary>
+    /// A referrer is written by whoever visited, so a name is taken from the label in front of the
+    /// public suffix and never from any label that merely appears in the address.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Cannot_Be_Given_Another_Site_Name_By_Borrowing_Its_Word()
+    {
+        var siteId = Guid.CreateVersion7();
+        await WriteAsync(
+            Asked(siteId, Midnight, "reader", "/posts/hello") with
+            {
+                Referrer = "https://google.attacker.test/pretend",
+                ReferrerDomain = "google.attacker.test",
+            });
+
+        var visit = await VisitOf(siteId, "reader", Midnight);
+
+        visit.Context.SendingSite.Should().Be("google.attacker.test");
+        visit.Context.SendingSite.Should().NotBe("Google");
+        visit.Context.Channel.Should().Be(SourceChannel.Link);
+    }
+
+    /// <summary>
+    /// Only a visit's first page names anywhere else; every page after it was reached from the site
+    /// being measured, so the site must never head its own visit.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_From_The_Measured_Site_Itself_Names_Nowhere()
+    {
+        var siteId = Guid.CreateVersion7();
+        await WriteAsync(
+            Asked(siteId, Midnight, "reader", "/posts/hello") with
+            {
+                Referrer = "https://example.com/index",
+                ReferrerDomain = "example.com",
+            });
+
+        var visit = await VisitOf(siteId, "reader", Midnight);
+
+        visit.Context.SendingSite.Should().BeEmpty();
+        visit.Context.Channel.Should().Be(SourceChannel.Direct);
+    }
+
+    /// <summary>
+    /// Settled once over the whole visit rather than per report, and from the earliest report that
+    /// carried one — a panel that named a different browser on each reading would be a defect.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Takes_Its_Place_And_Software_From_The_Reports_That_Carried_Them()
+    {
+        var siteId = Guid.CreateVersion7();
+        await WriteAsync(
+            Asked(siteId, Midnight, "reader", "/posts/hello") with
+            {
+                CountryCode = "IN",
+                City = "Pune",
+                NetworkOwner = "Jio Platforms",
+                DeviceClass = DeviceClass.Phone,
+                BrowserFamily = "Chrome",
+                OperatingSystem = "Android",
+            },
+            Asked(siteId, Midnight.AddMinutes(2), "reader", "/pricing"));
+
+        var visit = await VisitOf(siteId, "reader", Midnight);
+
+        visit.Context.CountryCode.Should().Be("IN");
+        visit.Context.Town.Should().Be("Pune");
+        visit.Context.NetworkOwner.Should().Be("Jio Platforms");
+        visit.Context.Device.Should().Be(DeviceClass.Phone);
+        visit.Context.Browser.Should().Be("Chrome");
+        visit.Context.OperatingSystem.Should().Be("Android");
+    }
+
+    /// <summary>Nothing established is an answer rather than a gap, and is reported as one.</summary>
+    [Fact]
+    public async Task A_Visit_Nothing_Could_Be_Established_About_Says_So()
+    {
+        var siteId = Guid.CreateVersion7();
+        await WriteAsync(Asked(siteId, Midnight, "reader", "/posts/hello"));
+
+        var visit = await VisitOf(siteId, "reader", Midnight);
+
+        visit.Context.Should().Be(VisitContext.Nothing);
+    }
+
+    [Fact]
+    public async Task An_Identity_Naming_No_Visit_Establishes_Nothing_And_Lists_Nothing()
+    {
+        var siteId = Guid.CreateVersion7();
+        await WriteAsync(Asked(siteId, Midnight, "reader", "/posts/hello"));
+
+        var visit = await VisitOf(siteId, "stranger", Midnight);
+
+        visit.Steps.Should().BeEmpty();
+        visit.Context.Should().Be(VisitContext.Nothing);
+    }
+
     private async Task<IReadOnlyList<VisitStep>> JourneyOf(
         Guid siteId,
         string visitorKey,
         DateTimeOffset began) =>
-        await stack.Services.GetRequiredService<ITelemetryQueries>().GetSiteVisitJourneyAsync(
+        (await VisitOf(siteId, visitorKey, began)).Steps;
+
+    private Task<VisitJourney> VisitOf(Guid siteId, string visitorKey, DateTimeOffset began) =>
+        stack.Services.GetRequiredService<ITelemetryQueries>().GetSiteVisitJourneyAsync(
             Scope(siteId),
             new SiteVisitJourneyQuery(
                 new VisitKey(visitorKey, began),
                 IdleTimeout,
+                "example.com",
                 SiteVisitJourneyQuery.MostSteps),
             Cancellation.Token);
 

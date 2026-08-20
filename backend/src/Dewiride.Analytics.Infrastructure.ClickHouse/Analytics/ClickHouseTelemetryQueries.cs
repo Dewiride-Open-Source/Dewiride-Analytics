@@ -161,6 +161,40 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     }
 
     /// <inheritdoc />
+    public async Task<SiteSources> GetSiteSourcesAsync(
+        TenantScope scope,
+        SiteSourcesQuery query,
+        CancellationToken cancellationToken)
+    {
+        var sources = ImmutableArray.CreateBuilder<SiteSourceRow>();
+        var totalVisitors = 0L;
+        var totalSources = 0L;
+        var mostVisitors = 0L;
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            sources.Add(new SiteSourceRow(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetInt64(2),
+                reader.GetInt64(3)));
+
+            // The same on every row, and nowhere else to read them from. A slice with nothing in
+            // it returns no rows at all, and nought is the honest answer for all three.
+            totalVisitors = reader.GetInt64(4);
+            totalSources = reader.GetInt64(5);
+            mostVisitors = reader.GetInt64(6);
+        }
+
+        return new SiteSources(totalVisitors, totalSources, mostVisitors, sources.DrainToImmutable());
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<SiteDeviceKindRow>> GetSiteDeviceKindsAsync(
         TenantScope scope,
         SiteDeviceKindsQuery query,
@@ -327,12 +361,13 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     }
 
     /// <inheritdoc />
-    public async Task<ImmutableArray<VisitStep>> GetSiteVisitJourneyAsync(
+    public async Task<VisitJourney> GetSiteVisitJourneyAsync(
         TenantScope scope,
         SiteVisitJourneyQuery query,
         CancellationToken cancellationToken)
     {
         var steps = ImmutableArray.CreateBuilder<VisitStep>();
+        var context = VisitContext.Nothing;
 
         await using var reader = await ExecuteAsync(
                 AnalyticsSqlCompiler.Compile(scope, query),
@@ -351,10 +386,40 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
                 Observed(reader.GetInt32(4)),
                 Observed(reader.GetInt16(5)),
                 reader.GetByte(1) == 1 ? Operated(reader) : null));
+
+            // Settled over the whole visit and repeated on every row, so it is read once and the
+            // rows after the first say the same thing. A visit with no steps says nothing, which
+            // is what an identity naming no visit here answers with.
+            context = Established(reader);
         }
 
-        return steps.DrainToImmutable();
+        return new VisitJourney(context, steps.DrainToImmutable());
     }
+
+    /// <summary>
+    /// Reads what could be established about the visitor behind a visit.
+    /// </summary>
+    /// <remarks>
+    /// The kind of source and the kind of device both arrive as text, so anything the vocabulary
+    /// does not hold reads as unrecognised rather than as a failure — on the same terms as the
+    /// control a press was on.
+    /// </remarks>
+    /// <param name="reader">The open row.</param>
+    /// <returns>The account.</returns>
+    private static VisitContext Established(ClickHouseDataReader reader) =>
+        new(
+            reader.GetString(10),
+            TrafficSources.Kinds.TryGetValue(reader.GetString(11), out var channel)
+                ? channel
+                : SourceChannel.Direct,
+            reader.GetString(12),
+            reader.GetString(13),
+            reader.GetString(14),
+            StoredNames.DeviceClasses.TryGetValue(reader.GetString(15), out var device)
+                ? device
+                : DeviceClass.Unknown,
+            reader.GetString(16),
+            reader.GetString(17));
 
     /// <summary>
     /// Turns the statement's "not observed" back into nothing.

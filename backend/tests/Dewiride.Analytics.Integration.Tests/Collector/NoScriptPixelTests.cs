@@ -155,6 +155,42 @@ public sealed class NoScriptPixelTests(AnalyticsStackFixture stack)
         response.Content.Headers.ContentDisposition.Should().BeNull();
     }
 
+    /// <summary>
+    /// This address is printed on the screen that hands over the tracking snippet, so it is one
+    /// people check. Asking for the headers alone is the reflex way to ask whether an address is
+    /// serving, and on an endpoint that takes no credential at all an answer of "unauthorised"
+    /// sends whoever asked looking for a fault that is not there.
+    /// </summary>
+    [Fact]
+    public async Task Asking_For_The_Headers_Alone_Answers_As_The_Image_Does()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        using var client = stack.CreateClient();
+
+        var response = await HeadAsync(client, site.Id, referrer: $"https://{site.Domain}/");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("image/gif");
+    }
+
+    /// <summary>
+    /// And records nothing while it does. Whatever watches the installation afterwards asks this
+    /// every half minute for ever, and counting those would make a monitoring tool the busiest
+    /// reader the site has.
+    /// </summary>
+    [Fact]
+    public async Task Asking_For_The_Headers_Alone_Records_No_Page_View()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        using var client = stack.CreateClient();
+
+        await HeadAsync(client, site.Id, referrer: $"https://{site.Domain}/posts/hello");
+
+        var stored = await RowsAsync(site.Id);
+
+        stored.Should().BeEmpty();
+    }
+
     private IClickHouseClient Client => stack.Services.GetRequiredService<IClickHouseClient>();
 
     private static string Domain() => $"site-{Guid.NewGuid():n}.example";
@@ -176,13 +212,28 @@ public sealed class NoScriptPixelTests(AnalyticsStackFixture stack)
         return query.Count == 0 ? Pixel : $"{Pixel}?{string.Join('&', query)}";
     }
 
-    private static async Task<HttpResponseMessage> GetAsync(
+    private static Task<HttpResponseMessage> GetAsync(
         HttpClient client,
         Guid siteId,
         string referrer,
-        string? url = null)
+        string? url = null) =>
+        SendAsync(client, HttpMethod.Get, siteId, referrer, url);
+
+    private static Task<HttpResponseMessage> HeadAsync(
+        HttpClient client,
+        Guid siteId,
+        string referrer,
+        string? url = null) =>
+        SendAsync(client, HttpMethod.Head, siteId, referrer, url);
+
+    private static async Task<HttpResponseMessage> SendAsync(
+        HttpClient client,
+        HttpMethod method,
+        Guid siteId,
+        string referrer,
+        string? url)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, Address(siteId.ToString(), url));
+        using var request = new HttpRequestMessage(method, Address(siteId.ToString(), url));
 
         request.Headers.Add(HeaderNames.Referer, referrer);
 

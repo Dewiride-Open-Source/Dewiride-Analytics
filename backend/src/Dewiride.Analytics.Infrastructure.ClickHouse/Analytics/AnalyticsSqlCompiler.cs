@@ -1,6 +1,8 @@
 using System.Collections.Frozen;
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Tenancy;
+using Dewiride.Analytics.Classification;
+using Dewiride.Analytics.Classification.Identity;
 
 namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 
@@ -38,6 +40,16 @@ public static class AnalyticsSqlCompiler
     private const string IdleParameter = "idle_seconds";
     private const string SettledParameter = "settled_ms";
     private const string VisitorKeyParameter = "visitor_key";
+    private const string SiteDomainParameter = "site_domain";
+    private const string SuffixesParameter = "second_levels";
+    private const string SourceKeysParameter = "source_keys";
+    private const string SourceNamesParameter = "source_names";
+    private const string SourceChannelsParameter = "source_channels";
+    private const string HostingNumbersParameter = "hosting_numbers";
+    private const string HostingNamesParameter = "hosting_names";
+    private const string CategoriesParameter = "categories";
+    private const string StrengthsParameter = "strengths";
+    private const string LeastPagesParameter = "least_pages";
 
     /// <summary>
     /// Bucket function per granularity. Bucketing runs in the site's own time zone, so the
@@ -87,7 +99,98 @@ public static class AnalyticsSqlCompiler
         {
             [LocationGrouping.Country] = "country_code",
             [LocationGrouping.Town] = "city",
+
+            // Named from the catalogue where the number is one this build recognises, so a
+            // company's several networks are one row and a reader is shown "Alibaba Cloud" rather
+            // than "ALIBABA-CN-NET Alibaba US Technology Co., Ltd.". Where it is not recognised the
+            // registry's handle is dropped and its description kept, which is the readable half of
+            // what the registry publishes.
+            [LocationGrouping.Network] =
+                """
+                transform(
+                            autonomous_system,
+                            {hosting_numbers:Array(UInt32)},
+                            {hosting_names:Array(String)},
+                            if(
+                                position(network_owner, ' ') > 0,
+                                substring(network_owner, position(network_owner, ' ') + 1),
+                                network_owner))
+                """,
         }.ToFrozenDictionary();
+
+    /// <summary>The catalogue of hosting networks, held as the arrays the store binds.</summary>
+    private static readonly uint[] HostingNumbers = [.. HostingNetworks.Numbers];
+
+    /// <summary>What each of those networks is called on a screen.</summary>
+    private static readonly string[] HostingNames = [.. HostingNetworks.Operators];
+
+    /// <summary>
+    /// What a place list carries alongside each row as the country it is in.
+    /// </summary>
+    /// <remarks>
+    /// Nothing, on a list of networks. A network is not a place, and carrying a country would
+    /// divide one company's datacentres into a row per country — which is the answer this grouping
+    /// exists to escape, since a rented server reports the country it is racked in and a hundred
+    /// of them read as an audience there.
+    /// </remarks>
+    private static readonly FrozenDictionary<LocationGrouping, string> PlaceCountryColumns =
+        new Dictionary<LocationGrouping, string>
+        {
+            [LocationGrouping.Country] = "country_code",
+            [LocationGrouping.Town] = "country_code",
+            [LocationGrouping.Network] = "''",
+        }.ToFrozenDictionary();
+
+    /// <summary>
+    /// Which expression a source list groups on.
+    /// </summary>
+    /// <remarks>
+    /// A fixed table of expressions written in this file, on the same terms as
+    /// <see cref="PlaceColumns"/>. Neither reads anything a caller supplied: a page row is the
+    /// sending site's address with the path of the sending page after it, and everything from the
+    /// question mark onwards is cut — that part is somebody else's site carrying somebody else's
+    /// state, and which article sent the readers is answered without it.
+    /// </remarks>
+    private static readonly FrozenDictionary<SourceGrouping, string> SourceExpressions =
+        new Dictionary<SourceGrouping, string>
+        {
+            [SourceGrouping.Site] = "source_site",
+            [SourceGrouping.Page] = "concat(source_site, path(source_address))",
+            [SourceGrouping.Kind] = "source_channel",
+        }.ToFrozenDictionary();
+
+    /// <summary>
+    /// What a source list carries alongside each row as the site it belongs to.
+    /// </summary>
+    /// <remarks>
+    /// Nothing, on a list of kinds. A kind is not a site, and a row carrying one would divide
+    /// "search engines" into as many rows as there were search engines — which is the answer the
+    /// list beside it already gives.
+    /// </remarks>
+    private static readonly FrozenDictionary<SourceGrouping, string> SourceSiteExpressions =
+        new Dictionary<SourceGrouping, string>
+        {
+            [SourceGrouping.Site] = "source_site",
+            [SourceGrouping.Page] = "source_site",
+            [SourceGrouping.Kind] = "''",
+        }.ToFrozenDictionary();
+
+    /// <summary>
+    /// The catalogue of sending sites, held as the arrays the store binds.
+    /// </summary>
+    /// <remarks>
+    /// Copied once rather than converted per question, and as plain arrays because that is what
+    /// the driver knows how to send as an <c>Array(String)</c>. They are bound rather than written
+    /// into the statement so that what a reviewer reads in an approved statement stays the shape
+    /// of the question instead of a hundred hostnames.
+    /// </remarks>
+    private static readonly string[] SecondLevels = [.. TrafficSources.SecondLevelSuffixes];
+
+    private static readonly string[] SourceKeys = [.. TrafficSources.Keys];
+
+    private static readonly string[] SourceNames = [.. TrafficSources.Names];
+
+    private static readonly string[] SourceChannels = [.. TrafficSources.Channels];
 
     /// <summary>
     /// Which resolved column a software list groups on.
@@ -242,9 +345,10 @@ public static class AnalyticsSqlCompiler
     /// a long article as somebody who read one page and left.
     /// </para>
     /// <para>
-    /// A visit that asked for no page at all is no part of this. It is a reader whose page view
-    /// never arrived and whose progress reports did, which says where somebody was but not what
-    /// they arrived at.
+    /// Which pages a visit went to is settled in <see cref="VisitGrouping"/> as well, so a reader
+    /// whose arrival was never announced but whose progress reports were is a reader of the page
+    /// those reports name, here and on the visit's own account of itself alike. A visit that named
+    /// no page at all is still no part of this: nothing about it says where anybody was.
     /// </para>
     /// </remarks>
     private static readonly string ReconstructedVisits = $$"""
@@ -271,16 +375,10 @@ public static class AnalyticsSqlCompiler
                 SELECT
                     min(server_ts) AS started_at,
                     max(server_ts) AS ended_at,
-                    toInt64(countIf(is_page)) AS page_count,
-                    argMinIf(path, (server_ts, event_id), is_page) AS entry_path,
-                    argMaxIf(path, (server_ts, event_id), is_page) AS exit_path
-                FROM
-                (
-                    SELECT
-                        *,
-                        kind = 'PageView' AND NOT is_second_sighting AS is_page
-                    FROM counted
-                )
+                    toInt64(countIf(opens_page)) AS page_count,
+                    argMinIf(path, (server_ts, event_id), opens_page) AS entry_path,
+                    argMaxIf(path, (server_ts, event_id), opens_page) AS exit_path
+                FROM opened
                 GROUP BY visitor_key, visit_ordinal
                 HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
                    AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
@@ -327,6 +425,7 @@ public static class AnalyticsSqlCompiler
             SitePagesQuery pages => CompileSitePages(scope, pages),
             SiteActionsQuery actions => CompileSiteActions(scope, actions),
             SiteLocationsQuery places => CompileSiteLocations(scope, places),
+            SiteSourcesQuery sources => CompileSiteSources(scope, sources),
             SiteDeviceKindsQuery devices => CompileSiteDeviceKinds(scope, devices),
             SiteSoftwareQuery software => CompileSiteSoftware(scope, software),
             _ => null,
@@ -583,9 +682,9 @@ public static class AnalyticsSqlCompiler
     /// <para>
     /// A step is one arrival at one page, not one page. A reader who comes back to an article later
     /// in the same visit was there twice, and folding the two together would report one long
-    /// reading that never happened. Which arrival a progress report belongs to is settled by
-    /// counting the page views of that address before it, so a report still counts towards its step
-    /// when the page view announcing it was lost.
+    /// reading that never happened. Which arrival a report belongs to is settled in
+    /// <see cref="VisitGrouping"/>, which is also what the visit's own page count is taken from —
+    /// so the number of steps a reader is shown here is the number the row above them says.
     /// </para>
     /// <para>
     /// What nothing could be measured on is carried as minus one, on the same terms as a reading
@@ -600,45 +699,67 @@ public static class AnalyticsSqlCompiler
     /// twice. Where the two share an instant the page comes first, since a control cannot be
     /// operated on a page nobody has arrived at.
     /// </para>
+    /// <para>
+    /// Every row carries the same account of who the visit was — where it was sent from, where it
+    /// was, whose network it was on, and what it was read with. It is settled once over the whole
+    /// visit and repeated rather than answered by a second question, because a visit is opened by
+    /// somebody pressing a row and two questions where one will do doubles that cost for an answer
+    /// nobody can act on until both arrive. Each fact is taken as the first report that carried
+    /// one: geography and software are resolved per report and a visit watched by both halves has
+    /// reports that resolved neither.
+    /// </para>
     /// </remarks>
     private static CompiledStatement CompileSiteVisitJourney(TenantScope scope, SiteVisitJourneyQuery query)
     {
         var sql = $$"""
             WITH
-                windowed AS
-                (
-                    SELECT
-                        event_id,
-                        surface,
-                        visitor_key,
-                        correlation_id,
-                        server_ts,
-                        kind,
-                        path,
-                        status_code,
-                        engaged_ms,
-                        scroll_depth_percent,
-                        action_control,
-                        action_label,
-                        action_target,
-                        action_target_kind
-                    FROM events
-                    WHERE site_id = {site_id:UUID}
-                      AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-                      AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
-                ),
+                {{SendingSites.Of(
+                    "event_id",
+                    "surface",
+                    "visitor_key",
+                    "correlation_id",
+                    "server_ts",
+                    "kind",
+                    "path",
+                    "status_code",
+                    "engaged_ms",
+                    "scroll_depth_percent",
+                    "action_control",
+                    "action_label",
+                    "action_target",
+                    "action_target_kind",
+                    "country_code",
+                    "city",
+                    "network_owner",
+                    "device_class",
+                    "browser_family",
+                    "operating_system")}},
                 {{ReconciledEvents.Reconciliation}},
                 {{VisitGrouping.Of("visitor_key = {visitor_key:String}")}},
                 stepped AS
                 (
-                    SELECT
-                        *,
-                        sum(toUInt8(kind = 'PageView' AND NOT is_second_sighting)) OVER (
-                            PARTITION BY path
-                            ORDER BY server_ts, event_id
-                            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS step
-                    FROM counted
+                    SELECT *
+                    FROM opened
                     WHERE visit_ordinal = 0
+                ),
+                context AS
+                (
+                    SELECT
+                        argMinIf(source_site, (server_ts, event_id), sending_host != '') AS from_site,
+                        argMinIf(source_channel, (server_ts, event_id), sending_host != '') AS from_kind,
+                        argMinIf(country_code, (server_ts, event_id), country_code != '') AS country,
+                        argMinIf(city, (server_ts, event_id), city != '') AS town,
+                        argMinIf(network_owner, (server_ts, event_id), network_owner != '') AS network,
+                        argMinIf(
+                            toString(device_class),
+                            (server_ts, event_id),
+                            device_class != 'Unknown') AS device,
+                        argMinIf(browser_family, (server_ts, event_id), browser_family != '') AS browser,
+                        argMinIf(
+                            operating_system,
+                            (server_ts, event_id),
+                            operating_system != '') AS system_name
+                    FROM stepped
                 ),
                 pages AS
                 (
@@ -655,7 +776,7 @@ public static class AnalyticsSqlCompiler
                         'None' AS target_kind
                     FROM stepped
                     WHERE kind != 'Action'
-                    GROUP BY path, step
+                    GROUP BY path, page_ordinal
                 ),
                 pressed AS
                 (
@@ -673,13 +794,16 @@ public static class AnalyticsSqlCompiler
                     FROM stepped
                     WHERE kind = 'Action'
                 )
-            SELECT at, press, path, status_code, engaged_ms, depth, label, control, target, target_kind
+            SELECT
+                at, press, path, status_code, engaged_ms, depth, label, control, target, target_kind,
+                from_site, from_kind, country, town, network, device, browser, system_name
             FROM
             (
                 SELECT * FROM pages
                 UNION ALL
                 SELECT * FROM pressed
-            )
+            ) AS steps
+            CROSS JOIN context
             ORDER BY at, press, path
             LIMIT {limit:UInt32}
             """;
@@ -687,9 +811,8 @@ public static class AnalyticsSqlCompiler
         return new CompiledStatement(
             sql,
             [
-                new QueryParameter(SiteIdParameter, scope.SiteId),
-                new QueryParameter(FromParameter, query.Range.From.ToUnixTimeMilliseconds()),
-                new QueryParameter(ToParameter, query.Range.To.ToUnixTimeMilliseconds()),
+                .. WindowParameters(scope, query.Range),
+                .. CatalogueParameters(query.SiteDomain),
                 new QueryParameter(IdleParameter, (long)query.IdleTimeout.TotalSeconds),
                 new QueryParameter(VisitorKeyParameter, query.Visit.VisitorKey),
                 new QueryParameter(LimitParameter, (uint)query.Limit),
@@ -754,6 +877,18 @@ public static class AnalyticsSqlCompiler
     /// ordinary on a busy site, and without the tie-break they could swap places between one slice
     /// and the next and one of them would never be seen.
     /// </para>
+    /// <para>
+    /// What the caller narrowed to is applied <em>after</em> the reduction to one row per visit, so
+    /// a visit is kept or dropped on the verdict a reader would be shown. Applied inside, a visit
+    /// re-judged into a different category under newer rules would still be found by its old one.
+    /// The count of the whole window is taken after the narrowing for the same reason: a list that
+    /// says how far through it somebody is has to be counting the list they are looking at.
+    /// </para>
+    /// <para>
+    /// The narrowing is the same three expressions whatever was asked for, with an empty set
+    /// meaning "all of them" and nought pages meaning "any". One shape of statement rather than
+    /// eight is one plan for the store to reuse, one statement to read, and one to approve.
+    /// </para>
     /// </remarks>
     private static CompiledStatement CompileJudgedSessions(TenantScope scope, JudgedSessionsQuery query)
     {
@@ -785,6 +920,9 @@ public static class AnalyticsSqlCompiler
                 ORDER BY ruleset_major DESC, ruleset_minor DESC, classified_at DESC
                 LIMIT 1 BY session_key
             )
+            WHERE (empty({categories:Array(String)}) OR toString(category) IN {categories:Array(String)})
+              AND (empty({strengths:Array(String)}) OR toString(strength) IN {strengths:Array(String)})
+              AND page_count >= {least_pages:UInt32}
             ORDER BY started_at DESC, session_key
             LIMIT {limit:UInt32} OFFSET {offset:UInt32}
             """;
@@ -795,8 +933,31 @@ public static class AnalyticsSqlCompiler
                 .. WindowParameters(scope, query.Range),
                 new QueryParameter(LimitParameter, (uint)query.Limit),
                 new QueryParameter(OffsetParameter, (uint)query.Offset),
+                new QueryParameter(
+                    CategoriesParameter,
+                    query.Categories.Select(category => StoredNames.CategoryNames[category]).ToArray()),
+                new QueryParameter(StrengthsParameter, AtLeast(query.LeastStrength)),
+                new QueryParameter(LeastPagesParameter, (uint)query.LeastPages),
             ]);
     }
+
+    /// <summary>
+    /// The strengths that count as at least the one asked for, named as the store spells them.
+    /// </summary>
+    /// <remarks>
+    /// Written out as a set rather than compared as a number, so the ordering of the bands stays a
+    /// fact about this product's own enumeration and never a fact about which number the store
+    /// happened to record each one under. Nothing asked for means every band, which is the same
+    /// empty set the categories use.
+    /// </remarks>
+    /// <param name="least">The lowest band worth returning, or nothing for all of them.</param>
+    /// <returns>The stored names, or an empty set.</returns>
+    private static string[] AtLeast(EvidenceStrength? least) =>
+        least is null
+            ? []
+            : [.. Enum.GetValues<EvidenceStrength>()
+                .Where(strength => strength >= least.Value)
+                .Select(strength => StoredNames.StrengthNames[strength])];
 
     /// <summary>
     /// Counts the headline totals, reading pages delivered rather than reports received.
@@ -1016,12 +1177,13 @@ public static class AnalyticsSqlCompiler
     private static CompiledStatement CompileSiteLocations(TenantScope scope, SiteLocationsQuery query)
     {
         var place = PlaceColumns[query.Grouping];
+        var country = PlaceCountryColumns[query.Grouping];
 
         var sql = $$"""
             WITH
                 windowed AS
                 (
-                    SELECT kind, surface, path, visitor_key, correlation_id, country_code, city
+                    SELECT kind, surface, path, visitor_key, correlation_id, country_code, city, network_owner, autonomous_system
                     FROM events
                     WHERE site_id = {site_id:UUID}
                       AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
@@ -1034,6 +1196,8 @@ public static class AnalyticsSqlCompiler
                         visitor_key,
                         anyIf(country_code, country_code != '') AS country_code,
                         anyIf(city, city != '') AS city,
+                        anyIf(network_owner, network_owner != '') AS network_owner,
+                        max(autonomous_system) AS autonomous_system,
                         toInt64(sum(page_views)) AS page_views
                     FROM
                     (
@@ -1042,6 +1206,8 @@ public static class AnalyticsSqlCompiler
                             path,
                             anyIf(country_code, country_code != '') AS country_code,
                             anyIf(city, city != '') AS city,
+                            anyIf(network_owner, network_owner != '') AS network_owner,
+                            max(autonomous_system) AS autonomous_system,
                             {{ReconciledEvents.DeliveredPageViews(16)}}
                         FROM identified
                         WHERE visitor_key != ''
@@ -1061,7 +1227,7 @@ public static class AnalyticsSqlCompiler
             (
                 SELECT
                     {{place}} AS place,
-                    country_code,
+                    {{country}} AS country_code,
                     toInt64(count()) AS visitors,
                     toInt64(sum(page_views)) AS page_views
                 FROM located
@@ -1075,6 +1241,122 @@ public static class AnalyticsSqlCompiler
             sql,
             [
                 .. WindowParameters(scope, query.Range),
+                .. CatalogueOfNetworks(query.Grouping),
+                new QueryParameter(LimitParameter, (uint)query.Limit),
+                new QueryParameter(OffsetParameter, (uint)query.Offset),
+            ]);
+    }
+
+    /// <summary>
+    /// Counts visitors, grouped by where they came from before they arrived.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Counted per visitor and settled once for the whole visitor, on exactly the terms a place
+    /// list is. Only a visit's first page carries an address from anywhere else — every page after
+    /// it was reached from the site itself — so taking each report's own answer would file one
+    /// arrival from a search engine as one arrival from the search engine and a dozen from the
+    /// site being measured.
+    /// </para>
+    /// <para>
+    /// What counts as the site being measured is its registered address and anything below it,
+    /// which is the rule the collector applies when it decides whose traffic a report is. A site
+    /// reachable at two names, or spread across a documentation subdomain and a main one, would
+    /// otherwise list itself as its own busiest source.
+    /// </para>
+    /// <para>
+    /// That address is bound as a parameter rather than written into the statement. It is the
+    /// only value in this file that comes from the control plane instead of from a fixed table of
+    /// identifiers, and the two are kept apart on purpose.
+    /// </para>
+    /// <para>
+    /// An arrival naming nowhere is the empty string, and is a row like any other. It is usually
+    /// the largest row on the list, and dropping it would leave every share on the screen taken
+    /// against a total that excluded most of the audience. The empty string means exactly that in
+    /// all three groupings, which is what lets one aggregate settle a visitor's source whichever
+    /// way the list is being read.
+    /// </para>
+    /// <para>
+    /// <b>One site is one row whatever address it answered on.</b> A leading <c>www.</c> is cut,
+    /// and the rest is reduced to the label in front of the public suffix — so <c>google.com</c>,
+    /// <c>www.google.co.in</c> and <c>search.yahoo.co.jp</c> become <c>google</c>, <c>google</c>
+    /// and <c>yahoo</c>. Without it the busiest source of a site's traffic is spread over a dozen
+    /// rows and appears on none of them at its real size.
+    /// </para>
+    /// <para>
+    /// That reduction is also what makes the lookup safe against the referrer being written by
+    /// whoever visited the site. Matching any label would let somebody who registers
+    /// <c>google.attacker.test</c> file their traffic under Google's name on a stranger's
+    /// dashboard; taking the label in front of the suffix gives <c>attacker</c>.
+    /// </para>
+    /// <para>
+    /// The catalogue itself is bound as three parallel arrays rather than written into the
+    /// statement, so what a reviewer reads here stays the shape of the question rather than a list
+    /// of a hundred hostnames. It is applied here rather than stored at ingest deliberately: a
+    /// correction to it re-answers every period a site has ever recorded, where a stored column
+    /// would leave the same visit classified two ways depending on when it happened to arrive.
+    /// </para>
+    /// </remarks>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement.</returns>
+    private static CompiledStatement CompileSiteSources(TenantScope scope, SiteSourcesQuery query)
+    {
+        var source = SourceExpressions[query.Grouping];
+        var sendingSite = SourceSiteExpressions[query.Grouping];
+
+        var sql = $$"""
+            WITH
+                {{SendingSites.Of("kind", "surface", "path", "visitor_key", "correlation_id")}},
+                {{ReconciledEvents.Reconciliation}},
+                sourced AS
+                (
+                    SELECT
+                        visitor_key,
+                        anyIf(source, source != '') AS source,
+                        anyIf(site, site != '') AS site,
+                        toInt64(sum(page_views)) AS page_views
+                    FROM
+                    (
+                        SELECT
+                            visitor_key,
+                            path,
+                            anyIf({{source}}, source_site != '') AS source,
+                            anyIf({{sendingSite}}, source_site != '') AS site,
+                            {{ReconciledEvents.DeliveredPageViews(16)}}
+                        FROM identified
+                        WHERE visitor_key != ''
+                        GROUP BY visitor_key, path
+                    )
+                    GROUP BY visitor_key
+                )
+            SELECT
+                source,
+                site,
+                visitors,
+                page_views,
+                toInt64(sum(visitors) OVER ()) AS total_visitors,
+                toInt64(count() OVER ()) AS total_sources,
+                toInt64(max(visitors) OVER ()) AS most_visitors
+            FROM
+            (
+                SELECT
+                    source,
+                    site,
+                    toInt64(count()) AS visitors,
+                    toInt64(sum(page_views)) AS page_views
+                FROM sourced
+                GROUP BY source, site
+            )
+            ORDER BY visitors DESC, source, site
+            LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+            """;
+
+        return new CompiledStatement(
+            sql,
+            [
+                .. WindowParameters(scope, query.Range),
+                .. CatalogueParameters(query.SiteDomain),
                 new QueryParameter(LimitParameter, (uint)query.Limit),
                 new QueryParameter(OffsetParameter, (uint)query.Offset),
             ]);
@@ -1275,6 +1557,50 @@ public static class AnalyticsSqlCompiler
         new(FromParameter, range.From.ToUnixTimeMilliseconds()),
         new(ToParameter, range.To.ToUnixTimeMilliseconds()),
     ];
+
+    /// <summary>
+    /// What <see cref="SendingSites"/> needs bound: the measured site's own address, and the
+    /// catalogue as three parallel arrays.
+    /// </summary>
+    /// <remarks>
+    /// The catalogue is applied when the question is asked rather than resolved into a stored
+    /// column when the traffic arrives, so correcting an entry re-answers every period a site has
+    /// already recorded instead of leaving the same visit classified two ways depending on when it
+    /// happened to arrive. Binding it also keeps a hostile referrer on the value side of the
+    /// boundary, which is the rule the whole compiler is built on.
+    /// </remarks>
+    /// <param name="siteDomain">
+    /// The measured site's own address, so it never appears as a source of its own traffic. Read
+    /// from the site catalogue by the endpoint and never from the request, so a caller cannot
+    /// decide whose traffic is left out of somebody else's answer.
+    /// </param>
+    /// <returns>The five values, in the order the statements bind them.</returns>
+    private static QueryParameter[] CatalogueParameters(string siteDomain) =>
+    [
+        new(SiteDomainParameter, siteDomain),
+        new(SuffixesParameter, SecondLevels),
+        new(SourceKeysParameter, SourceKeys),
+        new(SourceNamesParameter, SourceNames),
+        new(SourceChannelsParameter, SourceChannels),
+    ];
+
+    /// <summary>
+    /// The catalogue of hosting networks, bound only where a statement names it.
+    /// </summary>
+    /// <remarks>
+    /// Conditional because the other two place groupings never read it, and a statement carrying
+    /// bound values it does not mention is harder to review than one that does not.
+    /// </remarks>
+    /// <param name="grouping">What the place list is grouped by.</param>
+    /// <returns>The two arrays, or nothing where the grouping does not read them.</returns>
+    private static QueryParameter[] CatalogueOfNetworks(LocationGrouping grouping) =>
+        grouping == LocationGrouping.Network
+            ?
+            [
+                new(HostingNumbersParameter, HostingNumbers),
+                new(HostingNamesParameter, HostingNames),
+            ]
+            : [];
 
     /// <summary>
     /// The window, plus what turns activity inside it into visits.

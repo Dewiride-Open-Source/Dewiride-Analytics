@@ -1,5 +1,60 @@
 ﻿--- statement ---
 WITH
+    arrived AS
+    (
+        SELECT
+            event_id,
+            surface,
+            visitor_key,
+            correlation_id,
+            server_ts,
+            kind,
+            path,
+            status_code,
+            engaged_ms,
+            scroll_depth_percent,
+            action_control,
+            action_label,
+            action_target,
+            action_target_kind,
+            country_code,
+            city,
+            network_owner,
+            device_class,
+            browser_family,
+            operating_system,
+            referrer AS source_address,
+            if(
+                referrer_domain != ''
+                AND referrer_domain != {site_domain:String}
+                AND NOT endsWith(referrer_domain, concat('.', {site_domain:String})),
+                if(
+                    startsWith(referrer_domain, 'www.'),
+                    substring(referrer_domain, 5),
+                    referrer_domain),
+                '') AS sending_host
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    ),
+    named AS
+    (
+        SELECT
+            *,
+            splitByChar('.', sending_host) AS labels,
+            multiIf(
+                length(labels) < 2, sending_host,
+                length(labels) > 2
+                    AND has({second_levels:Array(String)}, arrayElement(labels, -2)),
+                    arrayElement(labels, -3),
+                arrayElement(labels, -2)) AS sending_name,
+            if(
+                has({source_keys:Array(String)}, sending_host),
+                sending_host,
+                sending_name) AS catalogue_key
+        FROM arrived
+    ),
     windowed AS
     (
         SELECT
@@ -16,11 +71,29 @@ WITH
             action_control,
             action_label,
             action_target,
-            action_target_kind
-        FROM events
-        WHERE site_id = {site_id:UUID}
-          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+            action_target_kind,
+            country_code,
+            city,
+            network_owner,
+            device_class,
+            browser_family,
+            operating_system,
+            source_address,
+            sending_host,
+            transform(
+                catalogue_key,
+                {source_keys:Array(String)},
+                {source_names:Array(String)},
+                sending_host) AS source_site,
+            if(
+                sending_host = '',
+                '',
+                transform(
+                    catalogue_key,
+                    {source_keys:Array(String)},
+                    {source_channels:Array(String)},
+                    'link')) AS source_channel
+        FROM named
     ),
     echoed AS
     (
@@ -89,16 +162,51 @@ WITH
                 AND sighting <= sightings_from_path AS is_second_sighting
         FROM sighted
     ),
-    stepped AS
+    paged AS
     (
         SELECT
             *,
-            sum(toUInt8(kind = 'PageView' AND NOT is_second_sighting)) OVER (
-                PARTITION BY path
-                ORDER BY server_ts, event_id
-                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS step
+            greatest(
+                toUInt64(1),
+                sum(toUInt8(kind = 'PageView' AND NOT is_second_sighting)) OVER (
+                    PARTITION BY visitor_key, visit_ordinal, path
+                    ORDER BY server_ts, event_id
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)) AS page_ordinal
         FROM counted
+    ),
+    opened AS
+    (
+        SELECT
+            *,
+            row_number() OVER (
+                PARTITION BY visitor_key, visit_ordinal, path, page_ordinal
+                ORDER BY is_second_sighting, kind != 'PageView', server_ts, event_id) = 1 AS opens_page
+        FROM paged
+    ),
+    stepped AS
+    (
+        SELECT *
+        FROM opened
         WHERE visit_ordinal = 0
+    ),
+    context AS
+    (
+        SELECT
+            argMinIf(source_site, (server_ts, event_id), sending_host != '') AS from_site,
+            argMinIf(source_channel, (server_ts, event_id), sending_host != '') AS from_kind,
+            argMinIf(country_code, (server_ts, event_id), country_code != '') AS country,
+            argMinIf(city, (server_ts, event_id), city != '') AS town,
+            argMinIf(network_owner, (server_ts, event_id), network_owner != '') AS network,
+            argMinIf(
+                toString(device_class),
+                (server_ts, event_id),
+                device_class != 'Unknown') AS device,
+            argMinIf(browser_family, (server_ts, event_id), browser_family != '') AS browser,
+            argMinIf(
+                operating_system,
+                (server_ts, event_id),
+                operating_system != '') AS system_name
+        FROM stepped
     ),
     pages AS
     (
@@ -115,7 +223,7 @@ WITH
             'None' AS target_kind
         FROM stepped
         WHERE kind != 'Action'
-        GROUP BY path, step
+        GROUP BY path, page_ordinal
     ),
     pressed AS
     (
@@ -133,13 +241,16 @@ WITH
         FROM stepped
         WHERE kind = 'Action'
     )
-SELECT at, press, path, status_code, engaged_ms, depth, label, control, target, target_kind
+SELECT
+    at, press, path, status_code, engaged_ms, depth, label, control, target, target_kind,
+    from_site, from_kind, country, town, network, device, browser, system_name
 FROM
 (
     SELECT * FROM pages
     UNION ALL
     SELECT * FROM pressed
-)
+) AS steps
+CROSS JOIN context
 ORDER BY at, press, path
 LIMIT {limit:UInt32}
 
@@ -147,6 +258,11 @@ LIMIT {limit:UInt32}
 site_id = 0197c0de-0000-7000-8000-000000000001
 from_ms = 1777626000000
 to_ms = 1777712400000
+site_domain = 'example.com'
+second_levels = ['ac', 'co', 'com', 'edu', 'go', 'gob', 'gouv', 'gov', 'govt', 'ne', 'net', 'or', 'org']
+source_keys = ['mail.google.com', 'news.google.com', 'translate.google.com', 'gemini.google.com', 'chat.openai.com', 'copilot.microsoft.com', 'com.google.android.gm', 'google', 'bing', 'yahoo', 'duckduckgo', 'ecosia', 'qwant', 'startpage', 'brave', 'kagi', 'mojeek', 'marginalia', 'searx', 'yandex', 'baidu', 'naver', 'daum', 'seznam', 'sogou', 'ask', 'aol', 'lycos', 'chatgpt', 'openai', 'perplexity', 'claude', 'copilot', 'phind', 'poe', 'facebook', 'instagram', 'threads', 'twitter', 'x', 't', 'linkedin', 'lnkd', 'reddit', 'youtube', 'youtu', 'pinterest', 'tiktok', 'bsky', 'mastodon', 'tumblr', 'vk', 'weibo', 'quora']
+source_names = ['Gmail', 'Google News', 'Google Translate', 'Gemini', 'ChatGPT', 'Copilot', 'Gmail', 'Google', 'Bing', 'Yahoo', 'DuckDuckGo', 'Ecosia', 'Qwant', 'Startpage', 'Brave Search', 'Kagi', 'Mojeek', 'Marginalia', 'SearXNG', 'Yandex', 'Baidu', 'Naver', 'Daum', 'Seznam', 'Sogou', 'Ask', 'AOL', 'Lycos', 'ChatGPT', 'ChatGPT', 'Perplexity', 'Claude', 'Copilot', 'Phind', 'Poe', 'Facebook', 'Instagram', 'Threads', 'X', 'X', 'X', 'LinkedIn', 'LinkedIn', 'Reddit', 'YouTube', 'YouTube', 'Pinterest', 'TikTok', 'Bluesky', 'Mastodon', 'Tumblr', 'VK', 'Weibo', 'Quora']
+source_channels = ['link', 'link', 'link', 'assistant', 'assistant', 'assistant', 'link', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social']
 idle_seconds = 1800
 visitor_key = '2f8a1c0b4d6e7f905a1b2c3d4e5f6071'
 limit = 200

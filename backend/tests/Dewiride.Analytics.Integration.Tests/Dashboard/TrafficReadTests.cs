@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Telemetry;
+using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Domain.Telemetry;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
@@ -70,7 +71,9 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
 
             visit.Category.Should().Be("security-scanner");
             visit.PageCount.Should().Be(3);
-            visit.Ruleset.Should().Be("1.0");
+            // Which ruleset is in force is stated once, in the test that exists to make moving it a
+            // deliberate act. What matters here is that a visit says which one judged it.
+            visit.Ruleset.Should().Be(RulesetVersion.Current.ToString());
             visit.IsProvisional.Should().BeFalse();
             visit.Surfaces.Should().Equal("cloudflare-worker");
             visit.Supporting.Should().Contain(reason => reason.Code == "probing.sensitive_paths");
@@ -198,6 +201,10 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     [InlineData("visits?limit=501")]
     [InlineData("visits?offset=-1")]
     [InlineData("visits?from=2024-01-02T00:00:00Z&to=2024-01-01T00:00:00Z")]
+    [InlineData("visits?category=whatever")]
+    [InlineData("visits?category=security-scanner&category=whatever")]
+    [InlineData("visits?strength=certain")]
+    [InlineData("visits?minPages=-1")]
     [InlineData("traffic?from=2020-01-01T00:00:00Z&to=2024-01-01T00:00:00Z")]
     public async Task A_Question_That_Cannot_Be_Answered_As_Asked_Is_Refused(string query)
     {
@@ -209,6 +216,58 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
             var response = await browser.GetAsync($"/api/sites/{site.Id}/{query}");
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    /// <summary>
+    /// Narrowing the list is what makes it usable on a site whose traffic is mostly machinery: the
+    /// question people actually have is "show me the ones that were people", and it has to be
+    /// answerable without reading every visit to find them.
+    /// </summary>
+    /// <param name="narrowing">What the reader narrowed to.</param>
+    /// <param name="expected">How many of the site's two visits should come back.</param>
+    [Theory]
+    [InlineData("category=security-scanner", 2)]
+    [InlineData("category=likely-human", 0)]
+    [InlineData("category=likely-human&category=security-scanner", 2)]
+    [InlineData("minPages=3", 2)]
+    [InlineData("minPages=4", 0)]
+    [InlineData("strength=weak", 2)]
+    [InlineData("strength=verified", 0)]
+    [InlineData("category=security-scanner&strength=strong&minPages=2", 2)]
+    public async Task A_Member_Can_Narrow_The_List_To_The_Visits_They_Came_For(string narrowing, int expected)
+    {
+        var site = await JudgedSiteAsync(visitors: 2);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var visits = await ReadVisitsAsync(browser, site.Id, narrowing);
+
+            visits.Visits.Should().HaveCount(expected);
+
+            // The figure a list counts itself against has to be the narrowed list, or somebody
+            // shown three of two hundred would be told there were a hundred and ninety-seven more.
+            visits.TotalVisits.Should().Be(expected);
+        }
+    }
+
+    /// <summary>
+    /// A narrowed list still counts the whole of what it was narrowed to rather than the screenful
+    /// returned, which is what lets it say how far through somebody has read.
+    /// </summary>
+    [Fact]
+    public async Task A_Narrowed_List_Counts_Every_Visit_It_Was_Narrowed_To()
+    {
+        var site = await JudgedSiteAsync(visitors: 3);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var visits = await ReadVisitsAsync(browser, site.Id, "category=security-scanner&limit=1");
+
+            visits.Visits.Should().ContainSingle();
+            visits.TotalVisits.Should().Be(3);
         }
     }
 

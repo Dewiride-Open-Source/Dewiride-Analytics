@@ -21,12 +21,17 @@ public interface IVisitorKeyFactory
     /// Derives the visitor key for a request.
     /// </summary>
     /// <param name="siteId">Site being visited, so keys never collide across sites.</param>
-    /// <param name="ipAddress">Visitor's network address, or null when unavailable.</param>
+    /// <param name="connection">
+    /// What the visitor's connection is worth recognising them by — usually the address the request
+    /// arrived from, and on a network that rents servers the network itself. Reduced by
+    /// <see cref="VisitorConnection"/>, which is where that difference is explained. Null when
+    /// nothing about the connection was observed.
+    /// </param>
     /// <param name="userAgent">Visitor's declared user agent, or null when unavailable.</param>
     /// <param name="observedAt">When the request was observed, which selects the day's salt.</param>
     /// <returns>
     /// The key, or <see langword="null"/> when there is too little to derive one from. A null key
     /// is honest: it means activity cannot be grouped, not that it should be grouped arbitrarily.
     /// </returns>
-    string? Derive(Guid siteId, string? ipAddress, string? userAgent, DateTimeOffset observedAt);
+    string? Derive(Guid siteId, string? connection, string? userAgent, DateTimeOffset observedAt);
 }

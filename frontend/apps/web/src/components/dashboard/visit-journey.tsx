@@ -1,9 +1,12 @@
 'use client';
 
-import { useFormatter, useTranslations } from 'next-intl';
+import { useFormatter, useLocale, useTranslations } from 'next-intl';
+import { type ReactNode, useMemo } from 'react';
+import { PlaceCredit } from '@/components/dashboard/place-credit';
 import { splitDuration } from '@/lib/analytics/duration';
 import { readablePath } from '@/lib/analytics/pages';
-import type { ControlKind, VisitJourneyStep, VisitPress } from '@/lib/api/schemas';
+import { countryNames } from '@/lib/analytics/places';
+import type { ControlKind, VisitContext, VisitJourneyStep, VisitPress } from '@/lib/api/schemas';
 import { useVisitJourney } from '@/lib/queries/sites';
 
 interface VisitJourneyProps {
@@ -34,14 +37,136 @@ export function VisitJourney({ siteId, visit, pageCount, timeZoneId, open }: Vis
   const steps = journey.data?.steps;
 
   return (
+    <>
+      {journey.data === undefined ? null : <Whose context={journey.data.context} />}
+
+      <section className="flex flex-col gap-2">
+        <h3 className="text-xs font-medium tracking-wide text-foreground-muted uppercase">
+          {t('title')}
+        </h3>
+
+        <Trail
+          steps={steps}
+          failed={journey.isError}
+          pageCount={pageCount}
+          timeZoneId={timeZoneId}
+        />
+      </section>
+    </>
+  );
+}
+
+/**
+ * Who the visit was, before what it did.
+ *
+ * A list of pages and a verdict between them say what happened and what the engine made of it.
+ * Neither says whether the reader came from a search, roughly where they were, or what they were
+ * reading on — and those three are what turn a row on a list into somebody a site's owner can
+ * picture. So they go above the trail rather than beside the numbers.
+ *
+ * Only what was established is shown. Four facts reading "not known" is what a screen looks like
+ * when it is describing its own gaps instead of the visit, so a fact nothing answered is left out
+ * and the section says once, quietly, that the rest went unobserved.
+ */
+function Whose({ context }: { readonly context: VisitContext }) {
+  const t = useTranslations('dashboard.journey.about');
+  const locale = useLocale();
+  const named = useMemo(() => countryNames(locale), [locale]);
+
+  const place = placeOf(context, named(context.countryCode));
+  const read = readOn(context, t);
+
+  return (
     <section className="flex flex-col gap-2">
       <h3 className="text-xs font-medium tracking-wide text-foreground-muted uppercase">
         {t('title')}
       </h3>
 
-      <Trail steps={steps} failed={journey.isError} pageCount={pageCount} timeZoneId={timeZoneId} />
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+        {/*
+          What kind of thing a site is goes under its name, because a name alone leaves the reader
+          to know which of them are search engines — which is the whole reason the catalogue
+          exists. An arrival that named nowhere is already written as what it is, and saying it a
+          second time underneath would spend a line agreeing with itself.
+        */}
+        <Fact label={t('from')} value={context.source === '' ? t('direct') : context.source}>
+          {context.kind === 'direct' ? undefined : t(`kind.${context.kind}`)}
+        </Fact>
+
+        {place === null ? null : <Fact label={t('place')} value={place} />}
+        {read === null ? null : <Fact label={t('readOn')} value={read} />}
+        {context.network === '' ? null : <Fact label={t('network')} value={context.network} />}
+      </dl>
+
+      {/*
+        The licence behind every country and town this product shows asks for a link back wherever
+        its results appear, and one visit showing one town is exactly that. It is here rather than
+        under the whole card so that it appears with the data and not without it.
+      */}
+      {place === null ? null : <PlaceCredit note={t('estimate')} />}
+
+      {place === null && read === null ? (
+        <p className="text-sm text-foreground-muted">{t('unobserved')}</p>
+      ) : null}
     </section>
   );
+}
+
+interface FactProps {
+  readonly label: string;
+  /** Written by whoever visited, so it reaches the screen as text and never as a link. */
+  readonly value: string;
+  /** A quieter word under it, where one says something the value does not. */
+  readonly children?: ReactNode;
+}
+
+function Fact({ label, value, children }: FactProps) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <dt className="text-xs text-foreground-subtle">{label}</dt>
+      <dd className="flex min-w-0 flex-col">
+        <bdi className="truncate text-sm text-foreground" title={value}>
+          {value}
+        </bdi>
+        {children === undefined ? null : (
+          <span className="truncate text-xs text-foreground-muted">{children}</span>
+        )}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * Roughly where the visit was, where anything placed it.
+ *
+ * A town is worth showing only with its country beside it: a great many town names belong to more
+ * than one, and a reader shown "Springfield" alone has been told less than they think.
+ */
+function placeOf(context: VisitContext, country: string | null): string | null {
+  if (country === null) {
+    return null;
+  }
+
+  return context.town === '' ? country : `${context.town}, ${country}`;
+}
+
+/**
+ * What the visit was read on.
+ *
+ * The software when anything named it, since "Chrome on Android" says more than "a phone" does.
+ * The kind of device is the fallback rather than an addition — a row carrying both would spend a
+ * line saying twice what one of them already said.
+ */
+function readOn(context: VisitContext, t: ReturnType<typeof useTranslations>): string | null {
+  if (context.browser !== '' && context.system !== '') {
+    return t('on', { browser: context.browser, system: context.system });
+  }
+
+  if (context.browser !== '' || context.system !== '') {
+    return context.browser || context.system;
+  }
+
+  return context.device === 'unknown' ? null : t(`device.${context.device}`);
 }
 
 interface TrailProps {

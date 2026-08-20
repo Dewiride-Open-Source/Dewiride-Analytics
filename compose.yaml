@@ -18,7 +18,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-dewiride_analytics}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Bound to this machine only, for the reason the engine below is. A published port is not
+      # covered by the host's firewall: Docker writes its own forwarding rules ahead of the ones
+      # ufw and firewalld manage, so a port published without an address answers every address the
+      # machine has whatever the firewall was told to allow. On a rented server that is the
+      # control plane taking questions from the internet. A database tool on this machine still
+      # reaches it at localhost; only reaching it from elsewhere stops, and nothing here needs to.
+      - "${POSTGRES_BIND:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       # PostgreSQL 18 moved its data directory inside the image, and the volume it declares moved
       # with it. Mounting the pre-18 path instead leaves the real data outside any volume, where
@@ -52,8 +58,11 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-dewiride_telemetry}
     ports:
-      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
-      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+      # Bound to this machine only, as the control plane above and the engine below are. This is
+      # where every visit ever recorded is kept, and its liveness endpoint answers with the server
+      # and its version before any password is looked at.
+      - "${CLICKHOUSE_BIND:-127.0.0.1}:${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_BIND:-127.0.0.1}:${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
     ulimits:
       # The figure every example in ClickHouse's own installation documentation carries. The
       # server does not complain when it is missing; it simply runs out of file handles later.
@@ -117,6 +126,11 @@ services:
       # volume yourself, and everything else behaves the same. Until anything is there, visitors
       # are still counted and their country reads as not known.
       Dewiride__ReferenceData__AutoDownload: ${REFERENCE_DATA_AUTO_DOWNLOAD:-true}
+      # How much the engine says about what it is doing. Debug adds the reason a report was turned
+      # away, which is how "the tracker is installed and the dashboard stays at zero" is answered.
+      # Off by default because the collector takes no credential, so a line per refused report is
+      # a log file whose size is chosen by whoever is scanning the internet that day.
+      Logging__LogLevel__Dewiride: ${ENGINE_LOG_LEVEL:-Information}
     volumes:
       - reference-data:/var/lib/dewiride/reference
     ports:
@@ -151,7 +165,12 @@ services:
       # Read when a request is forwarded rather than when the image was built.
       DEWIRIDE_API_ORIGIN: http://api:8080
     ports:
-      - "${WEB_PORT:-3000}:3000"
+      # The one service meant to be reached from a browser, and still bound to this machine by
+      # default, because the supported way to publish it is a reverse proxy terminating TLS in
+      # front of it. Signing in sets a cookie the browser will only send back over the connection
+      # that set it, so publishing these screens unencrypted puts the dashboard's password on the
+      # wire. Set WEB_BIND to 0.0.0.0 when the proxy runs on a different machine.
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-3000}:3000"
     healthcheck:
       # Asked with the runtime's own fetch rather than a tool added to the image for the purpose.
       test:

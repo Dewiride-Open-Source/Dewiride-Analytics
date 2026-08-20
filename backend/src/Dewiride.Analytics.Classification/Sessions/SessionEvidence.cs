@@ -67,6 +67,27 @@ public sealed record SessionEvidence
     /// <summary>Whether the client declared itself under automation control.</summary>
     public bool? DeclaredWebDriver { get; init; }
 
+    /// <summary>
+    /// The routing number of the network the visit arrived over. Nought means nothing resolved one.
+    /// </summary>
+    /// <remarks>
+    /// The one thing here that whoever is driving the browser did not choose. Everything else on
+    /// this record is either something the client said about itself or something it did, and both
+    /// can be produced deliberately; where the request came from cannot be, short of renting a
+    /// household connection. Nought is common and is not a finding — an installation whose proxy
+    /// does not pass the visitor's address through resolves nothing at all.
+    /// </remarks>
+    public uint AutonomousSystem { get; init; }
+
+    /// <summary>
+    /// Who runs that network, as the routing registry names them. Empty where nothing resolved it.
+    /// </summary>
+    /// <remarks>
+    /// Carried for the reader rather than for the rules: the engine matches on the number, which
+    /// outlives the names its holders trade under.
+    /// </remarks>
+    public string? NetworkOwner { get; init; }
+
     /// <summary>How long the session lasted.</summary>
     public TimeSpan Duration => EndedAt - StartedAt;
 

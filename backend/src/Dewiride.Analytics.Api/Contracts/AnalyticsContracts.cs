@@ -144,6 +144,42 @@ public sealed record LocationsResponse(
 public sealed record LocationRow(string Place, string CountryCode, long Visitors, long PageViews);
 
 /// <summary>
+/// One slice of where a website's visitors came from over a window, busiest first.
+/// </summary>
+/// <param name="From">Inclusive start of the window.</param>
+/// <param name="To">Exclusive end of the window.</param>
+/// <param name="Grouping">What each row stands for: <c>site</c> or <c>page</c>.</param>
+/// <param name="Visitors">Visitors across every source in the window, not only this slice.</param>
+/// <param name="TotalSources">How many sources the window holds, so a slice can say what it is part of.</param>
+/// <param name="MostVisitors">The busiest source's count, which every bar on the list is drawn against.</param>
+/// <param name="Sources">The slice itself.</param>
+public sealed record SourcesResponse(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    string Grouping,
+    long Visitors,
+    long TotalSources,
+    long MostVisitors,
+    IReadOnlyList<SourceRow> Sources);
+
+/// <summary>
+/// One source and how many of a window's visitors it sent.
+/// </summary>
+/// <param name="Source">
+/// The sending site's address, or that address followed by the path of the sending page. Empty
+/// when the arrival named nowhere at all — which is reported rather than dropped, because on most
+/// websites it is the largest share of the audience.
+/// </param>
+/// <param name="Site">
+/// The sending site's address on its own, so a page row can be shown as belonging somewhere
+/// without the screen having to take the address apart. Empty on the row for arrivals that named
+/// nowhere.
+/// </param>
+/// <param name="Visitors">Distinct visitors, counted on the same daily terms as the headline.</param>
+/// <param name="PageViews">Pages those visitors went on to be delivered.</param>
+public sealed record SourceRow(string Source, string Site, long Visitors, long PageViews);
+
+/// <summary>
 /// How much of a website's audience was on each kind of device over a window.
 /// </summary>
 /// <remarks>
@@ -315,8 +351,10 @@ public sealed record TrafficGroup(string Category, string Strength, long Session
 /// <param name="From">Inclusive start of the window.</param>
 /// <param name="To">Exclusive end of the window.</param>
 /// <param name="TotalVisits">
-/// How many judged visits the window holds, across every slice. Counted over the whole window, so
-/// the rows returned need not add up to it.
+/// How many judged visits the window holds, across every slice, and after anything the caller
+/// narrowed to. Counted over the whole window, so the rows returned need not add up to it — and
+/// counted over the narrowed set, so a list can say how far through the visits it is showing
+/// somebody has read.
 /// </param>
 /// <param name="Visits">The slice, newest first.</param>
 public sealed record VisitsResponse(
@@ -515,14 +553,51 @@ public sealed record VisitPagesResponse(
 public sealed record VisitPageRow(string Path, long Visits);
 
 /// <summary>
-/// What one visit did, in the order it did it.
+/// One visit: who it was, and what it did in the order it did it.
 /// </summary>
 /// <param name="Visit">The visit this describes, as it was asked for.</param>
+/// <param name="Context">What could be established about the visitor, which may be nothing.</param>
 /// <param name="Steps">
 /// The steps, oldest first. Empty where the identity names no visit on this website — including
 /// where the activity behind it has passed out of retention.
 /// </param>
-public sealed record VisitJourneyResponse(string Visit, IReadOnlyList<VisitJourneyStep> Steps);
+public sealed record VisitJourneyResponse(
+    string Visit,
+    VisitContextResponse Context,
+    IReadOnlyList<VisitJourneyStep> Steps);
+
+/// <summary>
+/// What could be established about the visitor behind one visit.
+/// </summary>
+/// <remarks>
+/// Every field is empty rather than absent where nothing established it. A site behind something
+/// that does not pass the visitor's address along places nobody, and a visit only its own server
+/// saw carries no browser — both are answers, and the dashboard says so in words rather than
+/// leaving a gap the reader has to interpret.
+/// </remarks>
+/// <param name="Source">
+/// The site that sent them, named where it is catalogued and left as its own address where it is
+/// not. Empty where the browser named nowhere.
+/// </param>
+/// <param name="Kind">What sort of thing that was: a search engine, an assistant, a social network, or a link.</param>
+/// <param name="CountryCode">Two-letter country code, or empty.</param>
+/// <param name="Town">
+/// Town or city, spelled as the free geolocation data spells it. An estimate from the visitor's
+/// network rather than a position from their device.
+/// </param>
+/// <param name="Network">Who runs the network the visit came over, or empty.</param>
+/// <param name="Device">Phone, tablet, computer, something else, or not known.</param>
+/// <param name="Browser">What it was read with, or empty.</param>
+/// <param name="System">What that was running on, or empty.</param>
+public sealed record VisitContextResponse(
+    string Source,
+    string Kind,
+    string CountryCode,
+    string Town,
+    string Network,
+    string Device,
+    string Browser,
+    string System);
 
 /// <summary>
 /// One thing a visit did: arriving at a page, or operating a control on one.

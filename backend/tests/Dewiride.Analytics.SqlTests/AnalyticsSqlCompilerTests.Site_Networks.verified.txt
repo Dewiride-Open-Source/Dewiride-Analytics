@@ -1,0 +1,103 @@
+﻿--- statement ---
+WITH
+    windowed AS
+    (
+        SELECT kind, surface, path, visitor_key, correlation_id, country_code, city, network_owner, autonomous_system
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    ),
+    echoed AS
+    (
+        SELECT
+            minIf(visitor_key, surface IN ('BrowserTracker', 'NoScriptPixel')) AS browser_key,
+            minIf(visitor_key, surface NOT IN ('BrowserTracker', 'NoScriptPixel')) AS reported_key
+        FROM windowed
+        WHERE correlation_id != ''
+          AND visitor_key != ''
+        GROUP BY correlation_id
+        HAVING browser_key != ''
+           AND reported_key != ''
+    ),
+    linked AS
+    (
+        SELECT
+            reported_key,
+            min(browser_key) AS browser_key
+        FROM echoed
+        GROUP BY reported_key
+    ),
+    identified AS
+    (
+        SELECT
+            windowed.* EXCEPT (visitor_key),
+            if(linked.browser_key != '' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'), linked.browser_key, windowed.visitor_key) AS visitor_key
+        FROM windowed
+        LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
+    ),
+    located AS
+    (
+        SELECT
+            visitor_key,
+            anyIf(country_code, country_code != '') AS country_code,
+            anyIf(city, city != '') AS city,
+            anyIf(network_owner, network_owner != '') AS network_owner,
+            max(autonomous_system) AS autonomous_system,
+            toInt64(sum(page_views)) AS page_views
+        FROM
+        (
+            SELECT
+                visitor_key,
+                path,
+                anyIf(country_code, country_code != '') AS country_code,
+                anyIf(city, city != '') AS city,
+                anyIf(network_owner, network_owner != '') AS network_owner,
+                max(autonomous_system) AS autonomous_system,
+                greatest(
+                    countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),
+                    toUInt64(countIf(kind != 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')) > 0),
+                    countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) AS delivered,
+                if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
+            FROM identified
+            WHERE visitor_key != ''
+            GROUP BY visitor_key, path
+        )
+        GROUP BY visitor_key
+    )
+SELECT
+    place,
+    country_code,
+    visitors,
+    page_views,
+    toInt64(sum(visitors) OVER ()) AS total_visitors,
+    toInt64(count() OVER ()) AS total_places,
+    toInt64(max(visitors) OVER ()) AS most_visitors
+FROM
+(
+    SELECT
+        transform(
+            autonomous_system,
+            {hosting_numbers:Array(UInt32)},
+            {hosting_names:Array(String)},
+            if(
+                position(network_owner, ' ') > 0,
+                substring(network_owner, position(network_owner, ' ') + 1),
+                network_owner)) AS place,
+        '' AS country_code,
+        toInt64(count()) AS visitors,
+        toInt64(sum(page_views)) AS page_views
+    FROM located
+    GROUP BY place, country_code
+)
+ORDER BY visitors DESC, place, country_code
+LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777593600000
+to_ms = 1778198400000
+hosting_numbers = [16509, 14618, 15169, 19527, 396982, 8075, 45102, 37963, 134963, 203513, 45090, 132203, 133478, 137876, 55990, 136907, 131444, 141180, 151610, 14061, 63949, 20473, 24940, 212317, 213230, 215859, 16276, 51167, 40021, 141995, 12876, 31898, 36351, 60781, 19148, 30633, 133752, 134351, 136988, 8560, 197540, 49505, 62240, 42708, 396356, 32475, 20860, 20773, 26496, 12200, 19994, 15395]
+hosting_names = ['Amazon Web Services', 'Amazon Web Services', 'Google', 'Google', 'Google Cloud', 'Microsoft', 'Alibaba Cloud', 'Alibaba Cloud', 'Alibaba Cloud', 'Alibaba Cloud', 'Tencent Cloud', 'Tencent Cloud', 'Tencent Cloud', 'Tencent Cloud', 'Huawei Cloud', 'Huawei Cloud', 'Huawei Cloud', 'Huawei Cloud', 'Huawei Cloud', 'DigitalOcean', 'Linode', 'Vultr', 'Hetzner', 'Hetzner', 'Hetzner', 'Hetzner', 'OVHcloud', 'Contabo', 'Contabo', 'Contabo', 'Scaleway', 'Oracle Cloud', 'IBM Cloud', 'Leaseweb', 'Leaseweb', 'Leaseweb', 'Leaseweb', 'Leaseweb', 'Leaseweb', 'IONOS', 'netcup', 'Selectel', 'Clouvider', 'GleSYS', 'Latitude.sh', 'SingleHop', 'iomart', 'GoDaddy', 'GoDaddy', 'Rackspace', 'Rackspace', 'Rackspace']
+limit = 10
+offset = 0

@@ -213,21 +213,41 @@ public sealed class SitePagesTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// Reading a page and being on one are different reports. A page nobody was ever delivered is
-    /// not a page anybody read, and a list carrying a nought is a list nobody can use.
+    /// A tracker only reports how a page is being read from the page itself, so a page reported as
+    /// read was delivered even though the report announcing it never arrived.
     /// </summary>
     [Fact]
-    public async Task A_Page_With_No_Delivery_Behind_It_Is_Not_Listed()
+    public async Task A_Page_Reported_As_Read_Is_Listed_Without_Its_Announcement()
     {
         var siteId = Guid.NewGuid();
 
         await WriteAsync(
             FromServer(siteId, Midnight.AddHours(1), "visitor-a", "/read"),
-            Engaged(siteId, Midnight.AddHours(2), "visitor-a", "/never-delivered"));
+            Engaged(siteId, Midnight.AddHours(2), "visitor-a", "/never-announced"));
 
         var pages = await PageOfAddresses(siteId);
 
-        pages.Pages.Select(page => page.Path).Should().Equal("/read");
+        pages.Pages.Select(page => page.Path).Should().BeEquivalentTo("/read", "/never-announced");
+        pages.TotalPageViews.Should().Be(2);
+    }
+
+    /// <summary>
+    /// A page read for half an hour is reported on over and over while it is being read. All of
+    /// those reports are about one delivery, and a page delivered once is one page view.
+    /// </summary>
+    [Fact]
+    public async Task Every_Report_About_One_Reading_Is_Still_One_Page_View()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            Engaged(siteId, Midnight.AddHours(1), "visitor-a", "/long-read"),
+            Engaged(siteId, Midnight.AddHours(1).AddMinutes(1), "visitor-a", "/long-read"),
+            Engaged(siteId, Midnight.AddHours(1).AddMinutes(2), "visitor-a", "/long-read"));
+
+        var pages = await PageOfAddresses(siteId);
+
+        pages.Pages.Should().ContainSingle().Which.PageViews.Should().Be(1);
     }
 
     [Fact]

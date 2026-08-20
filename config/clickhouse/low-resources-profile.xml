@@ -28,6 +28,15 @@
       <max_bytes_before_external_group_by>536870912</max_bytes_before_external_group_by>
       <max_bytes_before_external_sort>536870912</max_bytes_before_external_sort>
 
+      <!--
+        The same principle applied to how many questions are in flight rather than how large one
+        is. Arriving to find the server's concurrency ceiling full, a question waits here for a
+        slot instead of being refused; only a wait longer than this is answered with an error.
+        Left at its default of nought the surplus is refused the instant it arrives, which reaches
+        the reader as a card saying something went wrong on a server that is merely busy.
+      -->
+      <queue_max_wait_ms>5000</queue_max_wait_ms>
+
       <!-- Parallel parsing and formatting buy throughput with memory this machine has not got. -->
       <input_format_parallel_parsing>0</input_format_parallel_parsing>
       <output_format_parallel_formatting>0</output_format_parallel_formatting>

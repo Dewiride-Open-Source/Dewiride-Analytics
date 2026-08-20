@@ -57,6 +57,16 @@ public interface ITelemetryQueries
         SiteLocationsQuery query,
         CancellationToken cancellationToken);
 
+    /// <summary>Returns one slice of where a window's visitors came from, busiest first.</summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The window, the grouping, and which slice of the list to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The slice, with the figures the whole window gives it its meaning against.</returns>
+    Task<SiteSources> GetSiteSourcesAsync(
+        TenantScope scope,
+        SiteSourcesQuery query,
+        CancellationToken cancellationToken);
+
     /// <summary>Returns one slice of what a site's visitors operated, most pressed first.</summary>
     /// <param name="scope">Proof the caller may read this site.</param>
     /// <param name="query">The window, the grouping, and which slice of the list to return.</param>
@@ -127,12 +137,15 @@ public interface ITelemetryQueries
         SiteVisitFlowQuery query,
         CancellationToken cancellationToken);
 
-    /// <summary>Returns the pages one visit went through, in order.</summary>
+    /// <summary>Returns what one visit was, and what it did.</summary>
     /// <param name="scope">Proof the caller may read this site.</param>
     /// <param name="query">Which visit, and how many steps to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The steps, oldest first. Empty where the identity names no visit on this site.</returns>
-    Task<ImmutableArray<VisitStep>> GetSiteVisitJourneyAsync(
+    /// <returns>
+    /// The steps, oldest first, and the account of who the visit was. Empty, and knowing nothing,
+    /// where the identity names no visit on this site.
+    /// </returns>
+    Task<VisitJourney> GetSiteVisitJourneyAsync(
         TenantScope scope,
         SiteVisitJourneyQuery query,
         CancellationToken cancellationToken);
@@ -355,6 +368,39 @@ public readonly record struct SiteLocationRow(
     long PageViews);
 
 /// <summary>
+/// One slice of where a window's visitors came from, with the whole window's figures.
+/// </summary>
+/// <param name="TotalVisitors">Visitors across every source in the window, not only this slice.</param>
+/// <param name="TotalSources">How many sources the window holds, so a slice can say what it is part of.</param>
+/// <param name="MostVisitors">The busiest source's count, which every bar on the list is drawn against.</param>
+/// <param name="Sources">The slice itself, busiest first.</param>
+public sealed record SiteSources(
+    long TotalVisitors,
+    long TotalSources,
+    long MostVisitors,
+    ImmutableArray<SiteSourceRow> Sources);
+
+/// <summary>
+/// One source and how many of a window's visitors it sent.
+/// </summary>
+/// <param name="Source">
+/// The sending site's address, or that address with the sending page's path after it, depending
+/// on how the list was grouped. Empty when the arrival named nowhere, which is a row on the list
+/// rather than one to be dropped.
+/// </param>
+/// <param name="Site">
+/// The sending site's address on its own. The same as <paramref name="Source"/> on a site list,
+/// and what lets a page list show where a page belongs without parsing the address on screen.
+/// </param>
+/// <param name="Visitors">Distinct visitors, on the same daily terms as the headline count.</param>
+/// <param name="PageViews">Pages those visitors went on to be delivered.</param>
+public readonly record struct SiteSourceRow(
+    string Source,
+    string Site,
+    long Visitors,
+    long PageViews);
+
+/// <summary>
 /// One kind of device and how much of a window's audience was on it.
 /// </summary>
 /// <remarks>
@@ -572,6 +618,68 @@ public readonly record struct VisitStep(
     int? EngagedMs,
     int? ScrollDepthPercent,
     VisitPress? Press);
+
+/// <summary>
+/// One visit: who it was, and what it did.
+/// </summary>
+/// <remarks>
+/// The two halves are answered together because they are one question. A list of pages says what
+/// happened and a verdict says what the engine made of it; neither says whether the reader came
+/// from a search, where they were, or what they were reading on — and those are what turn a row on
+/// a list into somebody a site's owner can picture.
+/// </remarks>
+/// <param name="Context">What can be said about the visitor, which may be nothing.</param>
+/// <param name="Steps">What the visit did, oldest first.</param>
+public sealed record VisitJourney(VisitContext Context, ImmutableArray<VisitStep> Steps)
+{
+    /// <summary>A visit nothing is known about, which is what an unknown identity answers with.</summary>
+    public static VisitJourney None { get; } = new(VisitContext.Nothing, []);
+}
+
+/// <summary>
+/// What can be said about the visitor behind one visit.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Every field is empty rather than absent where nothing established it, and empty is a fact
+/// this product states rather than hides: a site behind something that does not pass the visitor's
+/// address along places nobody at all, and a visit only its own server saw carries no browser.
+/// </para>
+/// <para>
+/// Each is settled as the earliest report of the visit that carried one. A visit watched by both a
+/// tracker in the browser and a reporter on the site's own server holds reports that resolved
+/// these and reports that did not, and taking the first that did is both correct and repeatable —
+/// a panel that named a different browser on each reading would be a defect.
+/// </para>
+/// </remarks>
+/// <param name="SendingSite">
+/// The site that sent them, named from the catalogue where it is in it and left as its own address
+/// where it is not. Empty where the browser named nowhere.
+/// </param>
+/// <param name="Channel">What kind of thing that was. <see cref="SourceChannel.Direct"/> where nothing said.</param>
+/// <param name="CountryCode">Two-letter country code, or empty.</param>
+/// <param name="Town">
+/// Town or city, as the free geolocation data spells it, which is English. An estimate from the
+/// visitor's network rather than a position from their device. Empty where nothing placed them.
+/// </param>
+/// <param name="NetworkOwner">Who runs the network the visit came over, or empty.</param>
+/// <param name="Device">What sort of device it was, which is <see cref="DeviceClass.Unknown"/> where nothing said.</param>
+/// <param name="Browser">What it was read with, or empty.</param>
+/// <param name="OperatingSystem">What that was running on, or empty.</param>
+public readonly record struct VisitContext(
+    string SendingSite,
+    SourceChannel Channel,
+    string CountryCode,
+    string Town,
+    string NetworkOwner,
+    DeviceClass Device,
+    string Browser,
+    string OperatingSystem)
+{
+    /// <summary>An account that establishes nothing, which is a correct answer rather than a gap.</summary>
+    public static VisitContext Nothing { get; } =
+        new(string.Empty, SourceChannel.Direct, string.Empty, string.Empty, string.Empty, DeviceClass.Unknown, string.Empty, string.Empty);
+}
 
 /// <summary>
 /// One control a visitor operated, as it appears inside a visit.

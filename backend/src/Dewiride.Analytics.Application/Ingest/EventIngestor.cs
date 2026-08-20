@@ -1,6 +1,7 @@
 using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Domain.Telemetry;
+using Microsoft.Extensions.Logging;
 
 namespace Dewiride.Analytics.Application.Ingest;
 
@@ -18,12 +19,14 @@ namespace Dewiride.Analytics.Application.Ingest;
 /// <param name="networkLookup">Resolves where the visitor's address is and whose network it is on.</param>
 /// <param name="eventSink">Durable storage for accepted events.</param>
 /// <param name="timeProvider">Source of the authoritative server timestamp.</param>
-public sealed class EventIngestor(
+/// <param name="logger">Records why a report was turned away, for the operator alone.</param>
+public sealed partial class EventIngestor(
     ISiteCatalog siteCatalog,
     IVisitorKeyFactory visitorKeyFactory,
     INetworkLookup networkLookup,
     IEventSink eventSink,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ILogger<EventIngestor> logger)
 {
     /// <summary>Longest URL accepted. Anything beyond this is a payload to be rejected, not a page.</summary>
     private const int MaxUrlLength = 2048;
@@ -70,6 +73,12 @@ public sealed class EventIngestor(
     private const byte MaxScrollDepthPercent = 100;
 
     /// <summary>
+    /// Longest host written to the log. Past this the value is not a hostname somebody has
+    /// misconfigured, and there is nothing to be learnt from the rest of it.
+    /// </summary>
+    private const int MaxLoggedHostLength = 128;
+
+    /// <summary>
     /// Longest town name stored. Generous enough for the longest real one and short enough that
     /// nothing arriving from the reference data can become a payload.
     /// </summary>
@@ -99,8 +108,23 @@ public sealed class EventIngestor(
         }
 
         var site = await siteCatalog.FindAsync(command.SiteId, cancellationToken).ConfigureAwait(false);
-        if (site is null || !IsOriginPermitted(site, context.RequestOrigin, url.Host))
+        if (site is null)
         {
+            Log.UnknownSite(logger, command.SiteId);
+            return IngestOutcome.Rejected;
+        }
+
+        if (!IsOriginPermitted(site, context.RequestOrigin, url.Host, out var candidateHost))
+        {
+            // Asked before the host is rendered rather than after. This address is public and
+            // takes no credential, so on a refusal that nobody has turned the log on for, the
+            // work of making an attacker's value safe to write is work an attacker chose.
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                var refusedHost = Loggable(candidateHost);
+                Log.OriginRefused(logger, refusedHost, site.Domain, site.Id);
+            }
+
             return IngestOutcome.Rejected;
         }
 
@@ -137,7 +161,9 @@ public sealed class EventIngestor(
 
         // Resolved here rather than by a later job, because the address it is resolved from is
         // erased 72 hours after this row is written. An attribute missed on the way in cannot be
-        // recovered afterwards: there would be nothing left to recover it from.
+        // recovered afterwards: there would be nothing left to recover it from. It also has to be
+        // known before the visitor key below, which on a rented network is derived from the
+        // network rather than from the address.
         var network = networkLookup.Resolve(context.IpAddress);
         var client = ClientProfiler.Profile(context.UserAgent, context.Hints);
 
@@ -150,7 +176,11 @@ public sealed class EventIngestor(
             ServerTimestamp = receivedAt,
             ClientTimestamp = clientTimestamp,
             ClockSkewMs = CalculateClockSkewMs(clientTimestamp, receivedAt),
-            VisitorKey = visitorKeyFactory.Derive(site.Id, context.IpAddress, context.UserAgent, receivedAt),
+            VisitorKey = visitorKeyFactory.Derive(
+                site.Id,
+                VisitorConnection.Identifying(context.IpAddress, network.AutonomousSystem),
+                context.UserAgent,
+                receivedAt),
             Host = url.Host,
             Path = url.AbsolutePath,
             QueryString = site.RetainQueryStrings ? NullIfEmpty(url.Query) : null,
@@ -212,21 +242,66 @@ public sealed class EventIngestor(
     /// when no Origin header is present, because several capture surfaces are server-side and
     /// legitimately have no browser origin.
     /// </remarks>
-    private static bool IsOriginPermitted(SiteSnapshot site, string? requestOrigin, string urlHost)
+    /// <param name="site">The site the report claims to belong to.</param>
+    /// <param name="requestOrigin">The origin the request arrived with, if any.</param>
+    /// <param name="urlHost">The host of the page the report describes.</param>
+    /// <param name="candidate">The host that was judged, so a refusal can say what it saw.</param>
+    /// <returns>Whether the report may be stored against this site.</returns>
+    private static bool IsOriginPermitted(
+        SiteSnapshot site,
+        string? requestOrigin,
+        string urlHost,
+        out string? candidate)
     {
-        var candidate = NormalizeHost(requestOrigin) ?? NormalizeHost(urlHost);
-        if (candidate is null)
+        var judged = NormalizeHost(requestOrigin) ?? NormalizeHost(urlHost);
+        candidate = judged;
+
+        if (judged is null)
         {
             return false;
         }
 
         if (site.AllowedOrigins.Length > 0)
         {
-            return site.AllowedOrigins.Any(allowed => HostMatches(candidate, allowed));
+            return site.AllowedOrigins.Any(allowed => HostMatches(judged, allowed));
         }
 
-        return HostMatches(candidate, site.Domain);
+        return HostMatches(judged, site.Domain);
     }
+
+    /// <summary>
+    /// Renders a host safe to write to a log.
+    /// </summary>
+    /// <remarks>
+    /// The value comes from an Origin header or from the address a report gave for itself, so it
+    /// is written by whoever sent the request and not by a browser this product trusts. A log is
+    /// a line-oriented file that people and collectors both read as one record per line, so a
+    /// newline in it forges records; anything outside what a hostname is made of is replaced
+    /// rather than escaped, because none of it can be a real answer to this question anyway.
+    /// </remarks>
+    /// <param name="host">The host that was judged.</param>
+    /// <returns>A bounded string containing only characters a hostname may hold.</returns>
+    private static string Loggable(string? host)
+    {
+        if (string.IsNullOrEmpty(host))
+        {
+            return "(none)";
+        }
+
+        var length = Math.Min(host.Length, MaxLoggedHostLength);
+        return string.Create(length, host, static (span, source) =>
+        {
+            for (var index = 0; index < span.Length; index++)
+            {
+                var character = source[index];
+                span[index] = IsHostCharacter(character) ? character : '?';
+            }
+        });
+    }
+
+    private static bool IsHostCharacter(char character) =>
+        char.IsAsciiLetterOrDigit(character)
+        || character is '.' or '-' or ':' or '[' or ']' or '_';
 
     private static bool HostMatches(string candidate, string allowed) =>
         string.Equals(candidate, allowed, StringComparison.Ordinal)
@@ -307,4 +382,42 @@ public sealed class EventIngestor(
     }
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+    /// <summary>
+    /// Why a report was turned away, written for whoever runs the installation.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only here. The collector's answer stays byte-for-byte the same whatever it made of a
+    /// request, because telling a caller apart a real site identifier from an invented one is
+    /// exactly what it refuses to do — so the reason is put where the machine's owner can read it
+    /// and the sender cannot.
+    /// </para>
+    /// <para>
+    /// Both are written at debug level, and that is a decision rather than an oversight: the
+    /// address is public and unauthenticated, so anything logged for every refused request is a
+    /// log file whose size is chosen by whoever is scanning the internet that day. They are here
+    /// to be turned on for the ten minutes it takes to find out why a freshly installed snippet
+    /// is reporting nothing.
+    /// </para>
+    /// </remarks>
+    private static partial class Log
+    {
+        [LoggerMessage(
+            EventId = 4101,
+            Level = LogLevel.Debug,
+            Message = "Report refused: no site {SiteId} on this installation.")]
+        public static partial void UnknownSite(ILogger logger, Guid siteId);
+
+        [LoggerMessage(
+            EventId = 4102,
+            Level = LogLevel.Debug,
+            Message = "Report refused: site {SiteId} is registered as {Domain} and accepts only "
+                + "that address and addresses below it, so a report from {Candidate} is not stored.")]
+        public static partial void OriginRefused(
+            ILogger logger,
+            string candidate,
+            string domain,
+            Guid siteId);
+    }
 }

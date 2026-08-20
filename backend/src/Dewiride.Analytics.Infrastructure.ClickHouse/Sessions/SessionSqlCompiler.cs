@@ -15,17 +15,36 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
 /// and every value is bound.
 /// </para>
 /// <para>
-/// The grouping itself, and the marking of a page's second reporter, are written in
-/// <see cref="VisitGrouping"/> rather than here, because more than one statement now needs them
-/// and a visit has to mean the same thing in all of them. What belongs to this statement alone is
-/// what it makes of a visit once it has one: the evidence the detection engine is allowed to
-/// reason about, and nothing else.
+/// The grouping into visits and into the pages they went to, and the marking of a page's second
+/// reporter, are written in <see cref="VisitGrouping"/> rather than here, because more than one
+/// statement now needs them and a visit — and a page within one — has to mean the same thing in
+/// all of them. That is what keeps the pages the engine judged and the pages a reader is shown for
+/// the same visit from being two different answers. What belongs to this statement alone is what
+/// it makes of a visit once it has one: the evidence the detection engine is allowed to reason
+/// about, and nothing else.
 /// </para>
 /// <para>
 /// Activity is read a full idle timeout past the end of the window. That is what makes "this visit
 /// is over" a fact rather than an artefact of where the reading stopped: a visit whose last
 /// activity falls before the end of the window has been watched falling silent for long enough to
 /// know nothing more is coming.
+/// </para>
+/// <para>
+/// It is read a full idle timeout before the start of the window as well, and that is what stops a
+/// visit being counted twice. The caller works forward through a site in windows, and its bookmark
+/// stops at the earliest visit still in progress rather than at the end of the window it just
+/// read — so the next window routinely opens part-way through a visit that has already been judged.
+/// Read from the window's own start, the remainder of that visit looks like a whole one that began
+/// at whichever report happened to fall first inside it, and it is judged a second time under a
+/// second identity, usually with too little left in it to say anything. The reach back is what
+/// gives that remainder its true beginning, which then falls before the window and is dropped by
+/// the filter below.
+/// </para>
+/// <para>
+/// One idle timeout is exactly enough, and not by estimation. A visit is a chain of reports each
+/// less than an idle timeout apart, so a visit with a report on both sides of the window's start
+/// must have one within an idle timeout before it — which is the report that carries the whole
+/// chain back and puts the reconstructed beginning outside the window.
 /// </para>
 /// </remarks>
 public static class SessionSqlCompiler
@@ -53,7 +72,7 @@ public static class SessionSqlCompiler
         /// <summary>Whether the visit is over.</summary>
         public const int IsClosed = 3;
 
-        /// <summary>Exact number of pages asked for.</summary>
+        /// <summary>Exact number of pages the visit went to.</summary>
         public const int PageCount = 4;
 
         /// <summary>
@@ -79,7 +98,16 @@ public static class SessionSqlCompiler
         /// <summary>Widest viewport reported.</summary>
         public const int ViewportWidth = 9;
 
-        /// <summary>Milliseconds the pages were in front of somebody.</summary>
+        /// <summary>
+        /// Milliseconds the pages were in front of somebody, added up across the visit.
+        /// </summary>
+        /// <remarks>
+        /// One reading per page rather than one per report. A tracker reports the time a page has
+        /// held somebody so far, over and over while it holds them, so each report restates the
+        /// last one with more on the end; adding the reports together would count the first minute
+        /// of a long read once for every report that mentioned it and hand the engine an afternoon
+        /// where there was a quarter of an hour.
+        /// </remarks>
         public const int EngagedMs = 10;
 
         /// <summary>Furthest any page was scrolled.</summary>
@@ -102,6 +130,18 @@ public static class SessionSqlCompiler
 
         /// <summary>How many of those carried one.</summary>
         public const int WebDriverSeen = 17;
+
+        /// <summary>Routing number of the network the visit arrived over, or nought.</summary>
+        /// <remarks>
+        /// Taken as the largest seen rather than the first, so a visit whose reports arrived over
+        /// several addresses is judged on a network that carried it rather than on nothing. Nought
+        /// is what an unresolved address reads as, and the largest of nought and a real number is
+        /// the real one.
+        /// </remarks>
+        public const int AutonomousSystem = 18;
+
+        /// <summary>Who runs that network, for the reader rather than for the rules.</summary>
+        public const int NetworkOwner = 19;
     }
 
     /// <summary>
@@ -133,36 +173,48 @@ public static class SessionSqlCompiler
                     scroll_depth_percent,
                     had_pointer_interaction,
                     had_keyboard_interaction,
-                    declared_web_driver
+                    declared_web_driver,
+                    autonomous_system,
+                    network_owner
                 FROM events
                 WHERE site_id = {site_id:UUID}
-                  AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                  AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64} - {idle_seconds:Int64} * 1000, 'UTC')
                   AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {idle_seconds:Int64} * 1000, 'UTC')
             ),
             {{ReconciledEvents.Reconciliation}},
-            {{VisitGrouping.Of(VisitGrouping.EveryVisitor)}}
+            {{VisitGrouping.Of(VisitGrouping.EveryVisitor)}},
+            attended AS
+            (
+                SELECT
+                    *,
+                    max(engaged_ms) OVER (
+                        PARTITION BY visitor_key, visit_ordinal, path, page_ordinal) AS page_engaged_ms
+                FROM opened
+            )
         SELECT
             concat(visitor_key, ':', toString(toUnixTimestamp64Milli(min(server_ts)))) AS session_key,
             min(server_ts) AS started_at,
             max(server_ts) AS ended_at,
             toBool(max(server_ts) < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')) AS is_closed,
-            toUInt32(countIf(kind = 'PageView' AND NOT is_second_sighting)) AS page_count,
+            toUInt32(countIf(opens_page)) AS page_count,
             groupArraySortedIf({max_requests:UInt32})(
                 (toUnixTimestamp64Milli(server_ts), path, status_code),
-                kind = 'PageView' AND NOT is_second_sighting) AS requests,
+                opens_page) AS requests,
             groupUniqArray(toString(surface)) AS surfaces,
             anyIf(user_agent, user_agent != '') AS user_agent,
             anyIf(language, language != '') AS language,
             max(viewport_width) AS viewport_width,
-            sum(engaged_ms) AS engaged_ms,
+            sumIf(page_engaged_ms, opens_page) AS engaged_ms,
             max(scroll_depth_percent) AS max_scroll_depth_percent,
             toUInt32(countIf(had_pointer_interaction != 'Unobserved')) AS pointer_observed,
             toUInt32(countIf(had_pointer_interaction = 'Yes')) AS pointer_seen,
             toUInt32(countIf(had_keyboard_interaction != 'Unobserved')) AS keyboard_observed,
             toUInt32(countIf(had_keyboard_interaction = 'Yes')) AS keyboard_seen,
             toUInt32(countIf(declared_web_driver != 'Unobserved')) AS web_driver_observed,
-            toUInt32(countIf(declared_web_driver = 'Yes')) AS web_driver_seen
-        FROM counted
+            toUInt32(countIf(declared_web_driver = 'Yes')) AS web_driver_seen,
+            max(autonomous_system) AS autonomous_system,
+            anyIf(network_owner, network_owner != '') AS network_owner
+        FROM attended
         GROUP BY visitor_key, visit_ordinal
         HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
            AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')

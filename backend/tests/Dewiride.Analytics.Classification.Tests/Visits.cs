@@ -58,6 +58,24 @@ internal static class Visits
         UserAgent = userAgent,
     };
 
+    /// <summary>
+    /// A visit that behaves exactly like a reader, from a computer rented in a datacentre.
+    /// </summary>
+    /// <remarks>
+    /// The case this product exists to get right, and the one it got wrong in the field: a real
+    /// browser driven by a script, reading for a minute and scrolling to the bottom of the page,
+    /// arriving from a rented server. Every behavioural reading here says person; only where it
+    /// came from says otherwise.
+    /// </remarks>
+    /// <param name="autonomousSystem">The network it arrived over.</param>
+    public static SessionEvidence AReaderFromARentedServer(uint autonomousSystem = 45102) =>
+        AReader() with
+        {
+            SessionKey = "rented",
+            AutonomousSystem = autonomousSystem,
+            NetworkOwner = "ALIBABA-CN-NET Alibaba US Technology Co., Ltd.",
+        };
+
     /// <summary>Something sweeping the site for a way in.</summary>
     public static SessionEvidence AScanner() => new()
     {

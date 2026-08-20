@@ -7,6 +7,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import { EVERY_JOURNEY, type JourneyFilters } from '@/lib/analytics/journeys';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
 import {
   addSite,
@@ -20,6 +21,7 @@ import {
   readPageEngagement,
   readActions,
   readSoftware,
+  readSources,
   readTraffic,
   readVisitJourney,
   readVisitPages,
@@ -34,6 +36,7 @@ import type {
   ActionGrouping,
   Session,
   SoftwareGrouping,
+  SourceGrouping,
   VisitPosition,
 } from '@/lib/api/schemas';
 import {
@@ -47,6 +50,7 @@ import {
   pageEngagementKey,
   actionsKey,
   softwareKey,
+  sourcesKey,
   trafficKey,
   visitJourneyKey,
   visitPagesKey,
@@ -132,6 +136,29 @@ export function useLocations(
   return useQuery({
     queryKey: locationsKey(siteId, window, grouping, limit, offset),
     queryFn: () => readLocations(siteId, window, grouping, limit, offset),
+    placeholderData: keepPreviousData,
+    retry: false,
+    staleTime: FRESH_FOR,
+  });
+}
+
+/**
+ * One slice of where a period's visitors came from.
+ *
+ * Kept on screen while the next slice is read, and while the reader switches between sending
+ * sites and sending pages, so neither move collapses the card and shoves everything below it up
+ * the page.
+ */
+export function useSources(
+  siteId: string,
+  window: AnalyticsWindow,
+  grouping: SourceGrouping,
+  limit: number,
+  offset: number,
+) {
+  return useQuery({
+    queryKey: sourcesKey(siteId, window, grouping, limit, offset),
+    queryFn: () => readSources(siteId, window, grouping, limit, offset),
     placeholderData: keepPreviousData,
     retry: false,
     staleTime: FRESH_FOR,
@@ -255,12 +282,20 @@ export function useTraffic(siteId: string, window: AnalyticsWindow) {
  * One slice of a website's judged visits, newest first, with the evidence behind each verdict.
  *
  * The slice on screen is kept while the next is read, so moving through the list does not empty
- * the card and drop everything below it up the page between one slice and the next.
+ * the card and drop everything below it up the page between one slice and the next — and the same
+ * while a reader narrows the list, which is otherwise the moment the screen collapses under the
+ * controls they are still using.
  */
-export function useVisits(siteId: string, window: AnalyticsWindow, limit: number, offset: number) {
+export function useVisits(
+  siteId: string,
+  window: AnalyticsWindow,
+  limit: number,
+  offset: number,
+  filters: JourneyFilters = EVERY_JOURNEY,
+) {
   return useQuery({
-    queryKey: visitsKey(siteId, window, limit, offset),
-    queryFn: () => readVisits(siteId, window, limit, offset),
+    queryKey: visitsKey(siteId, window, limit, offset, filters),
+    queryFn: () => readVisits(siteId, window, limit, offset, filters),
     retry: false,
     placeholderData: keepPreviousData,
     staleTime: JUDGED_FRESH_FOR,

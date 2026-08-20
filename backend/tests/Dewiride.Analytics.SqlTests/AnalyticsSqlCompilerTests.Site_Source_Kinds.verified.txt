@@ -1,0 +1,152 @@
+﻿--- statement ---
+WITH
+    arrived AS
+    (
+        SELECT
+            kind,
+            surface,
+            path,
+            visitor_key,
+            correlation_id,
+            referrer AS source_address,
+            if(
+                referrer_domain != ''
+                AND referrer_domain != {site_domain:String}
+                AND NOT endsWith(referrer_domain, concat('.', {site_domain:String})),
+                if(
+                    startsWith(referrer_domain, 'www.'),
+                    substring(referrer_domain, 5),
+                    referrer_domain),
+                '') AS sending_host
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    ),
+    named AS
+    (
+        SELECT
+            *,
+            splitByChar('.', sending_host) AS labels,
+            multiIf(
+                length(labels) < 2, sending_host,
+                length(labels) > 2
+                    AND has({second_levels:Array(String)}, arrayElement(labels, -2)),
+                    arrayElement(labels, -3),
+                arrayElement(labels, -2)) AS sending_name,
+            if(
+                has({source_keys:Array(String)}, sending_host),
+                sending_host,
+                sending_name) AS catalogue_key
+        FROM arrived
+    ),
+    windowed AS
+    (
+        SELECT
+            kind,
+            surface,
+            path,
+            visitor_key,
+            correlation_id,
+            source_address,
+            sending_host,
+            transform(
+                catalogue_key,
+                {source_keys:Array(String)},
+                {source_names:Array(String)},
+                sending_host) AS source_site,
+            if(
+                sending_host = '',
+                '',
+                transform(
+                    catalogue_key,
+                    {source_keys:Array(String)},
+                    {source_channels:Array(String)},
+                    'link')) AS source_channel
+        FROM named
+    ),
+    echoed AS
+    (
+        SELECT
+            minIf(visitor_key, surface IN ('BrowserTracker', 'NoScriptPixel')) AS browser_key,
+            minIf(visitor_key, surface NOT IN ('BrowserTracker', 'NoScriptPixel')) AS reported_key
+        FROM windowed
+        WHERE correlation_id != ''
+          AND visitor_key != ''
+        GROUP BY correlation_id
+        HAVING browser_key != ''
+           AND reported_key != ''
+    ),
+    linked AS
+    (
+        SELECT
+            reported_key,
+            min(browser_key) AS browser_key
+        FROM echoed
+        GROUP BY reported_key
+    ),
+    identified AS
+    (
+        SELECT
+            windowed.* EXCEPT (visitor_key),
+            if(linked.browser_key != '' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'), linked.browser_key, windowed.visitor_key) AS visitor_key
+        FROM windowed
+        LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
+    ),
+    sourced AS
+    (
+        SELECT
+            visitor_key,
+            anyIf(source, source != '') AS source,
+            anyIf(site, site != '') AS site,
+            toInt64(sum(page_views)) AS page_views
+        FROM
+        (
+            SELECT
+                visitor_key,
+                path,
+                anyIf(source_channel, source_site != '') AS source,
+                anyIf('', source_site != '') AS site,
+                greatest(
+                    countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),
+                    toUInt64(countIf(kind != 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')) > 0),
+                    countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) AS delivered,
+                if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
+            FROM identified
+            WHERE visitor_key != ''
+            GROUP BY visitor_key, path
+        )
+        GROUP BY visitor_key
+    )
+SELECT
+    source,
+    site,
+    visitors,
+    page_views,
+    toInt64(sum(visitors) OVER ()) AS total_visitors,
+    toInt64(count() OVER ()) AS total_sources,
+    toInt64(max(visitors) OVER ()) AS most_visitors
+FROM
+(
+    SELECT
+        source,
+        site,
+        toInt64(count()) AS visitors,
+        toInt64(sum(page_views)) AS page_views
+    FROM sourced
+    GROUP BY source, site
+)
+ORDER BY visitors DESC, source, site
+LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777593600000
+to_ms = 1778198400000
+site_domain = 'example.com'
+second_levels = ['ac', 'co', 'com', 'edu', 'go', 'gob', 'gouv', 'gov', 'govt', 'ne', 'net', 'or', 'org']
+source_keys = ['mail.google.com', 'news.google.com', 'translate.google.com', 'gemini.google.com', 'chat.openai.com', 'copilot.microsoft.com', 'com.google.android.gm', 'google', 'bing', 'yahoo', 'duckduckgo', 'ecosia', 'qwant', 'startpage', 'brave', 'kagi', 'mojeek', 'marginalia', 'searx', 'yandex', 'baidu', 'naver', 'daum', 'seznam', 'sogou', 'ask', 'aol', 'lycos', 'chatgpt', 'openai', 'perplexity', 'claude', 'copilot', 'phind', 'poe', 'facebook', 'instagram', 'threads', 'twitter', 'x', 't', 'linkedin', 'lnkd', 'reddit', 'youtube', 'youtu', 'pinterest', 'tiktok', 'bsky', 'mastodon', 'tumblr', 'vk', 'weibo', 'quora']
+source_names = ['Gmail', 'Google News', 'Google Translate', 'Gemini', 'ChatGPT', 'Copilot', 'Gmail', 'Google', 'Bing', 'Yahoo', 'DuckDuckGo', 'Ecosia', 'Qwant', 'Startpage', 'Brave Search', 'Kagi', 'Mojeek', 'Marginalia', 'SearXNG', 'Yandex', 'Baidu', 'Naver', 'Daum', 'Seznam', 'Sogou', 'Ask', 'AOL', 'Lycos', 'ChatGPT', 'ChatGPT', 'Perplexity', 'Claude', 'Copilot', 'Phind', 'Poe', 'Facebook', 'Instagram', 'Threads', 'X', 'X', 'X', 'LinkedIn', 'LinkedIn', 'Reddit', 'YouTube', 'YouTube', 'Pinterest', 'TikTok', 'Bluesky', 'Mastodon', 'Tumblr', 'VK', 'Weibo', 'Quora']
+source_channels = ['link', 'link', 'link', 'assistant', 'assistant', 'assistant', 'link', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social']
+limit = 10
+offset = 0

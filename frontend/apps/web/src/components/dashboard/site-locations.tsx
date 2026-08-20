@@ -3,6 +3,7 @@
 import { MapPin } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { type ReactNode, useMemo, useState } from 'react';
+import { PlaceCredit } from '@/components/dashboard/place-credit';
 import {
   ListEmpty,
   ListSwitch,
@@ -121,6 +122,7 @@ function PlaceList({
           options={[
             { value: 'country', label: t('grouping.country') },
             { value: 'town', label: t('grouping.town') },
+            { value: 'network', label: t('grouping.network') },
           ]}
           value={grouping}
           onChange={onRegroup}
@@ -169,30 +171,24 @@ function PlaceList({
       />
 
       {/*
-        Required rather than courteous. The data behind these rows is published under a licence
-        whose one condition is a link back from any page that shows results from it, so this line
-        goes wherever the rows go. What a town is worth is said beside it only when towns are
-        what is on screen — a caveat about something a reader is not looking at is noise.
+        A network is not a place, so the list says once what one is — several visitors arriving from
+        one company's datacentre are a program rather than an audience, and that is the whole reason
+        this view exists. The place data is credited only where a place is what is on screen, and the
+        routing data is credited in its stead where it is not.
       */}
-      <p className="text-xs text-foreground-subtle">
-        {t.rich('attribution', { source: creditLink })}
-        {grouping === 'town' ? ` ${t('estimate')}` : null}
-      </p>
+      {grouping === 'network' ? (
+        <>
+          <p className="rounded-md bg-surface-muted px-3 py-2 text-sm text-foreground-muted">
+            {t('networksNote')}
+          </p>
+          <p className="text-xs text-foreground-subtle">
+            {t.rich('attributionNetworks', { source: routingCredit })}
+          </p>
+        </>
+      ) : (
+        <PlaceCredit note={grouping === 'town' ? t('estimate') : undefined} />
+      )}
     </Card>
-  );
-}
-
-/** The link back the place data's licence requires wherever its results are shown. */
-function creditLink(label: ReactNode) {
-  return (
-    <a
-      href="https://db-ip.com"
-      target="_blank"
-      rel="noreferrer"
-      className="underline underline-offset-2 hover:text-foreground-muted"
-    >
-      {label}
-    </a>
   );
 }
 
@@ -217,6 +213,16 @@ function PlaceName({ place, grouping, named }: PlaceNameProps) {
   const t = useTranslations('dashboard.locations');
   const country = named(place.countryCode);
 
+  // A network carries no country by design, and its name is written by whoever holds the routing
+  // number rather than by this product — so it reaches the screen as text and nothing else.
+  if (grouping === 'network') {
+    return place.place === '' ? (
+      <span className="text-foreground-muted">{t('unknownNetwork')}</span>
+    ) : (
+      <bdi>{place.place}</bdi>
+    );
+  }
+
   if (grouping === 'country') {
     return country ?? <span className="text-foreground-muted">{t('unknown')}</span>;
   }
@@ -234,6 +240,20 @@ function PlaceName({ place, grouping, named }: PlaceNameProps) {
       {place.place}
       {country ? <span className="text-foreground-muted">, {country}</span> : null}
     </>
+  );
+}
+
+/** The link back the routing data's licence asks for wherever its results are shown. */
+function routingCredit(label: ReactNode) {
+  return (
+    <a
+      href="https://iptoasn.com"
+      target="_blank"
+      rel="noreferrer"
+      className="underline underline-offset-2 hover:text-foreground-muted"
+    >
+      {label}
+    </a>
   );
 }
 

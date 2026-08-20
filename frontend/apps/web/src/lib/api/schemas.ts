@@ -84,7 +84,7 @@ export const pagesSchema = z.object({
 });
 
 /** What a row of a place list stands for. */
-export const locationGroupingSchema = z.enum(['country', 'town']);
+export const locationGroupingSchema = z.enum(['country', 'town', 'network']);
 
 export const siteLocationSchema = z.object({
   place: z.string(),
@@ -112,6 +112,46 @@ export const locationsSchema = z.object({
   totalPlaces: z.number().int(),
   mostVisitors: z.number().int(),
   places: z.array(siteLocationSchema),
+});
+
+/** What a row of a source list stands for. */
+export const sourceGroupingSchema = z.enum(['kind', 'site', 'page']);
+
+/**
+ * The kinds of thing that send a visitor.
+ *
+ * A closed set, and each name is a phrase in the message catalogue. A list grouped this way uses
+ * the same empty name every other grouping does for an arrival that named nowhere, so one row is
+ * written one way wherever it appears.
+ */
+export const sourceKindSchema = z.enum(['search', 'assistant', 'social', 'link']);
+
+export const siteSourceSchema = z.object({
+  source: z.string(),
+  site: z.string(),
+  visitors: z.number().int(),
+  pageViews: z.number().int(),
+});
+
+/**
+ * One slice of where a period's visitors came from before they arrived.
+ *
+ * Counted per person on the same terms as the place list, and a person is credited to one source:
+ * only a visit's first page names anywhere else, and everything after it was reached from the
+ * website being measured. The website's own address takes no part, so it never heads its own list.
+ *
+ * Arrivals that named nowhere are a row with an empty name rather than an absence. Typing an
+ * address in, opening a bookmark and following a link from an application all look the same here,
+ * and together they are usually the largest row on the list.
+ */
+export const sourcesSchema = z.object({
+  from: timestamp,
+  to: timestamp,
+  grouping: sourceGroupingSchema,
+  visitors: z.number().int(),
+  totalSources: z.number().int(),
+  mostVisitors: z.number().int(),
+  sources: z.array(siteSourceSchema),
 });
 
 /**
@@ -325,9 +365,37 @@ export const visitJourneyStepSchema = z.object({
   press: visitPressSchema.nullable(),
 });
 
-/** What one visit did, in the order it did it. */
+/**
+ * What sort of thing sent a visitor, as one visit reports it.
+ *
+ * Wider than the list a source card is grouped by, because a single visit has to be able to say
+ * that nothing named a sender — which on a list is a row rather than a kind.
+ */
+export const visitSourceKindSchema = z.enum(['direct', 'search', 'assistant', 'social', 'link']);
+
+/**
+ * What could be established about the visitor behind one visit.
+ *
+ * Every field is empty rather than absent where nothing established it, and empty is an answer
+ * this dashboard writes out rather than a gap it leaves. A site behind something that does not
+ * pass the visitor's address along places nobody at all; a visit only a website's own server saw
+ * carries no browser. Neither is a fault, and neither is a reason to show a blank.
+ */
+export const visitContextSchema = z.object({
+  source: z.string(),
+  kind: visitSourceKindSchema,
+  countryCode: z.string(),
+  town: z.string(),
+  network: z.string(),
+  device: deviceKindSchema,
+  browser: z.string(),
+  system: z.string(),
+});
+
+/** One visit: who it was, and what it did in the order it did it. */
 export const visitJourneySchema = z.object({
   visit: z.string(),
+  context: visitContextSchema,
   steps: z.array(visitJourneyStepSchema),
 });
 
@@ -468,6 +536,10 @@ export type Pages = z.infer<typeof pagesSchema>;
 export type LocationGrouping = z.infer<typeof locationGroupingSchema>;
 export type SiteLocation = z.infer<typeof siteLocationSchema>;
 export type Locations = z.infer<typeof locationsSchema>;
+export type SourceGrouping = z.infer<typeof sourceGroupingSchema>;
+export type SourceKind = z.infer<typeof sourceKindSchema>;
+export type SiteSource = z.infer<typeof siteSourceSchema>;
+export type Sources = z.infer<typeof sourcesSchema>;
 export type DeviceKind = z.infer<typeof deviceKindSchema>;
 export type SiteDevice = z.infer<typeof siteDeviceSchema>;
 export type Devices = z.infer<typeof devicesSchema>;
@@ -507,5 +579,7 @@ export type VisitPageRow = z.infer<typeof visitPageRowSchema>;
 export type VisitPages = z.infer<typeof visitPagesSchema>;
 export type VisitJourneyStep = z.infer<typeof visitJourneyStepSchema>;
 export type VisitJourney = z.infer<typeof visitJourneySchema>;
+export type VisitContext = z.infer<typeof visitContextSchema>;
+export type VisitSourceKind = z.infer<typeof visitSourceKindSchema>;
 export type ServerKey = z.infer<typeof serverKeySchema>;
 export type IssuedServerKey = z.infer<typeof issuedServerKeySchema>;

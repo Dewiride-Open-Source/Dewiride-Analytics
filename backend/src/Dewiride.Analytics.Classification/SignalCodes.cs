@@ -78,4 +78,14 @@ public static class SignalCodes
 
     /// <summary>No language was asked for, which an ordinary browser always does.</summary>
     public const string NoLanguageDeclared = "browser.no_language_declared";
+
+    /// <summary>
+    /// The visit arrived over a network whose business is renting computers.
+    /// </summary>
+    /// <remarks>
+    /// Where a browser is running is the one thing about it that cannot be rewritten by whoever is
+    /// driving it, short of renting a household connection — which is why this carries more weight
+    /// than anything the visit says about itself.
+    /// </remarks>
+    public const string HostingNetwork = "network.hosting";
 }

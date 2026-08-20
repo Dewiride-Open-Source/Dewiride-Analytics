@@ -1,3 +1,4 @@
+import { EVERY_JOURNEY, type JourneyFilters } from '@/lib/analytics/journeys';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
 import { discardResource, readResource, submitResource } from './client';
 import {
@@ -28,6 +29,9 @@ import {
   siteSchema,
   type SiteSettings,
   siteSettingsSchema,
+  type SourceGrouping,
+  type Sources,
+  sourcesSchema,
   sitesSchema,
   type Engagement,
   type EngagementRanking,
@@ -153,6 +157,28 @@ export function readLocations(
     `${siteAddress(siteId)}/locations?${asked}&${period(window)}`,
     locationsSchema,
   );
+}
+
+/**
+ * One slice of where a period's visitors came from, busiest first.
+ *
+ * Read exactly like the place list, including the figures that describe the whole period rather
+ * than the slice.
+ */
+export function readSources(
+  siteId: string,
+  window: AnalyticsWindow,
+  grouping: SourceGrouping,
+  limit: number,
+  offset: number,
+): Promise<Sources> {
+  const asked = new URLSearchParams({
+    grouping,
+    limit: String(limit),
+    offset: String(offset),
+  });
+
+  return readResource(`${siteAddress(siteId)}/sources?${asked}&${period(window)}`, sourcesSchema);
 }
 
 /**
@@ -299,14 +325,31 @@ export function readTraffic(siteId: string, window: AnalyticsWindow): Promise<Tr
  *
  * How many to bring back is decided by the screen rather than left to the engine's own default,
  * because it is the screen that knows how many rows a reader will actually work through.
+ *
+ * What the reader narrowed to is asked of the engine rather than applied to what comes back. A
+ * screen that filtered a page of rows would be filtering a slice of the period, so the figures
+ * beside the list would describe a different list from the one on it.
  */
 export function readVisits(
   siteId: string,
   window: AnalyticsWindow,
   limit: number,
   offset: number,
+  filters: JourneyFilters = EVERY_JOURNEY,
 ): Promise<Visits> {
   const asked = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+
+  for (const category of filters.categories) {
+    asked.append('category', category);
+  }
+
+  if (filters.leastStrength !== null) {
+    asked.set('strength', filters.leastStrength);
+  }
+
+  if (filters.leastPages > 0) {
+    asked.set('minPages', String(filters.leastPages));
+  }
 
   return readResource(`${siteAddress(siteId)}/visits?${asked}&${period(window)}`, visitsSchema);
 }

@@ -2,9 +2,13 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Dewiride.Analytics.Api.Contracts;
+using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Infrastructure.Accounts;
 using Dewiride.Analytics.Infrastructure.Identity;
+using Dewiride.Analytics.Infrastructure.Persistence;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dewiride.Analytics.Integration.Tests.Dashboard;
 
@@ -59,6 +63,38 @@ public sealed class SetupTests(AnalyticsStackFixture stack)
         listed[0].Id.Should().Be(created.SiteId);
         listed[0].Domain.Should().Be("first.example");
         listed[0].Role.Should().Be("owner");
+    }
+
+    /// <summary>
+    /// The account created on first run owns the organisation as well as the site it named.
+    /// </summary>
+    /// <remarks>
+    /// Both grants are written because they answer different questions: one names a role on a
+    /// particular website, the other a standing across everything the account owns. An install
+    /// claimed with only the first would produce an owner whose standing nothing recorded.
+    /// </remarks>
+    [Fact]
+    public async Task The_First_Person_Also_Owns_The_Organisation_They_Created()
+    {
+        await using var install = await FreshInstall.StartAsync(stack);
+        using var browser = await Browser.OpenAsync(install);
+
+        var response = await browser.PostAsync(Setup, Details());
+        var created = await response.Content.ReadFromJsonAsync<SetupResponse>(Cancellation.Token);
+
+        created.Should().NotBeNull();
+
+        await using var scope = install.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>();
+
+        var site = await database.Sites.AsNoTracking().SingleAsync(Cancellation.Token);
+        var standing = await database.OrganizationMemberships
+            .AsNoTracking()
+            .SingleAsync(Cancellation.Token);
+
+        standing.UserId.Should().Be(created.User.Id);
+        standing.OrganizationId.Should().Be(site.OrganizationId);
+        standing.Role.Should().Be(OrganizationRole.Owner);
     }
 
     [Fact]

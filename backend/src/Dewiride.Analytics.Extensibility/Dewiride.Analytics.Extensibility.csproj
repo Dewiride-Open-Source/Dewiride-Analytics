@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The seams the two editions meet on, and nothing else.
+
+    A leaf with no reference to any other part of the product, so that a commercial project can
+    implement these interfaces without dragging the open-source composition root in behind it, and
+    so that neither edition's assembly appears in the other's reference list.
+
+    Separate from Application because the host must be able to discover an edition without the use
+    cases being involved, and because what belongs here is decided by "both editions meet on it"
+    rather than by which layer it sits in.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Dewiride.Analytics.Extensibility</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      An edition registers services against the host builder and adds endpoints to its routing
+      table, and the guarantee every one of those endpoints has to uphold lives here beside them.
+      All three rest on ASP.NET Core, so the shared framework is referenced rather than assembled
+      from the handful of abstraction packages that shadow parts of it.
+    -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+</Project>

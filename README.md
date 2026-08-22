@@ -207,6 +207,35 @@ front of the dashboard to terminate TLS — signing in sets a cookie the browser
 over the connection that set it — and leave the two stores where they are. `WEB_BIND` in `.env`
 is there for the one case that needs it: a proxy running on a different machine.
 
+### Putting your own website in front of it
+
+Every screen lives under `/app`, and nothing occupies the root — so if you would rather have your
+own front page on the same address you read the dashboard on, set `SITE_ORIGIN` in `.env` to
+wherever it answers. Anything that names neither a screen nor one of the engine's addresses is
+forwarded there, including your `robots.txt` and your sitemap.
+
+It has to be reachable from the stack's own network: another container on it
+(`http://mysite:3000`), or an address on the machine itself
+(`http://host.docker.internal:8080`). Leave it empty, which is the ordinary case, and the root
+simply leads to the dashboard.
+
+### Copying it somewhere safe
+
+`deploy/backup.sh` writes both stores to a directory you name, and `deploy/restore.sh` puts one of
+those copies back. They use different methods, and it is not a matter of taste: the control plane
+holds accounts and settings, where a logical dump restores cleanly into a later version of
+PostgreSQL, and the telemetry store holds an append-mostly table where a logical dump would be
+absurd.
+
+```bash
+./deploy/backup.sh /var/backups/dewiride
+```
+
+Run it from a timer, keep the copies on a machine that is not this one, and put one back before you
+need to — a backup nobody has restored is a guess. `DEWIRIDE_COMPOSE_PROJECT` lets `restore.sh`
+write into a second stack on empty volumes, which is how to prove a copy is worth something without
+touching the installation you are trying to protect.
+
 ## What's inside
 
 | Directory   | What lives there                                                        |

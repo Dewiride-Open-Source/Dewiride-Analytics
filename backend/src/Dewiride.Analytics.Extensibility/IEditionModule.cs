@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Hosting;
 
-namespace Dewiride.Analytics.Application.Abstractions;
+namespace Dewiride.Analytics.Extensibility;
 
 /// <summary>
 /// Registers the services that differ between the open-source and commercial editions.

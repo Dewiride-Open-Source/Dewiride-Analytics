@@ -76,3 +76,32 @@ public sealed record SignedInUser(Guid Id, string EmailAddress, string DisplayNa
 /// <param name="User">The owner account that was created, now signed in.</param>
 /// <param name="Token">Value to send back in the <c>X-Csrf-Token</c> header from now on.</param>
 public sealed record SetupResponse(Guid SiteId, SignedInUser User, string Token);
+
+/// <summary>
+/// The address somebody types when they cannot remember their password.
+/// </summary>
+public sealed record ForgotPasswordRequest
+{
+    /// <summary>Address to send a way back in to.</summary>
+    public string? EmailAddress { get; init; }
+}
+
+/// <summary>
+/// What somebody following a reset link sends back.
+/// </summary>
+/// <remarks>
+/// The address travels with the link rather than being typed again, so that somebody halfway
+/// through getting back into their account is not asked to remember which of their addresses they
+/// registered with.
+/// </remarks>
+public sealed record ResetPasswordRequest
+{
+    /// <summary>Address the link was sent to, carried in the link itself.</summary>
+    public string? EmailAddress { get; init; }
+
+    /// <summary>The token from the link, exactly as it arrived.</summary>
+    public string? Token { get; init; }
+
+    /// <summary>The password to set.</summary>
+    public string? Password { get; init; }
+}

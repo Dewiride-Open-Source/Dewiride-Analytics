@@ -13,6 +13,23 @@ namespace Dewiride.Analytics.Architecture.Tests;
 [Trait("Category", "Layering")]
 public sealed class LayeringTests
 {
+    /// <summary>
+    /// The seams are a leaf. A commercial project implements them without taking a reference to
+    /// the open-source composition root, and the assembly the host discovers them through belongs
+    /// to neither edition.
+    /// </summary>
+    [Fact]
+    public void The_Edition_Seams_Depend_On_Nothing_In_The_Product()
+    {
+        AssertNoDependency(
+            Product.Extensibility,
+            Product.Domain,
+            Product.Application,
+            Product.Classification,
+            Product.Infrastructure,
+            Product.Api);
+    }
+
     [Fact]
     public void The_Domain_Depends_On_Nothing_In_The_Product()
     {

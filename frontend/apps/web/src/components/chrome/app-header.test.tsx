@@ -15,7 +15,7 @@ import { renderScreen } from '@/test/harness';
  */
 vi.mock('@/i18n/navigation', async (original) => ({
   ...(await original<typeof Navigation>()),
-  usePathname: () => '/',
+  usePathname: () => '/app',
 }));
 
 afterEach(() => {
@@ -125,10 +125,13 @@ describe('the bar across the top', () => {
 
     const sections = await screen.findByRole('navigation', { name: 'Sections' });
 
-    expect(within(sections).getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/');
+    expect(within(sections).getByRole('link', { name: 'Overview' })).toHaveAttribute(
+      'href',
+      '/app',
+    );
     expect(within(sections).getByRole('link', { name: 'User journey' })).toHaveAttribute(
       'href',
-      '/journeys',
+      '/app/journeys',
     );
   });
 

@@ -5,6 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Dewiride.Analytics.Extensibility\Dewiride.Analytics.Extensibility.csproj" />
     <ProjectReference Include="..\Dewiride.Analytics.Infrastructure\Dewiride.Analytics.Infrastructure.csproj" />
     <ProjectReference Include="..\Dewiride.Analytics.Infrastructure.ClickHouse\Dewiride.Analytics.Infrastructure.ClickHouse.csproj" />
     <!--
@@ -21,6 +22,15 @@
   -->
   <ItemGroup Condition="'$(DewirideEdition)' == 'Community'">
     <ProjectReference Include="..\Dewiride.Analytics.Community\Dewiride.Analytics.Community.csproj" />
+  </ItemGroup>
+
+  <!--
+    ee/ is a separate private repository checked out into ./ee and absent from an ordinary
+    clone, so a Cloud build without it fails here on a missing project rather than quietly
+    producing something that calls itself Cloud.
+  -->
+  <ItemGroup Condition="'$(DewirideEdition)' == 'Cloud'">
+    <ProjectReference Include="..\..\..\ee\backend\src\Dewiride.Analytics.Ee\Dewiride.Analytics.Ee.csproj" />
   </ItemGroup>
 
   <!--

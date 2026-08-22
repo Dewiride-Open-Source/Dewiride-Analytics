@@ -11,7 +11,8 @@
     "sections": "Sections",
     "section": {
       "overview": "Overview",
-      "journeys": "User journey"
+      "journeys": "User journey",
+      "settings": "Settings"
     }
   },
   "theme": {
@@ -80,6 +81,50 @@
     "refused": {
       "title": "We couldn't sign you in",
       "body": "Check your email address and password, then try again. Several wrong attempts in a row will pause sign-in for a few minutes."
+    },
+    "forgotten": "Forgotten your password?"
+  },
+  "forgotPassword": {
+    "title": "Forgotten your password?",
+    "subtitle": "Tell us the address you sign in with and we'll send you a link to choose a new one.",
+    "email": {
+      "label": "Email address",
+      "placeholder": "you@example.com"
+    },
+    "submit": "Send me a link",
+    "submitting": "Sending",
+    "sent": {
+      "title": "Check your inbox",
+      "body": "If that address has an account, a link to choose a new password is on its way. It works for the next 24 hours."
+    },
+    "back": "Back to sign in"
+  },
+  "resetPassword": {
+    "title": "Choose a new password",
+    "subtitle": "For {emailAddress}.",
+    "password": {
+      "label": "New password",
+      "hint": "At least 15 characters. A few unrelated words work well.",
+      "show": "Show password",
+      "hide": "Hide password"
+    },
+    "submit": "Save my new password",
+    "submitting": "Saving",
+    "loading": "Opening your link",
+    "done": {
+      "title": "Your new password is saved",
+      "body": "Sign in with it whenever you are ready.",
+      "action": "Go to sign in"
+    },
+    "expired": {
+      "title": "That link no longer works",
+      "body": "Reset links last 24 hours and can be used once.",
+      "action": "Send me a new one"
+    },
+    "missing": {
+      "title": "This link is incomplete",
+      "body": "Open the link from the email exactly as it was sent, or ask for a new one.",
+      "action": "Send me a new one"
     }
   },
   "dashboard": {
@@ -527,7 +572,17 @@
     "SiteAlreadyMeasured": "That website is already in your list — switch to it from the picker at the top.",
     "SiteNameRejected": "We couldn't use that name. Try a shorter one.",
     "SiteTimeZoneRejected": "We couldn't use that time zone. Pick another one from the list.",
-    "SiteIsOnlyOne": "This is your only website, so it can't be removed. Add another one first."
+    "SiteIsOnlyOne": "This is your only website, so it can't be removed. Add another one first.",
+    "SiteLimitReached": "You are already measuring as many websites as your account allows.",
+    "ResetLinkNotUsable": "That link has expired or has already been used. Ask for a new one.",
+    "AccountNameRejected": "We couldn't use that name. Try a shorter one.",
+    "LastOwnerRemains": "Someone has to run this account. Make someone else an owner first.",
+    "InvitationAddressUnusable": "We couldn't send to that address. Check it and try again.",
+    "InvitationAlreadyHere": "They're already on this account — change what they can do from the list above.",
+    "StandingNotRecognised": "We couldn't save that choice. Reload the page and try again.",
+    "InvitationLinkNotUsable": "That invitation has expired or has already been used. Ask for a new one.",
+    "JoinDetailsMissing": "Choose a password to finish setting up your account.",
+    "CurrentPasswordWrong": "That password didn't match. Enter the one you sign in with now."
   },
   "errors": {
     "unreachableTitle": "Can't reach Dewiride Analytics",
@@ -631,5 +686,117 @@
     "timeZone": {
       "label": "Count its days in"
     }
+  },
+  "settings": {
+    "sections": {
+      "label": "Settings",
+      "account": "Account",
+      "you": "Your details"
+    },
+    "standings": {
+      "member": "Can view",
+      "admin": "Can manage websites",
+      "owner": "Can run the account"
+    },
+    "account": {
+      "loading": "Loading your account",
+      "title": "Account",
+      "subtitle": "What this account is called, and who can see what it measures."
+    },
+    "name": {
+      "label": "Account name",
+      "submit": "Save",
+      "saved": "Saved"
+    },
+    "people": {
+      "label": "People",
+      "count": "{count, plural, one {# person} other {# people}}",
+      "you": "You",
+      "remove": "Remove",
+      "removeFor": "Remove {name}",
+      "standingFor": "What {name} can do",
+      "confirm": {
+        "title": "Remove this person?",
+        "body": "{name} will lose access to everything this account measures. Nothing that has already been collected is deleted.",
+        "keep": "Keep them",
+        "remove": "Remove",
+        "close": "Close"
+      }
+    },
+    "invitations": {
+      "label": "Invite someone",
+      "address": {
+        "label": "Email address",
+        "placeholder": "colleague@example.com"
+      },
+      "standing": {
+        "label": "What they can do"
+      },
+      "submit": "Send invitation",
+      "sent": "Invitation sent",
+      "waiting": "{standing} · link works until {date}",
+      "cancel": "Cancel",
+      "cancelFor": "Cancel the invitation to {address}",
+      "waitingLabel": "Waiting to join"
+    },
+    "you": {
+      "loading": "Loading your details",
+      "title": "Your details",
+      "subtitle": "You sign in as {address}.",
+      "name": {
+        "label": "Your name",
+        "submit": "Save",
+        "saved": "Saved"
+      },
+      "password": {
+        "label": "Password",
+        "current": {
+          "label": "Current password"
+        },
+        "replacement": {
+          "label": "New password",
+          "hint": "At least 15 characters. A few unrelated words work well."
+        },
+        "show": "Show password",
+        "hide": "Hide password",
+        "submit": "Change password",
+        "saved": "Password changed"
+      }
+    }
+  },
+  "join": {
+    "loading": "Checking your invitation",
+    "title": "Join {organization}",
+    "subtitle": "Invited to {address}.",
+    "name": {
+      "label": "Your name",
+      "optional": "Optional",
+      "placeholder": "Ada Lovelace"
+    },
+    "password": {
+      "label": "Choose a password",
+      "hint": "At least 15 characters. A few unrelated words work well.",
+      "show": "Show password",
+      "hide": "Hide password"
+    },
+    "submit": "Join and start",
+    "join": "Join",
+    "joining": "Joining",
+    "done": {
+      "title": "You have joined {organization}",
+      "ready": "Everything this account measures is ready for you.",
+      "signIn": "Sign in with your usual password to open it.",
+      "open": "Open my numbers",
+      "action": "Sign in"
+    },
+    "missing": {
+      "title": "This link is incomplete",
+      "body": "Open the invitation from the email you were sent."
+    },
+    "expired": {
+      "title": "This invitation cannot be used",
+      "body": "Invitations stop working after 7 days, and once they have been used. Ask whoever invited you to send another."
+    },
+    "action": "Go to sign in"
   }
 }

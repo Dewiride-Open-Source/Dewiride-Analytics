@@ -92,7 +92,7 @@ describe('the breakdown of who is visiting', () => {
 
     expect(await screen.findByRole('link', { name: /Look at each visit/ })).toHaveAttribute(
       'href',
-      '/journeys',
+      '/app/journeys',
     );
   });
 

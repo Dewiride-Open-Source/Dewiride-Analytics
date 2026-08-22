@@ -1,16 +1,20 @@
 using Dewiride.Analytics.Application.Abstractions;
 using Dewiride.Analytics.Application.Accounts;
+using Dewiride.Analytics.Application.Notifications;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Telemetry;
+using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Infrastructure.Accounts;
 using Dewiride.Analytics.Infrastructure.Classification;
 using Dewiride.Analytics.Infrastructure.Health;
 using Dewiride.Analytics.Infrastructure.Identity;
 using Dewiride.Analytics.Infrastructure.Network;
+using Dewiride.Analytics.Infrastructure.Notifications;
 using Dewiride.Analytics.Infrastructure.Persistence;
 using Dewiride.Analytics.Infrastructure.Sites;
 using Dewiride.Analytics.Infrastructure.Telemetry;
+using Dewiride.Analytics.Infrastructure.Tenancy;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -97,7 +101,17 @@ public static class InfrastructureRegistration
         builder.Services.AddScoped<ISiteSettings, SiteSettings>();
         builder.Services.AddScoped<IIngestKeyCatalog, CachedIngestKeyCatalog>();
         builder.Services.AddScoped<IIngestKeyDirectory, IngestKeyDirectory>();
+        builder.Services.AddScoped<IOrganizationDirectory, OrganizationDirectory>();
         builder.Services.AddScoped<IInstallation, Installation>();
+        builder.Services.AddScoped<IAccountProfile, AccountProfile>();
+        builder.Services.AddScoped<IInvitations, Invitations>();
+        builder.Services.AddScoped<IPasswordReset, PasswordReset>();
+
+        // Registered here rather than by an edition. Which grants exist differs between an
+        // installation with one organisation and a service with many; what a grant permits does
+        // not, and an edition able to answer that more generously than the other would be a
+        // security advisory rather than a feature difference.
+        builder.Services.AddScoped<ITenantScopeProvider, MembershipTenantScopeProvider>();
         builder.Services.AddScoped<IClassificationProgressStore, ClassificationProgressStore>();
 
         builder.Services.AddSingleton<VisitorKeySaltStore>();
@@ -105,6 +119,7 @@ public static class InfrastructureRegistration
         builder.Services.AddHostedService<VisitorKeySaltRotationService>();
 
         AddVisitorContext(builder);
+        AddNotifications(builder);
 
         builder.Services.AddHealthChecks()
             .AddCheck<ControlPlaneHealthCheck>(
@@ -164,6 +179,71 @@ public static class InfrastructureRegistration
         builder.Services.AddSingleton<INetworkLookup, ReferenceDataNetworkLookup>();
         builder.Services.AddHostedService<ReferenceDataRefresher>();
     }
+
+    /// <summary>
+    /// Adds the way messages leave the building.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Which implementation is registered is a deployment decision rather than a per-request one,
+    /// so it is read here and settled for the life of the process. Everything else about the mail
+    /// server is read at the moment of each send.
+    /// </para>
+    /// <para>
+    /// An installation with no mail server still gets a sender. Somebody who has forgotten the
+    /// password to their own analytics and cannot be sent a way back in is locked out for good,
+    /// and that is a defect rather than a consequence of not running a mail server.
+    /// </para>
+    /// </remarks>
+    /// <param name="builder">The host application builder.</param>
+    private static void AddNotifications(IHostApplicationBuilder builder)
+    {
+        // Checked when the host starts rather than at the first send, which is somebody already
+        // locked out waiting for a message that a mistyped port means will never arrive.
+        builder.Services.AddOptions<EmailOptions>()
+            .Bind(builder.Configuration.GetSection(EmailOptions.SectionName))
+            .Validate(
+                settings => !settings.Enabled || !string.IsNullOrWhiteSpace(settings.Host),
+                $"{EmailOptions.SectionName}:Host must name the mail server to hand messages to.")
+            .Validate(
+                settings => !settings.Enabled || Addressable(settings.FromAddress),
+                $"{EmailOptions.SectionName}:FromAddress must be the address messages are sent "
+                + "from, such as analytics@example.com.")
+            .Validate(
+                settings => settings.Port is > 0 and < 65536,
+                $"{EmailOptions.SectionName}:Port must be a port number.")
+            .Validate(
+                settings => settings.Timeout >= TimeSpan.FromSeconds(5),
+                $"{EmailOptions.SectionName}:Timeout must be at least five seconds. A mail server "
+                + "that has to look a hostname up takes longer than an instant to answer.")
+            .ValidateOnStart();
+
+        var configured = builder.Configuration
+            .GetSection(EmailOptions.SectionName)
+            .Get<EmailOptions>() ?? new EmailOptions();
+
+        if (configured.Enabled)
+        {
+            builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+        }
+        else
+        {
+            builder.Services.AddSingleton<IEmailSender, LoggingEmailSender>();
+        }
+    }
+
+    /// <summary>
+    /// Whether a value could be a mailbox rather than something somebody meant to fill in later.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not a full check of what an address may contain. The mail server decides that,
+    /// and a stricter rule here would only turn away the unusual addresses that are nevertheless
+    /// perfectly valid.
+    /// </remarks>
+    private static bool Addressable(string address) =>
+        address.Contains('@', StringComparison.Ordinal)
+        && !address.StartsWith('@')
+        && !address.EndsWith('@');
 
     /// <summary>
     /// Whether an address is one the refresher could actually fetch from.

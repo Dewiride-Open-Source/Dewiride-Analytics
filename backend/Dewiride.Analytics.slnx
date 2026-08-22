@@ -8,6 +8,7 @@
 		<Project Path="src/Dewiride.Analytics.Community/Dewiride.Analytics.Community.csproj" />
 		<Project Path="src/Dewiride.Analytics.Classification/Dewiride.Analytics.Classification.csproj" />
 		<Project Path="src/Dewiride.Analytics.Domain/Dewiride.Analytics.Domain.csproj" />
+		<Project Path="src/Dewiride.Analytics.Extensibility/Dewiride.Analytics.Extensibility.csproj" />
 		<Project Path="src/Dewiride.Analytics.Infrastructure/Dewiride.Analytics.Infrastructure.csproj" />
 		<Project Path="src/Dewiride.Analytics.Infrastructure.ClickHouse/Dewiride.Analytics.Infrastructure.ClickHouse.csproj" />
 	</Folder>

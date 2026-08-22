@@ -24,6 +24,11 @@
     <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Microsoft.Extensions.Options" />
     <!--
+      Hands messages to a mail server. The framework's own client is not recommended for new work
+      and MailKit is the alternative Microsoft names; see Directory.Packages.props.
+    -->
+    <PackageReference Include="MailKit" />
+    <!--
       Reads the MaxMind DB binary format, which is what DB-IP publishes its free geolocation data
       in. The reader only: no database ships with this product, and none of MaxMind's own are used.
     -->

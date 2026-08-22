@@ -20,6 +20,7 @@ namespace Dewiride.Analytics.SqlTests;
 public sealed class AnalyticsSqlCompilerTests
 {
     private static readonly Guid SiteId = Guid.Parse("0197c0de-0000-7000-8000-000000000001");
+    private static readonly Guid SecondSiteId = Guid.Parse("0197c0de-0000-7000-8000-000000000002");
     private static readonly Guid OrganizationId = Guid.Parse("0197c0de-0000-7000-8000-0000000000ff");
     private static readonly DateTimeOffset From = new(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset To = new(2026, 5, 8, 0, 0, 0, TimeSpan.Zero);
@@ -40,6 +41,53 @@ public sealed class AnalyticsSqlCompilerTests
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new OverviewQuery(Window()));
 
         return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Volume_Across_Sites()
+    {
+        var statement = AnalyticsSqlCompiler.CompileVolume(Volume());
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    /// <summary>
+    /// The two statements that count pages delivered count them the same way. One answers a
+    /// dashboard and the other answers an installation's own accounting, and a customer whose
+    /// screen and whose allowance disagreed would have no way to tell which figure was wrong.
+    /// </summary>
+    [Fact]
+    public void Counting_A_Window_And_Metering_It_Share_Their_Arithmetic()
+    {
+        var dashboard = AnalyticsSqlCompiler.Compile(Scope(), new OverviewQuery(Window()));
+        var metered = AnalyticsSqlCompiler.CompileVolume(Volume());
+
+        const string delivered = "greatest(\n            countIf(kind = 'PageView' AND surface IN (";
+
+        dashboard.Sql.Should().Contain(delivered);
+        metered.Sql.Should().Contain(delivered);
+    }
+
+    /// <summary>
+    /// Identity is settled inside each site when several are counted at once. A correlation
+    /// identifier is minted by the reporting site's own server, so two sites can mint the same one,
+    /// and folding them together would move one site's activity onto the other's key.
+    /// </summary>
+    [Fact]
+    public void Metering_Several_Sites_Settles_Identity_Inside_Each_Of_Them()
+    {
+        var statement = AnalyticsSqlCompiler.CompileVolume(Volume());
+
+        statement.Sql.Should().Contain("GROUP BY site_id, correlation_id");
+        statement.Sql.Should().Contain("LEFT JOIN linked ON windowed.site_id = linked.site_id AND");
+    }
+
+    [Fact]
+    public void Metering_Refuses_A_Missing_Window()
+    {
+        var act = () => AnalyticsSqlCompiler.CompileVolume(null!);
+
+        act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
@@ -1560,6 +1608,10 @@ public sealed class AnalyticsSqlCompilerTests
         new(SiteId, OrganizationId, SiteRole.Viewer, "Europe/London");
 
     private static TimeRange Window() => new(From, To);
+
+    /// <summary>Two sites of one organisation, which is what a usage figure is summed across.</summary>
+    private static SiteVolumeWindow Volume() =>
+        new() { Range = Window(), SiteIds = [SiteId, SecondSiteId] };
 
     /// <summary>What a visit is, and which of them the compiler may treat as finished.</summary>
     private static VisitBoundaries Visits() => new(IdleTimeout, To - IdleTimeout);

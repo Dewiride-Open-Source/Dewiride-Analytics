@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
 
-namespace Dewiride.Analytics.Api.Security;
+namespace Dewiride.Analytics.Extensibility;
 
 /// <summary>
 /// Refuses a request that changes something unless it proves it came from this application.
@@ -19,8 +22,14 @@ namespace Dewiride.Analytics.Api.Security;
 /// endpoint here takes JSON. Applied as a filter instead, per endpoint, so that leaving it off is
 /// a visible decision in the route rather than an accident of content type.
 /// </para>
+/// <para>
+/// It sits beside the edition seams rather than in the host because an edition adds endpoints of
+/// its own through <see cref="IEditionEndpoints"/>, and those have to be able to uphold the same
+/// guarantee. An edition whose writes were unguarded while running the same screens would be a
+/// security advisory rather than a feature difference.
+/// </para>
 /// </remarks>
-internal static class AntiforgeryGuard
+public static class AntiforgeryGuard
 {
     /// <summary>Header the caller returns the request token in.</summary>
     public const string HeaderName = "X-Csrf-Token";

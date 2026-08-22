@@ -5,6 +5,7 @@ import { hasLocale, NextIntlClientProvider } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import type { ReactNode } from 'react';
 import { AppHeader } from '@/components/chrome/app-header';
+import { EditionNotice } from '@/components/chrome/edition-notice';
 import { SessionGate } from '@/components/chrome/session-gate';
 import { Providers } from '@/components/providers';
 import { routing } from '@/i18n/routing';
@@ -59,6 +60,7 @@ export default async function LocaleLayout({
           <Providers>
             <div className="flex min-h-dvh flex-col">
               <AppHeader />
+              <EditionNotice />
               <main className="flex-1">
                 <SessionGate>{children}</SessionGate>
               </main>

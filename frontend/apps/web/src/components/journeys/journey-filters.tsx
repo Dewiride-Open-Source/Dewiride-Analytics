@@ -10,12 +10,12 @@ import { SelectInput } from '@/components/ui/field';
 import {
   type CategoryTally,
   EVERY_JOURNEY,
-  type JourneyFilters,
   isNarrowed,
-  type PageFloor,
+  type JourneyFilters,
   PAGE_FLOORS,
-  type StrengthFloor,
+  type PageFloor,
   STRENGTH_FLOORS,
+  type StrengthFloor,
   toggleCategory,
 } from '@/lib/analytics/journeys';
 import { CATEGORY_TONES } from '@/lib/analytics/verdicts';

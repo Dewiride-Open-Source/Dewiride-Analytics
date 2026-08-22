@@ -135,6 +135,11 @@ dotnet_diagnostic.CS8625.severity = error
 [backend/migrations/postgres/Migrations/*.cs]
 generated_code = true
 
+# The commercial edition's own schema, on its own history table, in the private
+# repository checked out into ee/. Same rule for the same reason.
+[ee/backend/src/**/Migrations/*.cs]
+generated_code = true
+
 # ---------------------------------------------------------------------------
 # Approved snapshots. These are compared character for character against what
 # the code produced, so an editor that helpfully trims a trailing space or adds

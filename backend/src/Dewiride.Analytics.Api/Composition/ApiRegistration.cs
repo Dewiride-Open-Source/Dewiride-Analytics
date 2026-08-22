@@ -6,7 +6,11 @@ using Dewiride.Analytics.Api.Configuration;
 using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Api.Endpoints;
 using Dewiride.Analytics.Api.Ingest;
+using Dewiride.Analytics.Extensibility;
+using Dewiride.Analytics.Application.Dashboard;
+using Dewiride.Analytics.Application.Persistence;
 using Dewiride.Analytics.Application.Sessions;
+using Dewiride.Analytics.Infrastructure.Notifications;
 using Dewiride.Analytics.Infrastructure.Tenancy;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
@@ -45,9 +49,22 @@ internal static class ApiRegistration
             .Bind(builder.Configuration.GetSection(SchemaOptions.SectionName))
             .ValidateOnStart();
 
+        var email = Bind<EmailOptions>(builder, EmailOptions.SectionName);
+
         builder.Services.AddOptions<DashboardOptions>()
             .Bind(builder.Configuration.GetSection(DashboardOptions.SectionName))
             .ValidateDataAnnotations()
+            .Validate(
+                settings => string.IsNullOrWhiteSpace(settings.PublicAddress)
+                    || settings.PublishedAt is not null,
+                $"{DashboardOptions.SectionName}:PublicAddress must be the whole address people "
+                + "open the dashboard on, such as https://analytics.example.com.")
+            .Validate(
+                settings => !email.Enabled || settings.PublishedAt is not null,
+                $"{DashboardOptions.SectionName}:PublicAddress must be set when "
+                + $"{EmailOptions.SectionName}:Enabled is true. The links in the messages this "
+                + "product sends are built from it, and are deliberately never taken from the "
+                + "address a request claims to have arrived at.")
             .ValidateOnStart();
 
         var collector = Bind<CollectorOptions>(builder, CollectorOptions.SectionName);
@@ -221,7 +238,7 @@ internal static class ApiRegistration
                     }));
 
             limiter.AddPolicy(
-                AccountEndpoints.RateLimitPolicyName,
+                RateLimitPolicies.Accounts,
                 context => RateLimitPartition.GetFixedWindowLimiter(
                     RequestObservation.ClientAddress(context) ?? string.Empty,
                     _ => new FixedWindowRateLimiterOptions

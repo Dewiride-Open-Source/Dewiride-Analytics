@@ -3,7 +3,12 @@ import { Loader2 } from 'lucide-react';
 import type { ComponentProps, ReactNode } from 'react';
 import { cn } from '@/lib/styling';
 
-const button = cva(
+/**
+ * Every button in the product wears this, and so does the occasional link that is the one action
+ * on a screen. Exported for that second case alone: a link styled by hand beside a real button is
+ * how two things that should look identical drift apart.
+ */
+export const buttonStyle = cva(
   'glow-control inline-flex items-center justify-center gap-2 rounded-md border font-medium ' +
     'whitespace-nowrap select-none disabled:pointer-events-none disabled:opacity-55',
   {
@@ -31,7 +36,7 @@ const button = cva(
   },
 );
 
-interface ButtonProps extends ComponentProps<'button'>, VariantProps<typeof button> {
+interface ButtonProps extends ComponentProps<'button'>, VariantProps<typeof buttonStyle> {
   /**
    * Whether the action this button starts is still running.
    *
@@ -57,7 +62,7 @@ export function Button({
       type="button"
       aria-busy={busy}
       disabled={disabled === true || busy}
-      className={cn(button({ tone, size, block }), className)}
+      className={cn(buttonStyle({ tone, size, block }), className)}
       {...rest}
     >
       {busy ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}

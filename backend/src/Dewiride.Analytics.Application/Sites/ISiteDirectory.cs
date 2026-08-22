@@ -80,6 +80,15 @@ public enum SiteAdditionOutcome
 
     /// <summary>The hostname or the time zone is not one a site can be built from.</summary>
     Unusable = 4,
+
+    /// <summary>
+    /// The organisation is already measuring as many sites as it may.
+    /// </summary>
+    /// <remarks>
+    /// Only ever reached where somebody else is running the service and how many sites an account
+    /// may measure is part of what it pays for. A self-hosted installation has no such limit.
+    /// </remarks>
+    LimitReached = 5,
 }
 
 /// <summary>

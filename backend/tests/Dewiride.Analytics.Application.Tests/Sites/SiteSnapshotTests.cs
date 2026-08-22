@@ -16,12 +16,16 @@ namespace Dewiride.Analytics.Application.Tests.Sites;
 /// </remarks>
 public sealed class SiteSnapshotTests
 {
+    /// <summary>The organisation every snapshot in these tests belongs to.</summary>
+    private static readonly Guid OrganizationId = Guid.Parse("0197c0de-0000-7000-8000-0000000000ff");
+
     [Fact]
     public void Survives_Being_Written_Out_And_Read_Back()
     {
         var snapshot = new SiteSnapshot
         {
             Id = Guid.Parse("0197c0de-0000-7000-8000-000000000001"),
+            OrganizationId = OrganizationId,
             Domain = "example.com",
             RetainQueryStrings = true,
             CaptureClicks = true,
@@ -32,6 +36,7 @@ public sealed class SiteSnapshotTests
 
         restored.Should().NotBeNull();
         restored.Id.Should().Be(snapshot.Id);
+        restored.OrganizationId.Should().Be(OrganizationId);
         restored.Domain.Should().Be("example.com");
         restored.RetainQueryStrings.Should().BeTrue();
         restored.AllowedOrigins.Should().Equal("docs.example.com", "cdn.example.com");
@@ -43,6 +48,7 @@ public sealed class SiteSnapshotTests
         var snapshot = new SiteSnapshot
         {
             Id = Guid.Parse("0197c0de-0000-7000-8000-000000000002"),
+            OrganizationId = OrganizationId,
             Domain = "example.com",
             RetainQueryStrings = false,
             CaptureClicks = false,
@@ -79,6 +85,7 @@ public sealed class SiteSnapshotTests
         var first = new SiteSnapshot
         {
             Id = id,
+            OrganizationId = OrganizationId,
             Domain = "example.com",
             RetainQueryStrings = true,
             CaptureClicks = true,

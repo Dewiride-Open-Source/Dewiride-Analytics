@@ -64,36 +64,19 @@ internal static class ReconciledEvents
     /// there to disagree.
     /// </para>
     /// </remarks>
-    public static string Reconciliation { get; } = $$"""
-        echoed AS
-            (
-                SELECT
-                    minIf(visitor_key, {{FromVisitorBrowser}}) AS browser_key,
-                    minIf(visitor_key, {{FromRequestPath}}) AS reported_key
-                FROM windowed
-                WHERE correlation_id != ''
-                  AND visitor_key != ''
-                GROUP BY correlation_id
-                HAVING browser_key != ''
-                   AND reported_key != ''
-            ),
-            linked AS
-            (
-                SELECT
-                    reported_key,
-                    min(browser_key) AS browser_key
-                FROM echoed
-                GROUP BY reported_key
-            ),
-            identified AS
-            (
-                SELECT
-                    windowed.* EXCEPT (visitor_key),
-                    if(linked.browser_key != '' AND {{FromRequestPath}}, linked.browser_key, windowed.visitor_key) AS visitor_key
-                FROM windowed
-                LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
-            )
-        """;
+    public static string Reconciliation { get; } = Reconciling(null);
+
+    /// <summary>
+    /// The same, for a <c>windowed</c> selection that also carries <c>site_id</c> and covers more
+    /// than one site.
+    /// </summary>
+    /// <remarks>
+    /// A correlation identifier is minted by the reporting site's own server, so two sites can
+    /// perfectly well mint the same one. Settling identity across all of them at once would read
+    /// that coincidence as one visitor seen twice and move one site's activity onto another site's
+    /// key. Settling it inside each site leaves the coincidence harmless.
+    /// </remarks>
+    public static string ReconciliationPerSite { get; } = Reconciling("site_id");
 
     /// <summary>
     /// Pages delivered, for a grouping already narrowed to one visitor and one page.
@@ -130,6 +113,55 @@ internal static class ReconciledEvents
             {pad}    toUInt64(countIf(kind != 'PageView' AND {FromVisitorBrowser}) > 0),
             {pad}    countIf(kind = 'PageView' AND {FromRequestPath})) AS delivered,
             {pad}if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
+            """;
+    }
+
+    /// <summary>
+    /// Writes the reconciliation, settling who each report was about either across the whole
+    /// window or inside one column of it.
+    /// </summary>
+    /// <param name="within">
+    /// The column identity is settled inside, or <see langword="null"/> to settle it across
+    /// everything the window holds. Written in this file and never supplied by a caller, on the
+    /// same terms as every other identifier these statements are built from.
+    /// </param>
+    /// <returns>
+    /// The three common table expressions, laid out to follow a <c>windowed</c> one.
+    /// </returns>
+    private static string Reconciling(string? within)
+    {
+        var also = within is null ? string.Empty : $"{within}, ";
+        var joined = within is null ? string.Empty : $"windowed.{within} = linked.{within} AND ";
+
+        return $$"""
+            echoed AS
+                (
+                    SELECT
+                        {{also}}minIf(visitor_key, {{FromVisitorBrowser}}) AS browser_key,
+                        minIf(visitor_key, {{FromRequestPath}}) AS reported_key
+                    FROM windowed
+                    WHERE correlation_id != ''
+                      AND visitor_key != ''
+                    GROUP BY {{also}}correlation_id
+                    HAVING browser_key != ''
+                       AND reported_key != ''
+                ),
+                linked AS
+                (
+                    SELECT
+                        {{also}}reported_key,
+                        min(browser_key) AS browser_key
+                    FROM echoed
+                    GROUP BY {{also}}reported_key
+                ),
+                identified AS
+                (
+                    SELECT
+                        windowed.* EXCEPT (visitor_key),
+                        if(linked.browser_key != '' AND {{FromRequestPath}}, linked.browser_key, windowed.visitor_key) AS visitor_key
+                    FROM windowed
+                    LEFT JOIN linked ON {{joined}}windowed.visitor_key = linked.reported_key
+                )
             """;
     }
 }

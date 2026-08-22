@@ -12,6 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Dewiride.Analytics.Extensibility\Dewiride.Analytics.Extensibility.csproj" />
     <ProjectReference Include="..\Dewiride.Analytics.Infrastructure\Dewiride.Analytics.Infrastructure.csproj" />
   </ItemGroup>
 

@@ -28,6 +28,15 @@ public sealed record SiteSnapshot
     /// <summary>The site's identity, which is also its public tracker identifier.</summary>
     public required Guid Id { get; init; }
 
+    /// <summary>
+    /// The organisation the site belongs to.
+    /// </summary>
+    /// <remarks>
+    /// Carried here so that the one question asked of an account on the ingest path — whether it
+    /// is still being measured — can be answered without a second lookup per report.
+    /// </remarks>
+    public required Guid OrganizationId { get; init; }
+
     /// <summary>Primary hostname, lower-cased and without scheme or trailing dot.</summary>
     public required string Domain { get; init; }
 

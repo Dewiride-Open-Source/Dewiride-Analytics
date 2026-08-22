@@ -20,11 +20,13 @@ namespace Dewiride.Analytics.Infrastructure.Sites;
 /// <param name="timeProvider">Source of the time a site and its ownership are stamped with.</param>
 /// <param name="telemetry">Removes what the telemetry store holds for a site.</param>
 /// <param name="cache">Cache the collector resolves sites through.</param>
+/// <param name="allowance">Decides whether the organisation may take on another site.</param>
 public sealed class SiteDirectory(
     ControlPlaneDbContext database,
     TimeProvider timeProvider,
     ITelemetryPurge telemetry,
-    HybridCache cache)
+    HybridCache cache,
+    ISiteAllowance allowance)
     : ISiteDirectory
 {
     /// <summary>
@@ -39,30 +41,52 @@ public sealed class SiteDirectory(
     private const int RemovalLockNamespace = 0x44_57_53_52;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Both claims are read, and the wider applies, exactly as resolving a scope on one site does.
+    /// A list built from grants alone would leave somebody invited into an account looking at an
+    /// empty dashboard while every screen below it would have let them in.
+    /// </remarks>
     public async Task<IReadOnlyList<SiteMembershipView>> ListForUserAsync(
         Guid userId,
-        CancellationToken cancellationToken) =>
-        await database.SiteMemberships
+        CancellationToken cancellationToken)
+    {
+        var rows = await database.Sites
             .AsNoTracking()
-            .Where(membership => membership.UserId == userId)
-            .Join(
-                database.Sites.AsNoTracking(),
-                membership => membership.SiteId,
-                site => site.Id,
-                (membership, site) => new { Site = site, membership.Role })
+            .Select(site => new
+            {
+                site.Id,
+                site.Domain,
+                site.DisplayName,
+                site.TimeZoneId,
+                Granted = database.SiteMemberships
+                    .Where(membership => membership.SiteId == site.Id && membership.UserId == userId)
+                    .Select(membership => (SiteRole?)membership.Role)
+                    .FirstOrDefault(),
+                Standing = database.OrganizationMemberships
+                    .Where(membership =>
+                        membership.OrganizationId == site.OrganizationId && membership.UserId == userId)
+                    .Select(membership => (OrganizationRole?)membership.Role)
+                    .FirstOrDefault(),
+            })
+            .Where(row => row.Granted != null || row.Standing != null)
             // Ordered before the result is shaped, not after. Sorting on a property of a value
             // the query has already constructed is not something the database can be asked to do,
             // and the whole table would be read back to do it here instead.
-            .OrderBy(row => row.Site.DisplayName)
-            .ThenBy(row => row.Site.Id)
-            .Select(row => new SiteMembershipView(
-                row.Site.Id,
-                row.Site.Domain,
-                row.Site.DisplayName,
-                row.Site.TimeZoneId,
-                row.Role))
+            .OrderBy(row => row.DisplayName)
+            .ThenBy(row => row.Id)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        return
+        [
+            .. rows.Select(row => new SiteMembershipView(
+                row.Id,
+                row.Domain,
+                row.DisplayName,
+                row.TimeZoneId,
+                OrganizationRoles.Widest(row.Granted, row.Standing)!.Value)),
+        ];
+    }
 
     /// <inheritdoc />
     public async Task<SiteAddition> AddAsync(
@@ -72,7 +96,7 @@ public sealed class SiteDirectory(
     {
         // Which organisation the new site joins comes from one they already own a site in, so a
         // person can only ever add a site alongside the ones they are already responsible for.
-        var organizationId = await OwnedOrganizationAsync(userId, cancellationToken).ConfigureAwait(false);
+        var organizationId = await OrganizationForNewSiteAsync(userId, cancellationToken).ConfigureAwait(false);
 
         if (organizationId is null)
         {
@@ -85,6 +109,7 @@ public sealed class SiteDirectory(
         {
             return new SiteAddition(SiteAdditionOutcome.Unusable, null);
         }
+
 
         // Checked against the normalised hostname rather than against what was typed, so the same
         // site in different letters is still the same site. Two rows for one hostname would split
@@ -100,6 +125,14 @@ public sealed class SiteDirectory(
         if (measured)
         {
             return new SiteAddition(SiteAdditionOutcome.AlreadyMeasured, null);
+        }
+
+        // Asked last of the four, and after the hostname has been recognised as one already here.
+        // Somebody adding a site they already have should be told that, whatever room they have
+        // left; the answer they need is the one about the site they named.
+        if (!await allowance.AllowsAnotherAsync(organizationId.Value, cancellationToken).ConfigureAwait(false))
+        {
+            return new SiteAddition(SiteAdditionOutcome.LimitReached, null);
         }
 
         database.Sites.Add(described);
@@ -124,9 +157,9 @@ public sealed class SiteDirectory(
     /// Everything runs inside a single transaction that begins by taking an advisory lock on the
     /// person asking, because the last-site rule is a decision made from a count and then acted on.
     /// Two removals arriving together would both read two owned sites, both pass, and both delete —
-    /// leaving an account owning none. That is not a recoverable state: a new site joins an
-    /// organisation the person already owns one in, so owning none means never being able to add
-    /// one, and the first-run claim that would otherwise hand out an organisation is long spent.
+    /// leaving somebody whose only claim to an organisation was those sites with none. That is not
+    /// a recoverable state for them: a new site joins an organisation they already have a claim to,
+    /// and the first-run claim that would otherwise hand out an organisation is long spent.
     /// The lock is per person rather than global so that two customers removing sites at the same
     /// moment never wait on each other.
     /// </para>
@@ -177,14 +210,7 @@ public sealed class SiteDirectory(
             return new SiteRemoval(SiteRemovalOutcome.NoSuchSite);
         }
 
-        var owned = await database.SiteMemberships
-            .AsNoTracking()
-            .CountAsync(
-                membership => membership.UserId == userId && membership.Role == SiteRole.Owner,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        if (owned == 1)
+        if (await WouldLeaveNowhereToBeginAgainAsync(userId, cancellationToken).ConfigureAwait(false))
         {
             return new SiteRemoval(SiteRemovalOutcome.OnlyOne);
         }
@@ -224,14 +250,14 @@ public sealed class SiteDirectory(
     }
 
     /// <summary>
-    /// The site a person owns, where the one they named is one of them.
+    /// The site a person may destroy, where the one they named is one of them.
     /// </summary>
     /// <remarks>
-    /// The grant is part of the lookup rather than a question asked before it, so a site that does
-    /// not exist and a site the caller does not own are the same answer and this cannot be used to
-    /// find out which identifiers on an installation are real. It also means the right to destroy
-    /// is established here, by the component that does the destroying, rather than trusted from
-    /// whoever called it.
+    /// Owning the site itself, or owning the account it belongs to. The grant is part of the lookup
+    /// rather than a question asked before it, so a site that does not exist and a site the caller
+    /// may not destroy are the same answer and this cannot be used to find out which identifiers on
+    /// an installation are real. It also means the right to destroy is established here, by the
+    /// component that does the destroying, rather than trusted from whoever called it.
     /// </remarks>
     /// <param name="userId">The person asking.</param>
     /// <param name="siteId">The site they named.</param>
@@ -240,22 +266,85 @@ public sealed class SiteDirectory(
     private async Task<Site?> OwnedSiteAsync(Guid userId, Guid siteId, CancellationToken cancellationToken) =>
         await database.Sites
             .Where(candidate => candidate.Id == siteId
-                && database.SiteMemberships.Any(membership =>
-                    membership.SiteId == candidate.Id
-                    && membership.UserId == userId
-                    && membership.Role == SiteRole.Owner))
+                && (database.SiteMemberships.Any(membership =>
+                        membership.SiteId == candidate.Id
+                        && membership.UserId == userId
+                        && membership.Role == SiteRole.Owner)
+                    || database.OrganizationMemberships.Any(membership =>
+                        membership.OrganizationId == candidate.OrganizationId
+                        && membership.UserId == userId
+                        && membership.Role == OrganizationRole.Owner)))
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
 
     /// <summary>
-    /// The organisation a person owns a site in, if they own one at all.
+    /// Whether removing a site would leave this person with nowhere to put another.
     /// </summary>
+    /// <remarks>
+    /// Only ever true of somebody whose sole claim to an organisation is the site they are
+    /// removing. Somebody who helps run the account keeps that standing whatever they remove, and
+    /// a new site of theirs joins the organisation that standing is in — so the rule that protects
+    /// the first case would only get in the second one's way.
+    /// </remarks>
     /// <param name="userId">The person asking.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The organisation, or nothing where they own no site.</returns>
-    private async Task<Guid?> OwnedOrganizationAsync(Guid userId, CancellationToken cancellationToken)
+    /// <returns><see langword="true"/> where the removal must be refused.</returns>
+    private async Task<bool> WouldLeaveNowhereToBeginAgainAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
     {
-        var found = await database.SiteMemberships
+        var helpsRunAnAccount = await database.OrganizationMemberships
+            .AsNoTracking()
+            .AnyAsync(
+                membership => membership.UserId == userId && membership.Role >= OrganizationRole.Admin,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (helpsRunAnAccount)
+        {
+            return false;
+        }
+
+        var owned = await database.SiteMemberships
+            .AsNoTracking()
+            .CountAsync(
+                membership => membership.UserId == userId && membership.Role == SiteRole.Owner,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return owned == 1;
+    }
+
+    /// <summary>
+    /// The organisation a new site of this person's would join, if there is one.
+    /// </summary>
+    /// <remarks>
+    /// A standing in an organisation counts as well as owning one of its sites, and is looked at
+    /// first. Somebody asked to help run an account is expected to be able to add a website to it,
+    /// and until they have added one they own none — so grants alone would make the first thing
+    /// they were invited to do the one thing they could not.
+    /// </remarks>
+    /// <param name="userId">The person asking.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The organisation, or nothing where they have no claim to one.</returns>
+    private async Task<Guid?> OrganizationForNewSiteAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var standing = await database.OrganizationMemberships
+            .AsNoTracking()
+            .Where(membership => membership.UserId == userId && membership.Role >= OrganizationRole.Admin)
+            .OrderByDescending(membership => membership.Role)
+            .ThenBy(membership => membership.GrantedAt)
+            .ThenBy(membership => membership.OrganizationId)
+            .Select(membership => (Guid?)membership.OrganizationId)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (standing is not null)
+        {
+            return standing;
+        }
+
+        return await database.SiteMemberships
             .AsNoTracking()
             .Where(membership => membership.UserId == userId && membership.Role == SiteRole.Owner)
             .Join(
@@ -267,8 +356,6 @@ public sealed class SiteDirectory(
             .Select(row => (Guid?)row.OrganizationId)
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        return found;
     }
 
     /// <summary>

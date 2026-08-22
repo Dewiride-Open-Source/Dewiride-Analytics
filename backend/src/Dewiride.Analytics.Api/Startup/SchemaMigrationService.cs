@@ -1,4 +1,4 @@
-using Dewiride.Analytics.Api.Configuration;
+using Dewiride.Analytics.Application.Persistence;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Migrations;
 using Dewiride.Analytics.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;

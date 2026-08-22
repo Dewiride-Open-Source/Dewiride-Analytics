@@ -7,9 +7,11 @@ import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { Field, PasswordInput, TextInput } from '@/components/ui/field';
 import { Notice } from '@/components/ui/notice';
+import { Link } from '@/i18n/navigation';
 import { ApiError } from '@/lib/api/problem';
 import { checkEmail, checkPresent, type ValidationKey } from '@/lib/forms/validation';
 import { useSignIn } from '@/lib/queries/session';
+import { FORGOT_PASSWORD } from '@/lib/routes';
 
 interface Refusals {
   readonly emailAddress?: ValidationKey;
@@ -111,16 +113,25 @@ export function SignInForm() {
           )}
         </Field>
 
-        <div className="flex items-center gap-2.5">
-          <input
-            id={stayId}
-            type="checkbox"
-            name="staySignedIn"
-            className="size-4 shrink-0 rounded-sm accent-[var(--accent)]"
-          />
-          <label htmlFor={stayId} className="text-sm text-foreground-muted">
-            {t('stay.label')}
-          </label>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <input
+              id={stayId}
+              type="checkbox"
+              name="staySignedIn"
+              className="size-4 shrink-0 rounded-sm accent-[var(--accent)]"
+            />
+            <label htmlFor={stayId} className="text-sm text-foreground-muted">
+              {t('stay.label')}
+            </label>
+          </div>
+
+          <Link
+            href={FORGOT_PASSWORD}
+            className="text-sm font-medium text-accent-strong underline-offset-4 hover:underline"
+          >
+            {t('forgotten')}
+          </Link>
         </div>
 
         <Button type="submit" size="lg" block busy={signIn.isPending}>

@@ -1,4 +1,4 @@
-using Dewiride.Analytics.Api.Configuration;
+using Dewiride.Analytics.Application.Dashboard;
 using Dewiride.Analytics.Application.Sessions;
 
 namespace Dewiride.Analytics.Integration.Tests.Fixtures;
@@ -20,6 +20,10 @@ internal static class TestSettings
     /// An allowance no test will reach, for the hosts whose subject is something else.
     /// </summary>
     public const string NoPracticalLimit = "100000";
+
+    /// <summary>The whole address this installation says people open it on.</summary>
+    public static readonly string PublicAddress =
+        $"{DashboardOptions.SectionName}:{nameof(DashboardOptions.PublicAddress)}";
 
     /// <summary>Whether the engine judges traffic on a timer in the background.</summary>
     /// <remarks>

@@ -12,7 +12,7 @@ import { Link, usePathname } from '@/i18n/navigation';
 import { useChosenSite } from '@/lib/analytics/chosen-site';
 import { useSession, useSignOut } from '@/lib/queries/session';
 import { useSites } from '@/lib/queries/sites';
-import { SECTIONS } from '@/lib/routes';
+import { currentSection, SECTIONS } from '@/lib/routes';
 import { cn } from '@/lib/styling';
 
 /**
@@ -98,7 +98,7 @@ export function AppHeader() {
         >
           <ul className="mx-auto flex max-w-6xl items-center gap-1 px-2 sm:px-4">
             {SECTIONS.map((section) => {
-              const current = here === section.path;
+              const current = here !== null && currentSection(here) === section.path;
 
               return (
                 <li key={section.path}>

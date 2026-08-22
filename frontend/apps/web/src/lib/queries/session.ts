@@ -2,8 +2,11 @@
 
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  claimInstall,
+  beginPasswordReset,
+  type ChosenPassword,
   type Credentials,
+  claimInstall,
+  completePasswordReset,
   describeSession,
   type InstallationDetails,
   signIn,
@@ -74,12 +77,40 @@ export function useClaimInstall() {
 }
 
 /**
+ * Asks the engine to send a way back into an account.
+ *
+ * There is nothing to put in the cache afterwards. The engine says nothing about whether the
+ * address belongs to an account, so the only thing the screen learns is that the request arrived.
+ */
+export function useBeginPasswordReset() {
+  const cache = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (emailAddress: string) => beginPasswordReset(emailAddress, proofFrom(cache)),
+  });
+}
+
+/**
+ * Sets a new password from a link.
+ *
+ * Nobody is signed in by this. Holding the link proves the mailbox and nothing else, and the
+ * password that was just chosen is what the sign-in screen then asks for.
+ */
+export function useCompletePasswordReset() {
+  const cache = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (chosen: ChosenPassword) => completePasswordReset(chosen, proofFrom(cache)),
+  });
+}
+
+/**
  * The proof-of-origin value the engine last issued.
  *
  * It belongs to the identity it was issued to and a new one arrives with every answer that
  * changes who is signed in, so it is read at the moment of use rather than held in a component.
  */
-function proofFrom(cache: QueryClient): string {
+export function proofFrom(cache: QueryClient): string {
   const proof = cache.getQueryData<Session>(sessionKey)?.token;
 
   if (!proof) {

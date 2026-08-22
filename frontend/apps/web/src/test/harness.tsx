@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { type RenderResult, render } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ReactElement } from 'react';
+import type { SignedInUser } from '@/lib/api/schemas';
 import { sessionKey } from '@/lib/queries/session';
 import messages from '../../messages/en.json';
 
@@ -14,6 +15,14 @@ interface Options {
    * answer is still on its way, or when it never comes.
    */
   readonly sessionAlreadyRead?: boolean;
+
+  /**
+   * Who is signed in, for the screens that are about the person reading them.
+   *
+   * Nobody by default, because most screens are about a website rather than about whoever is
+   * looking at it and would only be given somebody to ignore.
+   */
+  readonly signedInAs?: SignedInUser | null;
 }
 
 /**
@@ -25,14 +34,18 @@ interface Options {
  */
 export function renderScreen(
   ui: ReactElement,
-  { sessionAlreadyRead = true }: Options = {},
+  { sessionAlreadyRead = true, signedInAs = null }: Options = {},
 ): RenderResult & { readonly cache: QueryClient } {
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
 
   if (sessionAlreadyRead) {
-    cache.setQueryData(sessionKey, { setupCompleted: true, user: null, token: 'proof-value' });
+    cache.setQueryData(sessionKey, {
+      setupCompleted: true,
+      user: signedInAs,
+      token: 'proof-value',
+    });
   }
 
   const result = render(

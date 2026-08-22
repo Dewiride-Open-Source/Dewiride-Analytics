@@ -32,6 +32,7 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 public static class AnalyticsSqlCompiler
 {
     private const string SiteIdParameter = "site_id";
+    private const string SiteIdsParameter = "site_ids";
     private const string FromParameter = "from_ms";
     private const string ToParameter = "to_ms";
     private const string TimeZoneParameter = "time_zone";
@@ -404,6 +405,66 @@ public static class AnalyticsSqlCompiler
             ?? CompileFromVisits(scope, query)
             ?? CompileFromVerdicts(scope, query)
             ?? throw new NotSupportedException($"No statement is defined for {query.GetType().Name}.");
+    }
+
+    /// <summary>
+    /// Compiles the count of what a set of sites delivered over a window.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The one statement here that is not bound to an authorisation decision, because it answers
+    /// nobody's question: the sites come from the control plane and the answer goes into the
+    /// installation's own accounting. It is a separate entry point rather than another case in
+    /// <see cref="Compile(TenantScope, AnalyticsQuery)"/> for exactly that reason — every statement
+    /// reachable from a request takes its site from the scope, and a case that took one from the
+    /// question instead would put an exception to that rule where somebody could reach it.
+    /// </para>
+    /// <para>
+    /// It counts pages delivered through the same fragment the headline totals are built from, so
+    /// a figure counted for accounting and a figure shown on a screen are the same arithmetic
+    /// rather than two derivations that agree until they do not.
+    /// </para>
+    /// </remarks>
+    /// <param name="window">Which sites, and which stretch of time.</param>
+    /// <returns>The statement and its bound values.</returns>
+    public static CompiledStatement CompileVolume(SiteVolumeWindow window)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+
+        var sql = $$"""
+            WITH
+                windowed AS
+                (
+                    SELECT site_id, kind, surface, path, visitor_key, correlation_id
+                    FROM events
+                    WHERE site_id IN {site_ids:Array(UUID)}
+                      AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                      AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+                ),
+                {{ReconciledEvents.ReconciliationPerSite}}
+            SELECT
+                site_id,
+                toInt64(sum(page_views)) AS page_views
+            FROM
+            (
+                SELECT
+                    site_id,
+                    visitor_key,
+                    {{ReconciledEvents.DeliveredPageViews(8)}}
+                FROM identified
+                GROUP BY site_id, visitor_key, path
+            )
+            GROUP BY site_id
+            ORDER BY site_id
+            """;
+
+        return new CompiledStatement(
+            sql,
+            [
+                new QueryParameter(SiteIdsParameter, window.SiteIds.ToArray()),
+                new QueryParameter(FromParameter, window.Range.From.ToUnixTimeMilliseconds()),
+                new QueryParameter(ToParameter, window.Range.To.ToUnixTimeMilliseconds()),
+            ]);
     }
 
     /// <summary>

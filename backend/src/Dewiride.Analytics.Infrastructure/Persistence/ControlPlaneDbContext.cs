@@ -33,6 +33,12 @@ public sealed class ControlPlaneDbContext(DbContextOptions<ControlPlaneDbContext
     /// <summary>Sites whose traffic is observed.</summary>
     public DbSet<Site> Sites => Set<Site>();
 
+    /// <summary>Standings people hold in an organisation.</summary>
+    public DbSet<OrganizationMembership> OrganizationMemberships => Set<OrganizationMembership>();
+
+    /// <summary>Offers of a standing in an organisation, waiting to be taken up.</summary>
+    public DbSet<OrganizationInvitation> OrganizationInvitations => Set<OrganizationInvitation>();
+
     /// <summary>Grants of a role on a site.</summary>
     public DbSet<SiteMembership> SiteMemberships => Set<SiteMembership>();
 

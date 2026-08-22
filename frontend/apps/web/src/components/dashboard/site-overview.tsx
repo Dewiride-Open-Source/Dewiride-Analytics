@@ -16,7 +16,7 @@ import { SiteReading } from '@/components/dashboard/site-reading';
 import { SiteSettings } from '@/components/dashboard/site-settings';
 import { SiteSources } from '@/components/dashboard/site-sources';
 import { TrackingCode } from '@/components/dashboard/tracking-code';
-import { type TrafficDay, TrafficChart } from '@/components/dashboard/traffic-chart';
+import { TrafficChart, type TrafficDay } from '@/components/dashboard/traffic-chart';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';

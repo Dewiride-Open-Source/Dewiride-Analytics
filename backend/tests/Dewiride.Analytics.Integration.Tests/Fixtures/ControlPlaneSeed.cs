@@ -42,6 +42,56 @@ internal static class ControlPlaneSeed
     }
 
     /// <summary>
+    /// Adds another site to an organisation that already exists.
+    /// </summary>
+    /// <remarks>
+    /// For the tests about a standing reaching everything an account owns, which needs two sites
+    /// under one organisation rather than two organisations with one each.
+    /// </remarks>
+    /// <param name="stack">The running stack.</param>
+    /// <param name="organizationId">The organisation to add it to.</param>
+    /// <param name="domain">The site's primary hostname.</param>
+    /// <returns>The saved site.</returns>
+    public static async Task<Site> AddSiteToAsync(
+        AnalyticsStackFixture stack,
+        Guid organizationId,
+        string domain)
+    {
+        await using var scope = stack.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>();
+        var now = scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow();
+
+        var site = new Site(Guid.NewGuid(), organizationId, domain, "Etc/UTC", now);
+
+        database.Add(site);
+        await database.SaveChangesAsync(Cancellation.Token).ConfigureAwait(false);
+
+        return site;
+    }
+
+    /// <summary>
+    /// Gives an account a standing in an organisation.
+    /// </summary>
+    /// <param name="stack">The running stack.</param>
+    /// <param name="organizationId">The organisation.</param>
+    /// <param name="userId">The account.</param>
+    /// <param name="role">The standing to grant.</param>
+    /// <returns>A task that completes once the standing is saved.</returns>
+    public static async Task GrantInOrganizationAsync(
+        AnalyticsStackFixture stack,
+        Guid organizationId,
+        Guid userId,
+        OrganizationRole role)
+    {
+        await using var scope = stack.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>();
+        var now = scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow();
+
+        database.Add(new OrganizationMembership(Guid.NewGuid(), organizationId, userId, role, now));
+        await database.SaveChangesAsync(Cancellation.Token).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Issues a server key for a site.
     /// </summary>
     /// <param name="stack">The running stack.</param>

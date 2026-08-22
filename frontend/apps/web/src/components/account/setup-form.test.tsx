@@ -158,6 +158,9 @@ describe('the setup screen', () => {
     await userEvent.click(create());
 
     expect(await screen.findByText('This installation already has an owner')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Go to sign in' })).toHaveAttribute('href', '/sign-in');
+    expect(screen.getByRole('link', { name: 'Go to sign in' })).toHaveAttribute(
+      'href',
+      '/app/sign-in',
+    );
   });
 });

@@ -172,3 +172,109 @@ public sealed class SiteMembershipConfiguration : IEntityTypeConfiguration<SiteM
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
+
+/// <summary>Maps <see cref="OrganizationMembership"/>.</summary>
+public sealed class OrganizationMembershipConfiguration : IEntityTypeConfiguration<OrganizationMembership>
+{
+    /// <inheritdoc />
+    public void Configure(EntityTypeBuilder<OrganizationMembership> builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.ToTable("organization_memberships");
+        builder.HasKey(membership => membership.Id);
+
+        builder.Property(membership => membership.OrganizationId).IsRequired();
+        builder.Property(membership => membership.UserId).IsRequired();
+        builder.Property(membership => membership.GrantedAt).IsRequired();
+
+        builder.Property(membership => membership.Role)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .IsRequired();
+
+        builder.HasIndex(membership => new { membership.OrganizationId, membership.UserId })
+            .IsUnique()
+            .HasDatabaseName("ux_organization_memberships_organization_user");
+
+        // Resolving a scope starts from the person, so this is the direction the read runs in.
+        builder.HasIndex(membership => membership.UserId)
+            .HasDatabaseName("ix_organization_memberships_user_id");
+
+        builder.HasOne<Organization>()
+            .WithMany()
+            .HasForeignKey(membership => membership.OrganizationId)
+            .HasConstraintName("fk_organization_memberships_organizations_organization_id")
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<ApplicationUser>()
+            .WithMany()
+            .HasForeignKey(membership => membership.UserId)
+            .HasConstraintName("fk_organization_memberships_users_user_id")
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+/// <summary>Maps <see cref="OrganizationInvitation"/>.</summary>
+public sealed class OrganizationInvitationConfiguration : IEntityTypeConfiguration<OrganizationInvitation>
+{
+    /// <inheritdoc />
+    public void Configure(EntityTypeBuilder<OrganizationInvitation> builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.ToTable("organization_invitations");
+        builder.HasKey(invitation => invitation.Id);
+
+        builder.Property(invitation => invitation.OrganizationId).IsRequired();
+        builder.Property(invitation => invitation.InvitedByUserId).IsRequired();
+        builder.Property(invitation => invitation.InvitedAt).IsRequired();
+        builder.Property(invitation => invitation.ExpiresAt).IsRequired();
+
+        builder.Property(invitation => invitation.EmailAddress)
+            .HasMaxLength(OrganizationInvitation.MaxEmailAddressLength)
+            .IsRequired();
+
+        builder.Property(invitation => invitation.NormalizedEmailAddress)
+            .HasMaxLength(OrganizationInvitation.MaxEmailAddressLength)
+            .IsRequired();
+
+        builder.Property(invitation => invitation.Role)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .IsRequired();
+
+        // Fixed width: a SHA-256 digest in lower-case hexadecimal is always sixty-four
+        // characters, and saying so lets the database refuse anything that is not one.
+        builder.Property(invitation => invitation.TokenHash)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        // One row per address per organisation, whatever state it is in. Asking somebody again
+        // renews the row they already have, so a second one would be a duplicate on the screen and
+        // an older secret that still worked.
+        builder.HasIndex(invitation =>
+                new { invitation.OrganizationId, invitation.NormalizedEmailAddress })
+            .IsUnique()
+            .HasDatabaseName("ux_organization_invitations_organization_address");
+
+        // Somebody arrives holding a secret and nothing else, so this is the direction the read
+        // that matters runs in. Unique across the estate: a collision would be an invitation into
+        // the wrong account.
+        builder.HasIndex(invitation => invitation.TokenHash)
+            .IsUnique()
+            .HasDatabaseName("ux_organization_invitations_token_hash");
+
+        builder.HasOne<Organization>()
+            .WithMany()
+            .HasForeignKey(invitation => invitation.OrganizationId)
+            .HasConstraintName("fk_organization_invitations_organizations_organization_id")
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<ApplicationUser>()
+            .WithMany()
+            .HasForeignKey(invitation => invitation.InvitedByUserId)
+            .HasConstraintName("fk_organization_invitations_users_invited_by_user_id")
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}

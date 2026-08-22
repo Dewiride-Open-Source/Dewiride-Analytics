@@ -1,4 +1,4 @@
-namespace Dewiride.Analytics.Api.Configuration;
+namespace Dewiride.Analytics.Application.Persistence;
 
 /// <summary>
 /// How the two stores' schemas are brought up to date.

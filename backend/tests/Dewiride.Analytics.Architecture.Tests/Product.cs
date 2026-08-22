@@ -20,6 +20,9 @@ internal static class Product
     /// <summary>The domain model.</summary>
     public const string Domain = "Dewiride.Analytics.Domain";
 
+    /// <summary>The seams the two editions meet on.</summary>
+    public const string Extensibility = "Dewiride.Analytics.Extensibility";
+
     /// <summary>Use cases, ports and the analytics vocabulary.</summary>
     public const string Application = "Dewiride.Analytics.Application";
 

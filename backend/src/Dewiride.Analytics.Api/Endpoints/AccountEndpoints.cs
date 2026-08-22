@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Dewiride.Analytics.Api.Contracts;
-using Dewiride.Analytics.Api.Security;
 using Dewiride.Analytics.Application.Accounts;
+using Dewiride.Analytics.Extensibility;
 using Dewiride.Analytics.Infrastructure.Identity;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -26,8 +26,8 @@ namespace Dewiride.Analytics.Api.Endpoints;
 /// </remarks>
 internal static class AccountEndpoints
 {
-    /// <summary>Name of the rate-limiting policy attempts to sign in run under.</summary>
-    public const string RateLimitPolicyName = "sign-in";
+    /// <summary>Problem code reported when a password-reset link will not do.</summary>
+    public const string ResetLinkNotUsableCode = "ResetLinkNotUsable";
 
     /// <summary>
     /// Stands in for a real account when the address supplied does not match one.
@@ -61,7 +61,7 @@ internal static class AccountEndpoints
         routes.MapPost("/api/session", SignInAsync)
             .WithName("SignIn")
             .WithSummary("Signs somebody in with an address and a password.")
-            .RequireRateLimiting(RateLimitPolicyName)
+            .RequireRateLimiting(RateLimitPolicies.Accounts)
             .RequireProofOfOrigin()
             .AllowAnonymous();
 
@@ -76,7 +76,24 @@ internal static class AccountEndpoints
             .WithDescription(
                 "Works once. Every later call is refused, whoever makes it, because the install "
                 + "already has an owner.")
-            .RequireRateLimiting(RateLimitPolicyName)
+            .RequireRateLimiting(RateLimitPolicies.Accounts)
+            .RequireProofOfOrigin()
+            .AllowAnonymous();
+
+        routes.MapPost("/api/password-reset", BeginResetAsync)
+            .WithName("BeginPasswordReset")
+            .WithSummary("Sends a way back in to an address that has an account.")
+            .WithDescription(
+                "Answers the same whether or not the address belongs to an account. Anything "
+                + "else would turn this into a way of finding out who has one.")
+            .RequireRateLimiting(RateLimitPolicies.Accounts)
+            .RequireProofOfOrigin()
+            .AllowAnonymous();
+
+        routes.MapPost("/api/password-reset/complete", CompleteResetAsync)
+            .WithName("CompletePasswordReset")
+            .WithSummary("Sets a new password for somebody holding a link that still works.")
+            .RequireRateLimiting(RateLimitPolicies.Accounts)
             .RequireProofOfOrigin()
             .AllowAnonymous();
     }
@@ -97,7 +114,7 @@ internal static class AccountEndpoints
             : null;
 
         return TypedResults.Ok(
-            new SessionResponse(claimed, Describe(user), AntiforgeryGuard.IssueToken(antiforgery, context)));
+            new SessionResponse(claimed, SignedInUsers.Describe(user), AntiforgeryGuard.IssueToken(antiforgery, context)));
     }
 
     private static async Task<Results<Ok<SessionResponse>, ProblemHttpResult>> SignInAsync(
@@ -140,7 +157,7 @@ internal static class AccountEndpoints
         context.User = await sessions.CreateUserPrincipalAsync(user).ConfigureAwait(false);
 
         return TypedResults.Ok(
-            new SessionResponse(true, Describe(user), AntiforgeryGuard.IssueToken(antiforgery, context)));
+            new SessionResponse(true, SignedInUsers.Describe(user), AntiforgeryGuard.IssueToken(antiforgery, context)));
     }
 
     /// <summary>
@@ -202,8 +219,71 @@ internal static class AccountEndpoints
         return TypedResults.Ok(
             new SetupResponse(
                 outcome.SiteId!.Value,
-                Describe(owner)!,
+                SignedInUsers.Describe(owner)!,
                 AntiforgeryGuard.IssueToken(antiforgery, context)));
+    }
+
+    /// <summary>
+    /// Takes a request for a way back in and says nothing about what came of it.
+    /// </summary>
+    /// <remarks>
+    /// Accepted, always. Whether a message was sent, whether the address belongs to an account and
+    /// whether the mail server took it are all invisible from here, because an answer that varied
+    /// would be a way of asking this installation who has an account on it.
+    /// </remarks>
+    private static async Task<Results<Accepted, ProblemHttpResult>> BeginResetAsync(
+        ForgotPasswordRequest request,
+        HttpContext context,
+        IPasswordReset resets,
+        CancellationToken cancellationToken)
+    {
+        DoNotStore(context);
+
+        if (request is null || string.IsNullOrWhiteSpace(request.EmailAddress))
+        {
+            return AddressMissing();
+        }
+
+        await resets.BeginAsync(request.EmailAddress.Trim(), cancellationToken).ConfigureAwait(false);
+
+        return TypedResults.Accepted((string?)null);
+    }
+
+    /// <summary>
+    /// Sets a new password for somebody who followed a link.
+    /// </summary>
+    /// <remarks>
+    /// Nobody is signed in as a result. Possession of the link proves the mailbox and nothing
+    /// more, and the password that was just set is what the next screen asks for.
+    /// </remarks>
+    private static async Task<Results<NoContent, ProblemHttpResult>> CompleteResetAsync(
+        ResetPasswordRequest request,
+        HttpContext context,
+        IPasswordReset resets,
+        CancellationToken cancellationToken)
+    {
+        DoNotStore(context);
+
+        if (request is null
+            || string.IsNullOrWhiteSpace(request.EmailAddress)
+            || string.IsNullOrWhiteSpace(request.Token)
+            || string.IsNullOrEmpty(request.Password))
+        {
+            return LinkNotUsable();
+        }
+
+        var outcome = await resets
+            .CompleteAsync(
+                new PasswordResetRequest(request.EmailAddress.Trim(), request.Token, request.Password),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return outcome.Status switch
+        {
+            PasswordResetStatus.Reset => TypedResults.NoContent(),
+            PasswordResetStatus.PasswordRejected => Unusable(outcome.Problems),
+            _ => LinkNotUsable(),
+        };
     }
 
     /// <summary>
@@ -238,11 +318,6 @@ internal static class AccountEndpoints
         return true;
     }
 
-    private static SignedInUser? Describe(ApplicationUser? user) =>
-        user is null
-            ? null
-            : new SignedInUser(user.Id, user.Email ?? string.Empty, user.DisplayName ?? user.Email ?? string.Empty);
-
     /// <summary>
     /// Keeps answers about who is signed in out of every cache between here and the browser.
     /// </summary>
@@ -273,6 +348,39 @@ internal static class AccountEndpoints
                 + "website to measure and its time zone are all needed.",
             statusCode: StatusCodes.Status400BadRequest);
 
+    private static ProblemHttpResult AddressMissing() =>
+        TypedResults.Problem(
+            title: "An email address is needed.",
+            detail: "Enter the address you sign in with.",
+            statusCode: StatusCodes.Status400BadRequest);
+
+    /// <summary>
+    /// The single answer to every link that will not do.
+    /// </summary>
+    /// <remarks>
+    /// Expired, already used, tampered with, and sent to an address that has no account are all
+    /// answered identically and with the same code. Telling them apart would say which addresses
+    /// have accounts here, and confirming that a link had been used would confirm that somebody
+    /// had asked for one.
+    /// </remarks>
+    private static ProblemHttpResult LinkNotUsable() =>
+        Refusal(
+            "That link cannot be used.",
+            new AccountProblem(
+                ResetLinkNotUsableCode,
+                "Reset links stop working after 24 hours, and once they have been used. Ask for a "
+                + "new one."));
+
+    private static ProblemHttpResult Refusal(string title, AccountProblem problem) =>
+        TypedResults.Problem(
+            title: title,
+            detail: problem.Description,
+            statusCode: StatusCodes.Status400BadRequest,
+            extensions: new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["problems"] = new[] { problem },
+            });
+
     private static ProblemHttpResult AlreadyClaimed() =>
         TypedResults.Problem(
             title: "This installation has already been set up.",
@@ -280,7 +388,7 @@ internal static class AccountEndpoints
                 + "you.",
             statusCode: StatusCodes.Status409Conflict);
 
-    private static ProblemHttpResult Unusable(IReadOnlyList<InstallationProblem> problems) =>
+    private static ProblemHttpResult Unusable(IReadOnlyList<AccountProblem> problems) =>
         TypedResults.Problem(
             title: "Those details cannot be used.",
             detail: problems.Count > 0 ? problems[0].Description : null,

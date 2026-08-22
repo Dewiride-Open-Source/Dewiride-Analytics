@@ -1,6 +1,19 @@
 @import "tailwindcss";
 
 /*
+ * The compiled edition's screens, which sit outside this application's own directory.
+ *
+ * Styles are generated from the class names actually written in the source, and the search starts
+ * from this application. The commercial screens are compiled from ee/ and are therefore invisible
+ * to it: without this, any class used only there produces no rule at all, and the screen renders
+ * with the layout silently missing rather than with an error anybody would see.
+ *
+ * Written as a pattern rather than a directory so that a checkout without ee/ — which is every
+ * ordinary one — simply matches nothing.
+ */
+@source "../../../../../ee/frontend/edition/**/*.{ts,tsx}";
+
+/*
  * Dark is chosen, not merely detected: the theme switch writes a class on the document so that a
  * deliberate choice survives a machine set the other way.
  */

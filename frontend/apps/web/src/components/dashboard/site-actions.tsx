@@ -12,8 +12,8 @@ import {
 } from '@/components/dashboard/ranked-list';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
-import type { ActionGrouping, ControlKind, SiteAction } from '@/lib/api/schemas';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
+import type { ActionGrouping, ControlKind, SiteAction } from '@/lib/api/schemas';
 import { useActions } from '@/lib/queries/sites';
 
 interface SiteActionsProps {

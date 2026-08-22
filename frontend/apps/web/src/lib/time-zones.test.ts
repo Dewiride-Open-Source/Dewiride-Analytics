@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   offeredZone,
   readableZone,
-  thisDeviceTimeZone,
   type TimeZoneGroup,
+  thisDeviceTimeZone,
   timeZoneGroups,
   withZone,
 } from '@/lib/time-zones';

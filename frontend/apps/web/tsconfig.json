@@ -26,7 +26,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@edition": ["./src/edition/community/index.ts"]
     }
   },
   "include": [

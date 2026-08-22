@@ -53,6 +53,7 @@ public sealed class CachedSiteCatalog(ControlPlaneDbContext database, HybridCach
                 .Select(site => new SiteSnapshot
                 {
                     Id = site.Id,
+                    OrganizationId = site.OrganizationId,
                     Domain = site.Domain,
                     RetainQueryStrings = site.RetainQueryStrings,
                     CaptureClicks = site.CaptureClicks,

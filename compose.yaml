@@ -126,6 +126,22 @@ services:
       # volume yourself, and everything else behaves the same. Until anything is there, visitors
       # are still counted and their country reads as not known.
       Dewiride__ReferenceData__AutoDownload: ${REFERENCE_DATA_AUTO_DOWNLOAD:-true}
+      # The whole address people open the dashboard on. Every link the engine sends is built from
+      # it, and never from the address a request claims to have arrived at — a hostname taken off
+      # an incoming request is written by whoever sent it, so a reset link built that way can be
+      # aimed anywhere. Left empty until mail is switched on, at which point it is required.
+      Dewiride__Dashboard__PublicAddress: ${PUBLIC_URL:-}
+      # Where messages go. Left off, they are written to this engine's log instead, which is what
+      # lets somebody who has forgotten their password get back into an installation with no mail
+      # server. Anyone who can read that log can use the links in it.
+      Dewiride__Email__Enabled: ${EMAIL_ENABLED:-false}
+      Dewiride__Email__Host: ${SMTP_HOST:-}
+      Dewiride__Email__Port: ${SMTP_PORT:-587}
+      Dewiride__Email__Security: ${SMTP_SECURITY:-StartTls}
+      Dewiride__Email__UserName: ${SMTP_USERNAME:-}
+      Dewiride__Email__Password: ${SMTP_PASSWORD:-}
+      Dewiride__Email__FromAddress: ${EMAIL_FROM_ADDRESS:-}
+      Dewiride__Email__FromName: ${EMAIL_FROM_NAME:-Dewiride Analytics}
       # How much the engine says about what it is doing. Debug adds the reason a report was turned
       # away, which is how "the tracker is installed and the dashboard stays at zero" is answered.
       # Off by default because the collector takes no credential, so a line per refused report is
@@ -164,6 +180,11 @@ services:
       # one address and the sign-in cookie works with no cross-origin arrangement to get wrong.
       # Read when a request is forwarded rather than when the image was built.
       DEWIRIDE_API_ORIGIN: http://api:8080
+      # Where a website in front of the product answers, if there is one. The screens deliberately
+      # occupy one segment and leave the root free, so anything you put there is forwarded to it
+      # and shares this one address. Empty is the ordinary case, and then the root leads to the
+      # dashboard as it always has.
+      DEWIRIDE_SITE_ORIGIN: ${SITE_ORIGIN:-}
     ports:
       # The one service meant to be reached from a browser, and still bound to this machine by
       # default, because the supported way to publish it is a reverse proxy terminating TLS in

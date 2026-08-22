@@ -23,7 +23,7 @@ export async function readResource<T>(path: string, shape: ZodType<T>): Promise<
 }
 
 /** The ways this dashboard asks the engine to change something. */
-type ChangingMethod = 'POST' | 'PUT' | 'DELETE';
+type ChangingMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /**
  * Submits something to the engine.
@@ -54,17 +54,24 @@ export async function submitResource<T>(
 /**
  * Submits something the engine answers with nothing at all.
  *
- * Separate from the call that reads an answer back, because a successful removal has an empty
- * body and asking to read one as JSON fails on the answer that means it worked.
+ * Separate from the call that reads an answer back, because an empty body is what several of these
+ * answers are and asking to read one as JSON fails on the very answer that means it worked. The
+ * payload is optional for the same reason it is elsewhere: removing something carries nothing,
+ * while asking for a password to be reset carries what to reset.
  */
 export async function discardResource(
   path: string,
   method: ChangingMethod,
   proof: string,
+  body?: unknown,
 ): Promise<void> {
   const response = await send(path, {
     method,
-    headers: { ...ACCEPTS_JSON, [PROOF_HEADER]: proof },
+    headers:
+      body === undefined
+        ? { ...ACCEPTS_JSON, [PROOF_HEADER]: proof }
+        : { ...ACCEPTS_JSON, 'content-type': 'application/json', [PROOF_HEADER]: proof },
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
 
   if (!response.ok) {

@@ -7,50 +7,59 @@ import {
   actionsSchema,
   type Devices,
   devicesSchema,
-  type Installation,
-  issuedServerKeySchema,
-  type IssuedServerKey,
-  installationSchema,
-  type LocationGrouping,
-  type Locations,
-  locationsSchema,
-  type Overview,
-  overviewSchema,
-  type Pages,
-  pagesSchema,
-  type Session,
-  sessionSchema,
-  type Series,
-  type SeriesMetric,
-  seriesSchema,
-  type ServerKey,
-  serverKeysSchema,
-  type Site,
-  siteSchema,
-  type SiteSettings,
-  siteSettingsSchema,
-  type SourceGrouping,
-  type Sources,
-  sourcesSchema,
-  sitesSchema,
   type Engagement,
   type EngagementRanking,
   engagementSchema,
+  type Installation,
+  type InvitationPreview,
+  type IssuedServerKey,
+  type Join,
+  installationSchema,
+  invitationPreviewSchema,
+  issuedServerKeySchema,
+  joinSchema,
+  type LocationGrouping,
+  type Locations,
+  locationsSchema,
+  type Organization,
+  type OrganizationRole,
+  organizationSchema,
+  type Overview,
+  overviewSchema,
   type PageEngagement,
+  type Pages,
   pageEngagementSchema,
+  pagesSchema,
+  type Series,
+  type SeriesMetric,
+  type ServerKey,
+  type Session,
+  type Site,
+  type SignedInUser,
+  type SiteSettings,
   type Software,
   type SoftwareGrouping,
+  type SourceGrouping,
+  type Sources,
+  seriesSchema,
+  serverKeysSchema,
+  sessionSchema,
+  signedInUserSchema,
+  siteSchema,
+  siteSettingsSchema,
+  sitesSchema,
   softwareSchema,
+  sourcesSchema,
   type Traffic,
   trafficSchema,
-  type Visits,
-  visitsSchema,
   type VisitJourney,
-  visitJourneySchema,
   type VisitPages,
-  visitPagesSchema,
   type VisitPosition,
+  type Visits,
   type VisitTotals,
+  visitJourneySchema,
+  visitPagesSchema,
+  visitsSchema,
   visitTotalsSchema,
 } from './schemas';
 
@@ -64,6 +73,10 @@ import {
 const SESSION = '/api/session';
 const SETUP = '/api/setup';
 const SITES = '/api/sites';
+const PASSWORD_RESET = '/api/password-reset';
+const ORGANIZATION = '/api/organization';
+const ACCOUNT = '/api/account';
+const INVITATIONS = '/api/invitations';
 
 /** What is known before anybody has done anything: has this install an owner, and who is here. */
 export function describeSession(): Promise<Session> {
@@ -96,6 +109,31 @@ export interface InstallationDetails {
 
 export function claimInstall(details: InstallationDetails, proof: string): Promise<Installation> {
   return submitResource(SETUP, 'POST', proof, installationSchema, details);
+}
+
+/**
+ * Asks for a way back into an account.
+ *
+ * The engine accepts this whether or not the address belongs to an account, and answers with
+ * nothing either way, so there is no outcome to read and nothing a screen could say beyond what it
+ * would have said anyway.
+ */
+export function beginPasswordReset(emailAddress: string, proof: string): Promise<void> {
+  return discardResource(PASSWORD_RESET, 'POST', proof, { emailAddress });
+}
+
+/** What somebody who followed a reset link sends back. */
+export interface ChosenPassword {
+  /** The address the link was sent to, carried in the link rather than typed again. */
+  readonly emailAddress: string;
+  /** The token from the link, exactly as it arrived. */
+  readonly token: string;
+  readonly password: string;
+}
+
+/** Sets a new password for somebody holding a link that still works. */
+export function completePasswordReset(chosen: ChosenPassword, proof: string): Promise<void> {
+  return discardResource(`${PASSWORD_RESET}/complete`, 'POST', proof, chosen);
 }
 
 export function listSites(): Promise<Site[]> {
@@ -433,4 +471,88 @@ function siteAddress(siteId: string): string {
 
 function period(window: AnalyticsWindow): string {
   return new URLSearchParams({ from: window.from, to: window.to }).toString();
+}
+
+/** The account the caller belongs to, everybody in it, and everybody who has been asked to join. */
+export function describeOrganization(): Promise<Organization> {
+  return readResource(ORGANIZATION, organizationSchema);
+}
+
+export function renameOrganization(name: string, proof: string): Promise<void> {
+  return discardResource(ORGANIZATION, 'PATCH', proof, { name });
+}
+
+/** What somebody is being asked to do in the account. */
+export interface Standing {
+  readonly userId: string;
+  readonly role: OrganizationRole;
+}
+
+export function changeStanding(standing: Standing, proof: string): Promise<void> {
+  return discardResource(`${ORGANIZATION}/people/${standing.userId}`, 'PATCH', proof, {
+    role: standing.role,
+  });
+}
+
+export function removePerson(userId: string, proof: string): Promise<void> {
+  return discardResource(`${ORGANIZATION}/people/${userId}`, 'DELETE', proof);
+}
+
+/** Who is being asked to join, and as what. */
+export interface Invitation {
+  readonly emailAddress: string;
+  readonly role: OrganizationRole;
+}
+
+/**
+ * Asks somebody to join.
+ *
+ * The engine answers with nothing and the list is read again afterwards, so that what a screen
+ * shows is always the account as the engine holds it rather than one row assembled here.
+ */
+export function invitePerson(invitation: Invitation, proof: string): Promise<void> {
+  return discardResource(`${ORGANIZATION}/invitations`, 'POST', proof, invitation);
+}
+
+export function revokeInvitation(invitationId: string, proof: string): Promise<void> {
+  return discardResource(`${ORGANIZATION}/invitations/${invitationId}`, 'DELETE', proof);
+}
+
+/** Changes the name the caller is shown under. */
+export function renameAccount(displayName: string, proof: string): Promise<SignedInUser> {
+  return submitResource(ACCOUNT, 'PATCH', proof, signedInUserSchema, { displayName });
+}
+
+/** A password being replaced. */
+export interface PasswordChange {
+  readonly currentPassword: string;
+  readonly newPassword: string;
+}
+
+export function changePassword(change: PasswordChange, proof: string): Promise<void> {
+  return discardResource(`${ACCOUNT}/password`, 'PUT', proof, change);
+}
+
+/**
+ * Reads what an invitation is for.
+ *
+ * The secret travels in the body rather than in the address, because what is in an address is
+ * written to access logs, kept in browser history and passed on in a referrer header — and this
+ * one is a way into an account for as long as it lasts.
+ */
+export function previewInvitation(token: string, proof: string): Promise<InvitationPreview> {
+  return submitResource(`${INVITATIONS}/preview`, 'POST', proof, invitationPreviewSchema, {
+    token,
+  });
+}
+
+/** Everything the join screen collects, which is nothing at all where an account already exists. */
+export interface Acceptance {
+  readonly token: string;
+  readonly displayName: string | null;
+  readonly password: string | null;
+}
+
+export function acceptInvitation(acceptance: Acceptance, proof: string): Promise<Join> {
+  return submitResource(`${INVITATIONS}/accept`, 'POST', proof, joinSchema, acceptance);
 }

@@ -6,7 +6,7 @@ import { engineDoing, engineStopped, respondWith } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
 
 const replace = vi.fn();
-const pathname = vi.fn(() => '/');
+const pathname = vi.fn(() => '/app');
 
 vi.mock('@/i18n/navigation', () => ({
   usePathname: () => pathname(),
@@ -14,7 +14,7 @@ vi.mock('@/i18n/navigation', () => ({
 }));
 
 beforeEach(() => {
-  pathname.mockReturnValue('/');
+  pathname.mockReturnValue('/app');
   replace.mockClear();
 });
 
@@ -61,7 +61,7 @@ describe('landing on the right screen', () => {
       { sessionAlreadyRead: false },
     );
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/set-up'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/app/set-up'));
     expect(screen.queryByText('The dashboard')).not.toBeInTheDocument();
   });
 

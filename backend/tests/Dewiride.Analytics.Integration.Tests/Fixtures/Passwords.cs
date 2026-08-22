@@ -14,4 +14,7 @@ internal static class Passwords
 {
     /// <summary>A passphrase that satisfies every account rule.</summary>
     public const string Acceptable = "vermilion tractor almanac";
+
+    /// <summary>A second one, for a test that has to change a password to something else.</summary>
+    public const string Replacement = "cardamom lantern rowboat";
 }

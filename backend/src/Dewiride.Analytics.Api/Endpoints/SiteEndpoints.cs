@@ -2,13 +2,13 @@ using System.Collections.Frozen;
 using System.Collections.Immutable;
 using Dewiride.Analytics.Api.Analytics;
 using Dewiride.Analytics.Api.Contracts;
-using Dewiride.Analytics.Api.Security;
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Domain.Sites;
+using Dewiride.Analytics.Extensibility;
 using Dewiride.Analytics.Infrastructure.Tenancy;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -1305,6 +1305,7 @@ internal static class SiteEndpoints
                     RoleNames[added.Role])),
             SiteAdditionOutcome.NotAllowed => TypedResults.Forbid(),
             SiteAdditionOutcome.AlreadyMeasured => AlreadyMeasured(),
+            SiteAdditionOutcome.LimitReached => LimitReached(),
             _ => Unaddable(),
         };
     }
@@ -1364,6 +1365,9 @@ internal static class SiteEndpoints
     /// <summary>Names the reason a website is the last one its owner has.</summary>
     private const string OnlyOneCode = "SiteIsOnlyOne";
 
+    /// <summary>Names the reason an account is measuring as many websites as it may.</summary>
+    private const string LimitReachedCode = "SiteLimitReached";
+
     private static ProblemHttpResult Unaddable() =>
         Refused(
             "That website could not be added.",
@@ -1380,6 +1384,22 @@ internal static class SiteEndpoints
             new RefusedReason(
                 AlreadyMeasuredCode,
                 "It is already in the list of websites you can switch between."));
+
+    /// <summary>
+    /// Refuses a website because the account has no room left for one.
+    /// </summary>
+    /// <remarks>
+    /// The detail says only that there is no room, and never how much room there is or what would
+    /// give them more. Both belong to the edition that sells the room, and it says them on its own
+    /// screen where it can say them accurately.
+    /// </remarks>
+    private static ProblemHttpResult LimitReached() =>
+        Refused(
+            "That website could not be added.",
+            StatusCodes.Status409Conflict,
+            new RefusedReason(
+                LimitReachedCode,
+                "You are already measuring as many websites as your account allows."));
 
     private static ProblemHttpResult OnlyOne() =>
         Refused(

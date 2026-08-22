@@ -29,6 +29,54 @@ export const installationSchema = z.object({
   token: z.string(),
 });
 
+/**
+ * The three things somebody may be allowed to do across a whole account.
+ *
+ * Deliberately not the same list as the one for a single website. A standing in an account and a
+ * role on one of its websites answer different questions, and the words a reader sees for each
+ * come from the catalogue rather than from these.
+ */
+export const organizationRoleSchema = z.enum(['member', 'admin', 'owner']);
+
+export const personSchema = z.object({
+  id: z.uuid(),
+  emailAddress: z.string(),
+  displayName: z.string(),
+  role: organizationRoleSchema,
+  joinedAt: timestamp,
+});
+
+/** Somebody who has been asked to join and has not yet. */
+export const pendingInvitationSchema = z.object({
+  id: z.uuid(),
+  emailAddress: z.string(),
+  role: organizationRoleSchema,
+  invitedAt: timestamp,
+  expiresAt: timestamp,
+});
+
+export const organizationSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  role: organizationRoleSchema,
+  people: z.array(personSchema),
+  invitations: z.array(pendingInvitationSchema),
+});
+
+/** What an invitation is for, as the person holding it is shown. */
+export const invitationPreviewSchema = z.object({
+  organizationName: z.string(),
+  emailAddress: z.string(),
+  needsAccount: z.boolean(),
+});
+
+/** What came of taking an invitation up. */
+export const joinSchema = z.object({
+  signedIn: z.boolean(),
+  user: signedInUserSchema.nullable(),
+  token: z.string(),
+});
+
 /** The three things somebody may be allowed to do with a website. */
 export const siteRoleSchema = z.enum(['viewer', 'editor', 'owner']);
 
@@ -526,6 +574,12 @@ export const issuedServerKeySchema = z.object({
 export type SignedInUser = z.infer<typeof signedInUserSchema>;
 export type Session = z.infer<typeof sessionSchema>;
 export type Installation = z.infer<typeof installationSchema>;
+export type OrganizationRole = z.infer<typeof organizationRoleSchema>;
+export type Person = z.infer<typeof personSchema>;
+export type PendingInvitation = z.infer<typeof pendingInvitationSchema>;
+export type Organization = z.infer<typeof organizationSchema>;
+export type InvitationPreview = z.infer<typeof invitationPreviewSchema>;
+export type Join = z.infer<typeof joinSchema>;
 export type SiteRole = z.infer<typeof siteRoleSchema>;
 export type Site = z.infer<typeof siteSchema>;
 export type Overview = z.infer<typeof overviewSchema>;

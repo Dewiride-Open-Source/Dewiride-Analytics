@@ -1,4 +1,4 @@
-using Dewiride.Analytics.Api.Security;
+using Dewiride.Analytics.Extensibility;
 using Dewiride.Analytics.Infrastructure.Identity;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -38,6 +38,18 @@ internal static class AuthenticationRegistration
     /// </remarks>
     private static readonly TimeSpan SessionLifetime = TimeSpan.FromDays(14);
 
+    /// <summary>
+    /// How long a sign-in may go unchecked against the account it belongs to.
+    /// </summary>
+    /// <remarks>
+    /// Five minutes rather than the framework's half hour. Resetting a password changes the
+    /// account's security stamp, and this is how long afterwards a session opened with the old
+    /// password can keep working — which matters, because somebody resetting a password is often
+    /// doing it precisely because they think somebody else is holding one. The cost is a single
+    /// read of the control plane per signed-in session per five minutes.
+    /// </remarks>
+    private static readonly TimeSpan StampRecheck = TimeSpan.FromMinutes(5);
+
     /// <summary>Name of the cookie that carries a sign-in.</summary>
     public const string SessionCookieName = "dewiride.session";
 
@@ -56,6 +68,9 @@ internal static class AuthenticationRegistration
 
         builder.Services.ConfigureApplicationCookie(ConfigureSessionCookie);
 
+        builder.Services.Configure<SecurityStampValidatorOptions>(
+            options => options.ValidationInterval = StampRecheck);
+
         builder.Services.AddAuthorization(options => options.FallbackPolicy =
             new AuthorizationPolicyBuilder()
                 .RequireAuthenticatedUser()
@@ -73,7 +88,7 @@ internal static class AuthenticationRegistration
     }
 
     /// <summary>
-    /// Adds the parts of sign-in that need a request to sign in to.
+    /// Adds the parts of the account store that rest on ASP.NET Core.
     /// </summary>
     /// <remarks>
     /// Handed to the control-plane registration, which owns the account store but deliberately
@@ -86,6 +101,14 @@ internal static class AuthenticationRegistration
         ArgumentNullException.ThrowIfNull(accounts);
 
         accounts.AddSignInManager<SignInManager<ApplicationUser>>();
+
+        // Password reset and address confirmation both ask the account store for a token, and it
+        // has none to give until a provider is registered under this name — which fails at the
+        // moment somebody first asks for one rather than when the host starts. Only the
+        // data-protection provider is added: the other three the framework offers exist for
+        // two-step verification, which this product does not have.
+        accounts.AddTokenProvider<DataProtectorTokenProvider<ApplicationUser>>(
+            TokenOptions.DefaultProvider);
     }
 
     /// <summary>

@@ -15,6 +15,7 @@ namespace Dewiride.Analytics.Application.Ingest;
 /// parsed into a shape the rest of the system can rely on.
 /// </remarks>
 /// <param name="siteCatalog">Resolves the site a report claims to belong to.</param>
+/// <param name="allowance">Decides whether this installation is still measuring the site.</param>
 /// <param name="visitorKeyFactory">Derives the daily-rotated visitor key.</param>
 /// <param name="networkLookup">Resolves where the visitor's address is and whose network it is on.</param>
 /// <param name="eventSink">Durable storage for accepted events.</param>
@@ -22,6 +23,7 @@ namespace Dewiride.Analytics.Application.Ingest;
 /// <param name="logger">Records why a report was turned away, for the operator alone.</param>
 public sealed partial class EventIngestor(
     ISiteCatalog siteCatalog,
+    IMeasurementAllowance allowance,
     IVisitorKeyFactory visitorKeyFactory,
     INetworkLookup networkLookup,
     IEventSink eventSink,
@@ -111,6 +113,17 @@ public sealed partial class EventIngestor(
         if (site is null)
         {
             Log.UnknownSite(logger, command.SiteId);
+            return IngestOutcome.Rejected;
+        }
+
+        // Asked before anything is parsed out of the payload, because it is a question about the
+        // account rather than about the report: where the answer is no, none of the work below it
+        // is work worth doing. The sender is told nothing either way — a report turned away here
+        // gets the same empty answer as one that was stored — because whoever runs the measured
+        // site learns this from their own dashboard, and nobody else has any business learning it
+        // from the collector.
+        if (!await allowance.AllowsAsync(site, cancellationToken).ConfigureAwait(false))
+        {
             return IngestOutcome.Rejected;
         }
 

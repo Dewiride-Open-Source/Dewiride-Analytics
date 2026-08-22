@@ -46,6 +46,7 @@ internal static class CompiledStatementReport
         // approved file unchanged.
         string[] entries => $"[{string.Join(", ", entries.Select(entry => $"'{entry}'"))}]",
         uint[] numbers => $"[{string.Join(", ", numbers.Select(number => number.ToString(CultureInfo.InvariantCulture)))}]",
+        Guid[] identifiers => $"[{string.Join(", ", identifiers)}]",
         long number => number.ToString(CultureInfo.InvariantCulture),
         string text => $"'{text}'",
         _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,

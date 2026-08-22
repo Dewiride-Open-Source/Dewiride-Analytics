@@ -59,6 +59,8 @@ https://opensource.org/licenses/MIT
   TanStack Query / Table / Virtual  Copyright Tanner Linsley
   Radix UI, shadcn/ui
   echarts-for-react
+  MailKit and MimeKit             https://github.com/jstedfast/MailKit
+                                  Copyright .NET Foundation and Contributors
   Verify, Testcontainers, NSubstitute, NetArchTest
   crawler-user-agents             https://github.com/monperrus/crawler-user-agents
   ai.robots.txt                   https://github.com/ai-robots-txt/ai.robots.txt

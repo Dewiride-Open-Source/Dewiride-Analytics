@@ -57,6 +57,26 @@
     <PackageVersion Include="ClickHouse.Driver" Version="1.3.0" />
   </ItemGroup>
 
+  <ItemGroup Label="Notifications">
+    <!--
+      Sends the messages this product has to send: a way back into an account, and confirming an
+      address. Microsoft does not recommend System.Net.Mail.SmtpClient for new work (DE0005) because
+      it does not speak enough of the modern protocol to be secured properly, and names MailKit as
+      the alternative. MIT, and it brings MimeKit with it.
+    -->
+    <PackageVersion Include="MailKit" Version="4.17.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Payments">
+    <!--
+      Stripe's own .NET library, Apache-2.0. Referenced only by the commercially licensed edition,
+      which is a separate repository cloned into ee/ — no project in this repository names it. The
+      version is pinned here because this file is the single central one for the whole tree, and a
+      second one beside it is the arrangement Dependabot handles badly.
+    -->
+    <PackageVersion Include="Stripe.net" Version="52.3.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Reference data">
     <!--
       Reads the MaxMind DB binary format. The reader only — it bundles no data, and MaxMind's own

@@ -1,0 +1,61 @@
+﻿--- statement ---
+WITH
+    windowed AS
+    (
+        SELECT site_id, kind, surface, path, visitor_key, correlation_id
+        FROM events
+        WHERE site_id IN {site_ids:Array(UUID)}
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    ),
+    echoed AS
+    (
+        SELECT
+            site_id, minIf(visitor_key, surface IN ('BrowserTracker', 'NoScriptPixel')) AS browser_key,
+            minIf(visitor_key, surface NOT IN ('BrowserTracker', 'NoScriptPixel')) AS reported_key
+        FROM windowed
+        WHERE correlation_id != ''
+          AND visitor_key != ''
+        GROUP BY site_id, correlation_id
+        HAVING browser_key != ''
+           AND reported_key != ''
+    ),
+    linked AS
+    (
+        SELECT
+            site_id, reported_key,
+            min(browser_key) AS browser_key
+        FROM echoed
+        GROUP BY site_id, reported_key
+    ),
+    identified AS
+    (
+        SELECT
+            windowed.* EXCEPT (visitor_key),
+            if(linked.browser_key != '' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'), linked.browser_key, windowed.visitor_key) AS visitor_key
+        FROM windowed
+        LEFT JOIN linked ON windowed.site_id = linked.site_id AND windowed.visitor_key = linked.reported_key
+    )
+SELECT
+    site_id,
+    toInt64(sum(page_views)) AS page_views
+FROM
+(
+    SELECT
+        site_id,
+        visitor_key,
+        greatest(
+            countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),
+            toUInt64(countIf(kind != 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')) > 0),
+            countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) AS delivered,
+        if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
+    FROM identified
+    GROUP BY site_id, visitor_key, path
+)
+GROUP BY site_id
+ORDER BY site_id
+
+--- bound values ---
+site_ids = [0197c0de-0000-7000-8000-000000000001, 0197c0de-0000-7000-8000-000000000002]
+from_ms = 1777593600000
+to_ms = 1778198400000

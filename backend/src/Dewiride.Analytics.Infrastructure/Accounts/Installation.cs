@@ -112,11 +112,13 @@ public sealed class Installation(
         if (!created.Succeeded)
         {
             return InstallationOutcome.Rejected(
-                [.. created.Errors.Select(error => new InstallationProblem(error.Code, error.Description))]);
+                [.. created.Errors.Select(error => new AccountProblem(error.Code, error.Description))]);
         }
 
         database.Organizations.Add(organization);
         database.Sites.Add(site);
+        database.OrganizationMemberships.Add(
+            new OrganizationMembership(Guid.CreateVersion7(now), organization.Id, user.Id, OrganizationRole.Owner, now));
         database.SiteMemberships.Add(
             new SiteMembership(Guid.CreateVersion7(now), site.Id, user.Id, SiteRole.Owner, now));
 
@@ -155,7 +157,7 @@ public sealed class Installation(
         catch (ArgumentException exception)
         {
             refusal = InstallationOutcome.Rejected(
-                [new InstallationProblem(OrganizationRejectedCode, exception.Message)]);
+                [new AccountProblem(OrganizationRejectedCode, exception.Message)]);
 
             return false;
         }
@@ -172,7 +174,7 @@ public sealed class Installation(
         catch (ArgumentException exception)
         {
             refusal = InstallationOutcome.Rejected(
-                [new InstallationProblem(SiteRejectedCode, exception.Message)]);
+                [new AccountProblem(SiteRejectedCode, exception.Message)]);
 
             return false;
         }

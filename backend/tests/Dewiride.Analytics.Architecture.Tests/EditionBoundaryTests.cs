@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using Dewiride.Analytics.Application.Abstractions;
+using Dewiride.Analytics.Extensibility;
 
 namespace Dewiride.Analytics.Architecture.Tests;
 

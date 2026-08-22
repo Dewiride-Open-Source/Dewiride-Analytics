@@ -22,13 +22,18 @@
 # The dashboard image compiles the tracker as well, because it is the dashboard that serves the
 # beacon: one address for the snippet somebody pastes into their website.
 
-# Not needed by either image.
+# Not needed by any image.
 integrations
 tools
 infra
 deploy
 docs
-ee
+
+# ee/ is deliberately not excluded. The commercial edition's images are built from this same
+# context — an engine compiled with its projects, a dashboard bundled with its screens, and the
+# public website — and every one of them copies from there. It is absent from an ordinary
+# checkout, and the images in this directory copy named paths, so it never reaches a layer of
+# theirs either way.
 
 **/Dockerfile
 .dockerignore

@@ -1,10 +1,10 @@
 import type { JourneyFilters } from '@/lib/analytics/journeys';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
 import type {
+  ActionGrouping,
   EngagementRanking,
   LocationGrouping,
   SeriesMetric,
-  ActionGrouping,
   SoftwareGrouping,
   SourceGrouping,
   VisitPosition,
@@ -18,6 +18,14 @@ import type {
  */
 
 export const sitesKey = ['sites'] as const;
+
+/**
+ * The account somebody belongs to, everybody in it, and everybody waiting to join.
+ *
+ * One name for all three, because they are one answer: a screen that showed the people from one
+ * read and the invitations from another would show somebody twice on the day they accepted.
+ */
+export const organizationKey = ['organization'] as const;
 
 export function overviewKey(siteId: string, window: AnalyticsWindow) {
   return ['sites', siteId, 'overview', window.from, window.to] as const;

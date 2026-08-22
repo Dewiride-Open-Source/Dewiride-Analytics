@@ -26,6 +26,9 @@ internal sealed class IngestHarness
     /// <summary>Identifier of the site the harness resolves.</summary>
     public static readonly Guid SiteId = new("0197c0de-0000-7000-8000-000000000001");
 
+    /// <summary>The organisation the harness's site belongs to.</summary>
+    public static readonly Guid OrganizationId = new("0197c0de-0000-7000-8000-0000000000ff");
+
     /// <summary>What the network lookup resolves the harness's address to.</summary>
     public static readonly NetworkAttributes Somewhere =
         new("IN", "MH", "Pune", 24560, "Bharti Airtel");
@@ -36,7 +39,7 @@ internal sealed class IngestHarness
     private readonly RecordingSink _sink = new();
     private readonly FakeLogger<EventIngestor> _logger = new();
 
-    private IngestHarness(SiteSnapshot? site, string? visitorKey, NetworkAttributes network)
+    private IngestHarness(SiteSnapshot? site, string? visitorKey, NetworkAttributes network, bool measuring)
     {
         _catalog.FindAsync(SiteId, Arg.Any<CancellationToken>()).Returns(site);
         _visitorKeys
@@ -50,6 +53,7 @@ internal sealed class IngestHarness
 
         Ingestor = new EventIngestor(
             _catalog,
+            new FixedAllowance(measuring),
             _visitorKeys,
             _network,
             _sink,
@@ -92,6 +96,7 @@ internal sealed class IngestHarness
     /// <param name="allowedOrigins">Origins the site permits, or empty for its own domain only.</param>
     /// <param name="visitorKey">The key the visitor-key factory returns.</param>
     /// <param name="network">What the address resolves to, or nothing when it resolves to nothing.</param>
+    /// <param name="measuring">Whether the installation is still measuring this site's account.</param>
     /// <returns>The harness.</returns>
     public static IngestHarness ForSite(
         string domain = "example.com",
@@ -99,23 +104,26 @@ internal sealed class IngestHarness
         bool captureClicks = true,
         IEnumerable<string>? allowedOrigins = null,
         string? visitorKey = "9f2a1c4e8b6d0a3f",
-        NetworkAttributes? network = null) =>
+        NetworkAttributes? network = null,
+        bool measuring = true) =>
         new(
             new SiteSnapshot
             {
                 Id = SiteId,
+                OrganizationId = OrganizationId,
                 Domain = domain,
                 RetainQueryStrings = retainQueryStrings,
                 CaptureClicks = captureClicks,
                 AllowedOrigins = allowedOrigins?.ToImmutableArray() ?? [],
             },
             visitorKey,
-            network ?? Somewhere);
+            network ?? Somewhere,
+            measuring);
 
     /// <summary>Builds a harness whose site catalog resolves nothing.</summary>
     /// <returns>The harness.</returns>
     public static IngestHarness WithNoSuchSite() =>
-        new(site: null, visitorKey: null, network: NetworkAttributes.Unresolved);
+        new(site: null, visitorKey: null, network: NetworkAttributes.Unresolved, measuring: true);
 
     /// <summary>Runs one ingest.</summary>
     /// <param name="command">The report.</param>
@@ -154,6 +162,20 @@ internal sealed class IngestHarness
             IpAddress = address,
             RequestOrigin = origin,
         };
+
+    /// <summary>
+    /// An allowance with one settled answer, written out rather than substituted.
+    /// </summary>
+    /// <remarks>
+    /// A substitute set up to return a <see cref="ValueTask{TResult}"/> hands back the same
+    /// instance on every call, and a value task may only be consumed once.
+    /// </remarks>
+    /// <param name="measuring">The answer this allowance gives.</param>
+    private sealed class FixedAllowance(bool measuring) : IMeasurementAllowance
+    {
+        public ValueTask<bool> AllowsAsync(SiteSnapshot site, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(measuring);
+    }
 
     private sealed class RecordingSink : IEventSink
     {

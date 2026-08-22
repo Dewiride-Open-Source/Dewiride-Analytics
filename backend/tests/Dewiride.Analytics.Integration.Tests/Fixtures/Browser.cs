@@ -91,6 +91,22 @@ internal sealed class Browser : IDisposable
     public Task<HttpResponseMessage> PutWithoutProofAsync<TBody>(string path, TBody body) =>
         SendAsync(HttpMethod.Put, path, JsonContent.Create(body), token: null);
 
+    /// <summary>Sends a request that changes part of something, with proof of where it came from.</summary>
+    /// <typeparam name="TBody">Type of the payload.</typeparam>
+    /// <param name="path">Path to change.</param>
+    /// <param name="body">Payload to send.</param>
+    /// <returns>The answer.</returns>
+    public Task<HttpResponseMessage> PatchAsync<TBody>(string path, TBody body) =>
+        SendAsync(HttpMethod.Patch, path, JsonContent.Create(body), Token);
+
+    /// <summary>Sends a request that changes part of something, with a token that will not be accepted.</summary>
+    /// <typeparam name="TBody">Type of the payload.</typeparam>
+    /// <param name="path">Path to change.</param>
+    /// <param name="body">Payload to send.</param>
+    /// <returns>The answer.</returns>
+    public Task<HttpResponseMessage> PatchWithoutProofAsync<TBody>(string path, TBody body) =>
+        SendAsync(HttpMethod.Patch, path, JsonContent.Create(body), token: null);
+
     /// <summary>Sends a request that removes something, with proof of where it came from.</summary>
     /// <param name="path">Path to delete.</param>
     /// <returns>The answer.</returns>

@@ -12,6 +12,17 @@
 packages:
   - frontend/apps/web
   - tracker
+  # Absent from an ordinary checkout, and pnpm passes over a member that is not there. Both are
+  # named rather than matched by a pattern for the reason above: a pattern would sweep in whatever
+  # else somebody had cloned into ee/.
+  #
+  # The first is the half of the dashboard only the commercial edition compiles, and it has to be a
+  # member of this workspace rather than of one of its own: those screens import React, and a second
+  # copy of React in one bundle produces hooks that fail at run time. The second is the public
+  # website, which is an application of its own and shares no bundle with anything here — it is a
+  # member so that one lockfile and one version table serve both repositories.
+  - ee/frontend/edition
+  - ee/frontend/apps/site
 
 # Every version lives in the catalog below and packages refer to it as `catalog:`, so an upgrade
 # is a single line and two packages can never drift onto different copies of React.

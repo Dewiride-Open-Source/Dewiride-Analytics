@@ -41,10 +41,17 @@ app.MapCollect();
 app.MapNoScriptPixel();
 app.MapServerCollect();
 app.MapAccount();
+app.MapProfile();
+app.MapInvitations();
+app.MapOrganization();
 app.MapSites();
 app.MapServerKeys();
 app.MapSiteSettings();
 app.MapHealth();
+
+// Whatever the compiled edition adds, after the host's own: a route the product already answers
+// cannot be taken by an edition, because the framework refuses to map the same one twice.
+app.MapEdition();
 
 // The description covers a contract that is published in the open anyway, and a self-hoster
 // reaching for it is usually trying to find out why an integration is not reporting.

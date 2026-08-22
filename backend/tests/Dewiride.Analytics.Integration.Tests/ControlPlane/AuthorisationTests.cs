@@ -78,11 +78,90 @@ public sealed class AuthorisationTests(AnalyticsStackFixture stack)
         scope.Should().BeNull();
     }
 
+    /// <summary>
+    /// The reason a standing in an organisation exists at all. A site added after somebody joined
+    /// is one they can read, without anybody remembering to name them on it.
+    /// </summary>
+    [Fact]
+    public async Task A_Standing_In_The_Organisation_Reaches_A_Site_Nobody_Named_Them_On()
+    {
+        var first = await ControlPlaneSeed.AddSiteAsync(stack, domain: "standing.example").ConfigureAwait(true);
+        var (_, user) = await ControlPlaneSeed
+            .AddAccountAsync(stack, Address(), Passwords.Acceptable)
+            .ConfigureAwait(true);
+
+        await ControlPlaneSeed
+            .GrantInOrganizationAsync(stack, first.OrganizationId, user.Id, OrganizationRole.Admin)
+            .ConfigureAwait(true);
+
+        var later = await ControlPlaneSeed
+            .AddSiteToAsync(stack, first.OrganizationId, "added-later.example")
+            .ConfigureAwait(true);
+
+        var scope = await ResolveAsync(later.Id, user.Id).ConfigureAwait(true);
+
+        scope.Should().NotBeNull();
+        scope.Role.Should().Be(SiteRole.Editor);
+    }
+
+    /// <summary>
+    /// Both claims can be held at once, and the wider is what somebody may do. Taking the narrower
+    /// would give an account owner a reader's access to a site nobody had named them on.
+    /// </summary>
+    [Theory]
+    [InlineData(OrganizationRole.Member, SiteRole.Owner, SiteRole.Owner)]
+    [InlineData(OrganizationRole.Owner, SiteRole.Viewer, SiteRole.Owner)]
+    [InlineData(OrganizationRole.Admin, SiteRole.Viewer, SiteRole.Editor)]
+    public async Task Holding_Both_Claims_Gives_The_Wider_Of_Them(
+        OrganizationRole standing,
+        SiteRole granted,
+        SiteRole expected)
+    {
+        var domain = $"both-{standing}-{granted}.example".ToLowerInvariant();
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: domain).ConfigureAwait(true);
+        var (_, user) = await ControlPlaneSeed
+            .AddAccountAsync(stack, Address(), Passwords.Acceptable)
+            .ConfigureAwait(true);
+
+        await ControlPlaneSeed
+            .GrantInOrganizationAsync(stack, site.OrganizationId, user.Id, standing)
+            .ConfigureAwait(true);
+
+        await ControlPlaneSeed.GrantAsync(stack, site.Id, user.Id, granted).ConfigureAwait(true);
+
+        var scope = await ResolveAsync(site.Id, user.Id).ConfigureAwait(true);
+
+        scope.Should().NotBeNull();
+        scope.Role.Should().Be(expected);
+    }
+
+    /// <summary>
+    /// The isolation the hosted service exists to keep, and the one a self-hosted install would
+    /// need the day it had two organisations. A standing reaches nothing outside the one it is in.
+    /// </summary>
+    [Fact]
+    public async Task A_Standing_In_One_Organisation_Reaches_No_Site_In_Another()
+    {
+        var mine = await ControlPlaneSeed.AddSiteAsync(stack, domain: "standing-mine.example").ConfigureAwait(true);
+        var theirs = await ControlPlaneSeed.AddSiteAsync(stack, domain: "standing-theirs.example").ConfigureAwait(true);
+        var (_, user) = await ControlPlaneSeed
+            .AddAccountAsync(stack, Address(), Passwords.Acceptable)
+            .ConfigureAwait(true);
+
+        await ControlPlaneSeed
+            .GrantInOrganizationAsync(stack, mine.OrganizationId, user.Id, OrganizationRole.Owner)
+            .ConfigureAwait(true);
+
+        var scope = await ResolveAsync(theirs.Id, user.Id).ConfigureAwait(true);
+
+        scope.Should().BeNull();
+    }
+
     private async Task<Application.Tenancy.TenantScope?> ResolveAsync(Guid siteId, Guid? userId)
     {
         await using var scope = stack.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>();
-        var provider = new SingleTenantScopeProvider(database, new StubPrincipal(userId));
+        var provider = new MembershipTenantScopeProvider(database, new StubPrincipal(userId));
 
         return await provider.ResolveAsync(siteId, Cancellation.Token);
     }

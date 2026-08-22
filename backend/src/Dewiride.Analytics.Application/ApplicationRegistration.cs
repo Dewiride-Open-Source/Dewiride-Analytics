@@ -26,8 +26,8 @@ public static class ApplicationRegistration
 
         builder.Services.AddScoped<EventIngestor>();
 
-
-        // ruleset, performs no I/O, and is safe to use from as many threads as ask.
+        // One classifier for the process: it is immutable once built from the compiled ruleset,
+        // performs no I/O, and is safe to use from as many threads as ask.
         builder.Services.AddSingleton(TrafficClassifier.Current());
         builder.Services.AddScoped<SessionClassifier>();
 

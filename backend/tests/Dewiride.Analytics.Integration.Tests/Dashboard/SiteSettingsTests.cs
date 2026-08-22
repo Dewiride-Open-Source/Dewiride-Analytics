@@ -565,7 +565,7 @@ public sealed class SiteSettingsTests(AnalyticsStackFixture stack)
     {
         await using var work = stack.Services.CreateAsyncScope();
 
-        var scopes = new SingleTenantScopeProvider(
+        var scopes = new MembershipTenantScopeProvider(
             work.ServiceProvider.GetRequiredService<ControlPlaneDbContext>(),
             new Caller(userId));
 

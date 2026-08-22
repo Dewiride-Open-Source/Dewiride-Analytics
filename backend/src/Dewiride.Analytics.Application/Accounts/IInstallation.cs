@@ -82,12 +82,12 @@ public sealed record InstallationOutcome(
     InstallationStatus Status,
     Guid? UserId,
     Guid? SiteId,
-    IReadOnlyList<InstallationProblem> Problems)
+    IReadOnlyList<AccountProblem> Problems)
 {
     /// <summary>Builds the outcome for a request that was refused.</summary>
     /// <param name="problems">Why it was refused.</param>
     /// <returns>The outcome.</returns>
-    public static InstallationOutcome Rejected(IReadOnlyList<InstallationProblem> problems) =>
+    public static InstallationOutcome Rejected(IReadOnlyList<AccountProblem> problems) =>
         new(InstallationStatus.Rejected, null, null, problems);
 
     /// <summary>The outcome for an install that somebody had already claimed.</summary>
@@ -95,9 +95,3 @@ public sealed record InstallationOutcome(
         new(InstallationStatus.AlreadyClaimed, null, null, []);
 }
 
-/// <summary>
-/// One reason a request to claim an install was refused.
-/// </summary>
-/// <param name="Code">Stable identifier for the reason, safe to switch on.</param>
-/// <param name="Description">A sentence describing it, in English.</param>
-public sealed record InstallationProblem(string Code, string Description);

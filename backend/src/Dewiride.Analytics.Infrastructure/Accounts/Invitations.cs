@@ -375,6 +375,7 @@ public sealed class Invitations(
 
         var message = InvitationMessage.For(
             invitation.EmailAddress,
+            invitation.Id,
             organizationName,
             invitedBy ?? organizationName,
             AccountLinks.Carrying(dashboard.Value.PublishedAt, JoinScreen, secret));

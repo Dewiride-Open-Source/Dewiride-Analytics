@@ -75,6 +75,16 @@
       second one beside it is the arrangement Dependabot handles badly.
     -->
     <PackageVersion Include="Stripe.net" Version="52.3.0" />
+
+    <!--
+      The client for the mail service the hosted service sends through, which is ours and is on no
+      public feed. Referenced only by the commercially licensed edition, which carries the package
+      files themselves; a Cloud build points restore at them and an ordinary build never looks for
+      it, because no project in this repository names it. Pinned here for the same reason as the
+      line above.
+    -->
+    <PackageVersion Include="Dewiride.EmailServer.Client" Version="1.0.0" />
+    <PackageVersion Include="Dewiride.EmailServer.Client.Testing" Version="1.0.0" />
   </ItemGroup>
 
   <ItemGroup Label="Reference data">

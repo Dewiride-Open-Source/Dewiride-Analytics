@@ -43,6 +43,11 @@
   -->
   <ItemGroup>
     <InternalsVisibleTo Include="Dewiride.Analytics.Integration.Tests" />
+    <!--
+      The messages this product sends are internal because nothing outside composes one, and what
+      they say is worth approving in review. Their tests render them and nothing else.
+    -->
+    <InternalsVisibleTo Include="Dewiride.Analytics.MailTests" />
   </ItemGroup>
 
 </Project>

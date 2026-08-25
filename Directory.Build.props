@@ -69,6 +69,24 @@
            Text="DewirideEdition must be 'Community' or 'Cloud', but was '$(DewirideEdition)'." />
   </Target>
 
+  <!--
+    The commercial edition depends on one package that is not on any public feed, because it is
+    ours and is not offered to anybody else: the client for the mail service the hosted service
+    sends through. It ships as files inside ee/, and this points restore at them.
+
+    Conditioned on the edition rather than written into a NuGet.config, and that is the whole
+    point: a config file at this level names the folder for every restore, and an ordinary
+    checkout — which has no ee/ — then fails on a source that does not exist. A Cloud build
+    already requires ee/ to be present, so this is only ever read when the folder is there.
+
+    Applied to every project rather than to the one that declares the reference, because restore
+    resolves the whole graph: the host and the test projects pull it transitively and would
+    otherwise be looking for it on nuget.org.
+  -->
+  <PropertyGroup Condition="'$(DewirideEdition)' == 'Cloud'">
+    <RestoreAdditionalProjectSources>$(MSBuildThisFileDirectory)ee/packages;$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
+  </PropertyGroup>
+
   <ItemGroup Label="Analyzers applied to every project">
     <PackageReference Include="SonarAnalyzer.CSharp" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
     <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />

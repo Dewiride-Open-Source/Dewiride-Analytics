@@ -1,0 +1,126 @@
+﻿--- To ---
+reader@example.com
+
+--- Greeted as ---
+Jagdish
+
+--- Subject ---
+You have used most of this month's pages
+
+--- Idempotency key ---
+example:2
+
+--- Plain text ---
+You have used most of this month's pages
+========================================
+
+Hi Jagdish,
+
+Your websites have been busy. Here is where this month stands.
+
+  Pages this month     417,000
+  Included in Growth   500,000
+  Measuring pauses     3 September
+
+See where you are:
+https://analytics.example.com/app/settings/plan
+
+Nothing changes yet.
+
+We write once more if you pass it.
+
+--
+Dewiride Analytics · analytics.example.com
+Sent to reader@example.com about the account it is used for.
+
+--- HTML ---
+<!doctype html>
+<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>You have used most of this month&#39;s pages</title>
+<!--[if mso]><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml><![endif]-->
+<style>/* Outlook renders with Word, which ignores line-height unless told to take it exactly. */
+body,table,td,p,a { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+table,td { mso-table-lspace:0pt; mso-table-rspace:0pt; }
+p,td,div { mso-line-height-rule:exactly; }
+img { -ms-interpolation-mode:bicubic; border:0; outline:none; text-decoration:none; }
+a { color:#7456e0; }
+
+@media (prefers-color-scheme: dark) {
+  .dw-page { background:#0a0a10 !important; }
+  .dw-card { background:#111117 !important; border-color:#383844 !important; }
+  .dw-text, .dw-text a { color:#f1f1f4 !important; }
+  .dw-heading { color:#f1f1f4 !important; }
+  .dw-muted { color:#a4a3ad !important; }
+  .dw-subtle { color:#a4a3ad !important; }
+  .dw-rule { border-color:#383844 !important; }
+  .dw-mark { color:#9f87ff !important; }
+  .dw-button { background:#9f87ff !important; color:#0d091f !important; }
+  .dw-link { color:#9f87ff !important; }
+}
+
+@media only screen and (max-width: 620px) {
+  .dw-shell { width:100% !important; }
+  .dw-pad { padding-left:24px !important; padding-right:24px !important; }
+  .dw-heading { font-size:22px !important; line-height:30px !important; }
+}</style>
+</head>
+<body class="dw-page" style="margin:0;padding:0;width:100%;background:#f2f2f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">417,000 of 500,000 pages. Nothing stops yet.&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;</div>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="dw-page" style="background:#f2f2f7;">
+  <tr><td align="center" style="padding:32px 12px 40px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="dw-shell" style="width:600px;max-width:600px;">
+      <tr><td style="padding:0 8px 16px;">
+        <span class="dw-mark" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;letter-spacing:0.02em;color:#7456e0;">Dewiride Analytics</span>
+      </td></tr>
+      <tr><td class="dw-card" style="background:#ffffff;border:1px solid #dddde4;border-radius:14px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+          <tr><td class="dw-pad" style="padding:36px 40px 40px;">
+            <h1 class="dw-heading" style="margin:0 0 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:25px;line-height:33px;font-weight:600;letter-spacing:-0.02em;color:#1e1d25;">You have used most of this month&#39;s pages</h1>
+            <p class="dw-text" style="margin:0 0 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:25px;color:#1e1d25;">Hi Jagdish,</p>
+            <p class="dw-text" style="margin:0 0 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:25px;color:#1e1d25;">Your websites have been busy. Here is where this month stands.</p>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:2px 0 26px;"><tr>
+<td class="dw-muted dw-rule" style="padding:11px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:21px;color:#676671;">Pages this month</td>
+<td class="dw-text dw-rule" align="right" style="padding:11px 0;font-family:SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;font-size:14px;line-height:21px;font-weight:600;color:#1e1d25;white-space:nowrap;">417,000</td>
+</tr><tr>
+<td class="dw-muted dw-rule" style="border-top:1px solid #dddde4;padding:11px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:21px;color:#676671;">Included in Growth</td>
+<td class="dw-text dw-rule" align="right" style="border-top:1px solid #dddde4;padding:11px 0;font-family:SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;font-size:14px;line-height:21px;font-weight:600;color:#1e1d25;white-space:nowrap;">500,000</td>
+</tr><tr>
+<td class="dw-muted dw-rule" style="border-top:1px solid #dddde4;padding:11px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:21px;color:#676671;">Measuring pauses</td>
+<td class="dw-text dw-rule" align="right" style="border-top:1px solid #dddde4;padding:11px 0;font-family:SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;font-size:14px;line-height:21px;font-weight:600;color:#1e1d25;white-space:nowrap;">3 September</td>
+</tr></table>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 26px;">
+<tr><td>
+<!--[if mso]>
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="https://analytics.example.com/app/settings/plan" style="height:46px;v-text-anchor:middle;width:209px;" arcsize="22%" stroke="f" fillcolor="#7456e0">
+<w:anchorlock/>
+<center style="color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;font-weight:600;">See where you are</center>
+</v:roundrect>
+<![endif]-->
+<!--[if !mso]><!-->
+<a href="https://analytics.example.com/app/settings/plan" class="dw-button" style="display:inline-block;padding:14px 28px;border-radius:10px;background:#7456e0;color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:18px;font-weight:600;text-decoration:none;">See where you are</a>
+<!--<![endif]-->
+</td></tr>
+</table>
+            <p class="dw-subtle" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:21px;color:#888892;word-break:break-word;overflow-wrap:anywhere;">Or copy this into your browser:<br><a href="https://analytics.example.com/app/settings/plan" class="dw-link" style="color:#7456e0;text-decoration:underline;">https://analytics.example.com/app/settings/plan</a></p>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:26px 0 0;">
+<tr><td class="dw-rule" style="border-top:1px solid #dddde4;padding:22px 0 0;"><p class="dw-muted" style="margin:0 0 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:#676671;">Nothing changes yet.</p><p class="dw-muted" style="margin:0 0 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:#676671;">We write once more if you pass it.</p></td></tr>
+</table>
+          </td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:20px 8px 0;">
+        <p class="dw-subtle" style="margin:0 0 4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:19px;color:#888892;">Dewiride Analytics · analytics.example.com</p>
+        <p class="dw-subtle" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:19px;color:#888892;">Sent to reader@example.com about the account it is used for.</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>
+

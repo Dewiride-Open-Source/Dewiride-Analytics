@@ -70,7 +70,11 @@ public sealed class PasswordReset(
         }
 
         var token = await accounts.GeneratePasswordResetTokenAsync(user).ConfigureAwait(false);
-        var message = PasswordResetMessage.For(user.Email, user.DisplayName, LinkFor(user.Email, token));
+        var message = PasswordResetMessage.For(
+            user.Email,
+            user.DisplayName,
+            LinkFor(user.Email, token),
+            token);
 
         await SendQuietlyAsync(message, cancellationToken).ConfigureAwait(false);
     }

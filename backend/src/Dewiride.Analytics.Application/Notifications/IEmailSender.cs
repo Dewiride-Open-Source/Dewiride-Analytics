@@ -41,9 +41,23 @@ public interface IEmailSender
 /// <param name="Subject">Subject line.</param>
 /// <param name="PlainText">The message as plain text.</param>
 /// <param name="Html">The message as HTML.</param>
+/// <param name="IdempotencyKey">
+/// <para>
+/// What makes this the same message rather than another one. Derived from the thing the message is
+/// about — the token being sent, the invitation being offered, the month being reported on — and
+/// never from the moment of sending, which would make every attempt a new message.
+/// </para>
+/// <para>
+/// Stated on the message rather than left to whatever delivers it, because only the caller knows
+/// what "the same message" means. A pass that sends and then fails before recording that it sent
+/// runs again, and the difference between one notice and two is this value. An implementation that
+/// has nowhere to put it is free to ignore it.
+/// </para>
+/// </param>
 public sealed record EmailMessage(
     string ToAddress,
     string? ToName,
     string Subject,
     string PlainText,
-    string Html);
+    string Html,
+    string IdempotencyKey);

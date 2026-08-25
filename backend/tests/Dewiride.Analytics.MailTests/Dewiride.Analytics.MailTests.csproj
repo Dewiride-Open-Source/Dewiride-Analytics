@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Golden-file tests over the messages this product sends. No container, no mail server and no
+    network: the point is that a change to what lands in somebody's inbox becomes visible in review
+    rather than in an inbox, because nothing else about email fails loudly. A broken link, a
+    paragraph that stopped being escaped or a button that lost its Outlook shape all send
+    successfully.
+
+    Whether a mail server accepts them is proven separately, against a real one.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Dewiride.Analytics.MailTests</RootNamespace>
+    <AssemblyName>Dewiride.Analytics.MailTests</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dewiride.Analytics.Infrastructure\Dewiride.Analytics.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Verify.XunitV3" />
+  </ItemGroup>
+
+</Project>

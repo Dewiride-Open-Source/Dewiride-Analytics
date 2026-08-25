@@ -1,8 +1,8 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Dashboard } from '@/components/dashboard/dashboard';
-import { engineDoing, engineStopped, respondWith } from '@/test/engine';
+import { engineDoing, engineStopped, respondWith, type Sent } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
 
 /**
@@ -107,6 +107,13 @@ function busy() {
   return engineWith([SITE], totals(464, 132, 900));
 }
 
+/** What the engine was told about one part of the period, read back off the first question asked. */
+function asked(sent: readonly Sent[], part: string): string | null {
+  const first = sent.find((one) => one.path.includes('?'));
+
+  return new URLSearchParams(first?.path.slice(first.path.indexOf('?') + 1)).get(part);
+}
+
 describe('the dashboard', () => {
   it('names the website and the address it measures', async () => {
     busy();
@@ -192,7 +199,7 @@ describe('the dashboard', () => {
     renderScreen(<Dashboard />);
 
     expect(
-      await screen.findByRole('img', { name: /Daily page views and daily visitors/ }),
+      await screen.findByRole('img', { name: /Page views and visitors for/ }),
     ).toBeInTheDocument();
 
     await userEvent.click(screen.getByText('Show these figures as a table'));
@@ -226,19 +233,65 @@ describe('the dashboard', () => {
     expect(screen.queryByText(/Asia\/Kolkata/)).not.toBeInTheDocument();
   });
 
-  it('offers both periods and marks the one being shown', async () => {
+  it('opens on the last week, and offers every other period beside it', async () => {
     busy();
 
     renderScreen(<Dashboard />);
 
-    expect(await screen.findByRole('radio', { name: '7 days' })).toHaveAttribute(
-      'aria-checked',
-      'true',
+    expect(await screen.findByRole('combobox', { name: 'Period' })).toHaveValue('last-7-days');
+    expect(screen.getByRole('option', { name: 'Yesterday' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Last month' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Choose dates…' })).toBeInTheDocument();
+  });
+
+  /**
+   * A single day drawn as one daily column is a graph with one point on it. How finely a period
+   * is cut is settled by how long it is rather than by what was asked for, so choosing a short
+   * one has to change the question the engine is asked.
+   */
+  it('asks for a short period an hour at a time', async () => {
+    const engine = busy();
+
+    renderScreen(<Dashboard />);
+
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Period' }), 'today');
+
+    await waitFor(() =>
+      expect(engine.all().some(({ path }) => path.includes('granularity=hour'))).toBe(true),
     );
+  });
 
-    await userEvent.click(screen.getByRole('radio', { name: '30 days' }));
+  /**
+   * A link is only worth sending if it opens on what its sender was looking at, and that is
+   * settled before the screen has drawn anything.
+   */
+  it('opens on the period the address names rather than on the usual one', async () => {
+    busy();
 
-    expect(screen.getByRole('radio', { name: '30 days' })).toHaveAttribute('aria-checked', 'true');
+    renderScreen(<Dashboard />, { searchParams: '?period=yesterday' });
+
+    expect(await screen.findByRole('combobox', { name: 'Period' })).toHaveValue('yesterday');
+  });
+
+  it('asks the engine about the days the address names, in the website’s own clock', async () => {
+    const engine = busy();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=2026-08-17..2026-08-18' });
+
+    await waitFor(() => expect(asked(engine.all(), 'from')).toBe('2026-08-16T18:30:00.000Z'));
+    expect(asked(engine.all(), 'to')).toBe('2026-08-18T18:30:00.000Z');
+  });
+
+  /**
+   * An address is typed, edited and forwarded by people, so most of what can arrive in one is not
+   * a period at all. Every one of those has to leave somebody on a working screen.
+   */
+  it('opens on the usual period when the address names something that is not one', async () => {
+    busy();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=whenever' });
+
+    expect(await screen.findByRole('combobox', { name: 'Period' })).toHaveValue('last-7-days');
   });
 
   /**

@@ -97,11 +97,16 @@ const SPENT: ReadonlySet<string> = new Set([SIGN_IN, SIGN_UP, SET_UP]);
  * the foot of the first, because it is the one people come back to and work through rather than
  * glance at; the account is one because nobody visits it daily and a bar that grew a tab for every
  * setting would push the two that matter to the edge.
+ *
+ * The two about a website carry the period between them, so that somebody looking at a fortnight
+ * of numbers who goes to read the visits behind them is still looking at the same fortnight. The
+ * account is about the person rather than about any stretch of days, and a period in its address
+ * would be a question nothing on it could answer.
  */
 export const SECTIONS = [
-  { path: DASHBOARD, name: 'overview' },
-  { path: JOURNEYS, name: 'journeys' },
-  { path: SETTINGS, name: 'settings' },
+  { path: DASHBOARD, name: 'overview', aboutSite: true },
+  { path: JOURNEYS, name: 'journeys', aboutSite: true },
+  { path: SETTINGS, name: 'settings', aboutSite: false },
 ] as const;
 
 /**

@@ -2,23 +2,22 @@
 
 import { X } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
-import { useId } from 'react';
+import { PlaceCredit, RoutingCredit } from '@/components/dashboard/place-credit';
 import { TONE_FILLS } from '@/components/dashboard/verdict-badge';
+import { FilterBar } from '@/components/journeys/filter-bar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { SelectInput } from '@/components/ui/field';
+import { Chip } from '@/components/ui/chip';
 import {
   type CategoryTally,
+  countsHold,
   EVERY_JOURNEY,
   isNarrowed,
   type JourneyFilters,
-  PAGE_FLOORS,
-  type PageFloor,
-  STRENGTH_FLOORS,
-  type StrengthFloor,
-  toggleCategory,
+  toggleChoice,
 } from '@/lib/analytics/journeys';
 import { CATEGORY_TONES } from '@/lib/analytics/verdicts';
+import type { VisitFacets } from '@/lib/api/schemas';
 import { cn } from '@/lib/styling';
 
 interface JourneyFilterPanelProps {
@@ -26,30 +25,23 @@ interface JourneyFilterPanelProps {
   readonly available: readonly CategoryTally[];
   /** Whether that is still being read, so the panel does not claim there were none. */
   readonly pending: boolean;
+  /** What else this period turned out to hold, once a reader has reached for it. */
+  readonly held: VisitFacets | undefined;
+  /** Whether that is still on its way. */
+  readonly heldPending: boolean;
+  readonly onWantOptions: () => void;
   readonly value: JourneyFilters;
   readonly onChange: (filters: JourneyFilters) => void;
 }
-
-/** How each floor on the evidence is named. */
-const STRENGTH_LABELS: Readonly<Record<StrengthFloor, string>> = {
-  weak: 'strengthWeak',
-  moderate: 'strengthModerate',
-  strong: 'strengthStrong',
-};
-
-/** How each floor on the pages is named. */
-const PAGE_LABELS: Readonly<Record<PageFloor, string>> = {
-  0: 'pagesAny',
-  1: 'pagesOne',
-  2: 'pagesMany',
-};
 
 /**
  * The controls that cut a period's journeys down to the ones somebody came for.
  *
  * On a website of any size most journeys are machinery, so "show me the ones that were people" is
- * the question this screen exists to answer and it has to be one press away. The conclusions
- * offered are the ones this period actually reached, with their counts beside them: a list of
+ * the question this screen exists to answer and it has to be one press away — which is why the
+ * conclusions are chips across the top rather than one menu among twelve. Everything else about a
+ * visit sits in the row below, where each is a press to open and does not take up the screen until
+ * it is wanted. The conclusions offered are the ones this period actually reached: a list of
  * fourteen possibilities, most of which never happened here, is a longer way of finding the three
  * that did.
  *
@@ -59,14 +51,24 @@ const PAGE_LABELS: Readonly<Record<PageFloor, string>> = {
 export function JourneyFilterPanel({
   available,
   pending,
+  held,
+  heldPending,
+  onWantOptions,
   value,
   onChange,
 }: JourneyFilterPanelProps) {
   const t = useTranslations('journeys.filters');
   const categories = useTranslations('verdicts.category');
   const format = useFormatter();
-  const strengthId = useId();
-  const pagesId = useId();
+
+  /*
+    Every figure on this panel counts the whole period rather than what is left of it once
+    something has been narrowed away, so each control keeps its figures exactly while nothing
+    else is narrowing the list. Picking a second conclusion leaves them, because two conclusions
+    are alternatives rather than conditions piled up; picking a country as well takes them, because
+    from then on they would be true of the period and false of the list underneath them.
+  */
+  const counted = countsHold(value, 'categories');
 
   return (
     <Card className="glow-card flex flex-col gap-5 p-5 sm:p-6">
@@ -80,7 +82,7 @@ export function JourneyFilterPanel({
         ) : null}
       </div>
 
-      <fieldset className="flex flex-col gap-2.5">
+      <fieldset className="flex min-w-0 flex-col gap-2.5">
         <legend className="text-xs font-medium tracking-wide text-foreground-muted uppercase">
           {t('categories')}
         </legend>
@@ -93,92 +95,62 @@ export function JourneyFilterPanel({
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {available.map((tally) => {
-              const chosen = value.categories.includes(tally.category);
-
-              return (
-                <button
-                  key={tally.category}
-                  type="button"
-                  aria-pressed={chosen}
-                  onClick={() => onChange(toggleCategory(value, tally.category))}
-                  className={cn(
-                    'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
-                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong',
-                    chosen
-                      ? 'border-accent/40 bg-accent-soft font-medium text-accent-strong'
-                      : 'border-border bg-surface text-foreground-muted hover:bg-surface-muted hover:text-foreground',
-                  )}
-                >
+            {available.map((tally) => (
+              <Chip
+                key={tally.category}
+                pressed={value.categories.includes(tally.category)}
+                onPress={() => onChange(toggleChoice(value, 'categories', tally.category))}
+                leading={
                   <span
                     aria-hidden
                     className={cn(
-                      'size-2 rounded-full',
+                      'size-2 shrink-0 rounded-full',
                       TONE_FILLS[CATEGORY_TONES[tally.category]],
                     )}
                   />
-                  {/*
-                    A real space between the name and the figure, so what a screen reader reads out
-                    is "A person 6" rather than one word nobody would recognise. The gap between
-                    them on screen is drawn by the layout and says nothing to anybody listening.
-                  */}
-                  {categories(tally.category)}{' '}
-                  <span className="tabular-nums opacity-70">{format.number(tally.journeys)}</span>
-                </button>
-              );
-            })}
+                }
+              >
+                {/*
+                  A real space between the name and the figure, so what a screen reader reads out
+                  is "A person 6" rather than one word nobody would recognise. The gap between them
+                  on screen is drawn by the layout and says nothing to anybody listening.
+                */}
+                {categories(tally.category)}
+                {counted ? (
+                  <>
+                    {' '}
+                    <span className="tabular-nums opacity-70">{format.number(tally.journeys)}</span>
+                  </>
+                ) : null}
+              </Chip>
+            ))}
           </div>
         )}
       </fieldset>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor={strengthId}
-            className="text-xs font-medium tracking-wide text-foreground-muted uppercase"
-          >
-            {t('strength')}
-          </label>
-          <SelectInput
-            id={strengthId}
-            value={value.leastStrength ?? ''}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                leastStrength: (event.target.value || null) as StrengthFloor | null,
-              })
-            }
-          >
-            <option value="">{t('strengthAny')}</option>
-            {STRENGTH_FLOORS.map((floor) => (
-              <option key={floor} value={floor}>
-                {t(STRENGTH_LABELS[floor])}
-              </option>
-            ))}
-          </SelectInput>
-        </div>
+      <fieldset className="flex min-w-0 flex-col gap-2.5">
+        <legend className="text-xs font-medium tracking-wide text-foreground-muted uppercase">
+          {t('details')}
+        </legend>
 
-        <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor={pagesId}
-            className="text-xs font-medium tracking-wide text-foreground-muted uppercase"
-          >
-            {t('pages')}
-          </label>
-          <SelectInput
-            id={pagesId}
-            value={value.leastPages}
-            onChange={(event) =>
-              onChange({ ...value, leastPages: Number(event.target.value) as PageFloor })
-            }
-          >
-            {PAGE_FLOORS.map((floor) => (
-              <option key={floor} value={floor}>
-                {t(PAGE_LABELS[floor])}
-              </option>
-            ))}
-          </SelectInput>
-        </div>
+        <FilterBar
+          value={value}
+          onChange={onChange}
+          held={held}
+          onWantOptions={onWantOptions}
+          waiting={heldPending}
+        />
+      </fieldset>
+
+      {/*
+        Required rather than courteous. Three of the things this panel narrows by — the country,
+        the town, and the network a visit arrived over — are named from published data whose
+        licences ask for a link back from anywhere their results appear, and a list of countries
+        somebody can pick from is exactly that. Both are credited because this panel offers both.
+      */}
+      <div className="flex flex-col gap-1">
+        <PlaceCredit />
+        <RoutingCredit />
       </div>
     </Card>
   );

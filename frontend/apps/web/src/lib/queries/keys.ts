@@ -1,5 +1,5 @@
-import type { JourneyFilters } from '@/lib/analytics/journeys';
-import type { AnalyticsWindow } from '@/lib/analytics/period';
+import { type JourneyFilters, narrowingParams } from '@/lib/analytics/journeys';
+import type { AnalyticsWindow, Granularity } from '@/lib/analytics/period';
 import type {
   ActionGrouping,
   EngagementRanking,
@@ -31,8 +31,20 @@ export function overviewKey(siteId: string, window: AnalyticsWindow) {
   return ['sites', siteId, 'overview', window.from, window.to] as const;
 }
 
-export function seriesKey(siteId: string, metric: SeriesMetric, window: AnalyticsWindow) {
-  return ['sites', siteId, 'series', metric, window.from, window.to] as const;
+/**
+ * One measure across a period, at one size of bucket.
+ *
+ * The size of the bucket is part of the name because the same window can be asked about twice —
+ * a period of one day is drawn an hour at a time and a longer one a day at a time — and two
+ * answers filed under one name would draw yesterday's shape with today's numbers.
+ */
+export function seriesKey(
+  siteId: string,
+  metric: SeriesMetric,
+  window: AnalyticsWindow,
+  granularity: Granularity,
+) {
+  return ['sites', siteId, 'series', metric, window.from, window.to, granularity] as const;
 }
 
 export function pagesKey(siteId: string, window: AnalyticsWindow, limit: number, offset: number) {
@@ -103,6 +115,10 @@ export function trafficKey(siteId: string, window: AnalyticsWindow) {
  * What the reader narrowed to is part of the name, because it is part of the question: two slices
  * asked for at the same offset under different narrowings are two different answers, and an answer
  * kept under one name would be handed back for the other.
+ *
+ * The narrowing is written out by the same code that asks the engine for it, so the name and the
+ * question cannot come apart — and two readers who picked the same values in a different order
+ * arrive at one name and share one answer.
  */
 export function visitsKey(
   siteId: string,
@@ -119,10 +135,18 @@ export function visitsKey(
     window.to,
     limit,
     offset,
-    [...filters.categories].sort().join(','),
-    filters.leastStrength ?? '',
-    filters.leastPages,
+    narrowingParams(filters).toString(),
   ] as const;
+}
+
+/**
+ * What a period's judged visits held, for the controls that narrow them.
+ *
+ * Carries no narrowing of its own: it describes the whole period, so the values on offer stay put
+ * while somebody works through them rather than rearranging themselves after every press.
+ */
+export function facetsKey(siteId: string, window: AnalyticsWindow) {
+  return ['sites', siteId, 'visits', 'facets', window.from, window.to] as const;
 }
 
 export function serverKeysKey(siteId: string) {

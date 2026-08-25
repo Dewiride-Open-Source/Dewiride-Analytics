@@ -1,8 +1,10 @@
+using System.Text.RegularExpressions;
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Domain.Sites;
+using Dewiride.Analytics.Domain.Telemetry;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
 
@@ -17,7 +19,7 @@ namespace Dewiride.Analytics.SqlTests;
 /// altering the compiler fails the build until somebody has read the new statement and moved the
 /// received file over the approved one.
 /// </remarks>
-public sealed class AnalyticsSqlCompilerTests
+public sealed partial class AnalyticsSqlCompilerTests
 {
     private static readonly Guid SiteId = Guid.Parse("0197c0de-0000-7000-8000-000000000001");
     private static readonly Guid SecondSiteId = Guid.Parse("0197c0de-0000-7000-8000-000000000002");
@@ -34,6 +36,12 @@ public sealed class AnalyticsSqlCompilerTests
 
     /// <summary>Every band at or above strong, which is what a floor on the evidence means.</summary>
     private static readonly string[] StrongEvidenceAndAbove = ["Strong", "Verified"];
+
+    /// <summary>The empty text, which is what the rebuild holds where nothing could be established.</summary>
+    private static readonly string[] NothingEstablished = [""];
+
+    /// <summary>The free-text narrowings a hostile value is proved to reach the store as a value.</summary>
+    private static readonly string[] FreeTextNarrowings = ["towns", "browsers", "entry_pages"];
 
     [Fact]
     public Task Overview()
@@ -443,9 +451,105 @@ public sealed class AnalyticsSqlCompilerTests
     [Fact]
     public Task Judged_Sessions()
     {
-        var statement = AnalyticsSqlCompiler.Compile(Scope(), new JudgedSessionsQuery(Window(), 50, 100));
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), Judged(50, 100));
 
         return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Judged_Sessions_By_Detail()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail());
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Site_Visit_Details()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), Facets());
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    /// <summary>
+    /// A filter never offers something the list beneath it cannot show, so only visits that have
+    /// been judged offer a value. Only those the rebuild could still describe, too: a visit whose
+    /// activity has aged out has no details left, and offering it as "nothing established" would be
+    /// a claim about the visitor rather than about the store.
+    /// </summary>
+    [Fact]
+    public void A_Detail_Is_Offered_Only_From_Visits_That_Were_Judged()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), Facets());
+
+        statement.Sql.Should().Contain("WHERE session_key IN (SELECT session_key FROM judged)");
+    }
+
+    /// <summary>
+    /// A busy site's pages run into thousands and a list nobody can reach the bottom of is not a
+    /// choice, so each detail keeps its commonest values and stops there.
+    /// </summary>
+    [Fact]
+    public void Each_Detail_Offers_Only_Its_Commonest_Values()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), Facets());
+
+        statement.Sql.Should().Contain("ORDER BY kind, visits DESC, value");
+        statement.Sql.Should().Contain("LIMIT {most_values:UInt32} BY kind");
+    }
+
+    /// <summary>
+    /// The store writes a common table expression out again wherever it is named, so nine
+    /// selections laid end to end would rebuild every visit in the period nine times over. The nine
+    /// details are unfolded from one array instead, over a single pass.
+    /// </summary>
+    [Fact]
+    public void Every_Detail_Is_Counted_In_One_Pass_Over_The_Rebuild()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), Facets());
+
+        statement.Sql.Should().Contain("arrayJoin([");
+        statement.Sql.Should().NotContain("UNION ALL");
+    }
+
+    /// <summary>
+    /// Every detail a reader can narrow to is one the panel can offer them. The two statements name
+    /// the nine independently — one as a condition, the other as a value it reports — and a detail
+    /// present in one and absent from the other is either a filter with nothing to offer or an
+    /// option that narrows nothing.
+    /// </summary>
+    [Fact]
+    public void Every_Detail_A_Reader_Can_Narrow_To_Is_One_The_Answer_Offers()
+    {
+        var offered = AnalyticsSqlCompiler.Compile(Scope(), Facets());
+        var narrowed = AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail());
+
+        var details = OfferedDetail().Matches(offered.Sql)
+            .Select(match => match.Groups[1].Value)
+            .ToArray();
+
+        details.Should().HaveCount(9);
+
+        foreach (var detail in details)
+        {
+            narrowed.Sql.Should().Contain($"OR {detail} IN ");
+        }
+    }
+
+    /// <summary>
+    /// A detail is offered under the address of the site that sent the visits, and a measured site
+    /// is never one of its own sources — so a question that arrived without the site's own address
+    /// would offer a reader their own site as somewhere their readers came from.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Describing_A_Period_Without_The_Site_Own_Address_Is_Refused(string domain)
+    {
+        var act = () => new SiteVisitFacetsQuery(Window(), IdleTimeout, domain);
+
+        act.Should().Throw<ArgumentException>();
     }
 
     /// <summary>
@@ -457,7 +561,7 @@ public sealed class AnalyticsSqlCompilerTests
     [Fact]
     public void The_Visit_List_Counts_The_Whole_Window_Rather_Than_The_Slice()
     {
-        var statement = AnalyticsSqlCompiler.Compile(Scope(), new JudgedSessionsQuery(Window(), 10, 20));
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), Judged(10, 20));
 
         statement.Sql.Should().Contain("count() OVER ()");
     }
@@ -470,7 +574,7 @@ public sealed class AnalyticsSqlCompilerTests
     [Fact]
     public void The_Visit_List_Is_Ordered_Totally_So_Slices_Neither_Repeat_Nor_Skip()
     {
-        var statement = AnalyticsSqlCompiler.Compile(Scope(), new JudgedSessionsQuery(Window(), 10, 20));
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), Judged(10, 20));
 
         statement.Sql.Should().Contain("ORDER BY started_at DESC, session_key");
     }
@@ -478,7 +582,7 @@ public sealed class AnalyticsSqlCompilerTests
     [Fact]
     public void Starting_The_Visit_List_Before_Its_Beginning_Is_Refused()
     {
-        var act = () => new JudgedSessionsQuery(Window(), 10, -1);
+        var act = () => new JudgedSessionsQuery(Window(), IdleTimeout, "example.com", 10, -1);
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
@@ -492,12 +596,12 @@ public sealed class AnalyticsSqlCompilerTests
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
-            new JudgedSessionsQuery(Window(), 10)
+            Judged(new VisitNarrowing
             {
                 Categories = [TrafficCategory.LikelyHuman, TrafficCategory.KnownAiCrawler],
                 LeastStrength = EvidenceStrength.Moderate,
                 LeastPages = 1,
-            });
+            }));
 
         statement.Sql.Should().NotContain("LikelyHuman").And.NotContain("Moderate");
 
@@ -517,7 +621,7 @@ public sealed class AnalyticsSqlCompilerTests
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
-            new JudgedSessionsQuery(Window(), 10) { LeastStrength = EvidenceStrength.Strong });
+            Judged(new VisitNarrowing { LeastStrength = EvidenceStrength.Strong }));
 
         statement.Parameters.Should().ContainSingle(parameter => parameter.Name == "strengths")
             .Which.Value.Should().BeEquivalentTo(StrongEvidenceAndAbove);
@@ -532,9 +636,9 @@ public sealed class AnalyticsSqlCompilerTests
     {
         var narrowed = AnalyticsSqlCompiler.Compile(
             Scope(),
-            new JudgedSessionsQuery(Window(), 10) { Categories = [TrafficCategory.LikelyHuman] });
+            Judged(new VisitNarrowing { Categories = [TrafficCategory.LikelyHuman] }));
 
-        var whole = AnalyticsSqlCompiler.Compile(Scope(), new JudgedSessionsQuery(Window(), 10));
+        var whole = AnalyticsSqlCompiler.Compile(Scope(), Judged(10));
 
         whole.Sql.Should().Be(narrowed.Sql);
 
@@ -552,36 +656,127 @@ public sealed class AnalyticsSqlCompilerTests
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
-            new JudgedSessionsQuery(Window(), 10) { Categories = [TrafficCategory.LikelyHuman] });
+            Judged(new VisitNarrowing { Categories = [TrafficCategory.LikelyHuman] }));
 
         statement.Sql.IndexOf("LIMIT 1 BY session_key", StringComparison.Ordinal).Should()
             .BeLessThan(statement.Sql.IndexOf("toString(category) IN", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// A narrowing that asks what a visit itself was cannot be answered from the verdicts, so the
+    /// period's visits are rebuilt from activity and joined on the identity the engine derived.
+    /// Reading a stored copy instead would freeze both catalogues at the moment each visit was
+    /// judged, and leave the same visit filed one way on a card and another way in this list.
+    /// </summary>
     [Theory]
-    [InlineData(-1)]
-    [InlineData(int.MinValue)]
-    public void Asking_For_Fewer_Than_No_Pages_Is_Refused(int leastPages)
+    [InlineData("described AS")]
+    [InlineData("AND session_key IN (SELECT session_key FROM narrowed)")]
+    public void Narrowing_The_Visit_List_By_What_A_Visit_Was_Rebuilds_The_Period(string expected)
     {
-        var act = () => new JudgedSessionsQuery(Window(), 10) { LeastPages = leastPages };
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail());
 
-        act.Should().Throw<ArgumentOutOfRangeException>();
+        statement.Sql.Should().Contain(expected);
     }
 
+    /// <summary>
+    /// The ordinary list pays nothing for the nine narrowings it was not given. A rebuild is a
+    /// second reading of every event in the period rather than a condition on rows the store
+    /// already has, and doing it unconditionally would charge every reader for work nobody asked
+    /// for.
+    /// </summary>
     [Fact]
-    public void Narrowing_To_A_Category_The_Engine_Cannot_Reach_Is_Refused()
+    public void Narrowing_By_Nothing_A_Visit_Did_Rebuilds_Nothing()
     {
-        var act = () => new JudgedSessionsQuery(Window(), 10) { Categories = [(TrafficCategory)9999] };
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), Judged(10));
 
-        act.Should().Throw<ArgumentOutOfRangeException>();
+        statement.Sql.Should().NotContain("described");
     }
 
+    /// <summary>
+    /// One shape whatever combination was named, on the same terms as the narrowing the verdicts
+    /// answer: an empty set is the question "all of them", so the store gets one plan to reuse and
+    /// there is one statement to read rather than one per combination somebody might ask for.
+    /// </summary>
     [Fact]
-    public void Narrowing_To_A_Strength_The_Engine_Does_Not_Report_Is_Refused()
+    public void Narrowing_By_Any_Combination_Of_Details_Leaves_The_Statement_Unchanged()
     {
-        var act = () => new JudgedSessionsQuery(Window(), 10) { LeastStrength = (EvidenceStrength)9999 };
+        var one = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            Judged(new VisitNarrowing { Countries = ["IN"] }));
 
-        act.Should().Throw<ArgumentOutOfRangeException>();
+        var everything = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            Judged(new VisitNarrowing
+            {
+                Categories = [TrafficCategory.LikelyHuman],
+                LeastStrength = EvidenceStrength.Strong,
+                LeastPages = 2,
+                Devices = [DeviceClass.Phone],
+                SourceKinds = [SourceChannel.Search],
+                Browsers = ["Firefox"],
+                OperatingSystems = ["Android"],
+                Countries = ["IN"],
+                Towns = ["Jaipur"],
+                Networks = ["Hetzner Online"],
+                Sources = ["Google"],
+                EntryPages = ["/pricing"],
+            }));
+
+        everything.Sql.Should().Be(one.Sql);
+    }
+
+    /// <summary>
+    /// What nothing established is held as an empty text rather than as the word the vocabulary
+    /// spells it by, because that is what the rebuild produces where no report said anything at
+    /// all. So asking to see the visits nobody could place has to ask for the empty text, and the
+    /// two closed sets are the only narrowings where that mapping has to be performed.
+    /// </summary>
+    [Theory]
+    [InlineData("devices")]
+    [InlineData("source_kinds")]
+    public void Asking_For_The_Visits_Nothing_Was_Established_About_Asks_For_An_Empty_Value(string bound)
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            Judged(new VisitNarrowing
+            {
+                Devices = [DeviceClass.Unknown],
+                SourceKinds = [SourceChannel.Direct],
+            }));
+
+        statement.Parameters.Should().ContainSingle(parameter => parameter.Name == bound)
+            .Which.Value.Should().BeEquivalentTo(NothingEstablished);
+    }
+
+    /// <summary>
+    /// A visit is still kept or dropped on the verdict a reader would be shown, and the count still
+    /// describes the narrowed list — so the further condition sits in the same outer selection as
+    /// the other three rather than inside the rebuild.
+    /// </summary>
+    [Fact]
+    public void Narrowing_By_What_A_Visit_Was_Still_Counts_The_Narrowed_List()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail());
+
+        statement.Sql.IndexOf("LIMIT 1 BY session_key", StringComparison.Ordinal).Should()
+            .BeLessThan(statement.Sql.IndexOf("FROM narrowed", StringComparison.Ordinal));
+
+        statement.Sql.Should().Contain("count() OVER ()");
+    }
+
+    /// <summary>
+    /// A narrowing may ask which site sent a visit, and the measured site is never one of its own
+    /// sources — so the statement needs the site's own address, and a question that arrived without
+    /// one would quietly report a site as its own busiest source.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void A_Visit_List_Without_The_Site_Own_Address_Is_Refused(string domain)
+    {
+        var act = () => new JudgedSessionsQuery(Window(), IdleTimeout, domain, 10);
+
+        act.Should().Throw<ArgumentException>();
     }
 
     /// <summary>
@@ -620,7 +815,7 @@ public sealed class AnalyticsSqlCompilerTests
     [InlineData(JudgedSessionsQuery.MostSessions + 1)]
     public void Asking_For_An_Impossible_Number_Of_Visits_Is_Refused(int limit)
     {
-        var act = () => new JudgedSessionsQuery(Window(), limit);
+        var act = () => new JudgedSessionsQuery(Window(), IdleTimeout, "example.com", limit);
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
@@ -1154,6 +1349,7 @@ public sealed class AnalyticsSqlCompilerTests
         statement.Sql.Should().NotContain("LIMIT");
     }
 
+
     /// <summary>
     /// The property the whole design rests on: nothing a caller supplies is concatenated. The
     /// site being read and the zone its days are cut in come from an authorisation decision, and
@@ -1166,6 +1362,35 @@ public sealed class AnalyticsSqlCompilerTests
 
         statement.Sql.Should().NotContain(SiteId.ToString());
         statement.Sql.Should().NotContain(From.ToUnixTimeMilliseconds().ToString(null as IFormatProvider));
+    }
+
+    /// <summary>
+    /// A narrowing carries a town, a browser's name and a page's address, and every one of them was
+    /// typed into a link — by the reader, or by whoever sent them the link. They are bound like
+    /// everything else, so text written to end a string literal reaches the store as the town
+    /// nobody lives in.
+    /// </summary>
+    [Fact]
+    public void A_Narrowing_Is_Bound_Rather_Than_Written_Into_The_Statement()
+    {
+        const string hostile = "') OR 1=1 --";
+
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            Judged(new VisitNarrowing
+            {
+                Towns = [hostile],
+                Browsers = [hostile],
+                EntryPages = [hostile],
+            }));
+
+        statement.Sql.Should().NotContain(hostile);
+
+        foreach (var name in FreeTextNarrowings)
+        {
+            statement.Parameters.Should().ContainSingle(parameter => parameter.Name == name)
+                .Which.Value.Should().BeEquivalentTo(new[] { hostile });
+        }
     }
 
     /// <summary>
@@ -1187,16 +1412,24 @@ public sealed class AnalyticsSqlCompilerTests
         statement.Parameters.Should().Contain(parameter => parameter.Name == "time_zone");
     }
 
+    /// <summary>
+    /// A statement and its values are written apart and have to meet exactly. A placeholder nothing
+    /// is bound to is a statement the store refuses outright; a value bound to a placeholder no
+    /// statement names is worse, because it is a narrowing that silently does nothing.
+    /// </summary>
     [Fact]
     public void Every_Placeholder_In_A_Statement_Has_A_Bound_Value()
     {
-        var statement = AnalyticsSqlCompiler.Compile(
-            Scope(),
-            new TimeSeriesQuery(Window(), TimeGranularity.Hour, TimeSeriesMetric.Visitors));
-
-        foreach (var parameter in statement.Parameters)
+        foreach (var statement in EveryShapeOfStatement())
         {
-            statement.Sql.Should().Contain($"{{{parameter.Name}:");
+            var bound = statement.Parameters.Select(parameter => parameter.Name).ToArray();
+
+            var named = Placeholder().Matches(statement.Sql)
+                .Select(match => match.Groups[1].Value)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            named.Should().BeEquivalentTo(bound);
         }
     }
 
@@ -1560,19 +1793,61 @@ public sealed class AnalyticsSqlCompilerTests
     {
         var dashboard = AnalyticsSqlCompiler.Compile(Scope(), new SiteVisitShapeQuery(Window(), Visits()));
 
-        var engine = SessionSqlCompiler.Compile(new SessionWindow
-        {
-            SiteId = SiteId,
-            From = From,
-            To = To,
-            IdleTimeout = IdleTimeout,
-            MaxRequestsPerSession = 1000,
-        });
+        var engine = SessionSqlCompiler.Compile(Judging());
 
         const string grouping = "sum(toUInt8(since_previous > {idle_seconds:Int64})) OVER (";
 
         dashboard.Sql.Should().Contain(grouping);
         engine.Sql.Should().Contain(grouping);
+    }
+
+    /// <summary>
+    /// A visit is named by its visitor and the instant it began, and that name is derived rather
+    /// than stored — so a list narrowed by what a visit was and the engine that judged it have to
+    /// derive it identically. They do not meet in a foreign key that would fail loudly: they meet in
+    /// a text, and a text that differs matches nothing and hands back an empty list with no error.
+    /// </summary>
+    [Fact]
+    public void Every_Statement_That_Names_A_Visit_Derives_The_Name_The_Same_Way()
+    {
+        var dashboard = AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail());
+
+        var engine = SessionSqlCompiler.Compile(Judging());
+
+        const string identity = "concat(visitor_key, ':', toString(toUnixTimestamp64Milli(min(server_ts))))";
+
+        dashboard.Sql.Should().Contain(identity);
+        engine.Sql.Should().Contain(identity);
+    }
+
+    /// <summary>
+    /// A visit already under way when the period opened has to keep its own beginning, because its
+    /// beginning is half its name. Read from the period's own start it would be handed an invented
+    /// one, and every visit that crossed the edge would quietly disappear from a narrowed list.
+    /// Reading past the far end is what makes the visits at that edge whole in the same way.
+    /// </summary>
+    [Theory]
+    [InlineData("server_ts >= fromUnixTimestamp64Milli({from_ms:Int64} - {idle_seconds:Int64} * 1000, 'UTC')")]
+    [InlineData("server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {idle_seconds:Int64} * 1000, 'UTC')")]
+    public void Rebuilding_A_Visit_Reads_Past_Both_Ends_Of_The_Period(string expected)
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail());
+
+        statement.Sql.Should().Contain(expected);
+    }
+
+    /// <summary>
+    /// A visit belongs to the period it began in, on the same terms as the verdict it is joined to.
+    /// Without that the rebuild would describe visits from either side of the period as well, which
+    /// costs work and could only ever match a verdict from another period's list.
+    /// </summary>
+    [Fact]
+    public void A_Rebuilt_Visit_Belongs_To_The_Period_It_Began_In()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), Facets());
+
+        statement.Sql.Should().Contain("HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')");
+        statement.Sql.Should().Contain("AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')");
     }
 
     [Fact]
@@ -1615,6 +1890,64 @@ public sealed class AnalyticsSqlCompilerTests
 
     /// <summary>What a visit is, and which of them the compiler may treat as finished.</summary>
     private static VisitBoundaries Visits() => new(IdleTimeout, To - IdleTimeout);
+
+    /// <summary>A slice of the standard window's judged visits, narrowed to nothing.</summary>
+    private static JudgedSessionsQuery Judged(int limit, int offset = 0) =>
+        new(Window(), IdleTimeout, "example.com", limit, offset);
+
+    /// <summary>A slice of the standard window's judged visits, narrowed as given.</summary>
+    private static JudgedSessionsQuery Judged(VisitNarrowing narrowing) =>
+        Judged(10) with { Narrowing = narrowing };
+
+    /// <summary>A slice of the standard window's judged visits, narrowed by what a visit itself was.</summary>
+    private static JudgedSessionsQuery JudgedByDetail() =>
+        Judged(new VisitNarrowing { Devices = [DeviceClass.Phone] });
+
+    /// <summary>What each detail of the standard window's judged visits held.</summary>
+    private static SiteVisitFacetsQuery Facets() => new(Window(), IdleTimeout, "example.com");
+
+    /// <summary>What the engine was asked when it judged the standard window.</summary>
+    private static SessionWindow Judging() =>
+        new()
+        {
+            SiteId = SiteId,
+            From = From,
+            To = To,
+            IdleTimeout = IdleTimeout,
+            MaxRequestsPerSession = 1000,
+        };
+
+    /// <summary>
+    /// One statement of every shape that binds more than a window.
+    /// </summary>
+    /// <remarks>
+    /// Held together so that a property every statement has to have is asserted over all of them
+    /// rather than over whichever one happened to be in mind when the assertion was written.
+    /// </remarks>
+    /// <returns>The statements.</returns>
+    private static CompiledStatement[] EveryShapeOfStatement() =>
+    [
+        Compile(TimeGranularity.Hour, TimeSeriesMetric.Visitors),
+        AnalyticsSqlCompiler.Compile(Scope(), Judged(50, 100)),
+        AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail()),
+        AnalyticsSqlCompiler.Compile(Scope(), Facets()),
+    ];
+
+    /// <summary>Finds every placeholder a statement names.</summary>
+    /// <returns>The pattern.</returns>
+    [GeneratedRegex(@"\{(\w+):")]
+    private static partial Regex Placeholder();
+
+    /// <summary>
+    /// Finds every detail an answer offers.
+    /// </summary>
+    /// <remarks>
+    /// The back-reference is the assertion: a detail is reported under the name of the column it
+    /// was read from, so a value can be sorted back into the list it belongs to.
+    /// </remarks>
+    /// <returns>The pattern.</returns>
+    [GeneratedRegex(@"\('(\w+)', \1\)")]
+    private static partial Regex OfferedDetail();
 
     /// <summary>
     /// A question from outside the vocabulary, built the only way one can be.

@@ -5,7 +5,7 @@ import { useFormatter, useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { JudgedTraffic } from '@/components/dashboard/judged-traffic';
 import { MetricCard, MetricCardSkeleton } from '@/components/dashboard/metric-card';
-import { PeriodSwitch } from '@/components/dashboard/period-switch';
+import { PeriodPicker } from '@/components/dashboard/period-picker';
 import { ServerKeys } from '@/components/dashboard/server-keys';
 import { SiteActions } from '@/components/dashboard/site-actions';
 import { SiteDevices } from '@/components/dashboard/site-devices';
@@ -16,13 +16,14 @@ import { SiteReading } from '@/components/dashboard/site-reading';
 import { SiteSettings } from '@/components/dashboard/site-settings';
 import { SiteSources } from '@/components/dashboard/site-sources';
 import { TrackingCode } from '@/components/dashboard/tracking-code';
-import { TrafficChart, type TrafficDay } from '@/components/dashboard/traffic-chart';
+import { TrafficChart, type TrafficPoint } from '@/components/dashboard/traffic-chart';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
-import { DEFAULT_PERIOD, type PeriodDays, windowFor } from '@/lib/analytics/period';
+import { daysIn, granularityFor, spanFor, windowFor } from '@/lib/analytics/period';
+import { usePeriod } from '@/lib/analytics/use-period';
 import type { Site } from '@/lib/api/schemas';
-import { useDailySeries, useOverview } from '@/lib/queries/sites';
+import { useOverview, useSeries } from '@/lib/queries/sites';
 import { readableZone } from '@/lib/time-zones';
 
 interface SiteOverviewProps {
@@ -37,23 +38,29 @@ export function SiteOverview({ site }: SiteOverviewProps) {
   const serverKeys = useTranslations('serverKeys');
   const settings = useTranslations('siteSettings');
   const format = useFormatter();
-  const [period, setPeriod] = useState<PeriodDays>(DEFAULT_PERIOD);
+  const { period, choose } = usePeriod();
   const [showingCode, setShowingCode] = useState(false);
   const [showingKeys, setShowingKeys] = useState(false);
   const [showingSettings, setShowingSettings] = useState(false);
 
   // Resolved once per period rather than on every render: the window is part of the name each
   // answer is cached under, and one that moved with the clock would never find a cached answer.
+  const span = useMemo(
+    () => spanFor(period, site.timeZoneId, new Date()),
+    [period, site.timeZoneId],
+  );
+
   const window = useMemo(
     () => windowFor(period, site.timeZoneId, new Date()),
     [period, site.timeZoneId],
   );
 
+  const granularity = granularityFor(span);
   const overview = useOverview(site.id, window);
-  const views = useDailySeries(site.id, 'pageviews', window);
-  const visitors = useDailySeries(site.id, 'visitors', window);
+  const views = useSeries(site.id, 'pageviews', window, granularity);
+  const visitors = useSeries(site.id, 'visitors', window, granularity);
 
-  const days = useMemo(
+  const points = useMemo(
     () => align(views.data?.points, visitors.data?.points),
     [views.data, visitors.data],
   );
@@ -82,7 +89,12 @@ export function SiteOverview({ site }: SiteOverviewProps) {
             <p className="truncate text-sm text-foreground-muted">{site.domain}</p>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        {/*
+          Aligned by their tops rather than their middles. The period carries the dates it works
+          out to on a second line, so a row centred on it would leave every button beside it
+          sitting lower than the control they line up with.
+        */}
+        <div className="flex flex-wrap items-start gap-3">
           <Button tone="secondary" size="sm" onClick={() => setShowingCode(true)}>
             <Code2 aria-hidden className="size-4" />
             {install('action')}
@@ -95,7 +107,7 @@ export function SiteOverview({ site }: SiteOverviewProps) {
             <SlidersHorizontal aria-hidden className="size-4" />
             {settings('action')}
           </Button>
-          <PeriodSwitch value={period} onChange={setPeriod} />
+          <PeriodPicker value={period} onChange={choose} timeZoneId={site.timeZoneId} />
         </div>
       </header>
 
@@ -136,11 +148,14 @@ export function SiteOverview({ site }: SiteOverviewProps) {
         />
       ) : (
         <>
-          {days.length > 0 ? (
+          {points.length > 0 ? (
             <TrafficChart
-              days={days}
+              points={points}
               siteName={site.displayName}
+              timeZoneId={site.timeZoneId}
               zone={readableZone(site.timeZoneId)}
+              granularity={granularity}
+              manyDays={daysIn(span) > 1}
             />
           ) : (
             <div className="h-72 animate-pulse rounded-lg border border-border bg-surface-muted" />
@@ -255,20 +270,20 @@ function perVisitor(
   return visitors > 0 ? format.number(pageViews / visitors, { maximumFractionDigits: 1 }) : null;
 }
 
-/** Two answers about the same days, joined into the rows a chart and a table both read. */
+/** Two answers about the same buckets, joined into the rows a chart and a table both read. */
 function align(
   views: readonly { readonly bucketStart: string; readonly value: number }[] | undefined,
   visitors: readonly { readonly bucketStart: string; readonly value: number }[] | undefined,
-): readonly TrafficDay[] {
+): readonly TrafficPoint[] {
   if (!views || !visitors) {
     return [];
   }
 
-  const byDay = new Map(visitors.map((point) => [point.bucketStart, point.value]));
+  const byBucket = new Map(visitors.map((point) => [point.bucketStart, point.value]));
 
   return views.map((point) => ({
     start: point.bucketStart,
     pageViews: point.value,
-    visitors: byDay.get(point.bucketStart) ?? 0,
+    visitors: byBucket.get(point.bucketStart) ?? 0,
   }));
 }

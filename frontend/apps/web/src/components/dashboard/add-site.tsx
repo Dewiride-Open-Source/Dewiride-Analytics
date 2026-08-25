@@ -108,13 +108,7 @@ export function AddSite({ open, onClose, likelyTimeZoneId, onAdded }: AddSitePro
               spellCheck={false}
               placeholder={t('domain.placeholder')}
               onChange={(event) => setDomain(event.target.value)}
-              /*
-                The first field of a panel that exists only to be filled in, which is where focus
-                belongs the moment it opens. The rule guards against seizing focus on a page
-                somebody was already reading; nobody was reading this until they asked for it.
-              */
-              // eslint-disable-next-line jsx-a11y/no-autofocus
-              autoFocus
+              data-opens-on
               required
             />
           )}

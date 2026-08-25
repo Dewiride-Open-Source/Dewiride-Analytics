@@ -1,6 +1,3 @@
-using System.Collections.Immutable;
-using Dewiride.Analytics.Classification;
-
 namespace Dewiride.Analytics.Application.Analytics;
 
 /// <summary>
@@ -690,18 +687,20 @@ public sealed record TrafficBreakdownQuery(TimeRange Range) : AnalyticsQuery(Ran
 /// Individual visits with the evidence behind each verdict, newest first.
 /// </summary>
 /// <remarks>
-/// The three narrowings below are asked of the verdict rather than of the activity behind it, so
-/// they cost nothing beyond the rows they leave out and they mean exactly what the reader sees:
-/// what generated the visit, how much weight stands behind saying so, and how much of the site it
-/// went to. Everything the caller may narrow by is a member of a closed set or a whole number, and
-/// none of it reaches a statement as text.
+/// <para>
+/// What the caller narrowed to is one value rather than a property per dimension, because a
+/// narrowing is one question — "show me these visits" — and splitting it across this question's own
+/// surface would leave every caller and every statement free to handle half of it.
+/// </para>
+/// <para>
+/// What counts as one visit, and which address is the site's own, are carried whether or not the
+/// narrowing turns out to need them. Which statement answers this question is the compiler's
+/// decision rather than the caller's, and a question that could arrive half filled in would leave
+/// every caller guessing which half.
+/// </para>
 /// </remarks>
 public sealed record JudgedSessionsQuery : AnalyticsQuery
 {
-    private readonly ImmutableArray<TrafficCategory> categories = [];
-    private readonly EvidenceStrength? leastStrength;
-    private readonly int leastPages;
-
     /// <summary>
     /// Most visits any one question may ask for.
     /// </summary>
@@ -713,21 +712,49 @@ public sealed record JudgedSessionsQuery : AnalyticsQuery
 
     /// <summary>Asks for judged visits in a window, newest first, one slice at a time.</summary>
     /// <param name="range">The window to look in, by when each visit began.</param>
+    /// <param name="idleTimeout">How long a visitor may be quiet before their next activity is a new visit.</param>
+    /// <param name="siteDomain">The measured site's own address, so it is never one of its own sources.</param>
     /// <param name="limit">How many visits to return, at most <see cref="MostSessions"/>.</param>
     /// <param name="offset">How many of the most recent visits to pass over first.</param>
+    /// <exception cref="ArgumentException">The site's address is missing.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The limit is not between one and the maximum, or the offset is negative.
     /// </exception>
-    public JudgedSessionsQuery(TimeRange range, int limit, int offset = 0)
+    public JudgedSessionsQuery(
+        TimeRange range,
+        TimeSpan idleTimeout,
+        string siteDomain,
+        int limit,
+        int offset = 0)
         : base(range)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(siteDomain);
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, MostSessions);
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
 
+        IdleTimeout = idleTimeout;
+        SiteDomain = siteDomain;
         Limit = limit;
         Offset = offset;
     }
+
+    /// <summary>How long a visitor may be quiet before their next activity is a new visit.</summary>
+    /// <remarks>
+    /// Read where the narrowing asks about the activity behind a verdict, because that activity has
+    /// to be rebuilt into visits before any of it can be compared against anything.
+    /// </remarks>
+    public TimeSpan IdleTimeout { get; }
+
+    /// <summary>
+    /// The measured site's own address.
+    /// </summary>
+    /// <remarks>
+    /// Read from the site catalogue rather than from the request, on the same terms as
+    /// <see cref="SiteVisitJourneyQuery.SiteDomain"/>: it decides which referrer counts as somewhere
+    /// else, and a caller who could name it could decide what a visit is said to have come from.
+    /// </remarks>
+    public string SiteDomain { get; }
 
     /// <summary>How many visits to return.</summary>
     public int Limit { get; }
@@ -735,66 +762,61 @@ public sealed record JudgedSessionsQuery : AnalyticsQuery
     /// <summary>How many of the most recent visits to pass over first.</summary>
     public int Offset { get; }
 
+    /// <summary>What to leave out, or nothing asked for, which is every visit the window holds.</summary>
+    public VisitNarrowing Narrowing { get; init; } = VisitNarrowing.Nothing;
+}
+
+/// <summary>
+/// What each detail of a period's judged visits actually held, counted per visit.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Asked so that a reader is offered the values their own traffic holds rather than a list of every
+/// country in the world. Six of the nine are open sets with no list to offer at all — nobody can
+/// guess whether a search engine is recorded as <c>Google</c>, <c>google</c> or <c>google.com</c> —
+/// so without this the filters those details need could not be built honestly.
+/// </para>
+/// <para>
+/// Counted per visit, because a visit is what the list it narrows is made of. Counting reports
+/// instead would offer a value promising four hundred visits and hand back ninety.
+/// </para>
+/// <para>
+/// It describes the whole period rather than what is left after the rest of the narrowing, which is
+/// the ground the conclusions have always been counted on. Conditioning it on everything else asked
+/// for would give the answer as many shapes as the question and double the cost of every change a
+/// reader makes to it.
+/// </para>
+/// </remarks>
+public sealed record SiteVisitFacetsQuery : AnalyticsQuery
+{
     /// <summary>
-    /// Which conclusions to return, or empty for all of them.
+    /// Most values any one detail offers.
     /// </summary>
     /// <remarks>
-    /// A set rather than one category, because the categories a reader thinks of as one thing —
-    /// every kind of crawler, say — are several here and stay several. Collapsing them into groups
-    /// on the way in would put a coarser vocabulary in front of the one the verdicts are stored in.
+    /// The commonest of them, because a busy site's pages run into thousands and a list nobody can
+    /// reach the bottom of is not a choice. Deliberately more than
+    /// <see cref="VisitNarrowing.MostValues"/>, which bounds what may be picked rather than what
+    /// may be looked through.
     /// </remarks>
-    /// <exception cref="ArgumentOutOfRangeException">A member is not a category the engine reaches.</exception>
-    public ImmutableArray<TrafficCategory> Categories
+    public const int MostValues = 100;
+
+    /// <summary>Asks what each detail of a window's judged visits held.</summary>
+    /// <param name="range">The window to look in, by when each visit began.</param>
+    /// <param name="idleTimeout">How long a visitor may be quiet before their next activity is a new visit.</param>
+    /// <param name="siteDomain">The measured site's own address, so it is never one of its own sources.</param>
+    /// <exception cref="ArgumentException">The site's address is missing.</exception>
+    public SiteVisitFacetsQuery(TimeRange range, TimeSpan idleTimeout, string siteDomain)
+        : base(range)
     {
-        get => categories;
+        ArgumentException.ThrowIfNullOrWhiteSpace(siteDomain);
 
-        init
-        {
-            if (!value.IsDefaultOrEmpty && value.Any(category => !Enum.IsDefined(category)))
-            {
-                throw new ArgumentOutOfRangeException(
-                    nameof(value),
-                    "Narrow to categories the engine can conclude.");
-            }
-
-            categories = value.IsDefault ? [] : value;
-        }
+        IdleTimeout = idleTimeout;
+        SiteDomain = siteDomain;
     }
 
-    /// <summary>
-    /// The least weight a verdict must carry to be returned, or nothing for any weight at all.
-    /// </summary>
-    /// <remarks>
-    /// A floor rather than an exact band. "Show me the ones there is real evidence for" is the
-    /// question people actually have, and a band on its own answers a narrower one.
-    /// </remarks>
-    /// <exception cref="ArgumentOutOfRangeException">The band is not one the engine reaches.</exception>
-    public EvidenceStrength? LeastStrength
-    {
-        get => leastStrength;
+    /// <summary>How long a visitor may be quiet before their next activity is a new visit.</summary>
+    public TimeSpan IdleTimeout { get; }
 
-        init
-        {
-            if (value is not null && !Enum.IsDefined(value.Value))
-            {
-                throw new ArgumentOutOfRangeException(nameof(value), "Narrow to a strength the engine reports.");
-            }
-
-            leastStrength = value;
-        }
-    }
-
-    /// <summary>The fewest pages a visit must have gone to, or nought for every visit.</summary>
-    /// <exception cref="ArgumentOutOfRangeException">The figure is negative.</exception>
-    public int LeastPages
-    {
-        get => leastPages;
-
-        init
-        {
-            ArgumentOutOfRangeException.ThrowIfNegative(value);
-
-            leastPages = value;
-        }
-    }
+    /// <summary>The measured site's own address, read from the site catalogue and never from a request.</summary>
+    public string SiteDomain { get; }
 }

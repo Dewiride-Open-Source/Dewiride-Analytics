@@ -169,6 +169,20 @@ public interface ITelemetryQueries
         TenantScope scope,
         JudgedSessionsQuery query,
         CancellationToken cancellationToken);
+
+    /// <summary>Returns what each detail of a window's judged visits held.</summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The window to describe.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// The commonest values each detail held, counted per visit, busiest first. A detail holds
+    /// nothing where the window has no judged visits, or where the activity behind them has already
+    /// aged out of the telemetry store.
+    /// </returns>
+    Task<VisitFacets> GetSiteVisitFacetsAsync(
+        TenantScope scope,
+        SiteVisitFacetsQuery query,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -225,6 +239,77 @@ public sealed record JudgedSession
     /// <summary>The conclusion, with the evidence for and against it.</summary>
     public required ClassificationVerdict Verdict { get; init; }
 }
+
+/// <summary>
+/// What each detail of a period's judged visits held, and how many visits held each value.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A list per detail rather than one list of rows carrying the detail's name, because two of the
+/// nine are members of this product's own closed vocabularies and the other seven are whatever the
+/// store holds. One list would have to give that distinction up, and give it up exactly where a
+/// screen has to know whether it may translate a value or must print it as it found it.
+/// </para>
+/// <para>
+/// A detail holding nothing is an empty list, which is an answer rather than a gap: a period whose
+/// visitors all arrived by typing the address genuinely has no sending sites to offer.
+/// </para>
+/// </remarks>
+public sealed record VisitFacets
+{
+    /// <summary>A period that offers nothing, which is what one holding no judged visits holds.</summary>
+    public static VisitFacets Nothing { get; } = new();
+
+    /// <summary>Kinds of device, commonest first.</summary>
+    /// <remarks>
+    /// What nothing established reads as <see cref="DeviceClass.Unknown"/>, which is the same
+    /// answer a single visit gives when nothing said what it was on.
+    /// </remarks>
+    public ImmutableArray<VisitDetailCount<DeviceClass>> Devices { get; init; } = [];
+
+    /// <summary>Kinds of place the visits were sent by.</summary>
+    /// <remarks>
+    /// What nothing established reads as <see cref="SourceChannel.Direct"/>, which is not "nobody
+    /// sent them" but "nothing said who did".
+    /// </remarks>
+    public ImmutableArray<VisitDetailCount<SourceChannel>> SourceKinds { get; init; } = [];
+
+    /// <summary>Browsers the visits were made with.</summary>
+    public ImmutableArray<VisitDetailCount<string>> Browsers { get; init; } = [];
+
+    /// <summary>The systems those browsers were running on.</summary>
+    public ImmutableArray<VisitDetailCount<string>> OperatingSystems { get; init; } = [];
+
+    /// <summary>Countries the visits arrived from, as two-letter codes.</summary>
+    public ImmutableArray<VisitDetailCount<string>> Countries { get; init; } = [];
+
+    /// <summary>Towns within them.</summary>
+    public ImmutableArray<VisitDetailCount<string>> Towns { get; init; } = [];
+
+    /// <summary>Who runs the networks the visits arrived over.</summary>
+    public ImmutableArray<VisitDetailCount<string>> Networks { get; init; } = [];
+
+    /// <summary>The sites that sent the visits.</summary>
+    public ImmutableArray<VisitDetailCount<string>> Sources { get; init; } = [];
+
+    /// <summary>The pages the visits began on.</summary>
+    public ImmutableArray<VisitDetailCount<string>> EntryPages { get; init; } = [];
+}
+
+/// <summary>
+/// One value a detail held, and how many of a period's judged visits held it.
+/// </summary>
+/// <remarks>
+/// Counted per visit rather than per report, because a visit is what the list this narrows is made
+/// of — a value offered as four hundred that handed back ninety would be a promise the product
+/// could not keep. Among the free-text details an empty value is a value rather than a gap: it is
+/// what the store holds where nothing could be established, so it counts the visits nothing is
+/// known about.
+/// </remarks>
+/// <typeparam name="T">How the value is spelled: a member of a closed set, or free text.</typeparam>
+/// <param name="Value">The value.</param>
+/// <param name="Visits">How many of the period's judged visits held it.</param>
+public readonly record struct VisitDetailCount<T>(T Value, long Visits);
 
 /// <summary>
 /// Headline totals for a site over a window.

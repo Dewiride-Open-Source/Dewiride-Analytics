@@ -167,6 +167,7 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     [Theory]
     [InlineData("traffic")]
     [InlineData("visits")]
+    [InlineData("visits/facets")]
     public async Task A_Site_Somebody_Has_No_Role_On_Is_Answered_As_Though_It_Did_Not_Exist(string screen)
     {
         var mine = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
@@ -186,6 +187,7 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     [Theory]
     [InlineData("traffic")]
     [InlineData("visits")]
+    [InlineData("visits/facets")]
     public async Task Nobody_Signed_In_Is_Refused(string screen)
     {
         var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
@@ -205,6 +207,9 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     [InlineData("visits?category=security-scanner&category=whatever")]
     [InlineData("visits?strength=certain")]
     [InlineData("visits?minPages=-1")]
+    [InlineData("visits?device=hovercraft")]
+    [InlineData("visits?sourceKind=telepathy")]
+    [InlineData("visits/facets?from=2024-01-02T00:00:00Z&to=2024-01-01T00:00:00Z")]
     [InlineData("traffic?from=2020-01-01T00:00:00Z&to=2024-01-01T00:00:00Z")]
     public async Task A_Question_That_Cannot_Be_Answered_As_Asked_Is_Refused(string query)
     {
@@ -216,6 +221,25 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
             var response = await browser.GetAsync($"/api/sites/{site.Id}/{query}");
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    /// <summary>
+    /// Checked before the site is, so a question outside the vocabulary is refused the same way
+    /// whether or not the site exists. The other order would turn a narrowing nobody can answer
+    /// into a way of finding out which identifiers on an install are real.
+    /// </summary>
+    [Fact]
+    public async Task A_Question_Outside_The_Vocabulary_Is_Refused_Before_The_Site_Is_Looked_Up()
+    {
+        var mine = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(mine.Id, SiteRole.Owner);
+
+        using (browser)
+        {
+            var nowhere = await browser.GetAsync($"/api/sites/{Guid.NewGuid()}/visits?device=hovercraft");
+
+            nowhere.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
     }
 
@@ -298,6 +322,151 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// A bound on the question rather than on the answer. Each named value is one more comparison
+    /// against every row the store rebuilt, and nobody picks two dozen towns off a list on purpose.
+    /// </summary>
+    [Fact]
+    public async Task Narrowing_To_More_Values_Than_Anyone_Means_Is_Refused()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var asking = string.Join('&', Enumerable.Range(0, 26).Select(each => $"town=town-{each}"));
+
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/visits?{asking}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    /// <summary>
+    /// The nine things a reader recognises a visit by are offered as what the period actually held,
+    /// spelled the way the rest of the product spells them: a kind of device reads as the word the
+    /// dashboard looks up in its catalogue rather than as whatever the engine calls it internally.
+    /// </summary>
+    [Fact]
+    public async Task A_Member_Is_Offered_What_Their_Period_Actually_Held()
+    {
+        var site = await DescribedTraffic.ADescribedVisitAsync(stack);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var offered = await ReadFacetsAsync(browser, site.Id);
+
+            offered.Devices.Should().ContainSingle().Which.Value.Should().Be("phone");
+            offered.SourceKinds.Should().ContainSingle().Which.Value.Should().Be("search");
+            offered.Browsers.Should().ContainSingle().Which.Value.Should().Be(DescribedTraffic.Browser);
+            offered.Systems.Should().ContainSingle().Which.Value.Should().Be(DescribedTraffic.SystemName);
+            offered.Countries.Should().ContainSingle().Which.Value.Should().Be(DescribedTraffic.Country);
+            offered.Towns.Should().ContainSingle().Which.Value.Should().Be(DescribedTraffic.Town);
+            offered.Networks.Should().ContainSingle().Which.Value.Should().Be(DescribedTraffic.Network);
+            offered.Sources.Should().ContainSingle().Which.Value.Should().Be(DescribedTraffic.Source);
+            offered.EntryPages.Should().ContainSingle().Which.Value.Should().Be(DescribedTraffic.EntryPage);
+            offered.EntryPages[0].Visits.Should().Be(1);
+        }
+    }
+
+    /// <summary>
+    /// The property the whole arrangement rests on, asked the way the dashboard will ask it. Every
+    /// value offered, written back as an address, finds the visit it was taken from — alone and all
+    /// nine at once. It is also what proves the two closed vocabularies survive the round trip: a
+    /// device offered as <c>phone</c> but narrowed by as <c>Phone</c> would refuse the question, and
+    /// one compared against the engine's own spelling would answer with an empty list and no error.
+    /// </summary>
+    [Fact]
+    public async Task Every_Value_Offered_Narrows_The_List_To_The_Visit_It_Came_From()
+    {
+        var site = await DescribedTraffic.ADescribedVisitAsync(stack);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var offered = await ReadFacetsAsync(browser, site.Id);
+
+            string[] narrowings =
+            [
+                Asking("device", offered.Devices),
+                Asking("sourceKind", offered.SourceKinds),
+                Asking("browser", offered.Browsers),
+                Asking("system", offered.Systems),
+                Asking("country", offered.Countries),
+                Asking("town", offered.Towns),
+                Asking("network", offered.Networks),
+                Asking("source", offered.Sources),
+                Asking("entryPage", offered.EntryPages),
+            ];
+
+            narrowings.Should().OnlyContain(narrowing => narrowing.Length > 0);
+
+            foreach (var narrowing in narrowings)
+            {
+                var narrowed = await ReadVisitsAsync(browser, site.Id, narrowing);
+
+                narrowed.TotalVisits.Should().Be(1, "{0} was offered", narrowing);
+            }
+
+            var together = await ReadVisitsAsync(browser, site.Id, string.Join('&', narrowings));
+
+            together.TotalVisits.Should().Be(1);
+        }
+    }
+
+    /// <summary>
+    /// Each detail on its own excludes the visits that did not hold it — which is the half the
+    /// round trip above cannot see, since a narrowing that never reached the store at all would
+    /// leave the list unnarrowed and hand the visit straight back.
+    /// </summary>
+    /// <param name="narrowing">A detail the described visit did not hold.</param>
+    [Theory]
+    [InlineData("device=desktop")]
+    [InlineData("sourceKind=social")]
+    [InlineData("browser=Chrome")]
+    [InlineData("system=Windows")]
+    [InlineData("country=FR")]
+    [InlineData("town=Lyon")]
+    [InlineData("network=Vodafone")]
+    [InlineData("source=Bing")]
+    [InlineData("entryPage=/nowhere")]
+    public async Task A_Detail_The_Visit_Did_Not_Have_Finds_Nothing(string narrowing)
+    {
+        var site = await DescribedTraffic.ADescribedVisitAsync(stack);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var everything = await ReadVisitsAsync(browser, site.Id, "limit=10");
+            var visits = await ReadVisitsAsync(browser, site.Id, narrowing);
+
+            everything.TotalVisits.Should().Be(1);
+            visits.Visits.Should().BeEmpty();
+            visits.TotalVisits.Should().Be(0);
+        }
+    }
+
+    /// <summary>
+    /// Asking to see the visits nothing was established about is a different question from asking
+    /// to see all of them, so an empty value has to survive the address it was written in rather
+    /// than being read as though it had been left out.
+    /// </summary>
+    [Fact]
+    public async Task Asking_For_What_Nothing_Was_Established_About_Is_Not_Asking_For_Everything()
+    {
+        var site = await DescribedTraffic.ADescribedVisitAsync(stack);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var everything = await ReadVisitsAsync(browser, site.Id, "limit=10");
+            var unplaced = await ReadVisitsAsync(browser, site.Id, "country=");
+
+            everything.TotalVisits.Should().Be(1);
+            unplaced.TotalVisits.Should().Be(0);
+        }
+    }
+    /// <summary>
     /// Writes one recognisable visit and judges it, so what the screens read back has been through
     /// the whole path rather than been placed there.
     /// </summary>
@@ -367,6 +536,28 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
 
         return visits;
     }
+
+    private static async Task<VisitFacetsResponse> ReadFacetsAsync(Browser browser, Guid siteId)
+    {
+        var response = await browser.GetAsync($"/api/sites/{siteId}/visits/facets");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var offered = await response.Content.ReadFromJsonAsync<VisitFacetsResponse>(Cancellation.Token);
+
+        offered.Should().NotBeNull();
+
+        return offered;
+    }
+
+    /// <summary>
+    /// Writes one detail's offered values as the address a reader narrowing by them would arrive at.
+    /// </summary>
+    /// <param name="key">What the detail is called in an address.</param>
+    /// <param name="offered">The values the answer offered.</param>
+    /// <returns>The query string that narrows to all of them.</returns>
+    private static string Asking(string key, IEnumerable<VisitDetailRow> offered) =>
+        string.Join('&', offered.Select(row => $"{key}={Uri.EscapeDataString(row.Value)}"));
 
     private async Task<Browser> SignedInAsync(Guid siteId, SiteRole role)
     {

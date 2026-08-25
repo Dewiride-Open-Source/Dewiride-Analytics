@@ -10,6 +10,8 @@ import { SiteSwitch } from '@/components/dashboard/site-switch';
 import { Button } from '@/components/ui/button';
 import { Link, usePathname } from '@/i18n/navigation';
 import { useChosenSite } from '@/lib/analytics/chosen-site';
+import { withPeriod } from '@/lib/analytics/period';
+import { usePeriod } from '@/lib/analytics/use-period';
 import { useSession, useSignOut } from '@/lib/queries/session';
 import { useSites } from '@/lib/queries/sites';
 import { currentSection, SECTIONS } from '@/lib/routes';
@@ -35,6 +37,7 @@ export function AppHeader() {
   const { site, choose } = useChosenSite(sites.data);
   const [adding, setAdding] = useState(false);
   const here = usePathname();
+  const { period } = usePeriod();
 
   function show(siteId: string) {
     choose(siteId);
@@ -102,8 +105,13 @@ export function AppHeader() {
 
               return (
                 <li key={section.path}>
+                  {/*
+                    The two screens about a website hand each other the period, so that moving
+                    between them is moving between two questions about the same days rather than
+                    starting again.
+                  */}
                   <Link
-                    href={section.path}
+                    href={section.aboutSite ? withPeriod(section.path, period) : section.path}
                     aria-current={current ? 'page' : undefined}
                     className={cn(
                       'relative flex h-11 items-center rounded-sm px-3 text-sm font-medium transition-colors',

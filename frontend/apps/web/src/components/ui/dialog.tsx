@@ -46,6 +46,15 @@ export function Dialog({ open, onClose, title, closeLabel, children, className }
 
     if (open && !element.open) {
       element.showModal();
+
+      /*
+        Opening it puts the cursor on the first thing that can hold one, which is the button that
+        closes it — so a panel asked for on purpose greets a keyboard with the way out of it. A
+        panel that exists to be filled in says which control it would rather start on, and gets it
+        moved here because the platform's own way of asking never arrives in time: the attribute is
+        read as the panel opens, and by then this component has already rendered without it.
+      */
+      element.querySelector<HTMLElement>('[data-opens-on]')?.focus();
     } else if (!open && element.open) {
       element.close();
     }

@@ -1,8 +1,10 @@
 using System.Collections.Frozen;
+using System.Collections.Immutable;
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Classification.Identity;
+using Dewiride.Analytics.Domain.Telemetry;
 
 namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 
@@ -51,6 +53,16 @@ public static class AnalyticsSqlCompiler
     private const string CategoriesParameter = "categories";
     private const string StrengthsParameter = "strengths";
     private const string LeastPagesParameter = "least_pages";
+    private const string DevicesParameter = "devices";
+    private const string SourceKindsParameter = "source_kinds";
+    private const string BrowsersParameter = "browsers";
+    private const string SystemsParameter = "systems";
+    private const string CountriesParameter = "countries";
+    private const string TownsParameter = "towns";
+    private const string NetworksParameter = "networks";
+    private const string SourcesParameter = "sources";
+    private const string EntryPagesParameter = "entry_pages";
+    private const string MostValuesParameter = "most_values";
 
     /// <summary>
     /// Bucket function per granularity. Bucketing runs in the site's own time zone, so the
@@ -92,31 +104,16 @@ public static class AnalyticsSqlCompiler
     /// Which resolved column a place list groups on.
     /// </summary>
     /// <remarks>
-    /// A fixed table of identifiers written in this file, which is what keeps the grouping a
-    /// choice between two statements rather than a caller-supplied column name.
+    /// A fixed table of identifiers and approved fragments, each written in this assembly, which
+    /// is what keeps the grouping a choice between two statements rather than a caller-supplied
+    /// column name.
     /// </remarks>
     private static readonly FrozenDictionary<LocationGrouping, string> PlaceColumns =
         new Dictionary<LocationGrouping, string>
         {
             [LocationGrouping.Country] = "country_code",
             [LocationGrouping.Town] = "city",
-
-            // Named from the catalogue where the number is one this build recognises, so a
-            // company's several networks are one row and a reader is shown "Alibaba Cloud" rather
-            // than "ALIBABA-CN-NET Alibaba US Technology Co., Ltd.". Where it is not recognised the
-            // registry's handle is dropped and its description kept, which is the readable half of
-            // what the registry publishes.
-            [LocationGrouping.Network] =
-                """
-                transform(
-                            autonomous_system,
-                            {hosting_numbers:Array(UInt32)},
-                            {hosting_names:Array(String)},
-                            if(
-                                position(network_owner, ' ') > 0,
-                                substring(network_owner, position(network_owner, ' ') + 1),
-                                network_owner))
-                """,
+            [LocationGrouping.Network] = NamedNetworks.From(8),
         }.ToFrozenDictionary();
 
     /// <summary>The catalogue of hosting networks, held as the arrays the store binds.</summary>
@@ -389,6 +386,122 @@ public static class AnalyticsSqlCompiler
         """;
 
     /// <summary>
+    /// A window's judged visits, reduced to one verdict each and narrowed to what a verdict holds.
+    /// </summary>
+    /// <remarks>
+    /// Everything up to the slice, because both shapes of the visit list end the same way and only
+    /// one of them has anything to say between the narrowing and the ordering.
+    /// </remarks>
+    private const string JudgedVisits = """
+        SELECT
+            session_key,
+            started_at,
+            ended_at,
+            page_count,
+            surfaces,
+            category,
+            strength,
+            is_provisional,
+            ruleset_major,
+            ruleset_minor,
+            signal_codes,
+            signal_directions,
+            signal_weights,
+            signal_supporting,
+            signal_parameters,
+            toInt64(count() OVER ()) AS total_visits
+        FROM
+        (
+            SELECT *
+            FROM session_classifications
+            WHERE site_id = {site_id:UUID}
+              AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+              AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+            ORDER BY ruleset_major DESC, ruleset_minor DESC, classified_at DESC
+            LIMIT 1 BY session_key
+        )
+        WHERE (empty({categories:Array(String)}) OR toString(category) IN {categories:Array(String)})
+          AND (empty({strengths:Array(String)}) OR toString(strength) IN {strengths:Array(String)})
+          AND page_count >= {least_pages:UInt32}
+        """;
+
+    /// <summary>Which of the narrowed visits a slice holds, in the order that makes slices agree.</summary>
+    private const string JudgedSlice = """
+        ORDER BY started_at DESC, session_key
+        LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+        """;
+
+    /// <summary>The whole statement for a narrowing the stored verdicts answer on their own.</summary>
+    private const string JudgedVerdicts = $"{JudgedVisits}\n{JudgedSlice}";
+
+    /// <summary>
+    /// The same, with the rebuild in front of it and the nine conditions only the visits themselves
+    /// can answer.
+    /// </summary>
+    /// <remarks>
+    /// The further condition sits in the same outer selection as the other three, so it still
+    /// applies after each visit has been reduced to one verdict and the count still describes the
+    /// narrowed list rather than the whole window.
+    /// </remarks>
+    private static readonly string JudgedVerdictsByDetail = $$"""
+        WITH
+            {{JudgedVisitDetails.Fragment}},
+            narrowed AS
+            (
+                SELECT session_key
+                FROM described
+                WHERE (empty({devices:Array(String)}) OR device IN {devices:Array(String)})
+                  AND (empty({source_kinds:Array(String)}) OR from_kind IN {source_kinds:Array(String)})
+                  AND (empty({browsers:Array(String)}) OR browser IN {browsers:Array(String)})
+                  AND (empty({systems:Array(String)}) OR system_name IN {systems:Array(String)})
+                  AND (empty({countries:Array(String)}) OR country IN {countries:Array(String)})
+                  AND (empty({towns:Array(String)}) OR town IN {towns:Array(String)})
+                  AND (empty({networks:Array(String)}) OR network IN {networks:Array(String)})
+                  AND (empty({sources:Array(String)}) OR from_site IN {sources:Array(String)})
+                  AND (empty({entry_pages:Array(String)}) OR entry_path IN {entry_pages:Array(String)})
+            )
+        {{JudgedVisits}}
+          AND session_key IN (SELECT session_key FROM narrowed)
+        {{JudgedSlice}}
+        """;
+
+    /// <summary>
+    /// What each detail of a window's judged visits held, counted per visit.
+    /// </summary>
+    /// <remarks>
+    /// The nine are unfolded from one array rather than laid end to end as nine selections, because
+    /// the store writes a common table expression out again wherever it is named — so nine of them
+    /// would rebuild every visit in the window nine times over.
+    /// </remarks>
+    private static readonly string VisitDetailCounts = $$"""
+        WITH
+            {{JudgedVisitDetails.Fragment}},
+            judged AS
+            (
+                SELECT session_key
+                FROM session_classifications
+                WHERE site_id = {site_id:UUID}
+                  AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                  AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+            ),
+            detailed AS
+            (
+                SELECT
+                    {{JudgedVisitDetails.EveryDetail(12)}} AS detail
+                FROM described
+                WHERE session_key IN (SELECT session_key FROM judged)
+            )
+        SELECT
+            detail.1 AS kind,
+            detail.2 AS value,
+            toInt64(count()) AS visits
+        FROM detailed
+        GROUP BY kind, value
+        ORDER BY kind, visits DESC, value
+        LIMIT {most_values:UInt32} BY kind
+        """;
+
+    /// <summary>
     /// Compiles a question into a statement.
     /// </summary>
     /// <param name="scope">The authorisation decision the statement is bound to.</param>
@@ -538,15 +651,23 @@ public static class AnalyticsSqlCompiler
     /// <param name="query">The question.</param>
     /// <returns>The statement, or <see langword="null"/> where this is not one of these questions.</returns>
     /// <remarks>
-    /// These read stored verdicts rather than activity, so they see only visits that have been
-    /// judged and answer for a slightly older window than the rest — which the interface states
-    /// rather than papers over.
+    /// <para>
+    /// These begin from stored verdicts rather than from activity, so they see only visits that
+    /// have been judged and answer for a slightly older window than the rest — which the interface
+    /// states rather than papers over.
+    /// </para>
+    /// <para>
+    /// Two of them may then reach back into the activity behind those verdicts, because what a
+    /// visit was is a different thing from what it was concluded to be, is stored nowhere, and has
+    /// to be rebuilt before it can be asked about.
+    /// </para>
     /// </remarks>
     private static CompiledStatement? CompileFromVerdicts(TenantScope scope, AnalyticsQuery query) =>
         query switch
         {
             TrafficBreakdownQuery breakdown => CompileTrafficBreakdown(scope, breakdown),
             JudgedSessionsQuery judged => CompileJudgedSessions(scope, judged),
+            SiteVisitFacetsQuery facets => CompileSiteVisitFacets(scope, facets),
             _ => null,
         };
 
@@ -769,12 +890,19 @@ public static class AnalyticsSqlCompiler
     /// one: geography and software are resolved per report and a visit watched by both halves has
     /// reports that resolved neither.
     /// </para>
+    /// <para>
+    /// The network is named from the hosting catalogue, which is what the card ranking a window's
+    /// networks and the filter narrowing a list to one of them both name it from. A visit opened
+    /// out of that list has to agree with the row it was opened from, and a registry's own
+    /// description is a different string for the same company.
+    /// </para>
     /// </remarks>
     private static CompiledStatement CompileSiteVisitJourney(TenantScope scope, SiteVisitJourneyQuery query)
     {
         var sql = $$"""
             WITH
                 {{SendingSites.Of(
+                    SendingSites.ThePeriod,
                     "event_id",
                     "surface",
                     "visitor_key",
@@ -791,6 +919,7 @@ public static class AnalyticsSqlCompiler
                     "action_target_kind",
                     "country_code",
                     "city",
+                    "autonomous_system",
                     "network_owner",
                     "device_class",
                     "browser_family",
@@ -803,14 +932,15 @@ public static class AnalyticsSqlCompiler
                     FROM opened
                     WHERE visit_ordinal = 0
                 ),
-                context AS
+                gathered AS
                 (
                     SELECT
                         argMinIf(source_site, (server_ts, event_id), sending_host != '') AS from_site,
                         argMinIf(source_channel, (server_ts, event_id), sending_host != '') AS from_kind,
                         argMinIf(country_code, (server_ts, event_id), country_code != '') AS country,
                         argMinIf(city, (server_ts, event_id), city != '') AS town,
-                        argMinIf(network_owner, (server_ts, event_id), network_owner != '') AS network,
+                        argMinIf(network_owner, (server_ts, event_id), network_owner != '') AS network_owner,
+                        max(autonomous_system) AS autonomous_system,
                         argMinIf(
                             toString(device_class),
                             (server_ts, event_id),
@@ -821,6 +951,19 @@ public static class AnalyticsSqlCompiler
                             (server_ts, event_id),
                             operating_system != '') AS system_name
                     FROM stepped
+                ),
+                context AS
+                (
+                    SELECT
+                        from_site,
+                        from_kind,
+                        country,
+                        town,
+                        {{NamedNetworks.From(12)}} AS network,
+                        device,
+                        browser,
+                        system_name
+                    FROM gathered
                 ),
                 pages AS
                 (
@@ -874,6 +1017,7 @@ public static class AnalyticsSqlCompiler
             [
                 .. WindowParameters(scope, query.Range),
                 .. CatalogueParameters(query.SiteDomain),
+                .. NetworkNames(),
                 new QueryParameter(IdleParameter, (long)query.IdleTimeout.TotalSeconds),
                 new QueryParameter(VisitorKeyParameter, query.Visit.VisitorKey),
                 new QueryParameter(LimitParameter, (uint)query.Limit),
@@ -917,9 +1061,32 @@ public static class AnalyticsSqlCompiler
 
         return new CompiledStatement(sql, WindowParameters(scope, query.Range));
     }
-
     /// <summary>
     /// Returns individual judged visits with the evidence behind each verdict.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Two statements rather than one, chosen by what the caller narrowed to. Everything a verdict
+    /// itself holds is a condition on rows the store already has; anything about the activity behind
+    /// a verdict has to be rebuilt from events before it can be compared against anything, and
+    /// rebuilding unconditionally would charge every reader of the ordinary list for work nobody
+    /// asked for.
+    /// </para>
+    /// <para>
+    /// Within each shape the text does not vary, which is what keeps one plan for the store to reuse
+    /// and one statement to approve rather than one per combination somebody might ask for.
+    /// </para>
+    /// </remarks>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement and its bound values.</returns>
+    private static CompiledStatement CompileJudgedSessions(TenantScope scope, JudgedSessionsQuery query) =>
+        query.Narrowing.ReadsActivity
+            ? CompileJudgedByDetail(scope, query)
+            : CompileJudgedByVerdict(scope, query);
+
+    /// <summary>
+    /// The shape for a narrowing the stored verdicts answer on their own.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -945,62 +1112,154 @@ public static class AnalyticsSqlCompiler
     /// The count of the whole window is taken after the narrowing for the same reason: a list that
     /// says how far through it somebody is has to be counting the list they are looking at.
     /// </para>
+    /// </remarks>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement and its bound values.</returns>
+    private static CompiledStatement CompileJudgedByVerdict(TenantScope scope, JudgedSessionsQuery query) =>
+        new(JudgedVerdicts, VerdictNarrowing(scope, query));
+
+    /// <summary>
+    /// The shape for a narrowing that also asks what the visits themselves were.
+    /// </summary>
+    /// <remarks>
     /// <para>
-    /// The narrowing is the same three expressions whatever was asked for, with an empty set
-    /// meaning "all of them" and nought pages meaning "any". One shape of statement rather than
-    /// eight is one plan for the store to reuse, one statement to read, and one to approve.
+    /// The shape above with the rebuild in front of it and one further condition on the same outer
+    /// selection — so the narrowing still applies after each visit has been reduced to one verdict,
+    /// and the count still describes the list the reader is looking at.
+    /// </para>
+    /// <para>
+    /// The nine conditions are written out whatever was asked for, each empty set meaning "all of
+    /// them". A reader who picked one country and a reader who picked a country, a browser and a
+    /// landing page send the store the same statement with different values in it.
+    /// </para>
+    /// <para>
+    /// It is joined on the identity the detection engine derived, which is reproduced from activity
+    /// rather than stored a second time. <see cref="JudgedVisitDetails"/> is where that is done and
+    /// why.
     /// </para>
     /// </remarks>
-    private static CompiledStatement CompileJudgedSessions(TenantScope scope, JudgedSessionsQuery query)
-    {
-        const string sql = """
-            SELECT
-                session_key,
-                started_at,
-                ended_at,
-                page_count,
-                surfaces,
-                category,
-                strength,
-                is_provisional,
-                ruleset_major,
-                ruleset_minor,
-                signal_codes,
-                signal_directions,
-                signal_weights,
-                signal_supporting,
-                signal_parameters,
-                toInt64(count() OVER ()) AS total_visits
-            FROM
-            (
-                SELECT *
-                FROM session_classifications
-                WHERE site_id = {site_id:UUID}
-                  AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-                  AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
-                ORDER BY ruleset_major DESC, ruleset_minor DESC, classified_at DESC
-                LIMIT 1 BY session_key
-            )
-            WHERE (empty({categories:Array(String)}) OR toString(category) IN {categories:Array(String)})
-              AND (empty({strengths:Array(String)}) OR toString(strength) IN {strengths:Array(String)})
-              AND page_count >= {least_pages:UInt32}
-            ORDER BY started_at DESC, session_key
-            LIMIT {limit:UInt32} OFFSET {offset:UInt32}
-            """;
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement and its bound values.</returns>
+    private static CompiledStatement CompileJudgedByDetail(TenantScope scope, JudgedSessionsQuery query) =>
+        new(
+            JudgedVerdictsByDetail,
+            [
+                .. VerdictNarrowing(scope, query),
+                .. CatalogueParameters(query.SiteDomain),
+                .. NetworkNames(),
+                new QueryParameter(IdleParameter, (long)query.IdleTimeout.TotalSeconds),
+                .. DetailNarrowing(query.Narrowing),
+            ]);
 
-        return new CompiledStatement(
-            sql,
+    /// <summary>
+    /// Counts what each detail of a window's judged visits held.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One pass over the rebuild rather than nine. The store writes a common table expression out
+    /// again wherever it is named, so nine selections laid end to end would each rebuild every visit
+    /// in the window; laying the nine details out as an array and unfolding it costs one.
+    /// </para>
+    /// <para>
+    /// Only visits that have been judged take part, and only those the rebuild could describe. A
+    /// visit whose activity has already aged out has no details left to offer, and offering it as
+    /// "nothing established" would be a claim about the visitor rather than about the store.
+    /// </para>
+    /// <para>
+    /// Each detail keeps its commonest values and stops there, which is what makes the answer a
+    /// list somebody can read rather than every page a busy site has ever served.
+    /// </para>
+    /// </remarks>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement and its bound values.</returns>
+    private static CompiledStatement CompileSiteVisitFacets(TenantScope scope, SiteVisitFacetsQuery query) =>
+        new(
+            VisitDetailCounts,
             [
                 .. WindowParameters(scope, query.Range),
-                new QueryParameter(LimitParameter, (uint)query.Limit),
-                new QueryParameter(OffsetParameter, (uint)query.Offset),
-                new QueryParameter(
-                    CategoriesParameter,
-                    query.Categories.Select(category => StoredNames.CategoryNames[category]).ToArray()),
-                new QueryParameter(StrengthsParameter, AtLeast(query.LeastStrength)),
-                new QueryParameter(LeastPagesParameter, (uint)query.LeastPages),
+                .. CatalogueParameters(query.SiteDomain),
+                .. NetworkNames(),
+                new QueryParameter(IdleParameter, (long)query.IdleTimeout.TotalSeconds),
+                new QueryParameter(MostValuesParameter, (uint)SiteVisitFacetsQuery.MostValues),
             ]);
-    }
+
+    /// <summary>
+    /// The window, the slice, and what was narrowed to among the things a verdict holds.
+    /// </summary>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The values both shapes bind.</returns>
+    private static QueryParameter[] VerdictNarrowing(TenantScope scope, JudgedSessionsQuery query) =>
+    [
+        .. WindowParameters(scope, query.Range),
+        new QueryParameter(LimitParameter, (uint)query.Limit),
+        new QueryParameter(OffsetParameter, (uint)query.Offset),
+        new QueryParameter(CategoriesParameter, AsStored(query.Narrowing.Categories)),
+        new QueryParameter(StrengthsParameter, AtLeast(query.Narrowing.LeastStrength)),
+        new QueryParameter(LeastPagesParameter, (uint)query.Narrowing.LeastPages),
+    ];
+
+    /// <summary>
+    /// What was narrowed to among the things the visit itself was, as the store spells them.
+    /// </summary>
+    /// <remarks>
+    /// All nine, always, because the statement names all nine however few were asked for. An empty
+    /// one is the question "all of them", and the statement says so rather than being assembled a
+    /// second way.
+    /// </remarks>
+    /// <param name="narrowing">What the caller asked for.</param>
+    /// <returns>The nine arrays.</returns>
+    private static QueryParameter[] DetailNarrowing(VisitNarrowing narrowing) =>
+    [
+        new(DevicesParameter, AsStored(narrowing.Devices)),
+        new(SourceKindsParameter, AsStored(narrowing.SourceKinds)),
+        new(BrowsersParameter, narrowing.Browsers.ToArray()),
+        new(SystemsParameter, narrowing.OperatingSystems.ToArray()),
+        new(CountriesParameter, narrowing.Countries.ToArray()),
+        new(TownsParameter, narrowing.Towns.ToArray()),
+        new(NetworksParameter, narrowing.Networks.ToArray()),
+        new(SourcesParameter, narrowing.Sources.ToArray()),
+        new(EntryPagesParameter, narrowing.EntryPages.ToArray()),
+    ];
+
+    /// <summary>
+    /// The conclusions asked for, named as the store spells them.
+    /// </summary>
+    /// <param name="categories">The conclusions.</param>
+    /// <returns>The stored names.</returns>
+    private static string[] AsStored(ImmutableArray<TrafficCategory> categories) =>
+        [.. categories.Select(category => StoredNames.CategoryNames[category])];
+
+    /// <summary>
+    /// The kinds of device asked for, named as the rebuild holds them.
+    /// </summary>
+    /// <remarks>
+    /// A device nothing established is held as an empty text rather than as the word the vocabulary
+    /// spells it by. The rebuild carries the first report that said anything, and where none did
+    /// there is nothing to carry — so asking for the visits nothing was established about is asking
+    /// for the empty text, and reading a visit back performs the same mapping the other way round.
+    /// </remarks>
+    /// <param name="devices">The kinds of device.</param>
+    /// <returns>The stored names.</returns>
+    private static string[] AsStored(ImmutableArray<DeviceClass> devices) =>
+        [.. devices.Select(device =>
+            device == DeviceClass.Unknown ? string.Empty : StoredNames.DeviceClassNames[device])];
+
+    /// <summary>
+    /// The kinds of source asked for, named as the rebuild holds them.
+    /// </summary>
+    /// <remarks>
+    /// A visit nothing sent is held as an empty text, on the same terms and for the same reason as
+    /// a device nothing established. It is not "nobody sent them": it is "nothing said who did".
+    /// </remarks>
+    /// <param name="kinds">The kinds of source.</param>
+    /// <returns>The stored names.</returns>
+    private static string[] AsStored(ImmutableArray<SourceChannel> kinds) =>
+        [.. kinds.Select(kind =>
+            kind == SourceChannel.Direct ? string.Empty : TrafficSources.Spelling(kind))];
 
     /// <summary>
     /// The strengths that count as at least the one asked for, named as the store spells them.
@@ -1368,7 +1627,7 @@ public static class AnalyticsSqlCompiler
 
         var sql = $$"""
             WITH
-                {{SendingSites.Of("kind", "surface", "path", "visitor_key", "correlation_id")}},
+                {{SendingSites.Of(SendingSites.ThePeriod, "kind", "surface", "path", "visitor_key", "correlation_id")}},
                 {{ReconciledEvents.Reconciliation}},
                 sourced AS
                 (
@@ -1655,13 +1914,22 @@ public static class AnalyticsSqlCompiler
     /// <param name="grouping">What the place list is grouped by.</param>
     /// <returns>The two arrays, or nothing where the grouping does not read them.</returns>
     private static QueryParameter[] CatalogueOfNetworks(LocationGrouping grouping) =>
-        grouping == LocationGrouping.Network
-            ?
-            [
-                new(HostingNumbersParameter, HostingNumbers),
-                new(HostingNamesParameter, HostingNames),
-            ]
-            : [];
+        grouping == LocationGrouping.Network ? NetworkNames() : [];
+
+    /// <summary>
+    /// The catalogue of hosting networks, as the two arrays a statement that names one binds.
+    /// </summary>
+    /// <remarks>
+    /// Written once because three statements name a network: the list that ranks the networks a
+    /// window's visitors arrived over, the rebuild that lets a reader narrow a list of visits to
+    /// one of them, and the account a single opened visit gives of itself.
+    /// </remarks>
+    /// <returns>The two arrays.</returns>
+    private static QueryParameter[] NetworkNames() =>
+    [
+        new(HostingNumbersParameter, HostingNumbers),
+        new(HostingNamesParameter, HostingNames),
+    ];
 
     /// <summary>
     /// The window, plus what turns activity inside it into visits.

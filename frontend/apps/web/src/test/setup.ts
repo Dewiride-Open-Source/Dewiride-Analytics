@@ -39,6 +39,23 @@ Object.defineProperty(Element.prototype, 'scrollIntoView', {
   value: () => {},
 });
 
+// Laying nothing out also means never noticing that something changed size, so the way of asking
+// to be told is missing altogether. A panel that keeps itself on screen beside the control it
+// opened from watches for exactly that, and would otherwise fail on a missing constructor rather
+// than on anything the test was checking. Where such a panel is actually drawn is a question for
+// a real browser.
+Object.defineProperty(window, 'ResizeObserver', {
+  writable: true,
+  configurable: true,
+  value: function watchSize(): ResizeObserver {
+    return {
+      observe: () => {},
+      unobserve: () => {},
+      disconnect: () => {},
+    } as unknown as ResizeObserver;
+  },
+});
+
 // The same document implements the dialog element's markup but none of its behaviour: opening and
 // closing one is simply missing. The real thing is what supplies the focus trap, the inert page
 // behind it and the Escape key, so it stays in the product and the two calls are supplied here.

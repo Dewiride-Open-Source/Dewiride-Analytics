@@ -63,9 +63,10 @@ function engineWith(sites: readonly Site[]) {
   });
 }
 
-function withTheme(ui: React.ReactElement) {
+function withTheme(ui: React.ReactElement, at?: string) {
   return renderScreen(<ThemeProvider attribute="class">{ui}</ThemeProvider>, {
     sessionAlreadyRead: false,
+    searchParams: at,
   });
 }
 
@@ -132,6 +133,32 @@ describe('the bar across the top', () => {
     expect(within(sections).getByRole('link', { name: 'User journey' })).toHaveAttribute(
       'href',
       '/app/journeys',
+    );
+  });
+
+  /**
+   * The two screens are two questions about the same days, so the way between them carries the
+   * days. The account is about the person rather than about any stretch of them, and a period in
+   * its address would be a question nothing on it could answer.
+   */
+  it('hands the period between the two screens about a website, and not to the account', async () => {
+    engineWith([SITE]);
+
+    withTheme(<AppHeader />, '?period=yesterday');
+
+    const sections = await screen.findByRole('navigation', { name: 'Sections' });
+
+    expect(within(sections).getByRole('link', { name: 'Overview' })).toHaveAttribute(
+      'href',
+      '/app?period=yesterday',
+    );
+    expect(within(sections).getByRole('link', { name: 'User journey' })).toHaveAttribute(
+      'href',
+      '/app/journeys?period=yesterday',
+    );
+    expect(within(sections).getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/app/settings',
     );
   });
 

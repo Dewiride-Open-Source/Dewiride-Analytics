@@ -134,8 +134,36 @@
     },
     "period": {
       "label": "Period",
-      "week": "7 days",
-      "month": "30 days"
+      "groups": {
+        "recent": "Recent",
+        "calendar": "Calendar",
+        "own": "Your own"
+      },
+      "presets": {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "last-7-days": "Last 7 days",
+        "last-30-days": "Last 30 days",
+        "last-90-days": "Last 90 days",
+        "this-month": "This month",
+        "last-month": "Last month",
+        "this-year": "This year"
+      },
+      "chosen": "Your dates",
+      "choose": "Choose dates…",
+      "chooser": {
+        "title": "Choose your dates",
+        "close": "Close",
+        "first": "First day",
+        "last": "Last day",
+        "length": "{days, plural, one {# day} other {# days}}",
+        "apply": "Show this period",
+        "problems": {
+          "backwards": "The last day comes before the first one.",
+          "future": "That day hasn't happened yet.",
+          "too-long": "Pick a stretch of a year or less."
+        }
+      }
     },
     "metrics": {
       "pageViews": {
@@ -153,10 +181,13 @@
       "title": "Traffic",
       "pageViews": "Page views",
       "visitors": "Daily visitors",
+      "visitorsByHour": "Visitors",
       "days": "Days run midnight to midnight in {zone}.",
-      "summary": "Daily page views and daily visitors for {site} over the selected period.",
+      "hours": "Times are the clock in {zone}.",
+      "summary": "Page views and visitors for {site} over the chosen period.",
       "table": "Show these figures as a table",
-      "columnDay": "Day"
+      "columnDay": "Day",
+      "columnHour": "Time"
     },
     "list": {
       "previous": "Previous",
@@ -438,13 +469,47 @@
       "title": "Narrow this down",
       "clear": "Clear",
       "categories": "What generated it",
+      "details": "More about these visits",
+      "chosen": "chosen",
+      "loading": "Finding what's in this period…",
+      "nothing": "Nothing recorded in this period.",
+      "noMatch": "Nothing matches that.",
+      "full": "That's the most you can pick at once.",
+      "searchLabel": "Search these options",
+      "searchPlaceholder": "Search",
+      "remove": "Remove {choice}",
+      "of": {
+        "devices": "Device",
+        "sourceKinds": "How they arrived",
+        "browsers": "Browser",
+        "systems": "System",
+        "countries": "Country",
+        "towns": "Town",
+        "networks": "Network",
+        "sources": "Came from",
+        "entryPages": "Landed on"
+      },
+      "arrived": {
+        "direct": "Came straight here",
+        "search": "A search engine",
+        "assistant": "An AI assistant",
+        "social": "A social network",
+        "link": "A link on another site"
+      },
+      "unplaced": {
+        "browsers": "Not known",
+        "systems": "Not known",
+        "countries": "Couldn't be placed",
+        "towns": "Not known",
+        "networks": "Not known",
+        "sources": "Nothing sent them",
+        "entryPages": "No page recorded"
+      },
       "strength": "How sure we are",
-      "strengthAny": "Any",
       "strengthWeak": "Slight signs or stronger",
       "strengthModerate": "Some signs or stronger",
       "strengthStrong": "Strong signs",
       "pages": "Pages read",
-      "pagesAny": "Any",
       "pagesOne": "One or more",
       "pagesMany": "More than one"
     },

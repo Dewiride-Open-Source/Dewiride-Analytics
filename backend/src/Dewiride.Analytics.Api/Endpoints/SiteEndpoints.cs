@@ -121,6 +121,18 @@ internal static class SiteEndpoints
     /// </remarks>
     private const string DefaultPosition = "entry";
 
+    /// <summary>What is said when a list is narrowed to a conclusion this product never reaches.</summary>
+    private const string UnreachedCategory =
+        "Narrow to the conclusions this product reaches, or leave it out for all of them.";
+
+    /// <summary>What is said when a list is narrowed to a kind of device this product never reports.</summary>
+    private const string UnreachedDevice =
+        "Narrow to the kinds of device this product reports, or leave it out for all of them.";
+
+    /// <summary>What is said when a list is narrowed to a kind of source this product never reports.</summary>
+    private const string UnreachedSourceKind =
+        "Narrow to the kinds of source this product reports, or leave it out for all of them.";
+
     /// <summary>
     /// What each role is called on the wire.
     /// </summary>
@@ -345,6 +357,10 @@ internal static class SiteEndpoints
         routes.MapGet("/api/sites/{siteId:guid}/visits", VisitsAsync)
             .WithName("SiteVisits")
             .WithSummary("Returns individual judged visits and the evidence behind each verdict.");
+
+        routes.MapGet("/api/sites/{siteId:guid}/visits/facets", VisitFacetsAsync)
+            .WithName("SiteVisitFacets")
+            .WithSummary("Returns what each detail of a period's judged visits held, and how many held it.");
 
         routes.MapGet("/api/sites/{siteId:guid}/visits/totals", VisitTotalsAsync)
             .WithName("SiteVisitTotals")
@@ -1090,14 +1106,24 @@ internal static class SiteEndpoints
     /// Answers with individual judged visits and the case behind each verdict.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Everything the caller supplied — the paging, the window, and what they narrowed to — is
     /// checked before the site is resolved, so a malformed request is refused identically whether
     /// or not the site exists.
+    /// </para>
+    /// <para>
+    /// The site's own address is read from the catalogue rather than from the request, because a
+    /// narrowing may ask which site sent a visit and a measured site is never one of its own
+    /// sources — so a caller who could name it could decide what somebody else's traffic is said to
+    /// have come from.
+    /// </para>
     /// </remarks>
     private static async Task<Results<Ok<VisitsResponse>, NotFound, ProblemHttpResult>> VisitsAsync(
         [AsParameters] VisitsParameters parameters,
         ITenantScopeProvider scopes,
+        ISiteCatalog sites,
         ITelemetryQueries telemetry,
+        IOptions<ClassificationOptions> classification,
         TimeProvider clock,
         CancellationToken cancellationToken)
     {
@@ -1123,14 +1149,24 @@ internal static class SiteEndpoints
             return TypedResults.NotFound();
         }
 
+        var site = await sites.FindAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (site is null)
+        {
+            return TypedResults.NotFound();
+        }
+
         var visits = await telemetry
             .GetJudgedSessionsAsync(
                 scope,
-                new JudgedSessionsQuery(slice.Range, slice.Limit, slice.Offset)
+                new JudgedSessionsQuery(
+                    slice.Range,
+                    classification.Value.IdleTimeout,
+                    site.Domain,
+                    slice.Limit,
+                    slice.Offset)
                 {
-                    Categories = narrowing.Categories,
-                    LeastStrength = narrowing.LeastStrength,
-                    LeastPages = narrowing.LeastPages,
+                    Narrowing = narrowing,
                 },
                 cancellationToken)
             .ConfigureAwait(false);
@@ -1144,23 +1180,117 @@ internal static class SiteEndpoints
     }
 
     /// <summary>
-    /// What a caller narrowed a list of visits to.
+    /// Answers what each detail of a period's judged visits held, so a reader is offered what is
+    /// there rather than a list of things that never happened.
     /// </summary>
-    /// <param name="Categories">Which conclusions to return, or empty for all of them.</param>
-    /// <param name="LeastStrength">The lowest band worth returning, or nothing for every band.</param>
-    /// <param name="LeastPages">The fewest pages a visit must have gone to.</param>
-    private readonly record struct VisitNarrowing(
-        ImmutableArray<TrafficCategory> Categories,
-        EvidenceStrength? LeastStrength,
-        int LeastPages);
+    /// <remarks>
+    /// <para>
+    /// Most of these are open sets nobody could write down in advance — a search engine may be
+    /// recorded under any of several names, and a page's address is whatever the site chose — so
+    /// the only honest way to offer them is to report what this site's own traffic held. Counted
+    /// per visit and over the whole period rather than over anything else the reader has narrowed
+    /// to, so a value offered as four hundred hands back four hundred, and one question has one
+    /// answer however a list is being read.
+    /// </para>
+    /// <para>
+    /// Answering rebuilds the period's visits from the activity behind them, which listing them
+    /// does not, so this is a question to ask while somebody is choosing what to narrow to and not
+    /// before.
+    /// </para>
+    /// </remarks>
+    private static async Task<Results<Ok<VisitFacetsResponse>, NotFound, ProblemHttpResult>> VisitFacetsAsync(
+        [AsParameters] OverviewParameters parameters,
+        ITenantScopeProvider scopes,
+        ISiteCatalog sites,
+        ITelemetryQueries telemetry,
+        IOptions<ClassificationOptions> classification,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!RequestedWindow.TryResolve(
+                parameters.From,
+                parameters.To,
+                RequestedWindow.Longest,
+                clock,
+                out var range,
+                out var refusal))
+        {
+            return Unusable(refusal);
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var site = await sites.FindAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (site is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var held = await telemetry
+            .GetSiteVisitFacetsAsync(
+                scope,
+                new SiteVisitFacetsQuery(range, classification.Value.IdleTimeout, site.Domain),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(
+            new VisitFacetsResponse(
+                range.From,
+                range.To,
+                Counted(held.Devices, kind => ReportedNames.Devices[kind]),
+                Counted(held.SourceKinds, TrafficSources.Spelling),
+                Counted(held.Browsers),
+                Counted(held.OperatingSystems),
+                Counted(held.Countries),
+                Counted(held.Towns),
+                Counted(held.Networks),
+                Counted(held.Sources),
+                Counted(held.EntryPages)));
+    }
+
+    /// <summary>
+    /// Reports the values one detail held, in the order the store offered them.
+    /// </summary>
+    /// <param name="held">What the detail held, commonest first.</param>
+    /// <returns>The same, as the wire reports it.</returns>
+    private static IReadOnlyList<VisitDetailRow> Counted(ImmutableArray<VisitDetailCount<string>> held) =>
+        Counted(held, value => value);
+
+    /// <summary>
+    /// Reports the members of a closed set one detail held, spelled the way the wire spells them.
+    /// </summary>
+    /// <typeparam name="T">The set the detail is drawn from.</typeparam>
+    /// <param name="held">What the detail held, commonest first.</param>
+    /// <param name="spelling">How a member is written where a caller names it.</param>
+    /// <returns>The same, as the wire reports it.</returns>
+    private static IReadOnlyList<VisitDetailRow> Counted<T>(
+        ImmutableArray<VisitDetailCount<T>> held,
+        Func<T, string> spelling) =>
+        [.. held.Select(one => new VisitDetailRow(spelling(one.Value), one.Visits))];
 
     /// <summary>
     /// Reads what a caller narrowed a list of visits to, refusing anything outside the vocabulary.
     /// </summary>
     /// <remarks>
-    /// Every name is resolved through the same table the answers are written with, so a value this
-    /// product does not report cannot be asked for either. Nothing supplied here reaches a
-    /// statement as text: what comes out is a member of a closed set or a whole number.
+    /// <para>
+    /// A name from a closed set is resolved through the same table the answers are written with, so
+    /// a value this product does not report cannot be asked for either, and what comes out is a
+    /// member rather than text. The rest are compared literally against what the store holds, and
+    /// are bounded by how many may be named at once rather than by how long any one of them is:
+    /// they are carried to the store as values and never as statement text, so there is nothing to
+    /// escape, and a page's address is as long as it is.
+    /// </para>
+    /// <para>
+    /// Every dimension is read before anything is refused, and the caller is told the first thing
+    /// wrong rather than all of it. Called before the site is resolved, so a question outside the
+    /// vocabulary is refused identically whether or not the site exists.
+    /// </para>
     /// </remarks>
     /// <param name="asked">What the caller supplied.</param>
     /// <param name="narrowing">What it means, where it was usable.</param>
@@ -1171,49 +1301,159 @@ internal static class SiteEndpoints
         out VisitNarrowing narrowing,
         out string? refusal)
     {
-        narrowing = default;
+        narrowing = VisitNarrowing.Nothing;
 
-        var categories = ImmutableArray.CreateBuilder<TrafficCategory>();
+        var refusals = new List<string>();
 
-        foreach (var name in asked.Category ?? [])
+        var categories = Chosen(asked.Category, ReportedNames.CategoriesByName, UnreachedCategory, refusals);
+        var leastStrength = Band(asked.Strength, refusals);
+        var leastPages = Pages(asked.MinPages, refusals);
+        var devices = Chosen(asked.Device, ReportedNames.DevicesByName, UnreachedDevice, refusals);
+        var sourceKinds = Chosen(asked.SourceKind, TrafficSources.Kinds, UnreachedSourceKind, refusals);
+        var browsers = Named(asked.Browser, refusals);
+        var systems = Named(asked.System, refusals);
+        var countries = Named(asked.Country, refusals);
+        var towns = Named(asked.Town, refusals);
+        var networks = Named(asked.Network, refusals);
+        var sources = Named(asked.Source, refusals);
+        var entryPages = Named(asked.EntryPage, refusals);
+
+        if (refusals.Count > 0)
         {
-            if (!ReportedNames.CategoriesByName.TryGetValue(name, out var category))
-            {
-                refusal = "Narrow to the conclusions this product reaches, or leave it out for all of them.";
-
-                return false;
-            }
-
-            categories.Add(category);
-        }
-
-        EvidenceStrength? leastStrength = null;
-
-        if (!string.IsNullOrEmpty(asked.Strength))
-        {
-            if (!ReportedNames.StrengthsByName.TryGetValue(asked.Strength, out var strength))
-            {
-                refusal = "Narrow to a strength of evidence this product reports, or leave it out for any.";
-
-                return false;
-            }
-
-            leastStrength = strength;
-        }
-
-        var leastPages = asked.MinPages ?? 0;
-
-        if (leastPages < 0)
-        {
-            refusal = "Ask for visits that went to no pages or more.";
+            refusal = refusals[0];
 
             return false;
         }
 
-        narrowing = new VisitNarrowing(categories.DrainToImmutable(), leastStrength, leastPages);
+        narrowing = new VisitNarrowing
+        {
+            Categories = categories,
+            LeastStrength = leastStrength,
+            LeastPages = leastPages,
+            Devices = devices,
+            SourceKinds = sourceKinds,
+            Browsers = browsers,
+            OperatingSystems = systems,
+            Countries = countries,
+            Towns = towns,
+            Networks = networks,
+            Sources = sources,
+            EntryPages = entryPages,
+        };
+
         refusal = null;
 
         return true;
+    }
+
+    /// <summary>
+    /// Resolves names a caller supplied into members of a closed set.
+    /// </summary>
+    /// <typeparam name="T">The set being narrowed to.</typeparam>
+    /// <param name="asked">The names, or nothing where the caller named none.</param>
+    /// <param name="vocabulary">The member each name stands for.</param>
+    /// <param name="refusal">What to say when one of them stands for nothing.</param>
+    /// <param name="refusals">Where to record that, so every dimension is read before any is refused.</param>
+    /// <returns>The members, or an empty set where none were named or one could not be resolved.</returns>
+    private static ImmutableArray<T> Chosen<T>(
+        string[]? asked,
+        FrozenDictionary<string, T> vocabulary,
+        string refusal,
+        List<string> refusals)
+        where T : struct, Enum
+    {
+        if (asked is null or [])
+        {
+            return [];
+        }
+
+        var chosen = ImmutableArray.CreateBuilder<T>(asked.Length);
+
+        foreach (var name in asked)
+        {
+            if (!vocabulary.TryGetValue(name, out var member))
+            {
+                refusals.Add(refusal);
+
+                return [];
+            }
+
+            chosen.Add(member);
+        }
+
+        return chosen.DrainToImmutable();
+    }
+
+    /// <summary>
+    /// Takes values to be compared against what the store holds, or refuses more than anyone means.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is validated beyond how many were named, and deliberately: these are compared
+    /// literally against recorded text, so the only wrong answer a strange one can produce is no
+    /// rows. An empty value is kept, because it is what the store holds where nothing could be
+    /// established and asking for it asks to see those visits.
+    /// </remarks>
+    /// <param name="asked">The values, or nothing where the caller named none.</param>
+    /// <param name="refusals">Where to record that too many were named.</param>
+    /// <returns>The values, or an empty set where none were named or too many were.</returns>
+    private static ImmutableArray<string> Named(string[]? asked, List<string> refusals)
+    {
+        if (asked is null or [])
+        {
+            return [];
+        }
+
+        if (asked.Length > VisitNarrowing.MostValues)
+        {
+            refusals.Add($"Narrow to at most {VisitNarrowing.MostValues} values at a time.");
+
+            return [];
+        }
+
+        return [.. asked];
+    }
+
+    /// <summary>
+    /// Reads the lowest band of evidence worth returning.
+    /// </summary>
+    /// <param name="asked">The band, or nothing for every band.</param>
+    /// <param name="refusals">Where to record that it is not a band this product reports.</param>
+    /// <returns>The band, or nothing where none was named or the name stood for none.</returns>
+    private static EvidenceStrength? Band(string? asked, List<string> refusals)
+    {
+        if (string.IsNullOrEmpty(asked))
+        {
+            return null;
+        }
+
+        if (!ReportedNames.StrengthsByName.TryGetValue(asked, out var strength))
+        {
+            refusals.Add("Narrow to a strength of evidence this product reports, or leave it out for any.");
+
+            return null;
+        }
+
+        return strength;
+    }
+
+    /// <summary>
+    /// Reads the fewest pages a visit must have gone to.
+    /// </summary>
+    /// <param name="asked">The figure, or nothing for every visit.</param>
+    /// <param name="refusals">Where to record that it asks for fewer pages than a visit can have.</param>
+    /// <returns>The figure, or nought where none was named or it was below nought.</returns>
+    private static int Pages(int? asked, List<string> refusals)
+    {
+        var least = asked ?? 0;
+
+        if (least < 0)
+        {
+            refusals.Add("Ask for visits that went to no pages or more.");
+
+            return 0;
+        }
+
+        return least;
     }
 
     private static VisitSummary Describe(JudgedSession visit) => new(
@@ -1716,6 +1956,12 @@ internal readonly record struct ActionsParameters(
 /// <summary>
 /// What the visits endpoint reads from the path and the query string.
 /// </summary>
+/// <remarks>
+/// Every narrowing may be named as often as the caller likes and means "any of these"; left out,
+/// it means all of them. The nine after the verdict's own three describe what a visit was rather
+/// than what it was concluded to be, and each value is spelled exactly as the answer that offered
+/// it spells it.
+/// </remarks>
 /// <param name="SiteId">The site to list visits for.</param>
 /// <param name="From">Inclusive start of the period. Defaults to a week before the end.</param>
 /// <param name="To">Exclusive end of the period. Defaults to now.</param>
@@ -1726,6 +1972,18 @@ internal readonly record struct ActionsParameters(
 /// </param>
 /// <param name="Strength">The lowest band of evidence worth returning. Absent for every band.</param>
 /// <param name="MinPages">The fewest pages a visit must have gone to. Defaults to none.</param>
+/// <param name="Device">Which kinds of device the visitors were on. Absent for all of them.</param>
+/// <param name="SourceKind">Which kinds of place sent them. Absent for all of them.</param>
+/// <param name="Browser">Which browsers they arrived with. Absent for all of them.</param>
+/// <param name="System">Which systems those browsers were running on. Absent for all of them.</param>
+/// <param name="Country">
+/// Which countries they arrived from, as the two-letter codes the answers report. Absent for all
+/// of them.
+/// </param>
+/// <param name="Town">Which towns and cities within them. Absent for all of them.</param>
+/// <param name="Network">Who runs the networks they arrived over. Absent for all of them.</param>
+/// <param name="Source">Which sites sent them. Absent for all of them.</param>
+/// <param name="EntryPage">Which pages they began on. Absent for all of them.</param>
 internal readonly record struct VisitsParameters(
     Guid SiteId,
     [FromQuery] DateTimeOffset? From,
@@ -1734,7 +1992,16 @@ internal readonly record struct VisitsParameters(
     [FromQuery] int? Offset,
     [FromQuery] string[]? Category,
     [FromQuery] string? Strength,
-    [FromQuery] int? MinPages);
+    [FromQuery] int? MinPages,
+    [FromQuery] string[]? Device,
+    [FromQuery] string[]? SourceKind,
+    [FromQuery] string[]? Browser,
+    [FromQuery] string[]? System,
+    [FromQuery] string[]? Country,
+    [FromQuery] string[]? Town,
+    [FromQuery] string[]? Network,
+    [FromQuery] string[]? Source,
+    [FromQuery] string[]? EntryPage);
 
 /// <summary>
 /// What the page-reading endpoint reads from the path and the query string.

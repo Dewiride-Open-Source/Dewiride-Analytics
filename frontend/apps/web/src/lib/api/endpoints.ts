@@ -1,5 +1,5 @@
-import { EVERY_JOURNEY, type JourneyFilters } from '@/lib/analytics/journeys';
-import type { AnalyticsWindow } from '@/lib/analytics/period';
+import { EVERY_JOURNEY, type JourneyFilters, narrowingParams } from '@/lib/analytics/journeys';
+import type { AnalyticsWindow, Granularity } from '@/lib/analytics/period';
 import { discardResource, readResource, submitResource } from './client';
 import {
   type ActionGrouping,
@@ -52,11 +52,13 @@ import {
   sourcesSchema,
   type Traffic,
   trafficSchema,
+  type VisitFacets,
   type VisitJourney,
   type VisitPages,
   type VisitPosition,
   type Visits,
   type VisitTotals,
+  visitFacetsSchema,
   visitJourneySchema,
   visitPagesSchema,
   visitsSchema,
@@ -148,8 +150,9 @@ export function readSeries(
   siteId: string,
   metric: SeriesMetric,
   window: AnalyticsWindow,
+  granularity: Granularity,
 ): Promise<Series> {
-  const asked = new URLSearchParams({ metric, granularity: 'day' });
+  const asked = new URLSearchParams({ metric, granularity });
 
   return readResource(`${siteAddress(siteId)}/series?${asked}&${period(window)}`, seriesSchema);
 }
@@ -375,21 +378,23 @@ export function readVisits(
   offset: number,
   filters: JourneyFilters = EVERY_JOURNEY,
 ): Promise<Visits> {
-  const asked = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  const asked = narrowingParams(filters);
 
-  for (const category of filters.categories) {
-    asked.append('category', category);
-  }
-
-  if (filters.leastStrength !== null) {
-    asked.set('strength', filters.leastStrength);
-  }
-
-  if (filters.leastPages > 0) {
-    asked.set('minPages', String(filters.leastPages));
-  }
+  asked.set('limit', String(limit));
+  asked.set('offset', String(offset));
 
   return readResource(`${siteAddress(siteId)}/visits?${asked}&${period(window)}`, visitsSchema);
+}
+
+/**
+ * What a period's judged visits held, so the controls that narrow the list offer only real values.
+ *
+ * Asked of the whole period rather than of whatever is left after the rest of the narrowing. A set
+ * of options that changed shape with every press would cost a fresh reading of the period each
+ * time, and the figure beside a value would be describing a list nobody had asked for yet.
+ */
+export function readFacets(siteId: string, window: AnalyticsWindow): Promise<VisitFacets> {
+  return readResource(`${siteAddress(siteId)}/visits/facets?${period(window)}`, visitFacetsSchema);
 }
 
 /**

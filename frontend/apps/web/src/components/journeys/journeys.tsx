@@ -4,7 +4,7 @@ import { Filter, ScanSearch } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { SiteScreen } from '@/components/chrome/site-screen';
-import { PeriodSwitch } from '@/components/dashboard/period-switch';
+import { PeriodPicker } from '@/components/dashboard/period-picker';
 import { ListEmpty, ListWaiting } from '@/components/dashboard/ranked-list';
 import { JourneyFilterPanel } from '@/components/journeys/journey-filters';
 import { VisitList } from '@/components/journeys/visit-list';
@@ -15,11 +15,14 @@ import {
   EVERY_JOURNEY,
   isNarrowed,
   type JourneyFilters,
+  narrowingParams,
   tallyCategories,
 } from '@/lib/analytics/journeys';
-import { DEFAULT_PERIOD, type PeriodDays, windowFor } from '@/lib/analytics/period';
+import { type Period, windowFor, writePeriod } from '@/lib/analytics/period';
+import { useJourneyFilters } from '@/lib/analytics/use-journey-filters';
+import { usePeriod } from '@/lib/analytics/use-period';
 import type { Site, Visits } from '@/lib/api/schemas';
-import { useTraffic, useVisits } from '@/lib/queries/sites';
+import { useFacets, useTraffic, useVisits } from '@/lib/queries/sites';
 
 /**
  * Everyone and everything that visited a website, one at a time.
@@ -44,20 +47,43 @@ function Waiting() {
   );
 }
 
-/** What a change to the list's shape leaves somebody looking at. */
-interface Showing {
-  readonly period?: PeriodDays;
-  readonly filters?: JourneyFilters;
-  readonly perPage?: number;
+/**
+ * What the list on screen is a list of.
+ *
+ * Everything that decides which journeys are on it and how many of them fit, written down so a
+ * change to any of it can be noticed while the screen is being drawn.
+ */
+function listName(period: Period, filters: JourneyFilters, perPage: number): string {
+  return `${writePeriod(period)}/${perPage}?${narrowingParams(filters).toString()}`;
 }
 
 /** One website's journeys, over one period, narrowed to whatever was asked for. */
 function SiteJourneys({ site }: { readonly site: Site }) {
   const t = useTranslations('journeys');
-  const [period, setPeriod] = useState<PeriodDays>(DEFAULT_PERIOD);
-  const [filters, setFilters] = useState<JourneyFilters>(EVERY_JOURNEY);
+  const { period, choose } = usePeriod();
+  const { filters, narrow } = useJourneyFilters();
   const [perPage, setPerPage] = useState<number>(DEFAULT_PAGE_SIZE);
   const [offset, setOffset] = useState(0);
+
+  // Asked for the first time somebody reaches for one of the controls that needs it, and not
+  // before. Working out what a period held means reading its whole activity a second time — the
+  // same work a narrowed list pays for — and a screen most people open to read the list would
+  // otherwise pay it every time. Once asked, it stays asked, so closing a menu and opening
+  // another does not start again.
+  const [wanted, setWanted] = useState(false);
+
+  // Where somebody is in the list only means anything in the list they were reading, so anything
+  // that makes it a different one puts them back at the start of it. Reconciled here rather than
+  // done as each control is pressed, because the period and the narrowing both live in the
+  // address and the browser's own way back changes them without anything on this screen being
+  // touched. Page nine of a list that is now four pages long is a screen with nothing on it.
+  const asked = listName(period, filters, perPage);
+  const [listed, setListed] = useState(asked);
+
+  if (listed !== asked) {
+    setListed(asked);
+    setOffset(0);
+  }
 
   // Resolved once per period rather than on every render: the window is part of the name each
   // answer is cached under, and one that moved with the clock would never find a cached answer.
@@ -68,25 +94,8 @@ function SiteJourneys({ site }: { readonly site: Site }) {
 
   const traffic = useTraffic(site.id, window);
   const visits = useVisits(site.id, window, perPage, offset, filters);
+  const held = useFacets(site.id, window, wanted);
   const available = useMemo(() => tallyCategories(traffic.data?.groups ?? []), [traffic.data]);
-
-  // Anything that changes which journeys the list holds puts somebody back at the start of it.
-  // Page nine of a list that is now four pages long is a screen with nothing on it.
-  function show({ period: days, filters: narrowing, perPage: size }: Showing) {
-    if (days !== undefined) {
-      setPeriod(days);
-    }
-
-    if (narrowing !== undefined) {
-      setFilters(narrowing);
-    }
-
-    if (size !== undefined) {
-      setPerPage(size);
-    }
-
-    setOffset(0);
-  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -100,7 +109,7 @@ function SiteJourneys({ site }: { readonly site: Site }) {
           </p>
         </div>
 
-        <PeriodSwitch value={period} onChange={(days) => show({ period: days })} />
+        <PeriodPicker value={period} onChange={choose} timeZoneId={site.timeZoneId} />
       </header>
 
       {/*
@@ -111,8 +120,11 @@ function SiteJourneys({ site }: { readonly site: Site }) {
         <JourneyFilterPanel
           available={available}
           pending={traffic.isPending}
+          held={held.data}
+          heldPending={held.isPending}
+          onWantOptions={() => setWanted(true)}
           value={filters}
-          onChange={(next) => show({ filters: next })}
+          onChange={narrow}
         />
       ) : null}
 
@@ -126,12 +138,12 @@ function SiteJourneys({ site }: { readonly site: Site }) {
           site={site}
           answer={visits.data}
           narrowed={isNarrowed(filters)}
-          onClear={() => show({ filters: EVERY_JOURNEY })}
+          onClear={() => narrow(EVERY_JOURNEY)}
           busy={visits.isFetching}
           perPage={perPage}
           offset={offset}
           onMove={setOffset}
-          onResize={(size) => show({ perPage: size })}
+          onResize={setPerPage}
         />
       )}
     </div>

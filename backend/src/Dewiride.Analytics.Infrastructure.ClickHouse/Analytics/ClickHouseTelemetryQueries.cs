@@ -409,15 +409,11 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     private static VisitContext Established(ClickHouseDataReader reader) =>
         new(
             reader.GetString(10),
-            TrafficSources.Kinds.TryGetValue(reader.GetString(11), out var channel)
-                ? channel
-                : SourceChannel.Direct,
+            AsSourceKind(reader.GetString(11)),
             reader.GetString(12),
             reader.GetString(13),
             reader.GetString(14),
-            StoredNames.DeviceClasses.TryGetValue(reader.GetString(15), out var device)
-                ? device
-                : DeviceClass.Unknown,
+            AsDevice(reader.GetString(15)),
             reader.GetString(16),
             reader.GetString(17));
 
@@ -584,6 +580,116 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
 
         return evidence.DrainToImmutable();
     }
+
+    /// <inheritdoc />
+    public async Task<VisitFacets> GetSiteVisitFacetsAsync(
+        TenantScope scope,
+        SiteVisitFacetsQuery query,
+        CancellationToken cancellationToken)
+    {
+        var rows = new List<DetailRow>();
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            rows.Add(new DetailRow(reader.GetString(0), reader.GetString(1), reader.GetInt64(2)));
+        }
+
+        return Sorted(rows);
+    }
+
+    /// <summary>
+    /// Sorts the answer's rows back into a list per detail.
+    /// </summary>
+    /// <remarks>
+    /// The statement reports all nine details down one column so that they can be counted in a
+    /// single pass over the rebuild, and this is the other half of that arrangement. Every list
+    /// keeps the order the statement put the rows in, which is commonest first. A row naming a
+    /// detail this build does not know belongs to no list and is left out, on the same terms as
+    /// every other value read back from the store: a row written by a later release must not stop
+    /// an earlier one showing what it does understand.
+    /// </remarks>
+    /// <param name="rows">Every row the answer held.</param>
+    /// <returns>What each detail offered.</returns>
+    private static VisitFacets Sorted(List<DetailRow> rows) =>
+        new()
+        {
+            Devices =
+            [
+                .. Of(rows, JudgedVisitDetails.Device)
+                    .Select(row => new VisitDetailCount<DeviceClass>(AsDevice(row.Value), row.Visits)),
+            ],
+            SourceKinds =
+            [
+                .. Of(rows, JudgedVisitDetails.SourceKind)
+                    .Select(row => new VisitDetailCount<SourceChannel>(AsSourceKind(row.Value), row.Visits)),
+            ],
+            Browsers = AsText(rows, JudgedVisitDetails.Browser),
+            OperatingSystems = AsText(rows, JudgedVisitDetails.System),
+            Countries = AsText(rows, JudgedVisitDetails.Country),
+            Towns = AsText(rows, JudgedVisitDetails.Town),
+            Networks = AsText(rows, JudgedVisitDetails.Network),
+            Sources = AsText(rows, JudgedVisitDetails.Source),
+            EntryPages = AsText(rows, JudgedVisitDetails.EntryPage),
+        };
+
+    /// <summary>Every row belonging to one detail, in the order the statement returned them.</summary>
+    /// <param name="rows">Every row the answer held.</param>
+    /// <param name="detail">Which detail.</param>
+    /// <returns>Its rows.</returns>
+    private static IEnumerable<DetailRow> Of(List<DetailRow> rows, string detail) =>
+        rows.Where(row => string.Equals(row.Detail, detail, StringComparison.Ordinal));
+
+    /// <summary>
+    /// One detail's values, kept as the store spells them.
+    /// </summary>
+    /// <remarks>
+    /// Seven of the nine are open sets — a browser's name, a town, a page's address — so there is
+    /// no vocabulary to translate them into and the empty text stays a value, meaning the visits
+    /// nothing was established about.
+    /// </remarks>
+    /// <param name="rows">Every row the answer held.</param>
+    /// <param name="detail">Which detail.</param>
+    /// <returns>Its values, commonest first.</returns>
+    private static ImmutableArray<VisitDetailCount<string>> AsText(List<DetailRow> rows, string detail) =>
+        [.. Of(rows, detail).Select(row => new VisitDetailCount<string>(row.Value, row.Visits))];
+
+    /// <summary>
+    /// Reads a kind of device back.
+    /// </summary>
+    /// <remarks>
+    /// Anything the vocabulary does not hold reads as unrecognised rather than as a failure, and
+    /// what nothing established is stored as an empty text — so both arrive here as the same
+    /// answer, which is the honest one.
+    /// </remarks>
+    /// <param name="stored">What the store holds.</param>
+    /// <returns>The kind of device.</returns>
+    private static DeviceClass AsDevice(string stored) =>
+        StoredNames.DeviceClasses.TryGetValue(stored, out var device) ? device : DeviceClass.Unknown;
+
+    /// <summary>
+    /// Reads a kind of source back.
+    /// </summary>
+    /// <remarks>
+    /// On the same terms as a kind of device. A visit nothing sent is stored as an empty text and
+    /// reads as direct, which is not "nobody sent them" but "nothing said who did".
+    /// </remarks>
+    /// <param name="stored">What the store holds.</param>
+    /// <returns>The kind of source.</returns>
+    private static SourceChannel AsSourceKind(string stored) =>
+        TrafficSources.Kinds.TryGetValue(stored, out var kind) ? kind : SourceChannel.Direct;
+
+    /// <summary>
+    /// One row of a facets answer, before it is sorted into the detail it belongs to.
+    /// </summary>
+    /// <param name="Detail">Which detail the value belongs to.</param>
+    /// <param name="Value">The value, as the store holds it.</param>
+    /// <param name="Visits">How many of the window's judged visits held it.</param>
+    private readonly record struct DetailRow(string Detail, string Value, long Visits);
 
     private async Task<ClickHouseDataReader> ExecuteAsync(
         CompiledStatement statement,

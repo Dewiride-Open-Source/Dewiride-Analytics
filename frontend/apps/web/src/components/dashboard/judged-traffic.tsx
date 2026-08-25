@@ -6,7 +6,8 @@ import { TrafficBreakdown } from '@/components/dashboard/traffic-breakdown';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { Link } from '@/i18n/navigation';
-import type { AnalyticsWindow } from '@/lib/analytics/period';
+import { type AnalyticsWindow, withPeriod } from '@/lib/analytics/period';
+import { usePeriod } from '@/lib/analytics/use-period';
 import type { Site } from '@/lib/api/schemas';
 import { useTraffic } from '@/lib/queries/sites';
 import { JOURNEYS } from '@/lib/routes';
@@ -26,6 +27,7 @@ interface JudgedTrafficProps {
 export function JudgedTraffic({ site, window }: JudgedTrafficProps) {
   const t = useTranslations('dashboard.traffic');
   const traffic = useTraffic(site.id, window);
+  const { period } = usePeriod();
 
   if (traffic.isError) {
     return <FailureNotice error={traffic.error} />;
@@ -54,8 +56,9 @@ export function JudgedTraffic({ site, window }: JudgedTrafficProps) {
     <>
       <TrafficBreakdown groups={traffic.data.groups} sessions={traffic.data.sessions} />
 
+      {/* Straight through to the same days, one visit at a time. */}
       <Link
-        href={JOURNEYS}
+        href={withPeriod(JOURNEYS, period)}
         className="inline-flex items-center gap-1.5 self-start rounded-md text-sm font-medium text-accent-strong hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong"
       >
         {t('everyVisit')}

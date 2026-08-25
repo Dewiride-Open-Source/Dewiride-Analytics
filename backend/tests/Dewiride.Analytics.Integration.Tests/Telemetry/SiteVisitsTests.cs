@@ -629,7 +629,8 @@ public sealed class SiteVisitsTests(AnalyticsStackFixture stack)
             {
                 CountryCode = "IN",
                 City = "Pune",
-                NetworkOwner = "Jio Platforms",
+                AutonomousSystem = DescribedTraffic.HouseholdNetwork,
+                NetworkOwner = DescribedTraffic.RegisteredNetwork,
                 DeviceClass = DeviceClass.Phone,
                 BrowserFamily = "Chrome",
                 OperatingSystem = "Android",
@@ -640,10 +641,32 @@ public sealed class SiteVisitsTests(AnalyticsStackFixture stack)
 
         visit.Context.CountryCode.Should().Be("IN");
         visit.Context.Town.Should().Be("Pune");
-        visit.Context.NetworkOwner.Should().Be("Jio Platforms");
+        visit.Context.NetworkOwner.Should().Be(DescribedTraffic.Network);
         visit.Context.Device.Should().Be(DeviceClass.Phone);
         visit.Context.Browser.Should().Be("Chrome");
         visit.Context.OperatingSystem.Should().Be("Android");
+    }
+
+    /// <summary>
+    /// A network is named the way the card that ranks networks and the filter that narrows to one
+    /// name it, because a visit is opened out of a list somebody narrowed. A routing number the
+    /// hosting catalogue recognises is given the operator's name; one it does not keeps the
+    /// registry's description with the handle in front of it dropped.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Names_Its_Network_The_Way_Every_Other_Screen_Does()
+    {
+        var siteId = Guid.CreateVersion7();
+        await WriteAsync(
+            Asked(siteId, Midnight, "renter", "/posts/hello") with
+            {
+                AutonomousSystem = 16509,
+                NetworkOwner = "AMAZON-02 Amazon.com, Inc.",
+            });
+
+        var visit = await VisitOf(siteId, "renter", Midnight);
+
+        visit.Context.NetworkOwner.Should().Be("Amazon Web Services");
     }
 
     /// <summary>Nothing established is an answer rather than a gap, and is reported as one.</summary>

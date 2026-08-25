@@ -1,6 +1,7 @@
 import { screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { TrafficChart } from '@/components/dashboard/traffic-chart';
+import { TrafficChart, type TrafficPoint } from '@/components/dashboard/traffic-chart';
+import type { Granularity } from '@/lib/analytics/period';
 import type { ChartPalette } from '@/lib/charts/palette';
 import { renderScreen } from '@/test/harness';
 
@@ -33,23 +34,46 @@ vi.mock('@/components/charts/chart', () => ({
   },
 }));
 
-const DAYS = [
-  { start: '2026-08-11T00:00:00+00:00', pageViews: 40, visitors: 12 },
-  { start: '2026-08-12T00:00:00+00:00', pageViews: 55, visitors: 18 },
-  { start: '2026-08-13T00:00:00+00:00', pageViews: 30, visitors: 9 },
+/** Three whole days, each cut at midnight in Kolkata. */
+const DAYS: readonly TrafficPoint[] = [
+  { start: '2026-08-10T18:30:00+00:00', pageViews: 40, visitors: 12 },
+  { start: '2026-08-11T18:30:00+00:00', pageViews: 55, visitors: 18 },
+  { start: '2026-08-12T18:30:00+00:00', pageViews: 30, visitors: 9 },
 ];
 
-function show() {
-  renderScreen(<TrafficChart days={DAYS} siteName="My Blog" zone="Kolkata" />);
+/** Three hours of one day, cut on the same clock. */
+const HOURS: readonly TrafficPoint[] = [
+  { start: '2026-08-17T18:30:00+00:00', pageViews: 4, visitors: 2 },
+  { start: '2026-08-17T19:30:00+00:00', pageViews: 9, visitors: 5 },
+  { start: '2026-08-17T20:30:00+00:00', pageViews: 6, visitors: 3 },
+];
 
-  return drawn.option as {
-    series: { name: string; data: number[]; areaStyle?: { color?: { colorStops: unknown[] } } }[];
-    xAxis: { data: string[] };
-  };
+interface Drawing {
+  series: { name: string; data: number[]; areaStyle?: { color?: { colorStops: unknown[] } } }[];
+  xAxis: { data: string[] };
+}
+
+function show(
+  points: readonly TrafficPoint[] = DAYS,
+  granularity: Granularity = 'day',
+  manyDays = true,
+): Drawing {
+  renderScreen(
+    <TrafficChart
+      points={points}
+      siteName="My Blog"
+      timeZoneId="Asia/Kolkata"
+      zone="Kolkata"
+      granularity={granularity}
+      manyDays={manyDays}
+    />,
+  );
+
+  return drawn.option as unknown as Drawing;
 }
 
 describe('the traffic chart', () => {
-  it('draws both measures across the same days', () => {
+  it('draws both measures across the same buckets', () => {
     const option = show();
 
     expect(option.series.map((one) => one.name)).toStrictEqual(['Page views', 'Daily visitors']);
@@ -75,7 +99,7 @@ describe('the traffic chart', () => {
     expect(screen.getByRole('table')).toBeInTheDocument();
     expect(screen.getAllByRole('row')).toHaveLength(DAYS.length + 1);
     expect(
-      screen.getByRole('img', { name: /Daily page views and daily visitors for My Blog/ }),
+      screen.getByRole('img', { name: /Page views and visitors for My Blog/ }),
     ).toBeInTheDocument();
   });
 
@@ -83,5 +107,42 @@ describe('the traffic chart', () => {
     show();
 
     expect(screen.getByText('Days run midnight to midnight in Kolkata.')).toBeInTheDocument();
+  });
+
+  /**
+   * A day beginning at half past six the evening before is the next day where the site is, and the
+   * day before that anywhere west of it. Written without naming the zone, every label on the chart
+   * is off by one for most of the people reading it.
+   */
+  it("writes a bucket in the site's own day rather than the reader's", () => {
+    const option = show();
+
+    expect(option.xAxis.data).toStrictEqual(['Aug 11', 'Aug 12', 'Aug 13']);
+  });
+});
+
+describe('a period drawn an hour at a time', () => {
+  it('writes each bucket as a time, with no date to repeat', () => {
+    const option = show(HOURS, 'hour', false);
+
+    expect(option.xAxis.data).toStrictEqual(['12 AM', '1 AM', '2 AM']);
+  });
+
+  it('keeps the date beside the time when the period covers more than one day', () => {
+    const option = show(HOURS, 'hour', true);
+
+    expect(option.xAxis.data[0]).toBe('Aug 18, 12 AM');
+  });
+
+  /**
+   * Counted in an hour, distinct visitors are the people who were there in that hour. Calling that
+   * figure the day's would be a claim about numbers that were never added up that way.
+   */
+  it('does not call an hour of visitors a day of them', () => {
+    const option = show(HOURS, 'hour', false);
+
+    expect(option.series.map((one) => one.name)).toStrictEqual(['Page views', 'Visitors']);
+    expect(screen.getByText('Times are the clock in Kolkata.')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Time' })).toBeInTheDocument();
   });
 });

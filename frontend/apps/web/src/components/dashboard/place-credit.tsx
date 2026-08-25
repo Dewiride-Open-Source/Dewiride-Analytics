@@ -9,29 +9,44 @@ interface PlaceCreditProps {
 }
 
 /**
- * The link back the place data's licence requires wherever its results are shown.
+ * The links back the licences require wherever the data behind a place or a network is shown.
  *
- * Required rather than courteous: the data behind every country and town this product shows is
- * published under a licence whose one condition is a link back from anywhere its results appear.
- * So this goes wherever a place goes — a ranked list of them, or a single one beside one visit —
- * and it is one component rather than one line repeated, because a condition satisfied by copying
- * a link into each new screen is a condition that will eventually be missed on one.
+ * Required rather than courteous: where a visitor was and whose network they arrived over come
+ * from two separately published sets of data, and each is published under a licence whose one
+ * condition is a link back from anywhere its results appear. So these go wherever those results
+ * go — a ranked list of them, a single one beside one visit, or a filter offering the ones a
+ * period held — and they are components rather than lines repeated, because a condition satisfied
+ * by copying a link into each new screen is a condition that will eventually be missed on one.
+ *
+ * Two components rather than one, because the two sets of data answer different questions and a
+ * screen showing only one of them must not credit the other.
  */
 export function PlaceCredit({ note }: PlaceCreditProps) {
   const t = useTranslations('dashboard.locations');
 
   return (
     <p className="text-xs text-foreground-subtle">
-      {t.rich('attribution', { source: creditLink })}
+      {t.rich('attribution', { source: creditLink('https://db-ip.com') })}
       {note === undefined ? null : ` ${note}`}
     </p>
   );
 }
 
-function creditLink(label: ReactNode) {
+/** The link back the routing data's licence requires wherever a network is named. */
+export function RoutingCredit() {
+  const t = useTranslations('dashboard.locations');
+
   return (
+    <p className="text-xs text-foreground-subtle">
+      {t.rich('attributionNetworks', { source: creditLink('https://iptoasn.com') })}
+    </p>
+  );
+}
+
+function creditLink(address: string) {
+  return (label: ReactNode) => (
     <a
-      href="https://db-ip.com"
+      href={address}
       target="_blank"
       rel="noreferrer"
       className="underline underline-offset-2 hover:text-foreground-muted"

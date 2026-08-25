@@ -92,6 +92,17 @@ internal static class ReportedNames
         }.ToFrozenDictionary();
 
     /// <summary>
+    /// Kind of device for each wire name.
+    /// </summary>
+    /// <remarks>
+    /// The same table read backwards, for the one direction that takes a name from a caller: a
+    /// request to narrow a list of visits to what the visitors were on. Built from the table above
+    /// rather than written out a second time, so what may be asked for is exactly what may be
+    /// answered.
+    /// </remarks>
+    public static FrozenDictionary<string, DeviceClass> DevicesByName { get; } = Invert(Devices);
+
+    /// <summary>
     /// Wire name for each kind of control a visitor operated.
     /// </summary>
     /// <remarks>

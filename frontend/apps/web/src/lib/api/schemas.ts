@@ -554,6 +554,40 @@ export const visitsSchema = z.object({
   visits: z.array(visitSchema),
 });
 
+/** One value a period's visits held, and how many of them held it. */
+export const visitDetailRowSchema = z.object({
+  value: z.string(),
+  visits: z.number().int(),
+});
+
+/**
+ * What a period's judged visits actually held, one list per detail, commonest first.
+ *
+ * Only what occurred is offered. Seven of the nine are open sets with no list anybody could write
+ * down in advance — nobody can guess whether a website's traffic recorded a search engine as one
+ * name or another — and a choice that can only ever come back empty reads as a fault in the
+ * product rather than as an honest limit.
+ *
+ * An empty value stands for the visits nothing was established about, which is an answer rather
+ * than a gap: a visitor behind something that passes on no address is still a visitor.
+ *
+ * Counted per visit, and across the whole period rather than across whatever is left after the
+ * rest of the narrowing, so a control offering a figure hands back exactly that many.
+ */
+export const visitFacetsSchema = z.object({
+  from: timestamp,
+  to: timestamp,
+  devices: z.array(visitDetailRowSchema),
+  sourceKinds: z.array(visitDetailRowSchema),
+  browsers: z.array(visitDetailRowSchema),
+  systems: z.array(visitDetailRowSchema),
+  countries: z.array(visitDetailRowSchema),
+  towns: z.array(visitDetailRowSchema),
+  networks: z.array(visitDetailRowSchema),
+  sources: z.array(visitDetailRowSchema),
+  entryPages: z.array(visitDetailRowSchema),
+});
+
 /** One key a website's own server may report with, described without its secret. */
 export const serverKeySchema = z.object({
   id: z.uuid(),
@@ -627,6 +661,8 @@ export type Traffic = z.infer<typeof trafficSchema>;
 export type VisitReason = z.infer<typeof visitReasonSchema>;
 export type Visit = z.infer<typeof visitSchema>;
 export type Visits = z.infer<typeof visitsSchema>;
+export type VisitDetailRow = z.infer<typeof visitDetailRowSchema>;
+export type VisitFacets = z.infer<typeof visitFacetsSchema>;
 export type VisitTotals = z.infer<typeof visitTotalsSchema>;
 export type VisitPosition = z.infer<typeof visitPositionSchema>;
 export type VisitPageRow = z.infer<typeof visitPageRowSchema>;

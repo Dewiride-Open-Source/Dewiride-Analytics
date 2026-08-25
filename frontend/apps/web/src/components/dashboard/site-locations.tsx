@@ -2,8 +2,8 @@
 
 import { MapPin } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
-import { type ReactNode, useMemo, useState } from 'react';
-import { PlaceCredit } from '@/components/dashboard/place-credit';
+import { useMemo, useState } from 'react';
+import { PlaceCredit, RoutingCredit } from '@/components/dashboard/place-credit';
 import {
   ListEmpty,
   ListSwitch,
@@ -181,9 +181,7 @@ function PlaceList({
           <p className="rounded-md bg-surface-muted px-3 py-2 text-sm text-foreground-muted">
             {t('networksNote')}
           </p>
-          <p className="text-xs text-foreground-subtle">
-            {t.rich('attributionNetworks', { source: routingCredit })}
-          </p>
+          <RoutingCredit />
         </>
       ) : (
         <PlaceCredit note={grouping === 'town' ? t('estimate') : undefined} />
@@ -244,19 +242,6 @@ function PlaceName({ place, grouping, named }: PlaceNameProps) {
 }
 
 /** The link back the routing data's licence asks for wherever its results are shown. */
-function routingCredit(label: ReactNode) {
-  return (
-    <a
-      href="https://iptoasn.com"
-      target="_blank"
-      rel="noreferrer"
-      className="underline underline-offset-2 hover:text-foreground-muted"
-    >
-      {label}
-    </a>
-  );
-}
-
 /**
  * Whether most of a period's visitors could not be placed at all.
  *

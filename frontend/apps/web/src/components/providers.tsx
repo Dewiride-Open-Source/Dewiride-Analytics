@@ -2,10 +2,12 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from 'next-themes';
+import { NuqsAdapter } from 'nuqs/adapters/next/app';
 import { type ReactNode, useState } from 'react';
 
 /**
- * The two things every screen needs: somewhere to keep answers, and the chosen appearance.
+ * The three things every screen needs: somewhere to keep answers, the chosen appearance, and the
+ * part of the address a screen is allowed to write to.
  *
  * The cache is built inside state rather than at module level so that each visitor gets their
  * own. A cache shared by every request on the server would hand one person's numbers to the next.
@@ -28,10 +30,17 @@ export function Providers({ children }: { readonly children: ReactNode }) {
   );
 
   return (
-    <QueryClientProvider client={cache}>
-      <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-        {children}
-      </ThemeProvider>
-    </QueryClientProvider>
+    <NuqsAdapter>
+      <QueryClientProvider client={cache}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+        </ThemeProvider>
+      </QueryClientProvider>
+    </NuqsAdapter>
   );
 }

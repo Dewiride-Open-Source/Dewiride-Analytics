@@ -1,46 +1,70 @@
 'use client';
 
 import { color } from 'echarts/core';
-import { useFormatter, useTranslations } from 'next-intl';
+import { type DateTimeFormatOptions, useFormatter, useTranslations } from 'next-intl';
 import { useCallback, useMemo } from 'react';
 import { Chart } from '@/components/charts/chart';
 import { Card } from '@/components/ui/card';
+import type { Granularity } from '@/lib/analytics/period';
 import type { ChartPalette } from '@/lib/charts/palette';
 
-/** One day of traffic, already lined up across both measures. */
-export interface TrafficDay {
+/** One bucket of traffic, already lined up across both measures. */
+export interface TrafficPoint {
   readonly start: string;
   readonly pageViews: number;
   readonly visitors: number;
 }
 
 interface TrafficChartProps {
-  readonly days: readonly TrafficDay[];
+  readonly points: readonly TrafficPoint[];
   readonly siteName: string;
-  /** The place whose midnight starts a day here, such as `Kolkata`. */
+  /** The site's own zone, so a bucket is read back in the day it was counted in. */
+  readonly timeZoneId: string;
+  /** The place whose clock those buckets follow, such as `Kolkata`. */
   readonly zone: string;
+  readonly granularity: Granularity;
+  /** Whether the period covers more than one day, which decides how a time is written. */
+  readonly manyDays: boolean;
 }
 
 /**
- * Daily page views and daily visitors over the chosen period.
+ * Page views and visitors over the chosen period.
  *
  * The same figures are published twice: once as a drawing, and once as a table anybody can open.
  * A canvas tells a screen reader nothing at all, and a chart whose numbers exist only as pixels
  * is a chart some of this product's readers simply do not have.
  */
-export function TrafficChart({ days, siteName, zone }: TrafficChartProps) {
+export function TrafficChart({
+  points,
+  siteName,
+  timeZoneId,
+  zone,
+  granularity,
+  manyDays,
+}: TrafficChartProps) {
   const t = useTranslations('dashboard.chart');
   const format = useFormatter();
 
+  // A bucket is cut where the site is, so it has to be read back there too. Written without a zone
+  // it is read in whichever one the person looking happens to be in, and a day counted in Kolkata
+  // is labelled as the day before for anybody reading in London.
   const labels = useMemo(
     () =>
-      days.map((day) => format.dateTime(new Date(day.start), { day: 'numeric', month: 'short' })),
-    [days, format],
+      points.map((point) =>
+        format.dateTime(new Date(point.start), labelling(granularity, manyDays, timeZoneId)),
+      ),
+    [points, format, granularity, manyDays, timeZoneId],
   );
 
-  const names = useMemo(() => [t('pageViews'), t('visitors')] as const, [t]);
-  const pageViews = useMemo(() => days.map((day) => day.pageViews), [days]);
-  const visitors = useMemo(() => days.map((day) => day.visitors), [days]);
+  // Counted in an hour, distinct visitors are the people who were there in that hour, which is a
+  // different figure from the day's. Naming it the day's would be a claim the numbers do not make.
+  const names = useMemo(
+    () => [t('pageViews'), granularity === 'day' ? t('visitors') : t('visitorsByHour')] as const,
+    [t, granularity],
+  );
+
+  const pageViews = useMemo(() => points.map((point) => point.pageViews), [points]);
+  const visitors = useMemo(() => points.map((point) => point.visitors), [points]);
 
   const option = useCallback(
     (palette: ChartPalette) => ({
@@ -88,7 +112,9 @@ export function TrafficChart({ days, siteName, zone }: TrafficChartProps) {
         <Chart option={option} label={t('summary', { site: siteName })} />
       </div>
 
-      <p className="text-xs text-foreground-subtle">{t('days', { zone })}</p>
+      <p className="text-xs text-foreground-subtle">
+        {granularity === 'day' ? t('days', { zone }) : t('hours', { zone })}
+      </p>
 
       <details className="group border-t border-border pt-3">
         <summary className="cursor-pointer text-sm font-medium text-foreground-muted marker:text-foreground-subtle hover:text-foreground">
@@ -99,7 +125,7 @@ export function TrafficChart({ days, siteName, zone }: TrafficChartProps) {
             <thead className="text-xs text-foreground-subtle">
               <tr>
                 <th scope="col" className="py-1.5 pr-4 font-medium">
-                  {t('columnDay')}
+                  {granularity === 'day' ? t('columnDay') : t('columnHour')}
                 </th>
                 <th scope="col" className="py-1.5 pr-4 text-right font-medium">
                   {names[0]}
@@ -110,15 +136,17 @@ export function TrafficChart({ days, siteName, zone }: TrafficChartProps) {
               </tr>
             </thead>
             <tbody className="text-foreground-muted">
-              {days.map((day, index) => (
-                <tr key={day.start} className="border-t border-border">
+              {points.map((point, index) => (
+                <tr key={point.start} className="border-t border-border">
                   <th scope="row" className="py-1.5 pr-4 font-normal">
                     {labels[index]}
                   </th>
                   <td className="py-1.5 pr-4 text-right tabular-nums">
-                    {format.number(day.pageViews)}
+                    {format.number(point.pageViews)}
                   </td>
-                  <td className="py-1.5 text-right tabular-nums">{format.number(day.visitors)}</td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {format.number(point.visitors)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -127,6 +155,28 @@ export function TrafficChart({ days, siteName, zone }: TrafficChartProps) {
       </details>
     </Card>
   );
+}
+
+/**
+ * How a bucket is written, which depends on how wide it is and how many days it sits among.
+ *
+ * An hour on its own needs no date beside it when every other bucket is from the same day, and
+ * needs one the moment they are not.
+ */
+function labelling(
+  granularity: Granularity,
+  manyDays: boolean,
+  timeZone: string,
+): DateTimeFormatOptions {
+  if (granularity === 'day') {
+    return { timeZone, day: 'numeric', month: 'short' };
+  }
+
+  // No minutes on either. A bucket an hour wide always begins on the hour, so the two zeroes say
+  // nothing and cost the width that lets a day's worth of labels sit side by side on a phone.
+  return manyDays
+    ? { timeZone, day: 'numeric', month: 'short', hour: 'numeric' }
+    : { timeZone, hour: 'numeric' };
 }
 
 /** One measure drawn across the period. */

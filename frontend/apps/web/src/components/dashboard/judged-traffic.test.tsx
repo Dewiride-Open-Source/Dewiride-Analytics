@@ -37,8 +37,8 @@ function engineWith(groups: readonly unknown[]) {
   });
 }
 
-function show() {
-  return renderScreen(<JudgedTraffic site={SITE} window={WINDOW} />);
+function show(at?: string) {
+  return renderScreen(<JudgedTraffic site={SITE} window={WINDOW} />, { searchParams: at });
 }
 
 describe('the breakdown of who is visiting', () => {
@@ -93,6 +93,22 @@ describe('the breakdown of who is visiting', () => {
     expect(await screen.findByRole('link', { name: /Look at each visit/ })).toHaveAttribute(
       'href',
       '/app/journeys',
+    );
+  });
+
+  /**
+   * The summary and the visits behind it are two questions about the same days, so the way between
+   * them carries the days. Sent to the usual period, somebody looking at a single Tuesday would
+   * arrive at a fortnight and read it as the wrong answer rather than as the wrong question.
+   */
+  it('takes the period being looked at through with it', async () => {
+    engineWith(GROUPS);
+
+    show('?period=2026-08-01..2026-08-14');
+
+    expect(await screen.findByRole('link', { name: /Look at each visit/ })).toHaveAttribute(
+      'href',
+      '/app/journeys?period=2026-08-01..2026-08-14',
     );
   });
 

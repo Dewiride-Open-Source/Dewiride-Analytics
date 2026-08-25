@@ -8,7 +8,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { EVERY_JOURNEY, type JourneyFilters } from '@/lib/analytics/journeys';
-import type { AnalyticsWindow } from '@/lib/analytics/period';
+import type { AnalyticsWindow, Granularity } from '@/lib/analytics/period';
 import type { NewSite } from '@/lib/api/endpoints';
 import {
   addSite,
@@ -16,6 +16,7 @@ import {
   readActions,
   readDevices,
   readEngagement,
+  readFacets,
   readLocations,
   readOverview,
   readPageEngagement,
@@ -43,6 +44,7 @@ import {
   actionsKey,
   devicesKey,
   engagementKey,
+  facetsKey,
   locationsKey,
   overviewKey,
   pageEngagementKey,
@@ -93,11 +95,16 @@ export function useOverview(siteId: string, window: AnalyticsWindow) {
   });
 }
 
-/** One measure for one website, counted a day at a time across a period. */
-export function useDailySeries(siteId: string, metric: SeriesMetric, window: AnalyticsWindow) {
+/** One measure for one website, counted in buckets of the given size across a period. */
+export function useSeries(
+  siteId: string,
+  metric: SeriesMetric,
+  window: AnalyticsWindow,
+  granularity: Granularity,
+) {
   return useQuery({
-    queryKey: seriesKey(siteId, metric, window),
-    queryFn: () => readSeries(siteId, metric, window),
+    queryKey: seriesKey(siteId, metric, window, granularity),
+    queryFn: () => readSeries(siteId, metric, window, granularity),
     retry: false,
     staleTime: FRESH_FOR,
   });
@@ -296,6 +303,27 @@ export function useVisits(
   return useQuery({
     queryKey: visitsKey(siteId, window, limit, offset, filters),
     queryFn: () => readVisits(siteId, window, limit, offset, filters),
+    retry: false,
+    placeholderData: keepPreviousData,
+    staleTime: JUDGED_FRESH_FOR,
+  });
+}
+
+/**
+ * What this period's judged visits held, for the controls that narrow the list.
+ *
+ * Only asked once somebody reaches for those controls. Working out what a period held means going
+ * back over the period's whole activity, which is worth doing for a reader who is about to narrow
+ * the list and worth nothing at all on a screen they are only glancing at.
+ *
+ * The last answer is kept while a new one is read, so the values on offer do not empty themselves
+ * under somebody's hand when the period changes beneath them.
+ */
+export function useFacets(siteId: string, window: AnalyticsWindow, wanted: boolean) {
+  return useQuery({
+    queryKey: facetsKey(siteId, window),
+    queryFn: () => readFacets(siteId, window),
+    enabled: wanted,
     retry: false,
     placeholderData: keepPreviousData,
     staleTime: JUDGED_FRESH_FOR,

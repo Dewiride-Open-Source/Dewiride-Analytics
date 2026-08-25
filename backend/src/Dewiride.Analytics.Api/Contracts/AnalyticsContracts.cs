@@ -409,6 +409,57 @@ public sealed record VisitReason(
     IReadOnlyDictionary<string, string> Values);
 
 /// <summary>
+/// What each detail of a period's judged visits held, so a reader is offered what is there.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Every list here describes the whole period rather than whatever else the caller has narrowed
+/// to, so one question has one answer however a visit list is being read. The commonest values
+/// first, and only as many of each as somebody could reach the bottom of.
+/// </para>
+/// <para>
+/// Among the free-text details an empty value is a value rather than a gap: it counts the visits
+/// nothing could be established about, which is a fair thing to ask to see and a different thing
+/// from asking to see all of them.
+/// </para>
+/// </remarks>
+/// <param name="From">Inclusive start of the period, by when each visit began.</param>
+/// <param name="To">Exclusive end of the period.</param>
+/// <param name="Devices">Kinds of device the visits were made on.</param>
+/// <param name="SourceKinds">Kinds of place the visits were sent from.</param>
+/// <param name="Browsers">Browsers the visits were made with.</param>
+/// <param name="Systems">The systems those browsers were running on.</param>
+/// <param name="Countries">Countries the visits arrived from, as two-letter codes.</param>
+/// <param name="Towns">Towns and cities within them.</param>
+/// <param name="Networks">Who runs the networks the visits arrived over.</param>
+/// <param name="Sources">The sites that sent the visits.</param>
+/// <param name="EntryPages">The pages the visits began on.</param>
+public sealed record VisitFacetsResponse(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    IReadOnlyList<VisitDetailRow> Devices,
+    IReadOnlyList<VisitDetailRow> SourceKinds,
+    IReadOnlyList<VisitDetailRow> Browsers,
+    IReadOnlyList<VisitDetailRow> Systems,
+    IReadOnlyList<VisitDetailRow> Countries,
+    IReadOnlyList<VisitDetailRow> Towns,
+    IReadOnlyList<VisitDetailRow> Networks,
+    IReadOnlyList<VisitDetailRow> Sources,
+    IReadOnlyList<VisitDetailRow> EntryPages);
+
+/// <summary>
+/// One value a detail held, and how many of the period's judged visits held it.
+/// </summary>
+/// <remarks>
+/// Counted per visit rather than per report, because a visit is what the list this narrows is made
+/// of: a value offered as four hundred that handed back ninety would be a promise the product
+/// could not keep.
+/// </remarks>
+/// <param name="Value">The value, spelled exactly as it must be spelled to narrow the list to it.</param>
+/// <param name="Visits">How many of the period's judged visits held it.</param>
+public sealed record VisitDetailRow(string Value, long Visits);
+
+/// <summary>
 /// How a website's pages were actually read over a window.
 /// </summary>
 /// <remarks>

@@ -1,9 +1,15 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { OnUrlUpdateFunction } from 'nuqs/adapters/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Journeys } from '@/components/journeys/journeys';
+import { DETAIL_DIMENSIONS } from '@/lib/analytics/journeys';
 import { engineDoing, engineStopped, respondWith, type Sent } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
+import messages from '../../../messages/en.json';
+
+/** What the filters are called, read from the catalogue rather than written out again here. */
+const FILTERS = messages.journeys.filters;
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -103,12 +109,49 @@ const NOTHING_KNOWN = {
 };
 
 /**
+ * What the period turns out to have held, which is what the filters offer.
+ *
+ * Written the way the engine reports it — the empty value is a value, meaning nothing about that
+ * visit could be established, and the two vocabularies it names arrive by their own spellings
+ * rather than as words anybody would say.
+ */
+const HELD = {
+  from: FROM,
+  to: TO,
+  devices: [
+    { value: 'phone', visits: 6 },
+    { value: 'desktop', visits: 3 },
+  ],
+  sourceKinds: [
+    { value: 'search', visits: 5 },
+    { value: 'direct', visits: 4 },
+  ],
+  browsers: [
+    { value: 'Firefox', visits: 6 },
+    { value: '', visits: 1 },
+  ],
+  systems: [{ value: 'Android', visits: 6 }],
+  countries: [
+    { value: 'IN', visits: 6 },
+    { value: 'FR', visits: 3 },
+  ],
+  towns: [{ value: 'Jaipur', visits: 6 }],
+  networks: [{ value: 'Reliance Jio Infocomm Limited', visits: 6 }],
+  sources: [
+    { value: 'Google', visits: 5 },
+    { value: '', visits: 4 },
+  ],
+  entryPages: [{ value: '/pricing', visits: 6 }],
+};
+
+/**
  * Answers every question the screen asks, in whichever order they arrive.
  *
- * A journey is asked for under the same address as the visit list and has to be recognised first,
- * or the list's own answer would be handed back for it. What the reader narrowed to is applied
- * here rather than ignored, because narrowing is a question for the engine and a test that let the
- * screen filter its own rows would be testing something the product does not do.
+ * A journey and what a period held are both asked for under the visit list's own address and have
+ * to be recognised first, or the list's answer would be handed back for them. What the reader
+ * narrowed to is applied here rather than ignored, because narrowing is a question for the engine
+ * and a test that let the screen filter its own rows would be testing something the product does
+ * not do.
  */
 function engineWith(
   groups: readonly unknown[],
@@ -120,6 +163,10 @@ function engineWith(
       journeys.asked += 1;
 
       return respondWith(200, { visit: 'visit-reader', context: NOTHING_KNOWN, steps: JOURNEY });
+    }
+
+    if (path.includes('/visits/facets')) {
+      return respondWith(200, HELD);
     }
 
     if (path.includes('/visits')) {
@@ -181,8 +228,18 @@ function listed(sent: readonly Sent[]): string[] {
   return sent.map((one) => one.path).filter((path) => /\/visits\?/.test(path));
 }
 
-function show() {
-  return renderScreen(<Journeys />);
+/** Every time the engine was asked what the period held. */
+function askedWhatIsHere(sent: readonly Sent[]): string[] {
+  return sent.map((one) => one.path).filter((path) => path.includes('/visits/facets'));
+}
+
+/** Opens one of the controls that narrows the list by something about the visit. */
+async function open(filter: string) {
+  await userEvent.click(screen.getByRole('button', { name: filter }));
+}
+
+function show(at?: string, watchingAddress?: OnUrlUpdateFunction) {
+  return renderScreen(<Journeys />, { searchParams: at, watchingAddress });
 }
 
 describe('the user journey screen', () => {
@@ -202,6 +259,19 @@ describe('the user journey screen', () => {
 
     expect(await screen.findByText('3 pages')).toBeInTheDocument();
     expect(screen.getByText('64 pages')).toBeInTheDocument();
+  });
+
+  /**
+   * Somebody arrives here from the numbers on the overview, and the two are two questions about
+   * the same days. A screen that started again on the usual period would answer a question nobody
+   * asked and look like the wrong answer to the one they did.
+   */
+  it('opens on the period the address names rather than on the usual one', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show('?period=yesterday');
+
+    expect(await screen.findByRole('combobox', { name: 'Period' })).toHaveValue('yesterday');
   });
 
   it('says nothing has been judged rather than showing an empty list', async () => {
@@ -419,6 +489,25 @@ describe('working through a long list', () => {
     expect(await screen.findByText('1–50 of 80')).toBeInTheDocument();
     expect(listed(engine.all()).at(-1)).toContain('limit=50');
   });
+
+  /**
+   * A new period is a new list. Left where they were, somebody would land on page three of a list
+   * that may now be one page long, which is a screen with nothing on it.
+   */
+  it('starts the list again at the top when the period changes', async () => {
+    const engine = engineWith(GROUPS, manyVisits(80));
+
+    show();
+
+    await screen.findByText('1–25 of 80');
+    await userEvent.click(screen.getByRole('button', { name: 'Page 3' }));
+    await screen.findByText('51–75 of 80');
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Period' }), 'yesterday');
+
+    expect(await screen.findByText('1–25 of 80')).toBeInTheDocument();
+    expect(listed(engine.all()).at(-1)).toContain('offset=0');
+  });
 });
 
 describe('narrowing the list down', () => {
@@ -465,14 +554,11 @@ describe('narrowing the list down', () => {
 
     show();
 
-    await userEvent.selectOptions(
-      await screen.findByLabelText('How sure we are'),
-      'Some signs or stronger',
-    );
-
     await screen.findByText('3 pages');
+    await open('How sure we are');
+    await userEvent.click(await screen.findByRole('radio', { name: 'Some signs or stronger' }));
 
-    expect(listed(engine.all()).at(-1)).toContain('strength=moderate');
+    await waitFor(() => expect(listed(engine.all()).at(-1)).toContain('strength=moderate'));
   });
 
   it('asks for visits that reached a page', async () => {
@@ -480,11 +566,11 @@ describe('narrowing the list down', () => {
 
     show();
 
-    await userEvent.selectOptions(await screen.findByLabelText('Pages read'), 'More than one');
-
     await screen.findByText('3 pages');
+    await open('Pages read');
+    await userEvent.click(await screen.findByRole('radio', { name: 'More than one' }));
 
-    expect(listed(engine.all()).at(-1)).toContain('minPages=2');
+    await waitFor(() => expect(listed(engine.all()).at(-1)).toContain('minPages=2'));
   });
 
   /**
@@ -514,7 +600,8 @@ describe('narrowing the list down', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Page 3' }));
     await screen.findByText('51–75 of 80');
 
-    await userEvent.selectOptions(screen.getByLabelText('Pages read'), 'One or more');
+    await open('Pages read');
+    await userEvent.click(await screen.findByRole('radio', { name: 'One or more' }));
 
     expect(await screen.findByText(/^1–25 of/)).toBeInTheDocument();
   });
@@ -531,5 +618,268 @@ describe('narrowing the list down', () => {
     await userEvent.click(screen.getByRole('button', { name: /A person 6/ }));
 
     expect(await screen.findByRole('button', { name: 'Clear' })).toBeInTheDocument();
+  });
+
+  /**
+   * The figures beside every choice count the whole period rather than what is left of it once
+   * something has been narrowed away. Two conclusions are alternatives rather than conditions
+   * piled up, so picking one leaves every figure in that control still true of what pressing the
+   * next one would give.
+   */
+  it('keeps the figures while one control is the only thing narrowing the list', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await userEvent.click(await screen.findByRole('button', { name: /A person 6/ }));
+
+    expect(
+      await screen.findByRole('button', { name: /Says it's an AI crawler 3/ }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('narrowing by what a visit actually was', () => {
+  /**
+   * Working out what a period held means reading its whole activity a second time, which is the
+   * same work a narrowed list pays for. Most people open this screen to read the list, so it is
+   * asked for when somebody reaches for one of these controls and not before.
+   */
+  it('asks what the period held only once somebody reaches for it', async () => {
+    const engine = engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+
+    expect(askedWhatIsHere(engine.all())).toHaveLength(0);
+
+    await open('Country');
+
+    expect(await screen.findByRole('checkbox', { name: 'India 6' })).toBeInTheDocument();
+    expect(askedWhatIsHere(engine.all())).toHaveLength(1);
+  });
+
+  it('offers only what this period held, with how many visits held it', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+    await open('Country');
+
+    expect(await screen.findByRole('checkbox', { name: 'India 6' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'France 3' })).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /Germany/ })).not.toBeInTheDocument();
+  });
+
+  /** A stored code is not a place. Nobody asks to see the visits from IN. */
+  it('writes a country out in the reader’s own language rather than as its code', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+    await open('Country');
+
+    await screen.findByRole('checkbox', { name: 'India 6' });
+
+    expect(document.body.textContent ?? '').not.toContain('IN 6');
+  });
+
+  it('names a kind of device in words rather than in the engine’s own spelling', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+    await open('Device');
+
+    expect(await screen.findByRole('checkbox', { name: 'Phones 6' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Computers 3' })).toBeInTheDocument();
+    expect(document.body.textContent ?? '').not.toContain('desktop');
+  });
+
+  it('asks the engine to narrow by something about the visit itself', async () => {
+    const engine = engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+    await open('Country');
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'India 6' }));
+
+    await waitFor(() => expect(listed(engine.all()).at(-1)).toContain('country=IN'));
+  });
+
+  /**
+   * A visit nothing could be established about is a real answer and a common one — an install
+   * behind a proxy that passes no address on resolves nothing at all — so it is a choice of its
+   * own rather than a blank row, and asking for it is a different question from asking for
+   * everything.
+   */
+  it('offers the visits nothing could be established about as a choice of its own', async () => {
+    const engine = engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+    await open('Browser');
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Not known 1' }));
+
+    await waitFor(() => expect(listed(engine.all()).at(-1)).toMatch(/[?&]browser=(&|$)/));
+  });
+
+  /**
+   * A view arrived at through several menus has to be undoable without going back through them,
+   * which is what the row underneath the controls is for.
+   */
+  it('shows everything picked, and takes one off again in a single press', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+    await open('Country');
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'India 6' }));
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Remove Country India' }));
+
+    expect(screen.queryByRole('button', { name: 'Remove Country India' })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument(),
+    );
+  });
+
+  it('says on the control itself how much of it is being asked for', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+    await open('Country');
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'India 6' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'France 3' }));
+
+    expect(await screen.findByRole('button', { name: 'Country 2 chosen' })).toBeInTheDocument();
+  });
+
+  /**
+   * Once something else is narrowing the list, a figure counted over the whole period is true of
+   * the period and false of what is on screen underneath it, so it goes.
+   */
+  it('drops the figures once something else is narrowing the list', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+    await open('Country');
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'India 6' }));
+
+    // The conclusions lose theirs, because a country now stands between them and the list.
+    expect(await screen.findByRole('button', { name: 'A person' })).toBeInTheDocument();
+
+    // The countries keep theirs, because picking a second one is an alternative to the first
+    // rather than a condition on top of it.
+    expect(screen.getByRole('checkbox', { name: 'France 3' })).toBeInTheDocument();
+  });
+
+  /**
+   * Driven off the list of things a visit can be narrowed by rather than off a list written out
+   * here, so a tenth added to the model and forgotten on the screen fails rather than shipping as
+   * a narrowing nothing offers. It is the counterpart of the guard on the engine's own side.
+   */
+  it.each([...DETAIL_DIMENSIONS])('offers a control for narrowing by %s', async (dimension) => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+
+    expect(screen.getByRole('button', { name: FILTERS.of[dimension] })).toBeInTheDocument();
+  });
+
+  it('offers the two floors beside them', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+
+    expect(screen.getByRole('button', { name: FILTERS.strength })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: FILTERS.pages })).toBeInTheDocument();
+  });
+});
+
+/**
+ * The point of the whole panel. Somebody who has worked a period down to the visits they were
+ * looking for has answered a question, and the answer is worth keeping: it survives a reload, it
+ * can be bookmarked, and it can be sent to somebody who then sees what the sender saw.
+ */
+describe('a narrowed list as a link', () => {
+  it('opens narrowed to what the address names rather than on the whole period', async () => {
+    const engine = engineWith(GROUPS, [READER, CRAWLER]);
+
+    show('?category=likely-human');
+
+    expect(await screen.findByText('3 pages')).toBeInTheDocument();
+    expect(screen.queryByText('64 pages')).not.toBeInTheDocument();
+    expect(listed(engine.all()).at(-1)).toContain('category=likely-human');
+  });
+
+  it('carries the days and the narrowing in the one link', async () => {
+    const engine = engineWith(GROUPS, [READER]);
+
+    show('?period=yesterday&category=likely-human');
+
+    expect(await screen.findByRole('combobox', { name: 'Period' })).toHaveValue('yesterday');
+    expect(listed(engine.all()).at(-1)).toContain('category=likely-human');
+  });
+
+  /**
+   * Somebody who arrives on a link did not narrow anything themselves, so the screen has to show
+   * them what it was narrowed to — otherwise they are looking at a short list with no way of
+   * telling why, and nothing to press to see the rest.
+   */
+  it('shows what a link narrowed to, and offers to undo it', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show('?country=IN&strength=moderate');
+
+    expect(await screen.findByRole('button', { name: 'Remove Country India' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Remove How sure we are Some signs or stronger' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
+  });
+
+  it('puts what a reader narrows to into the address as they narrow it', async () => {
+    const written = vi.fn();
+    engineWith(GROUPS, [READER]);
+
+    show(undefined, written);
+
+    await screen.findByText('3 pages');
+    await open('Country');
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'India 6' }));
+
+    await waitFor(() => expect(written).toHaveBeenCalled());
+    expect(written.mock.calls.at(-1)?.[0].queryString).toContain('country=IN');
+  });
+
+  /**
+   * An address is typed, edited and forwarded by people. Every one of those has to leave somebody
+   * on a working screen rather than on a refusal, because there is nothing they could do about it
+   * from where they are standing.
+   */
+  it('opens the whole period when a link names something that is not a narrowing', async () => {
+    const engine = engineWith(GROUPS, [READER, CRAWLER]);
+
+    show('?category=marvellous&strength=verified');
+
+    expect(await screen.findByText('64 pages')).toBeInTheDocument();
+    expect(listed(engine.all()).at(-1)).not.toContain('category=');
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
   });
 });

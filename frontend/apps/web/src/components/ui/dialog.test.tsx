@@ -83,4 +83,44 @@ describe('a focal overlay', () => {
 
     expect(screen.getByRole('dialog', { name: 'Your tracking code' })).toBeInTheDocument();
   });
+
+  /**
+   * Left to itself it starts on the first thing that can hold a cursor, which is the button that
+   * closes it — so a panel somebody asked for greets a keyboard with the way out of it.
+   */
+  it('starts on the control a panel says it would rather start on', () => {
+    renderScreen(
+      <Dialog open onClose={() => {}} title="Add a website" closeLabel="Close">
+        <input aria-label="Address" data-opens-on />
+      </Dialog>,
+    );
+
+    expect(screen.getByLabelText('Address')).toHaveFocus();
+  });
+
+  it('starts there when the panel is opened from a screen already drawn', async () => {
+    const acting = userEvent.setup();
+
+    renderScreen(<Openable />);
+
+    await acting.click(screen.getByRole('button', { name: 'Open' }));
+
+    expect(screen.getByLabelText('Address')).toHaveFocus();
+  });
 });
+
+/** A panel that is asked for rather than already open, which is how every one of them arrives. */
+function Openable() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        Open
+      </button>
+      <Dialog open={open} onClose={() => setOpen(false)} title="Add a website" closeLabel="Close">
+        <input aria-label="Address" data-opens-on />
+      </Dialog>
+    </>
+  );
+}

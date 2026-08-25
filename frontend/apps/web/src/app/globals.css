@@ -302,6 +302,54 @@
   .glow-modal {
     box-shadow: var(--shadow-lifted), var(--glow-ring), var(--glow-bloom);
   }
+
+  /*
+   * A list taller than the space it has been given, which is otherwise indistinguishable from one
+   * that ends exactly where it was cut — and a reader who cannot tell there is more below never
+   * looks for it.
+   *
+   * The first two layers are covers painted in the surface's own colour, pinned to the list and
+   * scrolling with it; the second two are shadows pinned to the frame and left behind. At the top
+   * of a list the cover sits over the shadow and hides it, and scrolling down slides the cover
+   * away and lets the shadow show. So a shadow appears at exactly the end there is more content
+   * beyond, drawn by the browser with nothing measured and no script.
+   */
+  .scroll-hint {
+    background:
+      linear-gradient(var(--surface) 34%, transparent) top / 100% 1.5rem no-repeat,
+      linear-gradient(transparent, var(--surface) 66%) bottom / 100% 1.5rem no-repeat,
+      radial-gradient(
+        farthest-side at 50% 0,
+        color-mix(in oklab, var(--foreground) 22%, transparent),
+        transparent
+      )
+      top / 100% 0.55rem no-repeat,
+      radial-gradient(
+        farthest-side at 50% 100%,
+        color-mix(in oklab, var(--foreground) 22%, transparent),
+        transparent
+      )
+      bottom / 100% 0.55rem no-repeat;
+    background-attachment: local, local, scroll, scroll;
+  }
+
+  /*
+   * A panel that hangs off the control it was opened from. It grows out of that control rather
+   * than appearing over it, which is what says where it came from on a screen holding a row of
+   * near-identical buttons — so the transform origin is the side the panel actually opened on.
+   * Reduced motion is honoured further down, for everything at once.
+   */
+  .popover-panel[data-state="open"] {
+    animation: popover-open 140ms cubic-bezier(0.16, 1, 0.3, 1);
+    transform-origin: var(--radix-popover-content-transform-origin);
+  }
+
+  @keyframes popover-open {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

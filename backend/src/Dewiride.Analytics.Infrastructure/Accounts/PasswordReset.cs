@@ -37,16 +37,6 @@ public sealed class PasswordReset(
     ILogger<PasswordReset> logger) : IPasswordReset
 {
     /// <summary>
-    /// The screen the link opens.
-    /// </summary>
-    /// <remarks>
-    /// The one address in the engine that names a screen. It has to be here: a link has to point
-    /// somewhere, and the alternative — reading the hostname off the request that asked for it —
-    /// is how a reset link ends up aimed at a server somebody else controls.
-    /// </remarks>
-    private const string ResetScreen = "app/reset-password";
-
-    /// <summary>
     /// The code the account store reports when a link is expired, spent or forged.
     /// </summary>
     /// <remarks>
@@ -160,7 +150,7 @@ public sealed class PasswordReset(
     /// whole of what somebody needs to put after their own address.
     /// </remarks>
     private string LinkFor(string emailAddress, string token) =>
-        AccountLinks.To(dashboard.Value.PublishedAt, ResetScreen, emailAddress, token);
+        AccountLinks.To(dashboard.Value.PublishedAt, DashboardScreens.ResetPassword, emailAddress, token);
 }
 
 /// <summary>

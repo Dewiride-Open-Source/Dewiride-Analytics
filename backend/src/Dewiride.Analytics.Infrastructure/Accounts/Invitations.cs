@@ -42,9 +42,6 @@ public sealed class Invitations(
     TimeProvider clock,
     ILogger<Invitations> logger) : IInvitations
 {
-    /// <summary>The screen an invitation link opens.</summary>
-    private const string JoinScreen = "app/join";
-
     /// <inheritdoc />
     public async Task<IReadOnlyList<PendingInvitation>> ListAsync(
         Guid organizationId,
@@ -378,7 +375,7 @@ public sealed class Invitations(
             invitation.Id,
             organizationName,
             invitedBy ?? organizationName,
-            AccountLinks.Carrying(dashboard.Value.PublishedAt, JoinScreen, secret));
+            AccountLinks.Carrying(dashboard.Value.PublishedAt, DashboardScreens.Join, secret));
 
         if (!await QuietSend.TryAsync(email, message, logger, cancellationToken).ConfigureAwait(false))
         {

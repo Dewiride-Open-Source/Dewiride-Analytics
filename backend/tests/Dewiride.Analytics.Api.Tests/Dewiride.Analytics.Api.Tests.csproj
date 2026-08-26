@@ -18,4 +18,15 @@
     <ProjectReference Include="..\..\src\Dewiride.Analytics.Api\Dewiride.Analytics.Api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      The dashboard's own list of the screens it serves, linked in rather than transcribed, so the
+      test that holds the engine's list to it reads the file the dashboard is actually built from.
+      A copy would agree with the engine on the day it was written and never again.
+    -->
+    <None Include="..\..\..\frontend\apps\web\src\lib\routes.ts"
+          Link="routes.ts"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

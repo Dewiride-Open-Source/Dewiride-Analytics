@@ -16,6 +16,12 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
     restoreMocks: true,
+    // Every suite runs in one zone, stated here rather than taken from whoever happens to be
+    // running it. Some of these read the zone this device is set to, and a test whose result
+    // depends on a machine's own settings passes in one country and fails in another — which is
+    // exactly how it went: green on a laptop in India, red on a build machine, which reports UTC.
+    // UTC rather than a convenient zone, because it is the one that found the defect.
+    env: { TZ: 'UTC' },
     // Longer than the default five seconds. A test that fills in the setup form types sixty
     // characters one keypress at a time into a screen holding several hundred time zones, and
     // every keypress is a full round of event dispatch against that whole tree. It takes about a

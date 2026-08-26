@@ -60,6 +60,18 @@ describe('choosing a time zone', () => {
 
     expect(thisDeviceTimeZone(onlyLondon)).toBe('Europe/London');
   });
+
+  /**
+   * `Intl.supportedValuesOf` answers with geographic zones only, so this one is never among them
+   * and has to be added. A browser reporting it is ordinary rather than exotic — it is what a
+   * machine with no zone configured says, and what Firefox tells every website when its
+   * fingerprint resistance is on — and without it such a device is quietly placed in Abidjan,
+   * which is simply the zone that sorts first.
+   */
+  it('offers a universal zone, which the platform itself never does', () => {
+    expect(Intl.supportedValuesOf('timeZone')).not.toContain('UTC');
+    expect(groups.flatMap((group) => group.zones).map((zone) => zone.id)).toContain('UTC');
+  });
 });
 
 describe('writing a zone into a sentence', () => {
@@ -94,6 +106,19 @@ describe('the zone a picker starts on', () => {
 
   it('falls back the same way when nothing was wanted at all', () => {
     expect(offeredZone(groups, undefined)).toBe(thisDeviceTimeZone(groups));
+  });
+
+  /**
+   * The last resort, for a device the platform cannot place at all. Falling through to the first
+   * entry in the list puts somebody in Côte d'Ivoire without their having chosen it.
+   */
+  it('falls back to the universal zone rather than to a country nobody chose', () => {
+    const abidjanFirst = [
+      { area: 'Africa', zones: [{ id: 'Africa/Abidjan', label: 'Abidjan (GMT+0:00)' }] },
+      { area: 'UTC', zones: [{ id: 'UTC', label: 'UTC (GMT+0:00)' }] },
+    ];
+
+    expect(offeredZone(abidjanFirst, 'Mars/Olympus_Mons')).toBe('UTC');
   });
 });
 

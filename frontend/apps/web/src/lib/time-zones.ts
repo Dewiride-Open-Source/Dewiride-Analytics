@@ -11,7 +11,16 @@
  * the identifier travels to the engine.
  */
 
-const FALLBACK = 'Etc/UTC';
+/**
+ * The zone for somebody the platform cannot place.
+ *
+ * Not a placeholder. `Intl.supportedValuesOf` answers with geographic zones only and therefore
+ * never contains this one — while a browser reporting it is ordinary: it is what a machine with no
+ * zone configured says, and what Firefox tells every website when its fingerprint resistance is
+ * switched on. Left out, the picker opens on whichever zone sorts first, which is Abidjan, and the
+ * screen tells somebody their website is counted in Côte d'Ivoire.
+ */
+const UNIVERSAL = 'UTC';
 
 /** A region heading and the zones under it. */
 export interface TimeZoneGroup {
@@ -36,7 +45,7 @@ export interface TimeZoneChoice {
  */
 export function timeZoneGroups(): readonly TimeZoneGroup[] {
   const supported = Intl.supportedValuesOf('timeZone');
-  const identifiers = supported.length > 0 ? supported : [FALLBACK];
+  const identifiers = supported.includes(UNIVERSAL) ? supported : [...supported, UNIVERSAL];
   const regions = new Map<string, TimeZoneChoice[]>();
 
   for (const id of identifiers) {
@@ -97,11 +106,13 @@ export function thisDeviceTimeZone(groups: readonly TimeZoneGroup[]): string {
  * `Asia/Kolkata` on another — so a stored zone is not always among the choices a particular
  * browser offers. A picker asked to start on a choice it does not have starts on whichever
  * happens to be first, which is how somebody ends up measuring a website in a country nobody
- * involved has ever been to. So the fall-back is stated rather than left to the browser.
+ * involved has ever been to. So the fall-back is stated rather than left to the browser, and
+ * where this device cannot be placed either it is the universal zone rather than a country
+ * nobody chose.
  *
  * @param groups Every zone this platform offers.
  * @param wanted The zone that would suit, if it is offered.
- * @returns The wanted zone, this device's zone, or the first there is.
+ * @returns The wanted zone, this device's zone, the universal zone, or the first there is.
  */
 export function offeredZone(groups: readonly TimeZoneGroup[], wanted: string | undefined): string {
   if (wanted !== undefined && offers(groups, wanted)) {
@@ -110,7 +121,11 @@ export function offeredZone(groups: readonly TimeZoneGroup[], wanted: string | u
 
   const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  return offers(groups, here) ? here : (groups[0]?.zones[0]?.id ?? FALLBACK);
+  if (offers(groups, here)) {
+    return here;
+  }
+
+  return offers(groups, UNIVERSAL) ? UNIVERSAL : (groups[0]?.zones[0]?.id ?? UNIVERSAL);
 }
 
 /** Whether a zone is one of the choices. */

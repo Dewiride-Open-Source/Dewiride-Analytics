@@ -13,6 +13,7 @@
 		<Project Path="src/Dewiride.Analytics.Infrastructure.ClickHouse/Dewiride.Analytics.Infrastructure.ClickHouse.csproj" />
 	</Folder>
 	<Folder Name="/tests/">
+		<Project Path="tests/Dewiride.Analytics.Api.Tests/Dewiride.Analytics.Api.Tests.csproj" />
 		<Project Path="tests/Dewiride.Analytics.Application.Tests/Dewiride.Analytics.Application.Tests.csproj" />
 		<Project Path="tests/Dewiride.Analytics.Architecture.Tests/Dewiride.Analytics.Architecture.Tests.csproj" />
 		<Project Path="tests/Dewiride.Analytics.Classification.Tests/Dewiride.Analytics.Classification.Tests.csproj" />

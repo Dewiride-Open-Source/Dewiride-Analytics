@@ -8,6 +8,11 @@ using Dewiride.Analytics.Infrastructure.ClickHouse;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Before anything reads a setting. Where a vault is named, it is added as the last place
+// configuration is read from and therefore wins over the environment — which is what lets a key
+// be changed where it is kept rather than on the machine the product runs on.
+builder.AddKeyVault();
+
 builder.AddObservability();
 builder.AddApiServices();
 builder.AddAuthentication();

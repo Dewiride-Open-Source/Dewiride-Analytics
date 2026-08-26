@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Unit tests over the host's own composition — the settings it reads before anything is built,
+    and what it refuses to start on. No container, no network and no vault.
+
+    The suite that boots against real servers cannot cover this: everything here is about an
+    engine that declines to boot, which that suite can only observe as a fixture failing to come
+    up with no explanation attached.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Dewiride.Analytics.Api.Tests</RootNamespace>
+    <AssemblyName>Dewiride.Analytics.Api.Tests</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dewiride.Analytics.Api\Dewiride.Analytics.Api.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -105,6 +105,22 @@ services:
       clickhouse:
         condition: service_healthy
     environment:
+      # Where this installation reads its settings from, ahead of everything below. Naming a vault
+      # here makes it the last place configuration is read from, so a value kept in it wins over
+      # the same value in this file — which is the point: a key can then be changed where it is
+      # stored, by somebody who never touches this machine, and this machine holds only the one
+      # credential that opens the vault.
+      #
+      # The vault is read once, as the engine starts. A value changed there reaches a running
+      # engine the next time that engine is started, and until then it goes on working with what
+      # it read. A vault named and not reachable stops the engine rather than starting it with
+      # everything the vault holds silently absent.
+      #
+      # Leave these empty, which is the ordinary case, and only this file is read.
+      Dewiride__KeyVault__Address: ${KEY_VAULT_ADDRESS:-}
+      Dewiride__KeyVault__TenantId: ${KEY_VAULT_TENANT_ID:-}
+      Dewiride__KeyVault__ClientId: ${KEY_VAULT_CLIENT_ID:-}
+      Dewiride__KeyVault__ClientSecret: ${KEY_VAULT_CLIENT_SECRET:-}
       # Inside the network each store answers to its own name on its own standard port, which is
       # why these do not match the addresses used from the machine itself.
       ConnectionStrings__ControlPlane: >-

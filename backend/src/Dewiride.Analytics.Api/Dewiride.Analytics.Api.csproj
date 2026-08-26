@@ -39,10 +39,18 @@
   -->
   <ItemGroup>
     <InternalsVisibleTo Include="Dewiride.Analytics.Integration.Tests" />
+    <InternalsVisibleTo Include="Dewiride.Analytics.Api.Tests" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <!--
+      Read at start-up by a deployment that names a vault, and never opened by one that does not.
+      The credential library is referenced beside it because the vault is opened as a sign-in of
+      this installation's own rather than by anything ambient to the machine.
+    -->
+    <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" />
+    <PackageReference Include="Azure.Identity" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" />

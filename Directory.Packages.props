@@ -115,6 +115,17 @@
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
   </ItemGroup>
 
+  <ItemGroup Label="Settings kept in a vault">
+    <!--
+      Azure Key Vault as a place settings are read from, for a deployment that would rather keep
+      its keys behind a door with an audit trail than in a file on the machine. Both are MIT and
+      first-party; only the host references them, and only a deployment that names a vault ever
+      opens a connection. See docs/adr/0030-settings-kept-somewhere-with-a-door.md.
+    -->
+    <PackageVersion Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.2" />
+    <PackageVersion Include="Azure.Identity" Version="1.21.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Observability">
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />

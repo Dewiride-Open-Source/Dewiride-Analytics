@@ -1,0 +1,103 @@
+# Every change to the free product, compiled and put through every suite.
+#
+# The commercial edition is not built here. It lives in a private repository this workflow cannot
+# see, and is built by that repository's own workflow against this one. What runs here is therefore
+# also the proof that the free product stands on its own — which is the claim the licence makes, and
+# the one thing a contributor with no access to the other repository has to be able to rely on.
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A second push while the first is still compiling makes the first answer a question nobody is
+# asking any more. Releases are not cancelled this way; a build is.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+# Nothing here writes anything anywhere. Stated rather than left to the repository default, because
+# the default is a setting somebody can widen without touching this file.
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    name: Engine
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          # The version this repository pins, rather than a second copy of it here.
+          global-json-file: global.json
+
+      # Warnings are errors in this repository and SonarAnalyzer.CSharp runs as a build analyser, so
+      # a rule violation fails this step rather than becoming a report somebody reads later. There is
+      # no separate analysis pass because there is nothing left for one to find.
+      - name: Compile
+        run: dotnet build backend/Dewiride.Analytics.slnx
+
+      # Named one at a time rather than discovered. A suite that quietly stops being run is invisible
+      # behind a wildcard, and a suite that quietly stops being run is the whole failure this exists
+      # to prevent: the run stays green and means less every week.
+      #
+      # The last of them starts real PostgreSQL and ClickHouse containers through Testcontainers,
+      # which is why this runs on a machine with Docker rather than inside a container of its own.
+      - name: Suites
+        run: |
+          set -euo pipefail
+          for suite in \
+            Dewiride.Analytics.Domain.Tests \
+            Dewiride.Analytics.Application.Tests \
+            Dewiride.Analytics.Classification.Tests \
+            Dewiride.Analytics.Architecture.Tests \
+            Dewiride.Analytics.Api.Tests \
+            Dewiride.Analytics.SqlTests \
+            Dewiride.Analytics.MailTests \
+            Dewiride.Analytics.Integration.Tests
+          do
+            echo "::group::$suite"
+            dotnet run --project "backend/tests/$suite" --no-build
+            echo "::endgroup::"
+          done
+
+  dashboard:
+    name: Dashboard and beacon
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Before Node, because the cache below is keyed on a lockfile this has to be present to read.
+      # No version here: the action reads the one `packageManager` pins, so the package manager
+      # cannot drift between a working copy and this machine.
+      - name: pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Node
+        uses: actions/setup-node@v7
+        with:
+          # The major the images are built on, stated rather than read from `engines.node` — that
+          # is a range, and a range resolves to whatever is newest on the day this runs, which is
+          # how a green run here and a broken image come apart without anybody changing anything.
+          node-version: "24"
+          cache: pnpm
+
+      # --frozen-lockfile rather than a plain install: a lockfile that no longer matches what the
+      # packages ask for is a defect to be seen here, not resolved silently into a different set of
+      # dependencies from the one anybody reviewed.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # The whole gate in one script — the pinned TypeScript version, lint, formatting, types and
+      # every suite. It is the same script a contributor runs, so this machine and a working copy
+      # cannot disagree about what passing means.
+      - name: Verify
+        run: pnpm verify

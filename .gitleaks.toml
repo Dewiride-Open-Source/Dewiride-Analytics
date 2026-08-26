@@ -1,0 +1,23 @@
+# What a scan for committed credentials is allowed to pass over.
+#
+# The default rules are kept in full and none of them is switched off. The single narrowing below
+# applies to the one heuristic rule — `generic-api-key` matches any long, high-entropy string — and
+# only inside the test trees, where the product's own identifiers are written out so that a test
+# reads identically every time it runs. `0123456789abcdef…` is a visitor key in a fixture. There is
+# nothing it opens and nowhere it could be used.
+#
+# Every rule that recognises a real provider's credential by its shape — Stripe, AWS, a private key
+# block — still applies to those files. A live key pasted into a test is caught by the rule that
+# knows what it is, which is the rule that matters. Switching `generic-api-key` off outright, or
+# allowing the whole repository, would have removed that as well.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Invented identifiers in fixtures, which the heuristic rule cannot tell from a key"
+targetRules = ["generic-api-key"]
+paths = [
+  '''^backend/tests/''',
+  '''^ee/tests/''',
+]

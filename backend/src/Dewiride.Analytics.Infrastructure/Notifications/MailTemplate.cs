@@ -167,9 +167,9 @@ public static class MailTemplate
               <tr><td align="center" style="padding:32px 12px 40px;">
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="dw-shell" style="width:600px;max-width:600px;">
                   <tr><td style="padding:0 8px 16px;">
-                    <span class="dw-mark" style="font-family:{BodyFont};font-size:15px;font-weight:700;letter-spacing:0.02em;color:{MailPalette.Accent};">{ProductName}</span>
+                    <span class="dw-mark" style="font-family:{BodyFont};font-size:15px;font-weight:700;letter-spacing:0.02em;color:{MailPalette.AccentText};">{ProductName}</span>
                   </td></tr>
-                  <tr><td class="dw-card" style="background:{MailPalette.Surface};border:1px solid {MailPalette.Border};border-radius:14px;">
+                  <tr><td class="dw-card" style="background:{MailPalette.Surface};border:1px solid {MailPalette.Border};border-radius:14px;box-shadow:{MailPalette.CardShadow};">
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                       <tr><td class="dw-pad" style="padding:36px 40px 40px;">
                         <h1 class="dw-heading" style="margin:0 0 20px;font-family:{BodyFont};font-size:25px;line-height:33px;font-weight:600;letter-spacing:-0.02em;color:{MailPalette.Text};">{subject}</h1>
@@ -177,7 +177,7 @@ public static class MailTemplate
                         {Paragraphs(content.Paragraphs)}
                         {FactRows(content.Facts)}
                         {Button(content.Action, link)}
-                        <p class="dw-subtle" style="margin:0;font-family:{BodyFont};font-size:13px;line-height:21px;color:{MailPalette.Subtle};word-break:break-word;overflow-wrap:anywhere;">Or copy this into your browser:<br><a href="{link}" class="dw-link" style="color:{MailPalette.Accent};text-decoration:underline;">{link}</a></p>
+                        <p class="dw-subtle" style="margin:0;font-family:{BodyFont};font-size:13px;line-height:21px;color:{MailPalette.Subtle};word-break:break-word;overflow-wrap:anywhere;">Or copy this into your browser:<br><a href="{link}" class="dw-link" style="color:{MailPalette.AccentText};text-decoration:underline;">{link}</a></p>
                         {Footnotes(content.Footnotes)}
                       </td></tr>
                     </table>
@@ -217,9 +217,16 @@ public static class MailTemplate
     /// The figures the message is about, in a block a reader can find without reading.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Set in a monospaced face and aligned right, so that two figures under one another line up on
     /// their digits. A column of numbers that does not line up is read as a list of unrelated
     /// things.
+    /// </para>
+    /// <para>
+    /// On a panel of its own rather than loose on the card, so that the figures read as the one
+    /// thing the message is reporting. It is also the third surface in a message that otherwise has
+    /// two, which is what keeps a page of text from reading as a single flat sheet.
+    /// </para>
     /// </remarks>
     private static string FactRows(IReadOnlyList<MailFact> facts)
     {
@@ -230,7 +237,13 @@ public static class MailTemplate
 
         var rows = string.Concat(facts.Select(FactRow));
 
-        return $"""<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:2px 0 26px;">{rows}</table>""";
+        return $"""
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="dw-panel" style="margin:4px 0 28px;background:{MailPalette.Panel};border:1px solid {MailPalette.Border};border-radius:12px;">
+            <tr><td class="dw-panel-pad" style="padding:6px 20px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">{rows}</table>
+            </td></tr>
+            </table>
+            """;
     }
 
     private static string FactRow(MailFact fact, int index)
@@ -240,7 +253,7 @@ public static class MailTemplate
         return $"""
             <tr>
             <td class="dw-muted dw-rule" style="{rule}padding:11px 0;font-family:{BodyFont};font-size:14px;line-height:21px;color:{MailPalette.Muted};">{WebUtility.HtmlEncode(fact.Label)}</td>
-            <td class="dw-text dw-rule" align="right" style="{rule}padding:11px 0;font-family:{FigureFont};font-size:14px;line-height:21px;font-weight:600;color:{MailPalette.Text};white-space:nowrap;">{WebUtility.HtmlEncode(fact.Value)}</td>
+            <td class="dw-figure dw-rule" align="right" style="{rule}padding:11px 0;font-family:{FigureFont};font-size:14px;line-height:21px;font-weight:600;color:{MailPalette.Text};white-space:nowrap;">{WebUtility.HtmlEncode(fact.Value)}</td>
             </tr>
             """;
     }
@@ -287,8 +300,14 @@ public static class MailTemplate
             return string.Empty;
         }
 
-        var lines = string.Concat(footnotes.Select(footnote =>
-            $"""<p class="dw-muted" style="margin:0 0 12px;font-family:{BodyFont};font-size:14px;line-height:22px;color:{MailPalette.Muted};">{WebUtility.HtmlEncode(footnote)}</p>"""));
+        var lines = string.Concat(footnotes.Select((footnote, index) =>
+        {
+            // The gap belongs between two of these, not under the last one, where it would add to
+            // the card's own padding and leave a hole below the final sentence.
+            var gap = index == footnotes.Count - 1 ? "0" : "0 0 12px";
+
+            return $"""<p class="dw-muted" style="margin:{gap};font-family:{BodyFont};font-size:14px;line-height:22px;color:{MailPalette.Muted};">{WebUtility.HtmlEncode(footnote)}</p>""";
+        }));
 
         return $"""
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:26px 0 0;">

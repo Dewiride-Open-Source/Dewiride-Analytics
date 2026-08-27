@@ -482,6 +482,77 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// The statement returns one row per category and bucket, ordered by both and filled so that
+    /// every category covers the whole window. That is what lets the rows be read as runs: a change
+    /// of category closes the run before it, and the bucket list is taken from the first run alone
+    /// because every later one repeats it exactly.
+    /// </remarks>
+    public async Task<TrafficSeries> GetTrafficSeriesAsync(
+        TenantScope scope,
+        TrafficSeriesQuery query,
+        CancellationToken cancellationToken)
+    {
+        var buckets = ImmutableArray.CreateBuilder<DateTimeOffset>();
+        var groups = ImmutableArray.CreateBuilder<TrafficSeriesGroup>();
+        var sessions = ImmutableArray.CreateBuilder<long>();
+        var pageViews = ImmutableArray.CreateBuilder<long>();
+        TrafficCategory? gathering = null;
+        var firstRun = true;
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var category = StoredNames.Categories[reader.GetString(0)];
+
+            if (gathering is { } previous && previous != category)
+            {
+                Keep(groups, previous, sessions, pageViews);
+                firstRun = false;
+            }
+
+            if (firstRun)
+            {
+                buckets.Add(reader.GetDateTimeOffset(1));
+            }
+
+            gathering = category;
+            sessions.Add(reader.GetInt64(2));
+            pageViews.Add(reader.GetInt64(3));
+        }
+
+        if (gathering is { } last)
+        {
+            Keep(groups, last, sessions, pageViews);
+        }
+
+        return new TrafficSeries(buckets.DrainToImmutable(), groups.DrainToImmutable());
+
+        // A window holding nothing at all still comes back filled: with no category to group by,
+        // the store invents one run of zeroes under the first name in its own enumeration. A
+        // category that genuinely occurred has a count somewhere in it, so a run that is zero the
+        // whole way along is that invention and never a real one.
+        static void Keep(
+            ImmutableArray<TrafficSeriesGroup>.Builder groups,
+            TrafficCategory category,
+            ImmutableArray<long>.Builder sessions,
+            ImmutableArray<long>.Builder pageViews)
+        {
+            var counted = sessions.DrainToImmutable();
+            var pages = pageViews.DrainToImmutable();
+
+            if (counted.Any(count => count > 0))
+            {
+                groups.Add(new TrafficSeriesGroup(category, counted, pages));
+            }
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<JudgedSessions> GetJudgedSessionsAsync(
         TenantScope scope,
         JudgedSessionsQuery query,

@@ -175,10 +175,38 @@
       },
       "pagesPerVisitor": {
         "label": "Pages per visitor"
+      },
+      "change": {
+        "up": "<strong>{amount} more</strong> than {period}",
+        "down": "<strong>{amount} less</strong> than {period}",
+        "level": "<strong>No change</strong> from {period}",
+        "none": "<strong>Up from none</strong> in {period}"
+      },
+      "against": {
+        "today": "yesterday",
+        "yesterday": "the day before",
+        "last-7-days": "the 7 days before",
+        "last-30-days": "the 30 days before",
+        "last-90-days": "the 90 days before",
+        "this-month": "the same days last month",
+        "last-month": "the month before",
+        "this-year": "the same days last year",
+        "chosen": "the {days, plural, one {day} other {# days}} before"
       }
     },
     "chart": {
       "title": "Traffic",
+      "view": {
+        "label": "What the chart shows",
+        "who": "Who came",
+        "activity": "How much"
+      },
+      "drawing": {
+        "label": "How the chart is drawn",
+        "line": "Line",
+        "columns": "Columns",
+        "area": "Area"
+      },
       "pageViews": "Page views",
       "visitors": "Daily visitors",
       "visitorsByHour": "Visitors",
@@ -187,7 +215,24 @@
       "summary": "Page views and visitors for {site} over the chosen period.",
       "table": "Show these figures as a table",
       "columnDay": "Day",
-      "columnHour": "Time"
+      "columnHour": "Time",
+      "who": {
+        "summary": "Who and what visited {site} over the chosen period.",
+        "days": "Visits that have finished, by day in {zone}.",
+        "hours": "Visits that have finished, by the clock in {zone}.",
+        "judging": "The newest are still being judged.",
+        "stillJudging": "still being judged",
+        "total": "All visits",
+        "none": "No visits have been judged in this period yet.",
+        "noneAction": "See how much was read",
+        "against": "The dashed line is {days}."
+      },
+      "against": {
+        "action": "Compare",
+        "label": "Compare with the period before",
+        "measure": "{name} before",
+        "lines": "The dashed lines are {days}."
+      }
     },
     "list": {
       "previous": "Previous",
@@ -246,6 +291,7 @@
       "visitors": "{count, plural, one {# visitor} other {# visitors}}",
       "views": "{count, plural, one {# view} other {# views}}",
       "direct": "Came straight here",
+      "ring": "The share of visitors arriving each way.",
       "mostlyDirect": "Most visitors came straight here — typed in, bookmarked, or from an app or a message that keeps the link private.",
       "grouping": {
         "label": "Show sources as",
@@ -273,6 +319,7 @@
       "visitors": "{count, plural, one {# visitor} other {# visitors}}",
       "views": "{count, plural, one {# view} other {# views}}",
       "unknown": "Not known",
+      "ring": "The share of readers on each kind of device.",
       "mostlyUnknown": "Most visits carried nothing that names a device. Who's visiting, further down, says what they were.",
       "view": {
         "label": "Show readers by",
@@ -341,6 +388,7 @@
       "judged": "{count, plural, one {# visit judged} other {# visits judged}}",
       "sessions": "{count, plural, one {# visit} other {# visits}}",
       "pages": "{count, plural, one {# page} other {# pages}}",
+      "ring": "How the judged visits divide between people, machinery and everything else.",
       "pending": "Visits still under way aren't counted here yet.",
       "everyVisit": "Look at each visit on its own",
       "empty": {
@@ -570,6 +618,12 @@
       "nextjs-middleware": "your own server",
       "log-import": "your server records",
       "server-side": "your own server"
+    },
+    "tone": {
+      "people": "People",
+      "automation": "Machinery",
+      "unwanted": "Unwanted",
+      "unclear": "Can't say"
     }
   },
   "reasons": {

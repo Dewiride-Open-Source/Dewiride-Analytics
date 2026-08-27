@@ -3,7 +3,14 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SiteSources } from '@/components/dashboard/site-sources';
 import { type Engine, engineDoing, engineStopped, respondWith } from '@/test/engine';
+import { ringParts } from '@/test/drawing';
 import { renderScreen } from '@/test/harness';
+
+/**
+ * Stands in for the drawing surface, so that what the ring would be told to draw can be read as
+ * an object rather than looked for among pixels on a canvas.
+ */
+vi.mock('@/components/charts/chart', async () => ({ ...(await import('@/test/drawing')) }));
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -148,6 +155,49 @@ describe('how a website’s visitors found it', () => {
    * The engine's word for a kind is a wire format. Showing it raw would put a developer's
    * vocabulary in front of a reader, and would not translate.
    */
+  /**
+   * Four ways in and the visitors who named none, every visitor in exactly one of them — so the
+   * five account for the whole the card states rather than heading a longer list.
+   */
+  it('draws the ways in as parts of a single whole', async () => {
+    engineWith(KINDS, 825);
+
+    show();
+
+    await screen.findByText('Search engines');
+
+    expect(ringParts().map((part) => part.name)).toStrictEqual([
+      'Came straight here',
+      'Search engines',
+      'Links from other sites',
+      'Social networks',
+      'AI assistants',
+    ]);
+  });
+
+  it('announces what the drawing shows, since a ring tells a screen reader nothing', async () => {
+    engineWith(KINDS, 825);
+
+    show();
+
+    expect(
+      await screen.findByRole('img', { name: 'The share of visitors arriving each way.' }),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * The same fallback the words already make, made in the colours as well: naming it as anything
+   * more particular would be a claim nothing supports.
+   */
+  it('gives a kind it has no word for the name and the colour of a plain link', async () => {
+    engineWith([{ source: 'newsletter', site: '', visitors: 5, pageViews: 9 }], 5);
+
+    show();
+
+    expect(await screen.findByText('Links from other sites')).toBeInTheDocument();
+    expect(ringParts()[0]?.name).toBe('Links from other sites');
+  });
+
   it('never shows the engine’s own word for a kind', async () => {
     engineWith(KINDS, 825);
 
@@ -174,6 +224,19 @@ describe('where a website’s visitors come from', () => {
    * A slice is one screenful of a longer list, so a share taken against the rows shown would put
    * the busiest source of a widely-linked site at several times the share it has.
    */
+  /**
+   * A ring says these are the parts of one thing, which is false of one screenful of a list that
+   * runs on past it.
+   */
+  it('draws no ring beside a list that is only part of a longer one', async () => {
+    engineWithAll(KINDS, SITES, PAGES);
+
+    await showing('Sites');
+
+    expect(await screen.findByText('Google')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
   it('takes a share against the whole period rather than against the rows shown', async () => {
     engineWith(KINDS, 825);
 

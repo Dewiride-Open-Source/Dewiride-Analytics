@@ -12,10 +12,28 @@
  * here to drift out of step with it.
  */
 
+import { TONE_TOKENS, type VerdictTone } from '@/lib/analytics/verdicts';
+
 /** The colours a chart needs, already in a notation the charting engine can read. */
 export interface ChartPalette {
   /** First series — the headline measure. */
   readonly series: readonly [string, string];
+  /**
+   * What each verdict tone is drawn in, so a band on a chart is the colour its pill already is.
+   *
+   * Green for the people a website is for, violet for machinery, red for what nobody asked for,
+   * and grey for what cannot be said — the same four the badges and the share bar use, taken from
+   * the same statement of which token belongs to which tone.
+   */
+  readonly tones: Readonly<Record<VerdictTone, string>>;
+  /**
+   * The quiet grey a part nothing could be established about is drawn in.
+   *
+   * The same token a verdict that cannot be said carries, and stated separately from it because a
+   * device nobody could name is not a verdict about anything: a ring of devices would otherwise
+   * have to reach into the vocabulary of traffic to find a colour for its last slice.
+   */
+  readonly subtle: string;
   /** Axis labels and the tooltip's supporting text. */
   readonly label: string;
   /** Grid lines and axis rules. */
@@ -30,6 +48,8 @@ export interface ChartPalette {
 
 const TOKENS = {
   series: ['--chart-1', '--chart-2'],
+  tones: TONE_TOKENS,
+  subtle: '--foreground-subtle',
   label: '--foreground-muted',
   line: '--border',
   surface: '--surface',
@@ -48,6 +68,13 @@ const SENTINEL = '#010203';
 /** Used when there is no canvas to convert with, as in a test document. */
 const FALLBACKS = {
   series: ['rgba(110, 76, 232, 1)', 'rgba(56, 168, 184, 1)'],
+  tones: {
+    people: 'rgba(31, 124, 75, 1)',
+    automation: 'rgba(116, 86, 224, 1)',
+    unwanted: 'rgba(188, 39, 41, 1)',
+    unclear: 'rgba(136, 136, 146, 1)',
+  },
+  subtle: 'rgba(136, 136, 146, 1)',
   label: 'rgba(116, 113, 128, 1)',
   line: 'rgba(224, 222, 232, 1)',
   surface: 'rgba(255, 255, 255, 1)',
@@ -71,6 +98,13 @@ export function readChartPalette(): ChartPalette {
       paint(TOKENS.series[0], FALLBACKS.series[0]),
       paint(TOKENS.series[1], FALLBACKS.series[1]),
     ],
+    tones: {
+      people: paint(TOKENS.tones.people, FALLBACKS.tones.people),
+      automation: paint(TOKENS.tones.automation, FALLBACKS.tones.automation),
+      unwanted: paint(TOKENS.tones.unwanted, FALLBACKS.tones.unwanted),
+      unclear: paint(TOKENS.tones.unclear, FALLBACKS.tones.unclear),
+    },
+    subtle: paint(TOKENS.subtle, FALLBACKS.subtle),
     label: paint(TOKENS.label, FALLBACKS.label),
     line: paint(TOKENS.line, FALLBACKS.line),
     surface: paint(TOKENS.surface, FALLBACKS.surface),

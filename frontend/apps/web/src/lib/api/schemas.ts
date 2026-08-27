@@ -518,6 +518,34 @@ export const trafficSchema = z.object({
   groups: z.array(trafficGroupSchema),
 });
 
+/** One category's count in every bucket, in the order the buckets are named. */
+export const trafficCategorySeriesSchema = z.object({
+  category: trafficCategorySchema,
+  sessions: z.array(z.number().int()),
+  pageViews: z.array(z.number().int()),
+});
+
+/**
+ * What generated a period's traffic, bucket by bucket.
+ *
+ * A table rather than a list of cells. The buckets are named once and each category's counts run
+ * alongside them in the same order, so a month counted an hour at a time is a handful of arrays
+ * rather than ten thousand small objects each repeating its own category.
+ *
+ * Every category the period actually held runs the whole length of it, zeroes included; one it
+ * never held is absent altogether rather than present as a row of nothing. Counting stops at
+ * `completeTo`, because a visit is only judged once it has finished — the buckets after it are
+ * reported and still filling.
+ */
+export const trafficSeriesSchema = z.object({
+  from: timestamp,
+  to: timestamp,
+  granularity: z.enum(['hour', 'day']),
+  completeTo: timestamp,
+  buckets: z.array(timestamp),
+  groups: z.array(trafficCategorySeriesSchema),
+});
+
 /**
  * One observation behind a verdict.
  *
@@ -658,6 +686,7 @@ export type CaptureSurface = z.infer<typeof captureSurfaceSchema>;
 export type SignalDirection = z.infer<typeof signalDirectionSchema>;
 export type TrafficGroup = z.infer<typeof trafficGroupSchema>;
 export type Traffic = z.infer<typeof trafficSchema>;
+export type TrafficSeries = z.infer<typeof trafficSeriesSchema>;
 export type VisitReason = z.infer<typeof visitReasonSchema>;
 export type Visit = z.infer<typeof visitSchema>;
 export type Visits = z.infer<typeof visitsSchema>;

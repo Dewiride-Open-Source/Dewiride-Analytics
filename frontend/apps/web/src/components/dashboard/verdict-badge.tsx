@@ -28,11 +28,6 @@ export const TONE_FILLS: Readonly<Record<VerdictTone, string>> = {
   unclear: 'bg-foreground-subtle',
 };
 
-/** The fill a category is drawn in. */
-export function fillFor(category: TrafficCategory): string {
-  return TONE_FILLS[CATEGORY_TONES[category]];
-}
-
 /** What generated a visit, named. */
 export function VerdictBadge({ category }: { readonly category: TrafficCategory }) {
   const t = useTranslations('verdicts.category');

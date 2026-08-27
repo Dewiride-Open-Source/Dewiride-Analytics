@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EVERY_JOURNEY } from '@/lib/analytics/journeys';
-import { readFacets, readVisits } from '@/lib/api/endpoints';
+import { readFacets, readTrafficSeries, readVisits } from '@/lib/api/endpoints';
 import { engineAnswering } from '@/test/engine';
 
 afterEach(() => {
@@ -37,6 +37,34 @@ function addressOf(sent: string): string {
 function askedIn(sent: string): URLSearchParams {
   return new URLSearchParams(sent.slice(sent.indexOf('?') + 1));
 }
+
+describe('asking the engine what generated a period’s traffic', () => {
+  const NOTHING_JUDGED = {
+    from: FROM,
+    to: TO,
+    granularity: 'day',
+    completeTo: TO,
+    buckets: [],
+    groups: [],
+  };
+
+  /**
+   * How finely to cut the period is part of the question rather than left to the engine, because
+   * it is the screen that knows how many buckets will fit across the width somebody is reading on.
+   */
+  it('asks for the period cut as finely as the screen can draw it', async () => {
+    const engine = engineAnswering(200, NOTHING_JUDGED);
+
+    await readTrafficSeries(SITE, PERIOD, 'hour');
+
+    const asked = askedIn(engine.first().path);
+
+    expect(addressOf(engine.first().path)).toBe(`/api/sites/${SITE}/traffic/series`);
+    expect(asked.get('granularity')).toBe('hour');
+    expect(asked.get('from')).toBe(FROM);
+    expect(asked.get('to')).toBe(TO);
+  });
+});
 
 describe('asking the engine for judged visits', () => {
   it('asks for one slice of the period', async () => {

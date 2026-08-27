@@ -1,4 +1,4 @@
-import type { TrafficCategory, VisitReason } from '@/lib/api/schemas';
+import type { TrafficCategory, TrafficGroup, VisitReason } from '@/lib/api/schemas';
 
 /**
  * How a verdict reaches the screen.
@@ -37,6 +37,63 @@ export const CATEGORY_TONES: Readonly<Record<TrafficCategory, VerdictTone>> = {
   'insufficient-evidence': 'unclear',
   unknown: 'unclear',
 };
+
+/**
+ * The order the tones are read in.
+ *
+ * The people a website is for come first, so that in a stack they sit on the axis with a straight
+ * edge to measure against and everything else piles above them.
+ */
+export const TONE_ORDER = [
+  'people',
+  'automation',
+  'unwanted',
+  'unclear',
+] as const satisfies readonly VerdictTone[];
+
+/**
+ * The design token each tone is drawn in.
+ *
+ * The single statement of which colour a tone carries. `TONE_FILLS` says the same thing again as
+ * class names, because the styling engine cannot see a name worked out while the page is running,
+ * and a test holds the two side by side so the second copy cannot drift from this one.
+ */
+export const TONE_TOKENS: Readonly<Record<VerdictTone, string>> = {
+  people: '--positive',
+  automation: '--accent',
+  unwanted: '--danger',
+  unclear: '--foreground-subtle',
+};
+
+/** One tone and the visits a period judged into it. */
+export interface TonePortion {
+  readonly tone: VerdictTone;
+  readonly sessions: number;
+}
+
+/**
+ * How a period divides between the four tones, in reading order.
+ *
+ * The summary above the list that names every category exactly — the same fold the chart on the
+ * overview makes, over a period counted once rather than bucket by bucket. A tone the period never
+ * held is left out rather than carried as a nought, so a website nobody has scraped shows neither
+ * a slice for it nor a name.
+ */
+export function tonesIn(groups: readonly TrafficGroup[]): readonly TonePortion[] {
+  const counted = new Map<VerdictTone, number>();
+
+  for (const group of groups) {
+    const tone = CATEGORY_TONES[group.category];
+
+    counted.set(tone, (counted.get(tone) ?? 0) + group.sessions);
+  }
+
+  return TONE_ORDER.flatMap((tone) => {
+    const sessions = counted.get(tone);
+
+    return sessions === undefined ? [] : [{ tone, sessions }];
+  });
+}
 
 /**
  * The two observations whose sentence depends on a value inside them.

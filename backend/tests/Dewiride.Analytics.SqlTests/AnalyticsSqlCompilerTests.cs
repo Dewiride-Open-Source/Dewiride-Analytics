@@ -449,6 +449,26 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     [Fact]
+    public Task Traffic_Series_By_Day()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new TrafficSeriesQuery(Window(), TimeGranularity.Day));
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Traffic_Series_By_Hour()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new TrafficSeriesQuery(Window(), TimeGranularity.Hour));
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
     public Task Judged_Sessions()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), Judged(50, 100));
@@ -793,6 +813,65 @@ public sealed partial class AnalyticsSqlCompilerTests
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new TrafficBreakdownQuery(Window()));
 
         statement.Sql.Should().Contain(expected);
+    }
+
+    /// <summary>
+    /// The series reduces each visit to one verdict on exactly the terms the breakdown does, and
+    /// takes the instant it buckets on from that same row. A visit dated by one ruleset and counted
+    /// by another would drift between the two answers without either of them being wrong.
+    /// </summary>
+    [Theory]
+    [InlineData("argMax(started_at, (ruleset_major, ruleset_minor, classified_at))")]
+    [InlineData("GROUP BY session_key")]
+    public void The_Series_Counts_Each_Visit_Once(string expected)
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new TrafficSeriesQuery(Window(), TimeGranularity.Day));
+
+        statement.Sql.Should().Contain(expected);
+    }
+
+    /// <summary>
+    /// Every category the window held covers the whole of it, because the fill restarts inside each
+    /// one. Ordered the other way round the answer comes back ragged — a category's counts as long
+    /// as its own busiest run rather than as long as the bucket list — and a reader lining the two
+    /// up against each other would read every count against the wrong day.
+    /// </summary>
+    [Fact]
+    public void Every_Category_In_The_Series_Covers_The_Whole_Window()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new TrafficSeriesQuery(Window(), TimeGranularity.Hour));
+
+        statement.Sql.Should().Contain("ORDER BY category, bucket");
+        statement.Sql.Should().Contain("WITH FILL");
+        statement.Sql.Should().Contain("STEP INTERVAL 1 HOUR");
+    }
+
+    /// <summary>
+    /// How finely to cut a period is the only thing a caller chooses about this statement, and
+    /// their word for it never reaches the text: it is looked up in a closed set on the way in and
+    /// the statement is assembled from identifiers this codebase owns. What the caller does supply
+    /// — the site and both ends of the window — is bound rather than written in.
+    /// </summary>
+    [Theory]
+    [InlineData(TimeGranularity.Day, "toStartOfDay")]
+    [InlineData(TimeGranularity.Hour, "toStartOfHour")]
+    public void A_Series_Names_The_Site_And_The_Window_Rather_Than_Writing_Them_In(
+        TimeGranularity granularity,
+        string bucket)
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new TrafficSeriesQuery(Window(), granularity));
+
+        statement.Sql.Should().Contain(bucket);
+        statement.Sql.Should().NotContain(SiteId.ToString());
+        statement.Sql.Should().NotContain(From.ToUnixTimeMilliseconds().ToString(null as IFormatProvider));
+        statement.Parameters.Select(parameter => parameter.Name)
+            .Should().Equal("site_id", "from_ms", "to_ms", "time_zone");
     }
 
     /// <summary>
@@ -1928,6 +2007,7 @@ public sealed partial class AnalyticsSqlCompilerTests
     private static CompiledStatement[] EveryShapeOfStatement() =>
     [
         Compile(TimeGranularity.Hour, TimeSeriesMetric.Visitors),
+        AnalyticsSqlCompiler.Compile(Scope(), new TrafficSeriesQuery(Window(), TimeGranularity.Day)),
         AnalyticsSqlCompiler.Compile(Scope(), Judged(50, 100)),
         AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail()),
         AnalyticsSqlCompiler.Compile(Scope(), Facets()),

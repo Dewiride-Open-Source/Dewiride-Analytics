@@ -58,11 +58,79 @@ function series(metric: string, values: readonly number[]) {
 const VIEWS = [40, 55, 30, 70, 65, 90, 84];
 const VISITORS = [12, 18, 9, 21, 20, 27, 25];
 
+/** The days the figures above cover, as the engine writes them. */
+const BUCKETS = VIEWS.map(
+  (_, day) => `2026-08-${String(11 + day).padStart(2, '0')}T00:00:00+00:00`,
+);
+
+/** A week whose visits have not been judged yet, which is where a new website starts. */
+const NOTHING_JUDGED = {
+  from: FROM,
+  to: TO,
+  granularity: 'day',
+  completeTo: TO,
+  buckets: [],
+  groups: [],
+};
+
+/**
+ * The same week, judged.
+ *
+ * A category on either side of the colour that means machinery, so that a band standing for both
+ * of them can be told apart from a label that names either.
+ */
+const JUDGED = {
+  from: FROM,
+  to: TO,
+  granularity: 'day',
+  completeTo: TO,
+  buckets: BUCKETS,
+  groups: [
+    {
+      category: 'likely-human',
+      sessions: [3, 5, 2, 6, 4, 8, 7],
+      pageViews: [9, 14, 5, 18, 11, 24, 21],
+    },
+    {
+      category: 'known-ai-crawler',
+      sessions: [1, 0, 2, 1, 3, 1, 0],
+      pageViews: [1, 0, 4, 1, 3, 1, 0],
+    },
+  ],
+};
+
+/** How recently a window has to end to be the period on screen rather than the one before it. */
+const RECENTLY = 86_400_000;
+
+/**
+ * Whether a question is about the period being looked at rather than the one it is measured
+ * against.
+ *
+ * Told apart by where the window ends. The period on screen runs up to about now; the one it is
+ * compared with ended when that one began, which is at least a period ago.
+ */
+function current(path: string): boolean {
+  const asked = new URLSearchParams(path.slice(path.indexOf('?') + 1));
+  const ends = Date.parse(asked.get('to') ?? '');
+
+  return !Number.isNaN(ends) && ends > Date.now() - RECENTLY;
+}
+
 /** Answers every question the screen asks, in whichever order they arrive. */
-function engineWith(sites: unknown, overview: unknown) {
+function engineWith(
+  sites: unknown,
+  overview: unknown,
+  judged: unknown = NOTHING_JUDGED,
+  earlier: unknown = overview,
+) {
   return engineDoing(async (path) => {
     if (path.includes('/server-keys')) {
       return respondWith(200, []);
+    }
+
+    // Named before the breakdown, whose address it begins with.
+    if (path.includes('/traffic/series')) {
+      return respondWith(200, judged);
     }
 
     if (path.includes('/traffic')) {
@@ -99,12 +167,21 @@ function engineWith(sites: unknown, overview: unknown) {
       );
     }
 
-    return respondWith(200, path.includes('/overview') ? overview : sites);
+    if (path.includes('/overview')) {
+      return respondWith(200, current(path) ? overview : earlier);
+    }
+
+    return respondWith(200, sites);
   });
 }
 
 function busy() {
   return engineWith([SITE], totals(464, 132, 900));
+}
+
+/** The same website, with a week of its visits already judged. */
+function watched() {
+  return engineWith([SITE], totals(464, 132, 900), JUDGED);
 }
 
 /** What the engine was told about one part of the period, read back off the first question asked. */
@@ -193,10 +270,31 @@ describe('the dashboard', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('draws the period and publishes the same figures as a table', async () => {
-    busy();
+  /**
+   * The question this product exists to answer is the one the screen opens on, without anybody
+   * having to press for it. How much traffic there was is a press away, never the other way round.
+   */
+  it('opens on who the traffic was, and publishes those figures as a table', async () => {
+    watched();
 
     renderScreen(<Dashboard />);
+
+    expect(await screen.findByRole('img', { name: /Who and what visited/ })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('Show these figures as a table'));
+
+    expect(screen.getByRole('columnheader', { name: 'People' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Machinery' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'All visits' })).toBeInTheDocument();
+    expect(screen.getAllByRole('row')).toHaveLength(BUCKETS.length + 1);
+  });
+
+  it('draws how much was read instead, for anybody who asks for it', async () => {
+    watched();
+
+    renderScreen(<Dashboard />);
+
+    await userEvent.click(await screen.findByRole('radio', { name: 'How much' }));
 
     expect(
       await screen.findByRole('img', { name: /Page views and visitors for/ }),
@@ -204,10 +302,19 @@ describe('the dashboard', () => {
 
     await userEvent.click(screen.getByText('Show these figures as a table'));
 
-    const table = screen.getByRole('table');
-
-    expect(table).toBeInTheDocument();
+    expect(screen.getByRole('table')).toBeInTheDocument();
     expect(screen.getAllByRole('row')).toHaveLength(VIEWS.length + 1);
+  });
+
+  /** A period nothing has been judged in is a state of its own, not an empty drawing. */
+  it('says so plainly when nothing in the period has been judged yet', async () => {
+    busy();
+
+    renderScreen(<Dashboard />);
+
+    expect(
+      await screen.findByText('No visits have been judged in this period yet.'),
+    ).toBeInTheDocument();
   });
 
   /**
@@ -223,9 +330,15 @@ describe('the dashboard', () => {
   });
 
   it('says which place a day is counted in, without printing an identifier', async () => {
-    busy();
+    watched();
 
     renderScreen(<Dashboard />);
+
+    expect(
+      await screen.findByText('Visits that have finished, by day in Kolkata.'),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('radio', { name: 'How much' }));
 
     expect(
       await screen.findByText('Days run midnight to midnight in Kolkata.'),
@@ -340,5 +453,50 @@ describe('the dashboard', () => {
     renderScreen(<Dashboard />);
 
     expect(await screen.findByText("Can't reach Dewiride Analytics")).toBeInTheDocument();
+  });
+});
+
+describe('the period before', () => {
+  /**
+   * A number on its own says how much. A number beside the one before it says whether anything is
+   * happening, which is what somebody opens a dashboard to find out.
+   */
+  it('says which way every headline number moved, and against what', async () => {
+    engineWith([SITE], totals(464, 132, 900), NOTHING_JUDGED, totals(400, 120, 800));
+
+    renderScreen(<Dashboard />);
+
+    expect(await screen.findByText('16% more')).toBeInTheDocument();
+    expect(screen.getByText('10% more')).toBeInTheDocument();
+    expect(screen.getByText('5% more')).toBeInTheDocument();
+    expect(screen.getAllByText(/than the 7 days before/)).toHaveLength(3);
+  });
+
+  /**
+   * Four hundred page views after none is neither four thousand per cent nor infinitely many.
+   * A percentage taken against nothing would look like a measurement.
+   */
+  it('shows no percentage where the period before held nothing', async () => {
+    engineWith([SITE], totals(464, 132, 900), NOTHING_JUDGED, totals(0, 0, 0));
+
+    renderScreen(<Dashboard />);
+
+    expect(await screen.findByText('464')).toBeInTheDocument();
+    expect(screen.getAllByText('Up from none')).toHaveLength(3);
+    expect(screen.queryByText(/% more/)).not.toBeInTheDocument();
+  });
+
+  it('draws it behind the picture for anybody who asks, and publishes its figures too', async () => {
+    watched();
+
+    renderScreen(<Dashboard />);
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Compare with the period before' }),
+    );
+
+    expect(
+      await screen.findByRole('columnheader', { name: 'All visits before' }),
+    ).toBeInTheDocument();
   });
 });

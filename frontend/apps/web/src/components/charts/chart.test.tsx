@@ -20,8 +20,12 @@ vi.mock('echarts/core', () => ({
   color: { modifyAlpha: (colour: string) => colour },
 }));
 
-vi.mock('echarts/charts', () => ({ LineChart: 'line' }));
-vi.mock('echarts/components', () => ({ GridComponent: 'grid', TooltipComponent: 'tooltip' }));
+vi.mock('echarts/charts', () => ({ LineChart: 'line', BarChart: 'bar', PieChart: 'pie' }));
+vi.mock('echarts/components', () => ({
+  GridComponent: 'grid',
+  MarkAreaComponent: 'markArea',
+  TooltipComponent: 'tooltip',
+}));
 vi.mock('echarts/renderers', () => ({ CanvasRenderer: 'canvas' }));
 vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'light' }) }));
 
@@ -43,7 +47,15 @@ const EMPTY = () => ({ series: [] });
 
 describe('the charting surface', () => {
   it('registers only the pieces the product draws with', () => {
-    expect(echarts.registered).toStrictEqual(['line', 'grid', 'tooltip', 'canvas']);
+    expect(echarts.registered).toStrictEqual([
+      'line',
+      'bar',
+      'pie',
+      'grid',
+      'markArea',
+      'tooltip',
+      'canvas',
+    ]);
   });
 
   it('announces what it shows, since a drawing tells a screen reader nothing', () => {

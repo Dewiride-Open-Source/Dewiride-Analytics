@@ -354,6 +354,10 @@ internal static class SiteEndpoints
             .WithName("SiteTraffic")
             .WithSummary("Returns judged visits grouped by what generated them.");
 
+        routes.MapGet("/api/sites/{siteId:guid}/traffic/series", TrafficSeriesAsync)
+            .WithName("SiteTrafficSeries")
+            .WithSummary("Returns judged visits counted by what generated them, bucket by bucket.");
+
         routes.MapGet("/api/sites/{siteId:guid}/visits", VisitsAsync)
             .WithName("SiteVisits")
             .WithSummary("Returns individual judged visits and the evidence behind each verdict.");
@@ -1099,6 +1103,65 @@ internal static class SiteEndpoints
                         ReportedNames.Strengths[group.Strength],
                         group.Sessions,
                         group.PageViews)),
+                ]));
+    }
+
+    private static async Task<Results<Ok<TrafficSeriesResponse>, NotFound, ProblemHttpResult>> TrafficSeriesAsync(
+        [AsParameters] TrafficSeriesParameters parameters,
+        ITenantScopeProvider scopes,
+        ITelemetryQueries telemetry,
+        IOptions<ClassificationOptions> classification,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!Granularities.TryGetValue(parameters.Granularity ?? string.Empty, out var granularity))
+        {
+            return Unusable("Ask for buckets of either an hour or a day.");
+        }
+
+        var longest = granularity == TimeGranularity.Hour
+            ? RequestedWindow.LongestByHour
+            : RequestedWindow.Longest;
+
+        if (!RequestedWindow.TryResolve(
+                parameters.From,
+                parameters.To,
+                longest,
+                clock,
+                out var range,
+                out var refusal))
+        {
+            return Unusable(refusal);
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var series = await telemetry
+            .GetTrafficSeriesAsync(scope, new TrafficSeriesQuery(range, granularity), cancellationToken)
+            .ConfigureAwait(false);
+
+        // The same instant the visit-shaped answers treat as the end of what has finished, so the
+        // point this series stops being complete at and the point those stop counting are one
+        // decision rather than two that happen to agree.
+        var completeTo = Boundaries(classification.Value, clock).SettledBefore;
+
+        return TypedResults.Ok(
+            new TrafficSeriesResponse(
+                range.From,
+                range.To,
+                GranularityNames[granularity],
+                completeTo,
+                [.. series.Buckets],
+                [
+                    .. series.Groups.Select(group => new TrafficCategorySeries(
+                        ReportedNames.Categories[group.Category],
+                        [.. group.Sessions],
+                        [.. group.PageViews])),
                 ]));
     }
 
@@ -1866,6 +1929,19 @@ internal readonly record struct OverviewParameters(
 internal readonly record struct SeriesParameters(
     Guid SiteId,
     [FromQuery] string? Metric,
+    [FromQuery] string? Granularity,
+    [FromQuery] DateTimeOffset? From,
+    [FromQuery] DateTimeOffset? To);
+
+/// <summary>
+/// What the traffic series endpoint reads from the path and the query string.
+/// </summary>
+/// <param name="SiteId">The site to count over.</param>
+/// <param name="Granularity">Either <c>hour</c> or <c>day</c>.</param>
+/// <param name="From">Inclusive start of the period. Defaults to a week before the end.</param>
+/// <param name="To">Exclusive end of the period. Defaults to now.</param>
+internal readonly record struct TrafficSeriesParameters(
+    Guid SiteId,
     [FromQuery] string? Granularity,
     [FromQuery] DateTimeOffset? From,
     [FromQuery] DateTimeOffset? To);

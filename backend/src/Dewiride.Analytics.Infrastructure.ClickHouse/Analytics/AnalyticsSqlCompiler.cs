@@ -666,6 +666,7 @@ public static class AnalyticsSqlCompiler
         query switch
         {
             TrafficBreakdownQuery breakdown => CompileTrafficBreakdown(scope, breakdown),
+            TrafficSeriesQuery series => CompileTrafficSeries(scope, series),
             JudgedSessionsQuery judged => CompileJudgedSessions(scope, judged),
             SiteVisitFacetsQuery facets => CompileSiteVisitFacets(scope, facets),
             _ => null,
@@ -1060,6 +1061,70 @@ public static class AnalyticsSqlCompiler
             """;
 
         return new CompiledStatement(sql, WindowParameters(scope, query.Range));
+    }
+
+    /// <summary>
+    /// Counts judged visits by what generated them, bucket by bucket.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The same reduction to one verdict per visit as <see cref="CompileTrafficBreakdown"/>, cut a
+    /// second way. Every column is taken from that one ruleset's row, the bucket included, so a
+    /// visit cannot be dated by one ruleset and counted by another.
+    /// </para>
+    /// <para>
+    /// A visit falls whole into the bucket it began in, which is the column the store is
+    /// partitioned and indexed on — so a window skips whole parts rather than reading and
+    /// discarding them.
+    /// </para>
+    /// <para>
+    /// The fill restarts for each category, because <c>category</c> is ordered ahead of the filled
+    /// column and its value carries into the rows the fill invents. That is what makes every
+    /// group's counts as long as the bucket list and in the same order, and it is also why a
+    /// category the window never held is absent altogether rather than a run of zeroes.
+    /// </para>
+    /// </remarks>
+    private static CompiledStatement CompileTrafficSeries(TenantScope scope, TrafficSeriesQuery query)
+    {
+        var bucket = BucketFunctions[query.Granularity];
+        var step = StepIntervals[query.Granularity];
+
+        // The upper fill bound is derived from one millisecond before the exclusive end of the
+        // window, for the reason CompileTimeSeries gives: bounding it on the end instant itself
+        // appends an empty bucket whenever a window ends exactly on a boundary, and truncates the
+        // final partial bucket whenever it does not.
+        var sql = $$"""
+            SELECT
+                category,
+                bucket,
+                toInt64(count()) AS sessions,
+                toInt64(sum(page_count)) AS page_views
+            FROM
+            (
+                SELECT
+                    session_key,
+                    argMax(category, (ruleset_major, ruleset_minor, classified_at)) AS category,
+                    argMax(page_count, (ruleset_major, ruleset_minor, classified_at)) AS page_count,
+                    {{bucket}}(
+                        argMax(started_at, (ruleset_major, ruleset_minor, classified_at)),
+                        {time_zone:String}) AS bucket
+                FROM session_classifications
+                WHERE site_id = {site_id:UUID}
+                  AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                  AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+                GROUP BY session_key
+            )
+            GROUP BY category, bucket
+            ORDER BY category, bucket
+            WITH FILL
+                FROM {{bucket}}(fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC'), {time_zone:String})
+                TO {{bucket}}(fromUnixTimestamp64Milli({to_ms:Int64} - 1, 'UTC'), {time_zone:String}) + {{step}}
+                STEP {{step}}
+            """;
+
+        return new CompiledStatement(
+            sql,
+            [.. WindowParameters(scope, query.Range), new QueryParameter(TimeZoneParameter, scope.TimeZoneId)]);
     }
     /// <summary>
     /// Returns individual judged visits with the evidence behind each verdict.

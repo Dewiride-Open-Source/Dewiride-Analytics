@@ -3,7 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SiteDevices } from '@/components/dashboard/site-devices';
 import { type Engine, engineDoing, engineStopped, respondWith } from '@/test/engine';
+import { softened } from '@/lib/charts/ring';
+import { PALETTE, ringParts } from '@/test/drawing';
 import { renderScreen } from '@/test/harness';
+
+/**
+ * Stands in for the drawing surface, so that what the ring would be told to draw can be read as
+ * an object rather than looked for among pixels on a canvas.
+ */
+vi.mock('@/components/charts/chart', async () => ({ ...(await import('@/test/drawing')) }));
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -176,6 +184,71 @@ describe('what a website’s readers use', () => {
    * A card opened on the device split has no reason to fetch a browser list nobody has asked
    * for.
    */
+  /**
+   * Five kinds, every reader in exactly one of them, and they account for the whole the card
+   * states — which is what makes a ring the honest shape for them.
+   */
+  it('draws the kinds as parts of a single whole', async () => {
+    engineWith(DEVICES);
+
+    show();
+
+    await screen.findByText('Computers');
+
+    expect(ringParts().map((part) => part.name)).toStrictEqual([
+      'Computers',
+      'Phones',
+      'Not known',
+    ]);
+    expect(ringParts().map((part) => part.value)).toStrictEqual([24, 12, 4]);
+  });
+
+  /**
+   * Two hues in two weights and a grey, which is what lets five parts of one ring be told apart
+   * without a sixth colour being invented for the occasion.
+   */
+  it('gives every kind of device a colour of its own', async () => {
+    engineWith([
+      { kind: 'phone', visitors: 30, pageViews: 60 },
+      { kind: 'desktop', visitors: 20, pageViews: 50 },
+      { kind: 'tablet', visitors: 10, pageViews: 15 },
+      { kind: 'other', visitors: 6, pageViews: 8 },
+      { kind: 'unknown', visitors: 4, pageViews: 4 },
+    ]);
+
+    show();
+
+    await screen.findByText('Tablets');
+
+    expect(ringParts().map((part) => part.itemStyle)).toStrictEqual([
+      { color: PALETTE.series[1] },
+      { color: PALETTE.series[0] },
+      { color: softened(PALETTE.series[0]) },
+      { color: softened(PALETTE.series[1]) },
+      { color: PALETTE.subtle },
+    ]);
+  });
+
+  it('announces what the drawing shows, since a ring tells a screen reader nothing', async () => {
+    engineWith(DEVICES);
+
+    show();
+
+    expect(
+      await screen.findByRole('img', { name: 'The share of readers on each kind of device.' }),
+    ).toBeInTheDocument();
+  });
+
+  it('draws the readers who named no device in the quiet colour the list marks them with', async () => {
+    engineWith(DEVICES);
+
+    show();
+
+    await screen.findByText('Not known');
+
+    expect(ringParts().at(-1)?.itemStyle).toStrictEqual({ color: PALETTE.subtle });
+  });
+
   it('asks nothing about browsers until somebody looks at them', async () => {
     const engine = engineWith(DEVICES);
 
@@ -247,6 +320,23 @@ describe('reading the same audience by browser and by system', () => {
 
     expect(await screen.findByText('Windows')).toBeInTheDocument();
     expect(screen.queryByText('11–20 of 23')).not.toBeInTheDocument();
+  });
+
+  /**
+   * A ring says these are the parts of one thing, which is false of one screenful of a list that
+   * runs on past it.
+   */
+  it('draws no ring beside a list that is only part of a longer one', async () => {
+    engineWith(DEVICES);
+
+    const user = userEvent.setup();
+
+    show();
+
+    await user.click(await screen.findByRole('radio', { name: 'Browsers' }));
+
+    expect(await screen.findByText('Chrome')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
   it('keeps the same total across all three views', async () => {

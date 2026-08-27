@@ -341,6 +341,43 @@ public sealed record TrafficResponse(
 public sealed record TrafficGroup(string Category, string Strength, long Sessions, long PageViews);
 
 /// <summary>
+/// Judged visits over a window, counted by what generated them, bucket by bucket.
+/// </summary>
+/// <remarks>
+/// A table rather than a list of its own cells: every entry in <paramref name="Groups"/> holds one
+/// count per bucket, in the order <paramref name="Buckets"/> names them. A category the window never
+/// held is left out altogether rather than reported as a run of zeroes.
+/// </remarks>
+/// <param name="From">Inclusive start of the window.</param>
+/// <param name="To">Exclusive end of the window.</param>
+/// <param name="Granularity">How wide each bucket is: <c>hour</c> or <c>day</c>.</param>
+/// <param name="CompleteTo">
+/// The instant judging has finished up to. A visit is judged once it has been silent long enough to
+/// have ended, so buckets reaching past this hold fewer visits than they eventually will — which a
+/// reader has to be told rather than left to infer from a line that falls away at the end.
+/// </param>
+/// <param name="Buckets">Where each bucket begins, oldest first.</param>
+/// <param name="Groups">One entry per category the window held.</param>
+public sealed record TrafficSeriesResponse(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    string Granularity,
+    DateTimeOffset CompleteTo,
+    IReadOnlyList<DateTimeOffset> Buckets,
+    IReadOnlyList<TrafficCategorySeries> Groups);
+
+/// <summary>
+/// One category's counts across every bucket of a window.
+/// </summary>
+/// <param name="Category">What generated these visits.</param>
+/// <param name="Sessions">How many visits began in each bucket.</param>
+/// <param name="PageViews">How many pages those visits asked for, bucket by bucket.</param>
+public sealed record TrafficCategorySeries(
+    string Category,
+    IReadOnlyList<long> Sessions,
+    IReadOnlyList<long> PageViews);
+
+/// <summary>
 /// One slice of the individual judged visits over a window, newest first.
 /// </summary>
 /// <remarks>

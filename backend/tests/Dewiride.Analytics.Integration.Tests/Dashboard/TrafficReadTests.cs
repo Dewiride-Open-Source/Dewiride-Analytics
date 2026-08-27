@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using Dewiride.Analytics.Api.Contracts;
@@ -167,6 +168,7 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     [Theory]
     [InlineData("traffic")]
     [InlineData("visits")]
+    [InlineData("traffic/series?granularity=day")]
     [InlineData("visits/facets")]
     public async Task A_Site_Somebody_Has_No_Role_On_Is_Answered_As_Though_It_Did_Not_Exist(string screen)
     {
@@ -187,6 +189,7 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     [Theory]
     [InlineData("traffic")]
     [InlineData("visits")]
+    [InlineData("traffic/series?granularity=day")]
     [InlineData("visits/facets")]
     public async Task Nobody_Signed_In_Is_Refused(string screen)
     {
@@ -211,6 +214,9 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     [InlineData("visits?sourceKind=telepathy")]
     [InlineData("visits/facets?from=2024-01-02T00:00:00Z&to=2024-01-01T00:00:00Z")]
     [InlineData("traffic?from=2020-01-01T00:00:00Z&to=2024-01-01T00:00:00Z")]
+    [InlineData("traffic/series")]
+    [InlineData("traffic/series?granularity=fortnight")]
+    [InlineData("traffic/series?granularity=hour&from=2024-01-01T00:00:00Z&to=2024-03-01T00:00:00Z")]
     public async Task A_Question_That_Cannot_Be_Answered_As_Asked_Is_Refused(string query)
     {
         var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
@@ -221,6 +227,149 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
             var response = await browser.GetAsync($"/api/sites/{site.Id}/{query}");
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [Fact]
+    public async Task A_Member_Sees_What_Generated_Their_Traffic_Bucket_By_Bucket()
+    {
+        var site = await JudgedSiteAsync(visitors: 3);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var series = await ReadTrafficSeriesAsync(browser, site.Id, "granularity=day");
+
+            series.Granularity.Should().Be("day");
+            series.Buckets.Should().NotBeEmpty();
+            series.Groups.Should().ContainSingle();
+            series.Groups[0].Category.Should().Be("security-scanner");
+            series.Groups[0].Sessions.Sum().Should().Be(3);
+            series.Groups[0].PageViews.Sum().Should().Be(9);
+        }
+    }
+
+    /// <summary>
+    /// Every category's counts are as long as the bucket list and in its order, which is what lets
+    /// a reader index one against the other rather than join them. A ragged answer would line every
+    /// count up against the wrong day without anything failing.
+    /// </summary>
+    [Theory]
+    [InlineData("day")]
+    [InlineData("hour")]
+    public async Task Every_Category_Reports_One_Count_Per_Bucket(string granularity)
+    {
+        var site = await JudgedSiteAsync(visitors: 2);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var series = await ReadTrafficSeriesAsync(browser, site.Id, $"granularity={granularity}");
+
+            series.Groups.Should().NotBeEmpty();
+            series.Groups.Should().OnlyContain(group =>
+                group.Sessions.Count == series.Buckets.Count
+                && group.PageViews.Count == series.Buckets.Count);
+        }
+    }
+
+    /// <summary>
+    /// The two answers about one window are the same arithmetic cut two ways. A series whose
+    /// buckets did not add up to the breakdown beside it would put one figure on a screen above
+    /// another that contradicts it, with nothing to say which of them was right.
+    /// </summary>
+    [Theory]
+    [InlineData("day")]
+    [InlineData("hour")]
+    public async Task The_Series_Adds_Up_To_The_Breakdown_Of_The_Same_Window(string granularity)
+    {
+        var site = await JudgedSiteAsync(visitors: 3);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+        var clock = stack.Services.GetRequiredService<TimeProvider>();
+        var window = $"from={Written(clock.GetUtcNow().AddDays(-3))}&to={Written(clock.GetUtcNow())}";
+
+        using (browser)
+        {
+            var breakdown = await browser.GetAsync($"/api/sites/{site.Id}/traffic?{window}");
+            breakdown.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var totals = await breakdown.Content.ReadFromJsonAsync<TrafficResponse>(Cancellation.Token);
+            var series = await ReadTrafficSeriesAsync(
+                browser,
+                site.Id,
+                $"granularity={granularity}&{window}");
+
+            totals.Should().NotBeNull();
+            totals.Sessions.Should().Be(3);
+            series.Groups.Sum(group => group.Sessions.Sum()).Should().Be(totals.Sessions);
+            series.Groups.Sum(group => group.PageViews.Sum()).Should().Be(totals.PageViews);
+        }
+    }
+
+    /// <summary>
+    /// A visit belongs to the bucket it began in, so a window opening after it began does not hold
+    /// it at all — the same rule every other visit-shaped answer counts by.
+    /// </summary>
+    /// <remarks>
+    /// It is also what catches a window reporting a category it never held. Asked for a stretch
+    /// with nothing in it the store still answers with a filled run, under whichever name its own
+    /// enumeration begins with, and a screen would draw a band and a legend entry for traffic that
+    /// was never there.
+    /// </remarks>
+    [Fact]
+    public async Task A_Visit_That_Began_Before_The_Window_Is_Not_In_It()
+    {
+        var site = await JudgedSiteAsync();
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+        var clock = stack.Services.GetRequiredService<TimeProvider>();
+        var recently = $"from={Written(clock.GetUtcNow().AddHours(-2))}&to={Written(clock.GetUtcNow())}";
+
+        using (browser)
+        {
+            var series = await ReadTrafficSeriesAsync(browser, site.Id, $"granularity=hour&{recently}");
+
+            series.Groups.Should().BeEmpty();
+            series.Buckets.Should().NotBeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// Judging happens once a visit has ended, so the newest part of any window is still filling in.
+    /// The answer says where that begins rather than leaving a reader to read a line falling away at
+    /// its end as traffic that stopped.
+    /// </summary>
+    [Fact]
+    public async Task The_Series_Says_How_Far_Judging_Has_Got()
+    {
+        var site = await JudgedSiteAsync();
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var series = await ReadTrafficSeriesAsync(browser, site.Id, "granularity=day");
+
+            series.CompleteTo.Should().BeAfter(series.From).And.BeBefore(series.To);
+        }
+    }
+
+    /// <summary>
+    /// Days are cut where the website is. A site reporting in Kolkata begins its days at half past
+    /// six the evening before in UTC, and a reader anywhere sees the day the traffic was counted in
+    /// rather than the one their own clock happened to be on.
+    /// </summary>
+    [Fact]
+    public async Task Days_Are_Cut_Where_The_Website_Is()
+    {
+        var site = await JudgedSiteAsync(timeZoneId: "Asia/Kolkata");
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var series = await ReadTrafficSeriesAsync(browser, site.Id, "granularity=day");
+
+            series.Buckets.Should().NotBeEmpty();
+            series.Buckets.Should().OnlyContain(bucket =>
+                bucket.UtcDateTime.TimeOfDay == new TimeSpan(18, 30, 0));
         }
     }
 
@@ -466,10 +615,7 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
             unplaced.TotalVisits.Should().Be(0);
         }
     }
-    /// <summary>
-    /// Writes one recognisable visit and judges it, so what the screens read back has been through
-    /// the whole path rather than been placed there.
-    /// </summary>
+
     /// <summary>
     /// A site whose traffic has been judged.
     /// </summary>
@@ -478,10 +624,11 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     /// visits the site ends up with — which is what a list read a slice at a time needs more than
     /// one of.
     /// </param>
+    /// <param name="timeZoneId">The zone the site reports in, which its days are cut in.</param>
     /// <returns>The site.</returns>
-    private async Task<Site> JudgedSiteAsync(int visitors = 1)
+    private async Task<Site> JudgedSiteAsync(int visitors = 1, string timeZoneId = "Etc/UTC")
     {
-        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain(), timeZoneId: timeZoneId);
         var clock = stack.Services.GetRequiredService<TimeProvider>();
         var at = clock.GetUtcNow().AddDays(-1);
 
@@ -536,6 +683,28 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
 
         return visits;
     }
+
+    private static async Task<TrafficSeriesResponse> ReadTrafficSeriesAsync(
+        Browser browser,
+        Guid siteId,
+        string asked)
+    {
+        var response = await browser.GetAsync($"/api/sites/{siteId}/traffic/series?{asked}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var series = await response.Content.ReadFromJsonAsync<TrafficSeriesResponse>(Cancellation.Token);
+
+        series.Should().NotBeNull();
+
+        return series;
+    }
+
+    /// <summary>An instant written the way a window in an address carries it.</summary>
+    /// <param name="at">The moment.</param>
+    /// <returns>The moment, ready to be put in a query string.</returns>
+    private static string Written(DateTimeOffset at) =>
+        Uri.EscapeDataString(at.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
 
     private static async Task<VisitFacetsResponse> ReadFacetsAsync(Browser browser, Guid siteId)
     {

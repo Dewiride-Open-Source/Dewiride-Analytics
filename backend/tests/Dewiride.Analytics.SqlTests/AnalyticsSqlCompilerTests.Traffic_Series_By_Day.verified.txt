@@ -1,0 +1,33 @@
+﻿--- statement ---
+SELECT
+    category,
+    bucket,
+    toInt64(count()) AS sessions,
+    toInt64(sum(page_count)) AS page_views
+FROM
+(
+    SELECT
+        session_key,
+        argMax(category, (ruleset_major, ruleset_minor, classified_at)) AS category,
+        argMax(page_count, (ruleset_major, ruleset_minor, classified_at)) AS page_count,
+        toStartOfDay(
+            argMax(started_at, (ruleset_major, ruleset_minor, classified_at)),
+            {time_zone:String}) AS bucket
+    FROM session_classifications
+    WHERE site_id = {site_id:UUID}
+      AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+      AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    GROUP BY session_key
+)
+GROUP BY category, bucket
+ORDER BY category, bucket
+WITH FILL
+    FROM toStartOfDay(fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC'), {time_zone:String})
+    TO toStartOfDay(fromUnixTimestamp64Milli({to_ms:Int64} - 1, 'UTC'), {time_zone:String}) + INTERVAL 1 DAY
+    STEP INTERVAL 1 DAY
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777593600000
+to_ms = 1778198400000
+time_zone = 'Europe/London'

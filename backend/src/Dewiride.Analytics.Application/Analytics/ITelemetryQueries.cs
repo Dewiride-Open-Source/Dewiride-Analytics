@@ -160,6 +160,16 @@ public interface ITelemetryQueries
         TrafficBreakdownQuery query,
         CancellationToken cancellationToken);
 
+    /// <summary>Returns judged visits counted by what generated them, bucket by bucket.</summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The window to count over, and how finely to cut it.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Every bucket in the window, and one entry per category the window held.</returns>
+    Task<TrafficSeries> GetTrafficSeriesAsync(
+        TenantScope scope,
+        TrafficSeriesQuery query,
+        CancellationToken cancellationToken);
+
     /// <summary>Returns individual judged visits with the evidence behind each verdict.</summary>
     /// <param name="scope">Proof the caller may read this site.</param>
     /// <param name="query">The window, and which slice of it to return.</param>
@@ -215,6 +225,32 @@ public readonly record struct TrafficBreakdownRow(
     EvidenceStrength Strength,
     long Sessions,
     long PageViews);
+
+/// <summary>
+/// What generated a window's judged visits, bucket by bucket.
+/// </summary>
+/// <remarks>
+/// Written as a table rather than as a list of its own cells. Every group's arrays are as long as
+/// <paramref name="Buckets"/> and hold their counts in the same order, so a reader indexes rather
+/// than joins — and a category the window never held is absent altogether rather than present as a
+/// row of zeroes.
+/// </remarks>
+/// <param name="Buckets">Where each bucket in the window begins, oldest first.</param>
+/// <param name="Groups">One entry per category the window held.</param>
+public sealed record TrafficSeries(
+    ImmutableArray<DateTimeOffset> Buckets,
+    ImmutableArray<TrafficSeriesGroup> Groups);
+
+/// <summary>
+/// One category's counts across every bucket of a window.
+/// </summary>
+/// <param name="Category">What the engine concluded generated these visits.</param>
+/// <param name="Sessions">How many visits began in each bucket.</param>
+/// <param name="PageViews">How many pages those visits asked for, bucket by bucket.</param>
+public sealed record TrafficSeriesGroup(
+    TrafficCategory Category,
+    ImmutableArray<long> Sessions,
+    ImmutableArray<long> PageViews);
 
 /// <summary>
 /// One judged visit, as it is read back for display.

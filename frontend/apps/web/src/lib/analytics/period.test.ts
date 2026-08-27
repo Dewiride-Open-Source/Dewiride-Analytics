@@ -8,6 +8,8 @@ import {
   type Period,
   type PeriodPreset,
   PRESETS,
+  previousSpan,
+  previousWindow,
   problemWith,
   readPeriod,
   samePeriod,
@@ -15,6 +17,7 @@ import {
   spanInstants,
   todayIn,
   windowFor,
+  windowForSpan,
   withPeriod,
   writePeriod,
 } from '@/lib/analytics/period';
@@ -367,5 +370,125 @@ describe('the address of a screen carrying a period', () => {
    */
   it('says nothing at all about the period every screen opens on', () => {
     expect(withPeriod('/app/journeys', DEFAULT_PERIOD)).toBe('/app/journeys');
+  });
+});
+
+describe('the whole window a run of days covers', () => {
+  /**
+   * Closed at both ends whether or not the last of those days has finished, because it is the
+   * calendar shape of a period rather than the part of it that has happened. The cutting back to
+   * this moment belongs to the period being looked at, not to the days themselves.
+   */
+  it('runs from the first midnight to the one after the last day', () => {
+    const { from, to } = windowForSpan({ first: '2026-08-11', last: '2026-08-18' }, 'Asia/Kolkata');
+
+    expect(from).toBe('2026-08-10T18:30:00.000Z');
+    expect(to).toBe('2026-08-18T18:30:00.000Z');
+  });
+});
+
+describe('the days a period is measured against', () => {
+  it('sets today beside yesterday', () => {
+    expect(previousSpan(TODAY, 'Asia/Kolkata', NOW)).toStrictEqual({
+      first: '2026-08-17',
+      last: '2026-08-17',
+    });
+  });
+
+  it('sets a run of days beside the same number of days immediately before it', () => {
+    expect(previousSpan(WEEK, 'Asia/Kolkata', NOW)).toStrictEqual({
+      first: '2026-08-05',
+      last: '2026-08-11',
+    });
+  });
+
+  it('sets a stretch somebody chose beside the same number of days before it', () => {
+    const chosen: Period = { kind: 'chosen', first: '2026-08-01', last: '2026-08-14' };
+
+    expect(previousSpan(chosen, 'Asia/Kolkata', NOW)).toStrictEqual({
+      first: '2026-07-18',
+      last: '2026-07-31',
+    });
+  });
+
+  /** A period named after the calendar steps back by one of those, so the dates line up. */
+  it('sets this month beside the same run of days in the month before', () => {
+    expect(previousSpan(named('this-month'), 'Asia/Kolkata', NOW)).toStrictEqual({
+      first: '2026-07-01',
+      last: '2026-07-18',
+    });
+  });
+
+  it('sets last month beside the whole of the month before it', () => {
+    expect(previousSpan(named('last-month'), 'Asia/Kolkata', NOW)).toStrictEqual({
+      first: '2026-06-01',
+      last: '2026-06-30',
+    });
+  });
+
+  it('sets this year beside the same stretch of the year before', () => {
+    expect(previousSpan(named('this-year'), 'Asia/Kolkata', NOW)).toStrictEqual({
+      first: '2025-01-01',
+      last: '2025-08-18',
+    });
+  });
+
+  /**
+   * February has no thirty-first, and the thirty-first of February is not a date this product may
+   * quietly turn into the third of March.
+   */
+  it('pulls a date back to the last day a shorter month has', () => {
+    const lastOfMarch = new Date('2026-03-31T09:00:00Z');
+
+    expect(previousSpan(named('this-month'), 'Asia/Kolkata', lastOfMarch)).toStrictEqual({
+      first: '2026-02-01',
+      last: '2026-02-28',
+    });
+  });
+
+  it('does the same for a leap day, which the year before did not have', () => {
+    const leapDay = new Date('2028-02-29T09:00:00Z');
+
+    expect(previousSpan(named('this-year'), 'Asia/Kolkata', leapDay)).toStrictEqual({
+      first: '2027-01-01',
+      last: '2027-02-28',
+    });
+  });
+});
+
+describe('the window a period is measured against', () => {
+  it('covers the whole of the earlier period once this one has finished', () => {
+    const { from, to } = previousWindow(YESTERDAY, 'Asia/Kolkata', NOW);
+
+    expect(from).toBe('2026-08-15T18:30:00.000Z');
+    expect(to).toBe('2026-08-16T18:30:00.000Z');
+  });
+
+  /**
+   * Today at ten in the morning has had ten hours in it and yesterday had twenty-four. Measured
+   * against the whole of yesterday, every morning would report a collapse in traffic and every
+   * night a recovery.
+   */
+  it('is cut to the same length as the part of this period that has happened', () => {
+    const { from, to } = previousWindow(TODAY, 'Etc/UTC', NOW);
+
+    expect(from).toBe('2026-08-17T00:00:00.000Z');
+    expect(to).toBe('2026-08-17T10:00:00.000Z');
+  });
+
+  it('is exactly as long as the period it is measured against', () => {
+    const current = windowFor(WEEK, 'Asia/Kolkata', NOW);
+    const earlier = previousWindow(WEEK, 'Asia/Kolkata', NOW);
+
+    expect(Date.parse(earlier.to) - Date.parse(earlier.from)).toBe(
+      Date.parse(current.to) - Date.parse(current.from),
+    );
+  });
+
+  it('ends where the period being looked at begins', () => {
+    const current = windowFor(WEEK, 'Asia/Kolkata', NOW);
+    const earlier = previousWindow(WEEK, 'Asia/Kolkata', NOW);
+
+    expect(Date.parse(earlier.to)).toBeLessThanOrEqual(Date.parse(current.from));
   });
 });

@@ -51,7 +51,9 @@ import {
   softwareSchema,
   sourcesSchema,
   type Traffic,
+  type TrafficSeries,
   trafficSchema,
+  trafficSeriesSchema,
   type VisitFacets,
   type VisitJourney,
   type VisitPages,
@@ -359,6 +361,25 @@ export function readPageEngagement(
 /** Judged visits over a period, grouped by what generated them. */
 export function readTraffic(siteId: string, window: AnalyticsWindow): Promise<Traffic> {
   return readResource(`${siteAddress(siteId)}/traffic?${period(window)}`, trafficSchema);
+}
+
+/**
+ * What generated a website's traffic, counted in buckets across a period.
+ *
+ * The same visits the breakdown reports, cut a second way: the breakdown answers what a period
+ * held altogether and this answers how that changed as the period went along.
+ */
+export function readTrafficSeries(
+  siteId: string,
+  window: AnalyticsWindow,
+  granularity: Granularity,
+): Promise<TrafficSeries> {
+  const asked = new URLSearchParams({ granularity });
+
+  return readResource(
+    `${siteAddress(siteId)}/traffic/series?${asked}&${period(window)}`,
+    trafficSeriesSchema,
+  );
 }
 
 /**

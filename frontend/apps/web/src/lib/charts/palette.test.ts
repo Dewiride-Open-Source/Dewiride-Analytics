@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { TONE_ORDER } from '@/lib/analytics/verdicts';
 import { readChartPalette } from '@/lib/charts/palette';
 
 /**
@@ -70,5 +71,45 @@ describe('the colours a chart is drawn in', () => {
 
     expect(palette.series).toStrictEqual(['rgba(110, 76, 232, 1)', 'rgba(56, 168, 184, 1)']);
     expect(palette.text).toBe('rgba(41, 38, 51, 1)');
+  });
+
+  /**
+   * A band on a chart has to be the colour the pill beside it already is, or the drawing and the
+   * words under it are two different answers.
+   */
+  it('carries a colour for every meaning a verdict can be shown in', () => {
+    canvasPainting([110, 76, 232, 255]);
+
+    const palette = readChartPalette();
+
+    for (const tone of TONE_ORDER) {
+      expect(palette.tones[tone]).toBe('rgba(110, 76, 232, 1)');
+    }
+  });
+
+  it('has one to fall back on for each of them as well', () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+
+    const palette = readChartPalette();
+
+    expect(new Set(TONE_ORDER.map((tone) => palette.tones[tone])).size).toBe(TONE_ORDER.length);
+  });
+});
+
+describe('the colour of a part nothing could be established about', () => {
+  /**
+   * A device nobody could name is not a verdict about anything, so a ring of devices has its own
+   * quiet grey rather than reaching into the vocabulary of traffic for one.
+   */
+  it('is read from the document like every other colour', () => {
+    canvasPainting([136, 136, 146, 255]);
+
+    expect(readChartPalette().subtle).toBe('rgba(136, 136, 146, 1)');
+  });
+
+  it('has one to fall back on where there is no canvas', () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+
+    expect(readChartPalette().subtle).toBe('rgba(136, 136, 146, 1)');
   });
 });

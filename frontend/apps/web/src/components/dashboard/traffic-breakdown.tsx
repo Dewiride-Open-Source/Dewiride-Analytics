@@ -1,10 +1,15 @@
 'use client';
 
 import { useFormatter, useTranslations } from 'next-intl';
-import { fillFor, VerdictBadge } from '@/components/dashboard/verdict-badge';
+import { useCallback, useMemo } from 'react';
+import { Ring } from '@/components/charts/ring';
+import { SplitList, SplitRow } from '@/components/dashboard/ranked-list';
+import { TONE_FILLS, VerdictBadge } from '@/components/dashboard/verdict-badge';
 import { Card } from '@/components/ui/card';
 import { shareOf } from '@/lib/analytics/share';
+import { tonesIn } from '@/lib/analytics/verdicts';
 import type { TrafficGroup } from '@/lib/api/schemas';
+import type { ChartPalette } from '@/lib/charts/palette';
 
 interface TrafficBreakdownProps {
   /** The groups, busiest first, as the engine returned them. */
@@ -16,15 +21,29 @@ interface TrafficBreakdownProps {
 /**
  * How a period divides up between the people a website is for and everything else.
  *
- * The bar is a summary and the list beneath it is the answer. A bar drawn on its own tells a
- * screen reader nothing, and two categories that share a colour are told apart only by the words
- * beside them — so the words are what carry the figures, and the bar is hidden from anyone
- * reading rather than looking.
+ * The ring and the list are deliberately not the same cut. The ring divides the period four ways —
+ * the people it was for, machinery, what nobody asked for, and what could not be said — because
+ * that is what somebody glances at this card to settle. The list names every category exactly, so
+ * a crawler that says it is an AI one is never shown as one that has been confirmed, and two
+ * categories that share a colour are told apart by the words beside them.
  */
 export function TrafficBreakdown({ groups, sessions }: TrafficBreakdownProps) {
   const t = useTranslations('dashboard.traffic');
   const strengths = useTranslations('verdicts.strength');
+  const tones = useTranslations('verdicts.tone');
   const format = useFormatter();
+
+  const portions = useMemo(() => tonesIn(groups), [groups]);
+
+  const slices = useCallback(
+    (palette: ChartPalette) =>
+      portions.map((portion) => ({
+        name: tones(portion.tone),
+        value: portion.sessions,
+        colour: palette.tones[portion.tone],
+      })),
+    [portions, tones],
+  );
 
   return (
     <Card className="flex flex-col gap-4 p-5 sm:p-6">
@@ -35,50 +54,61 @@ export function TrafficBreakdown({ groups, sessions }: TrafficBreakdownProps) {
         </p>
       </header>
 
-      <div
-        aria-hidden
-        className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full bg-surface-muted"
+      <SplitList
+        ring={
+          <>
+            <Ring slices={slices} label={t('ring')} />
+
+            {/*
+              What the four arcs stand for, and how much of the period each came to. The list
+              beside it is the same period cut finer, so this is the only place the four are
+              named — without it a colour on the ring would stand for nothing a reader could put
+              into words.
+            */}
+            <ul className="flex w-40 flex-col gap-1.5">
+              {portions.map((portion) => (
+                <li
+                  key={portion.tone}
+                  className="flex items-center gap-1.5 text-xs text-foreground-muted"
+                >
+                  <span
+                    aria-hidden
+                    className={`size-2 shrink-0 rounded-full ${TONE_FILLS[portion.tone]}`}
+                  />
+                  {tones(portion.tone)}
+                  <span className="ml-auto font-medium text-foreground tabular-nums">
+                    {format.number(shareOf(portion.sessions, sessions), {
+                      style: 'percent',
+                      maximumFractionDigits: 0,
+                    })}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        }
       >
         {groups.map((group) => (
-          <span
+          <SplitRow
             key={identify(group)}
-            className={fillFor(group.category)}
-            style={{ width: percent(shareOf(group.sessions, sessions)) }}
-          />
-        ))}
-      </div>
-
-      {/*
-        A row is stacked on a phone and one line from a tablet up. Left to wrap on its own, the
-        share drops onto a line of its own against the left edge, which reads as a mistake rather
-        than as the same figure every row above lines up on.
-      */}
-      <ul className="flex flex-col">
-        {groups.map((group) => (
-          <li
-            key={identify(group)}
-            className="flex flex-col gap-1 border-t border-border py-2.5 first:border-t-0 first:pt-0 sm:flex-row sm:items-center sm:gap-3"
-          >
-            <span className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:flex-1">
-              <VerdictBadge category={group.category} />
-              <span className="text-xs text-foreground-muted">{strengths(group.strength)}</span>
-            </span>
-            <span className="flex items-center justify-between gap-3 sm:justify-end">
-              <span className="text-sm text-foreground-muted tabular-nums">
+            name={
+              <>
+                <VerdictBadge category={group.category} />
+                <span className="text-xs text-foreground-muted">{strengths(group.strength)}</span>
+              </>
+            }
+            detail={
+              <>
                 {t('sessions', { count: group.sessions })}
                 <span aria-hidden> · </span>
                 {t('pages', { count: group.pageViews })}
-              </span>
-              <span className="w-11 text-right text-sm font-medium text-foreground tabular-nums">
-                {format.number(shareOf(group.sessions, sessions), {
-                  style: 'percent',
-                  maximumFractionDigits: 0,
-                })}
-              </span>
-            </span>
-          </li>
+              </>
+            }
+            part={group.sessions}
+            whole={sessions}
+          />
         ))}
-      </ul>
+      </SplitList>
 
       <p className="text-xs text-foreground-subtle">{t('pending')}</p>
     </Card>
@@ -94,9 +124,4 @@ export function TrafficBreakdown({ groups, sessions }: TrafficBreakdownProps) {
  */
 function identify(group: TrafficGroup): string {
   return `${group.category}/${group.strength}`;
-}
-
-/** A share as a width, kept off the percent scale's edges so a sliver is still visible. */
-function percent(share: number): string {
-  return `${Math.max(share * 100, 1.5)}%`;
 }

@@ -122,6 +122,32 @@ const SPANS: Readonly<Record<PeriodPreset, (today: CivilDate) => CivilSpan>> = {
   'this-year': (today) => ({ first: { year: today.year, month: 1, day: 1 }, last: today }),
 };
 
+/** The run of days each named period is compared with. */
+const EARLIER: Readonly<Record<PeriodPreset, (span: CivilSpan) => CivilSpan>> = {
+  today: byLength,
+  yesterday: byLength,
+  'last-7-days': byLength,
+  'last-30-days': byLength,
+  'last-90-days': byLength,
+  'this-month': (span) => {
+    const first = firstOfMonthBefore(span.first);
+
+    return { first, last: { ...first, day: Math.min(span.last.day, daysInMonth(first)) } };
+  },
+  'last-month': (span) => ({
+    first: firstOfMonthBefore(span.first),
+    last: shiftDays(span.first, -1),
+  }),
+  'this-year': (span) => {
+    const last = { ...span.last, year: span.last.year - 1 };
+
+    return {
+      first: { year: span.first.year - 1, month: 1, day: 1 },
+      last: { ...last, day: Math.min(last.day, daysInMonth(last)) },
+    };
+  },
+};
+
 /**
  * The days a period covers, in the site's own calendar.
  *
@@ -164,15 +190,81 @@ export function spanFor(period: Period, timeZone: string, now: Date): DaySpan {
  * @returns The window to ask about.
  */
 export function windowFor(period: Period, timeZone: string, now: Date): AnalyticsWindow {
-  const span = spanFor(period, timeZone, now);
-  const from = startOfDayIn(timeZone, readDay(span.first));
-  const closed = startOfDayIn(timeZone, shiftDays(readDay(span.last), 1));
+  const closed = windowForSpan(spanFor(period, timeZone, now), timeZone);
   const running = Math.floor(now.getTime() / HOUR) * HOUR + HOUR;
 
   return {
-    from: from.toISOString(),
-    to: new Date(Math.min(closed.getTime(), running)).toISOString(),
+    from: closed.from,
+    to: new Date(Math.min(Date.parse(closed.to), running)).toISOString(),
   };
+}
+
+/**
+ * The whole window a run of days covers, from its first midnight to the one after its last day.
+ *
+ * Closed at both ends, whether or not the last of those days has finished. It is the calendar
+ * shape of a period rather than the part of it that has happened, which is what lets a period
+ * still running be measured against the same stretch of an earlier one.
+ *
+ * @param span The days in question.
+ * @param timeZone The site's reporting zone.
+ */
+export function windowForSpan(span: DaySpan, timeZone: string): AnalyticsWindow {
+  return {
+    from: startOfDayIn(timeZone, readDay(span.first)).toISOString(),
+    to: startOfDayIn(timeZone, shiftDays(readDay(span.last), 1)).toISOString(),
+  };
+}
+
+/**
+ * The days a period is measured against: the stretch immediately before it.
+ *
+ * One rule, applied by what a period is. A period named after a calendar — a month, a year —
+ * steps back by one of those, so this month is set beside last month and the days line up by
+ * their dates. Everything else steps back by its own length, so a run of thirty days is set
+ * beside the thirty before it.
+ *
+ * Where a date has no equivalent in the earlier month it is pulled back to the last day that
+ * month has: the thirty-first of March is compared with the twenty-eighth of February rather than
+ * with a day that does not exist.
+ *
+ * @param period What is being looked at.
+ * @param timeZone The site's reporting zone.
+ * @param now The moment to measure from.
+ */
+export function previousSpan(period: Period, timeZone: string, now: Date): DaySpan {
+  const span = spanFor(period, timeZone, now);
+  const civil = { first: readDay(span.first), last: readDay(span.last) };
+  const earlier = period.kind === 'preset' ? EARLIER[period.preset](civil) : byLength(civil);
+
+  return { first: writeDay(earlier.first), last: writeDay(earlier.last) };
+}
+
+/**
+ * The window a period is measured against.
+ *
+ * A period still running is compared with the same part of the earlier one rather than with the
+ * whole of it. Today at ten in the morning has had ten hours in it and yesterday had twenty-four,
+ * so measuring one against the other would report a collapse in traffic every morning and a
+ * recovery every night.
+ *
+ * The same expression settles both cases. A period that has finished has run for its whole
+ * calendar length, so the earlier period's own end is the nearer of the two and the comparison is
+ * date-for-date; one still running has not, so the earlier window is cut to the part that matches.
+ * A day the clocks changed on cannot skew a finished comparison, because the calendar end is what
+ * wins there.
+ *
+ * @param period What is being looked at.
+ * @param timeZone The site's reporting zone.
+ * @param now The moment to measure from.
+ */
+export function previousWindow(period: Period, timeZone: string, now: Date): AnalyticsWindow {
+  const current = windowFor(period, timeZone, now);
+  const previous = windowForSpan(previousSpan(period, timeZone, now), timeZone);
+  const elapsed = Date.parse(current.to) - Date.parse(current.from);
+  const to = Math.min(Date.parse(previous.to), Date.parse(previous.from) + elapsed);
+
+  return { from: previous.from, to: new Date(to).toISOString() };
 }
 
 /**
@@ -182,6 +274,18 @@ export function windowFor(period: Period, timeZone: string, now: Date): Analytic
  */
 export function daysIn(span: DaySpan): number {
   return daysBetween(readDay(span.first), readDay(span.last));
+}
+
+/**
+ * Whether a period runs across more than one calendar year.
+ *
+ * A day written as `3 Jan` reads unambiguously within a year and ambiguously across one, and a
+ * period may be a year and a day long. Where it crosses, the year is written beside the day.
+ *
+ * @param span The days in question.
+ */
+export function crossesYears(span: DaySpan): boolean {
+  return span.first.slice(0, 4) !== span.last.slice(0, 4);
 }
 
 /**
@@ -414,6 +518,23 @@ function shiftDays(day: CivilDate, days: number): CivilDate {
 /** The first of the month a day falls in. */
 function firstOfMonth(day: CivilDate): CivilDate {
   return { year: day.year, month: day.month, day: 1 };
+}
+
+/** The first of the month before the one a day falls in. */
+function firstOfMonthBefore(day: CivilDate): CivilDate {
+  return firstOfMonth(shiftDays(firstOfMonth(day), -1));
+}
+
+/** How many days the month a day falls in has. */
+function daysInMonth(day: CivilDate): number {
+  return new Date(Date.UTC(day.year, day.month, 0)).getUTCDate();
+}
+
+/** The run of days of the same length immediately before a given one. */
+function byLength(span: CivilSpan): CivilSpan {
+  const length = daysBetween(span.first, span.last);
+
+  return { first: shiftDays(span.first, -length), last: shiftDays(span.last, -length) };
 }
 
 /**

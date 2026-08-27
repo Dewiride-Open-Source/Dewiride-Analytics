@@ -20,10 +20,22 @@ import { TrafficChart, type TrafficPoint } from '@/components/dashboard/traffic-
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
-import { daysIn, granularityFor, spanFor, windowFor } from '@/lib/analytics/period';
+import { changeBetween } from '@/lib/analytics/change';
+import {
+  crossesYears,
+  daysIn,
+  granularityFor,
+  previousSpan,
+  previousWindow,
+  spanFor,
+  spanInstants,
+  windowFor,
+} from '@/lib/analytics/period';
+import { useChartView } from '@/lib/analytics/use-chart-view';
+import { useComparison } from '@/lib/analytics/use-comparison';
 import { usePeriod } from '@/lib/analytics/use-period';
 import type { Site } from '@/lib/api/schemas';
-import { useOverview, useSeries } from '@/lib/queries/sites';
+import { useOverview, useSeries, useTrafficSeries } from '@/lib/queries/sites';
 import { readableZone } from '@/lib/time-zones';
 
 interface SiteOverviewProps {
@@ -39,6 +51,8 @@ export function SiteOverview({ site }: SiteOverviewProps) {
   const settings = useTranslations('siteSettings');
   const format = useFormatter();
   const { period, choose } = usePeriod();
+  const { view, show } = useChartView();
+  const { against, compare } = useComparison();
   const [showingCode, setShowingCode] = useState(false);
   const [showingKeys, setShowingKeys] = useState(false);
   const [showingSettings, setShowingSettings] = useState(false);
@@ -55,16 +69,75 @@ export function SiteOverview({ site }: SiteOverviewProps) {
     [period, site.timeZoneId],
   );
 
+  // The stretch immediately before this one, cut to the same length as the part of this one that
+  // has actually happened. Every headline number is read against it.
+  const earlierWindow = useMemo(
+    () => previousWindow(period, site.timeZoneId, new Date()),
+    [period, site.timeZoneId],
+  );
+
   const granularity = granularityFor(span);
   const overview = useOverview(site.id, window);
-  const views = useSeries(site.id, 'pageviews', window, granularity);
-  const visitors = useSeries(site.id, 'visitors', window, granularity);
+  const earlierOverview = useOverview(site.id, earlierWindow);
+
+  // Only whichever view is being read is asked for. The two answer different questions of
+  // different stores, and a screen opened on one has no reason to pay for the other.
+  const drawn = view === 'activity';
+  const views = useSeries(site.id, 'pageviews', window, granularity, drawn);
+  const visitors = useSeries(site.id, 'visitors', window, granularity, drawn);
+  const who = useTrafficSeries(site.id, window, granularity, !drawn);
+
+  // The earlier period is cut into the same buckets as this one, so that the two can be read off
+  // the same place on the axis. Asked for only once somebody puts it behind the drawing.
+  const earlierViews = useSeries(
+    site.id,
+    'pageviews',
+    earlierWindow,
+    granularity,
+    drawn && against,
+  );
+  const earlierVisitors = useSeries(
+    site.id,
+    'visitors',
+    earlierWindow,
+    granularity,
+    drawn && against,
+  );
+  const earlierWho = useTrafficSeries(site.id, earlierWindow, granularity, !drawn && against);
 
   const points = useMemo(
     () => align(views.data?.points, visitors.data?.points),
     [views.data, visitors.data],
   );
+
+  const earlierPoints = useMemo(
+    () => align(earlierViews.data?.points, earlierVisitors.data?.points),
+    [earlierViews.data, earlierVisitors.data],
+  );
+
+  // Written out once, in the site's own days, so the drawing can say which days its dashed lines
+  // actually cover rather than leaving somebody to work it out from the period they chose.
+  const earlierDays = useMemo(() => {
+    const covered = spanInstants(
+      previousSpan(period, site.timeZoneId, new Date()),
+      site.timeZoneId,
+    );
+
+    return format.dateTimeRange(covered.first, covered.last, {
+      timeZone: site.timeZoneId,
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  }, [period, site.timeZoneId, format]);
+
+  const problem = (drawn ? (views.error ?? visitors.error) : who.error) ?? null;
   const totals = overview.data;
+  const before = earlierOverview.data;
+  const comparedWith =
+    period.kind === 'preset'
+      ? metrics(`against.${period.preset}`)
+      : metrics('against.chosen', { days: daysIn(span) });
   const silent = totals !== undefined && totals.pageViews === 0 && totals.visitors === 0;
   const listing = `${site.id}:${window.from}:${window.to}`;
 
@@ -125,15 +198,21 @@ export function SiteOverview({ site }: SiteOverviewProps) {
             <MetricCard
               label={metrics('pageViews.label')}
               value={format.number(totals.pageViews)}
+              change={before && changeBetween(totals.pageViews, before.pageViews)}
+              comparedWith={comparedWith}
             />
             <MetricCard
               label={metrics('visitors.label')}
               value={format.number(totals.visitors)}
+              change={before && changeBetween(totals.visitors, before.visitors)}
+              comparedWith={comparedWith}
               note={metrics('visitors.note')}
             />
             <MetricCard
               label={metrics('pagesPerVisitor.label')}
               value={perVisitor(totals.pageViews, totals.visitors, format)}
+              change={before && changeBetween(pagesEach(totals), pagesEach(before))}
+              comparedWith={comparedWith}
             />
           </>
         )}
@@ -148,18 +227,26 @@ export function SiteOverview({ site }: SiteOverviewProps) {
         />
       ) : (
         <>
-          {points.length > 0 ? (
-            <TrafficChart
-              points={points}
-              siteName={site.displayName}
-              timeZoneId={site.timeZoneId}
-              zone={readableZone(site.timeZoneId)}
-              granularity={granularity}
-              manyDays={daysIn(span) > 1}
-            />
-          ) : (
-            <div className="h-72 animate-pulse rounded-lg border border-border bg-surface-muted" />
-          )}
+          <TrafficChart
+            view={view}
+            onView={show}
+            activity={views.data && visitors.data ? points : undefined}
+            who={who.data}
+            problem={problem}
+            comparison={{
+              on: against,
+              onChange: compare,
+              activity: earlierViews.data && earlierVisitors.data ? earlierPoints : undefined,
+              who: earlierWho.data,
+              days: earlierDays,
+            }}
+            siteName={site.displayName}
+            timeZoneId={site.timeZoneId}
+            zone={readableZone(site.timeZoneId)}
+            granularity={granularity}
+            manyDays={daysIn(span) > 1}
+            manyYears={crossesYears(span)}
+          />
 
           {/*
             Both lists are given a key that changes with the website and the period, so choosing
@@ -259,6 +346,17 @@ function FirstVisit({ title, body, action, onAction }: FirstVisitProps) {
       </Button>
     </Card>
   );
+}
+
+/**
+ * Pages read per visitor as a bare figure, which is nought over a period nobody came in.
+ *
+ * A period with no visitors has no such figure, and the card shows a mark rather than a number
+ * for it. Set beside another period it counts as none, which is what makes the first pages read
+ * after a quiet week a rise from nothing rather than a share of nothing.
+ */
+function pagesEach(totals: { readonly pageViews: number; readonly visitors: number }): number {
+  return totals.visitors > 0 ? totals.pageViews / totals.visitors : 0;
 }
 
 /** Pages read per visitor, on an average day, or nothing when nobody came. */

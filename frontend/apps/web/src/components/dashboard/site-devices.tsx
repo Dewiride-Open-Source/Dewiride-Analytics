@@ -1,20 +1,24 @@
 'use client';
 
 import { MonitorSmartphone } from 'lucide-react';
-import { useFormatter, useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useTranslations } from 'next-intl';
+import { useCallback, useState } from 'react';
+import { Ring } from '@/components/charts/ring';
 import {
   ListEmpty,
   ListSwitch,
   ListWaiting,
   RankedNav,
   RankedRow,
+  SplitList,
+  SplitRow,
 } from '@/components/dashboard/ranked-list';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
-import { shareOf } from '@/lib/analytics/share';
 import type { DeviceKind, SiteDevice, SiteSoftware, SoftwareGrouping } from '@/lib/api/schemas';
+import type { ChartPalette } from '@/lib/charts/palette';
+import { type SlicePaint, softened } from '@/lib/charts/ring';
 import { useDevices, useSoftware } from '@/lib/queries/sites';
 
 interface SiteDevicesProps {
@@ -29,19 +33,19 @@ const PER_PAGE = 10;
 type DeviceView = 'device' | SoftwareGrouping;
 
 /**
- * The fill each kind of device is drawn in.
+ * The colour each kind of device is drawn in.
  *
  * Two hues in two weights, and a grey for the visits nothing could be established about. They
- * differ in lightness as well as in colour, so the bar still separates for a reader who cannot
+ * differ in lightness as well as in colour, so the ring still divides for a reader who cannot
  * separate the hues — and the colour is never the answer in any case: every kind is named in the
- * list beneath, and the bar is hidden from anyone reading rather than looking.
+ * list beside the ring, behind a dot of its own.
  */
-const DEVICE_FILLS: Readonly<Record<DeviceKind, string>> = {
-  desktop: 'bg-chart-1',
-  phone: 'bg-chart-2',
-  tablet: 'bg-chart-1/50',
-  other: 'bg-chart-2/50',
-  unknown: 'bg-foreground-subtle',
+const DEVICE_PAINTS: Readonly<Record<DeviceKind, SlicePaint>> = {
+  desktop: { fill: 'bg-chart-1', colour: (palette) => palette.series[0] },
+  phone: { fill: 'bg-chart-2', colour: (palette) => palette.series[1] },
+  tablet: { fill: 'bg-chart-1/50', colour: (palette) => softened(palette.series[0]) },
+  other: { fill: 'bg-chart-2/50', colour: (palette) => softened(palette.series[1]) },
+  unknown: { fill: 'bg-foreground-subtle', colour: (palette) => palette.subtle },
 };
 
 /**
@@ -128,62 +132,47 @@ interface DeviceSplitProps {
 }
 
 /**
- * How a period's readers divide between kinds of device.
+ * How a period’s readers divide between kinds of device.
  *
- * A bar and a list rather than a ranked list on its own, because there are only ever a handful of
- * kinds and the answer people come for is the proportion between them. The bar is the summary and
- * the list is the answer: the words carry the figures, and the bar is hidden from a screen reader
- * because it would tell them nothing the list does not.
+ * A ring and a list rather than a ranked list on its own: there are only ever a handful of kinds,
+ * every reader the period held falls into exactly one of them, and the answer people come for is
+ * the proportion between them. The ring is the summary and the list is the answer — the words
+ * carry the figures, and the ring is announced as the one sentence that describes it.
  */
 function DeviceSplit({ devices, visitors }: DeviceSplitProps) {
   const t = useTranslations('dashboard.devices');
   const kinds = useTranslations('dashboard.devices.kind');
-  const format = useFormatter();
+
+  const slices = useCallback(
+    (palette: ChartPalette) =>
+      devices.map((device) => ({
+        name: kinds(device.kind),
+        value: device.visitors,
+        colour: DEVICE_PAINTS[device.kind].colour(palette),
+      })),
+    [devices, kinds],
+  );
 
   return (
     <>
-      <div
-        aria-hidden
-        className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full bg-surface-muted"
-      >
+      <SplitList ring={<Ring slices={slices} label={t('ring')} />}>
         {devices.map((device) => (
-          <span
+          <SplitRow
             key={device.kind}
-            className={DEVICE_FILLS[device.kind]}
-            style={{ width: sliver(device.visitors, visitors) }}
-          />
-        ))}
-      </div>
-
-      <ul className="flex flex-col">
-        {devices.map((device) => (
-          <li
-            key={device.kind}
-            className="flex flex-col gap-1 border-t border-border py-2.5 first:border-t-0 first:pt-0 sm:flex-row sm:items-center sm:gap-3"
-          >
-            <span className="flex items-center gap-2 sm:flex-1">
-              <span
-                aria-hidden
-                className={`size-2.5 shrink-0 rounded-full ${DEVICE_FILLS[device.kind]}`}
-              />
-              <span className="text-sm text-foreground">{kinds(device.kind)}</span>
-            </span>
-            <span className="flex items-center justify-between gap-3 sm:justify-end">
-              <span className="text-sm text-foreground-muted tabular-nums">
+            fill={DEVICE_PAINTS[device.kind].fill}
+            name={<span className="text-sm text-foreground">{kinds(device.kind)}</span>}
+            detail={
+              <>
                 {t('visitors', { count: device.visitors })}
                 <span aria-hidden> · </span>
                 {t('views', { count: device.pageViews })}
-              </span>
-              <span className="w-12 shrink-0 text-right text-sm font-medium text-foreground tabular-nums">
-                {format.number(shareOf(device.visitors, visitors), {
-                  style: 'percent',
-                  maximumFractionDigits: 0,
-                })}
-              </span>
-            </span>
-          </li>
+              </>
+            }
+            part={device.visitors}
+            whole={visitors}
+          />
         ))}
-      </ul>
+      </SplitList>
 
       {/*
         Shown only when it is the answer rather than a footnote to it. A website whose visits
@@ -298,9 +287,4 @@ function mostlyUnknown(devices: readonly SiteDevice[], visitors: number): boolea
   const nameless = devices.find((device) => device.kind === 'unknown');
 
   return nameless !== undefined && nameless.visitors * 2 > visitors;
-}
-
-/** A kind's share of the bar, kept off the scale's edge so a sliver is still visible. */
-function sliver(part: number, whole: number): string {
-  return `${Math.max(shareOf(part, whole) * 100, 1.5)}%`;
 }

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { PRESETS } from '@/lib/analytics/period';
 import {
   captureSurfaceSchema,
   deviceKindSchema,
@@ -17,6 +18,10 @@ import messages from '../../messages/en.json';
  * one is the key of a sentence written here. That makes the two halves a single contract kept in
  * two languages, and the only way a missing sentence otherwise announces itself is as its own key
  * appearing on a customer's screen.
+ *
+ * The dashboard's own closed sets are guarded the same way, for the same reason. The periods it
+ * offers are a fixed list, and each of them needs both a name and a way of saying what it is
+ * measured against.
  *
  * The engine's own source is read rather than a copy of it, because a copy is the thing that goes
  * stale. This is the one place in the dashboard that looks at the backend, and it looks at it as
@@ -135,5 +140,19 @@ describe('the engine vocabulary', () => {
     expect([...sentencesUnder('verdicts.strength')].sort()).toEqual([...strengths].sort());
     expect([...sentencesUnder('verdicts.surface')].sort()).toEqual([...surfaces].sort());
     expect([...sentencesUnder('dashboard.devices.kind')].sort()).toEqual([...devices].sort());
+  });
+});
+
+describe('the periods this dashboard offers', () => {
+  it.each(PRESETS)('has a name for %s', (preset) => {
+    expect(isWritten(wordsAt(`dashboard.period.presets.${preset}`))).toBe(true);
+  });
+
+  it.each(PRESETS)('says in words what %s is measured against', (preset) => {
+    expect(isWritten(wordsAt(`dashboard.metrics.against.${preset}`))).toBe(true);
+  });
+
+  it('names no period it cannot offer', () => {
+    expect([...sentencesUnder('dashboard.period.presets')].sort()).toEqual([...PRESETS].sort());
   });
 });

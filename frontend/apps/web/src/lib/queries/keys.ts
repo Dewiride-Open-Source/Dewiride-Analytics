@@ -110,6 +110,21 @@ export function trafficKey(siteId: string, window: AnalyticsWindow) {
 }
 
 /**
+ * What generated a period's traffic, at one size of bucket.
+ *
+ * The bucket is part of the name for the same reason it is on the other series: one window
+ * answered an hour at a time and a day at a time are two different answers, and two answers filed
+ * under one name would draw one shape with the other's numbers.
+ */
+export function trafficSeriesKey(
+  siteId: string,
+  window: AnalyticsWindow,
+  granularity: Granularity,
+) {
+  return ['sites', siteId, 'traffic', 'series', window.from, window.to, granularity] as const;
+}
+
+/**
  * One slice of a website's judged visits.
  *
  * What the reader narrowed to is part of the name, because it is part of the question: two slices

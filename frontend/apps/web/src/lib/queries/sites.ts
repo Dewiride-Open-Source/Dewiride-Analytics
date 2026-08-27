@@ -25,6 +25,7 @@ import {
   readSoftware,
   readSources,
   readTraffic,
+  readTrafficSeries,
   readVisitJourney,
   readVisitPages,
   readVisits,
@@ -54,6 +55,7 @@ import {
   softwareKey,
   sourcesKey,
   trafficKey,
+  trafficSeriesKey,
   visitJourneyKey,
   visitPagesKey,
   visitsKey,
@@ -95,16 +97,25 @@ export function useOverview(siteId: string, window: AnalyticsWindow) {
   });
 }
 
-/** One measure for one website, counted in buckets of the given size across a period. */
+/**
+ * One measure for one website, counted in buckets of the given size across a period.
+ *
+ * Asked only while it is being drawn. The picture on the overview answers two questions and shows
+ * one at a time, and a screen that opens on the other has no reason to read this.
+ *
+ * @param enabled Whether to ask at all.
+ */
 export function useSeries(
   siteId: string,
   metric: SeriesMetric,
   window: AnalyticsWindow,
   granularity: Granularity,
+  enabled = true,
 ) {
   return useQuery({
     queryKey: seriesKey(siteId, metric, window, granularity),
     queryFn: () => readSeries(siteId, metric, window, granularity),
+    enabled,
     retry: false,
     staleTime: FRESH_FOR,
   });
@@ -280,6 +291,29 @@ export function useTraffic(siteId: string, window: AnalyticsWindow) {
   return useQuery({
     queryKey: trafficKey(siteId, window),
     queryFn: () => readTraffic(siteId, window),
+    retry: false,
+    staleTime: JUDGED_FRESH_FOR,
+  });
+}
+
+/**
+ * What generated a period's traffic, bucket by bucket.
+ *
+ * Held current for as long as the breakdown it agrees with, and asked only while it is being
+ * drawn. Both count visits that have finished, so both move at the pace visits end.
+ *
+ * @param enabled Whether to ask at all.
+ */
+export function useTrafficSeries(
+  siteId: string,
+  window: AnalyticsWindow,
+  granularity: Granularity,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: trafficSeriesKey(siteId, window, granularity),
+    queryFn: () => readTrafficSeries(siteId, window, granularity),
+    enabled,
     retry: false,
     staleTime: JUDGED_FRESH_FOR,
   });

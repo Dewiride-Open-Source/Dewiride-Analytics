@@ -1,7 +1,7 @@
 'use client';
 
-import { LineChart } from 'echarts/charts';
-import { GridComponent, TooltipComponent } from 'echarts/components';
+import { BarChart, LineChart, PieChart } from 'echarts/charts';
+import { GridComponent, MarkAreaComponent, TooltipComponent } from 'echarts/components';
 import { type EChartsCoreOption, type EChartsType, init, use as register } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { useTheme } from 'next-themes';
@@ -14,7 +14,15 @@ import { cn } from '@/lib/styling';
  * full bundle is several times the size of everything else the dashboard ships. A chart type
  * added later registers itself here alongside these.
  */
-register([LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
+register([
+  LineChart,
+  BarChart,
+  PieChart,
+  GridComponent,
+  MarkAreaComponent,
+  TooltipComponent,
+  CanvasRenderer,
+]);
 
 interface ChartProps {
   /**

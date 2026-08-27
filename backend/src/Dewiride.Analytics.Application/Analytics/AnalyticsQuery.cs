@@ -684,6 +684,27 @@ public sealed record SiteVisitJourneyQuery : AnalyticsQuery
 public sealed record TrafficBreakdownQuery(TimeRange Range) : AnalyticsQuery(Range);
 
 /// <summary>
+/// Judged visits counted by what generated them, bucket by bucket across a window.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The same population as <see cref="TrafficBreakdownQuery"/>, cut along a second axis, so the two
+/// agree by construction: summing every bucket of every category gives the breakdown's own totals
+/// for the same window.
+/// </para>
+/// <para>
+/// A visit is counted whole, in the bucket it began in, however long it went on for. Spreading one
+/// across the buckets it touched would need the activity behind it rebuilt, and would report a
+/// visit that ran from a quarter to nine until half past as two visits — which is not a thing that
+/// happened.
+/// </para>
+/// </remarks>
+/// <param name="Range">The window to count over, by when each visit began.</param>
+/// <param name="Granularity">Bucket size.</param>
+public sealed record TrafficSeriesQuery(TimeRange Range, TimeGranularity Granularity)
+    : AnalyticsQuery(Range);
+
+/// <summary>
 /// Individual visits with the evidence behind each verdict, newest first.
 /// </summary>
 /// <remarks>

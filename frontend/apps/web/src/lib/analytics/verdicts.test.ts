@@ -1,6 +1,38 @@
 import { describe, expect, it } from 'vitest';
-import { byWeight, CATEGORY_TONES, reasonKey, reasonValues } from '@/lib/analytics/verdicts';
-import type { SignalDirection, VisitReason } from '@/lib/api/schemas';
+import { TONE_FILLS } from '@/components/dashboard/verdict-badge';
+import {
+  byWeight,
+  CATEGORY_TONES,
+  reasonKey,
+  reasonValues,
+  TONE_ORDER,
+  TONE_TOKENS,
+  tonesIn,
+} from '@/lib/analytics/verdicts';
+import type {
+  EvidenceStrength,
+  SignalDirection,
+  TrafficCategory,
+  VisitReason,
+} from '@/lib/api/schemas';
+
+describe('the colour a verdict is shown in', () => {
+  /**
+   * Which token a tone is stated once, and again as a class name because the styling engine
+   * cannot see a name worked out while the page is running. This is what stops the second copy
+   * drifting from the first and leaving a chart drawn in one colour beside a pill in another.
+   */
+  it('is the same colour on a chart as it is on a pill', () => {
+    for (const tone of TONE_ORDER) {
+      expect(TONE_FILLS[tone]).toBe(`bg-${TONE_TOKENS[tone].replace('--', '')}`);
+    }
+  });
+
+  it('covers every meaning a category can carry, and nothing else', () => {
+    expect(new Set(TONE_ORDER)).toStrictEqual(new Set(Object.values(CATEGORY_TONES)));
+    expect(Object.keys(TONE_TOKENS).sort()).toStrictEqual([...TONE_ORDER].sort());
+  });
+});
 
 function reason(
   code: string,
@@ -125,3 +157,44 @@ describe('the tone a category is shown in', () => {
     expect(CATEGORY_TONES['known-ai-crawler']).not.toBe('people');
   });
 });
+
+describe('how a period divides between the four tones', () => {
+  const GROUPS = [
+    group('likely-human', 'moderate', 6),
+    group('known-search-crawler', 'strong', 3),
+    group('known-ai-crawler', 'strong', 2),
+    group('suspected-ai-crawler', 'weak', 1),
+    group('unknown', 'weak', 4),
+  ];
+
+  it('adds up every category that shares a tone', () => {
+    expect(tonesIn(GROUPS)).toStrictEqual([
+      { tone: 'people', sessions: 6 },
+      { tone: 'automation', sessions: 6 },
+      { tone: 'unclear', sessions: 4 },
+    ]);
+  });
+
+  /**
+   * A website nobody has scraped shows no red anywhere: not a slice on the ring, and not a name
+   * for one in the list beside it.
+   */
+  it('leaves out a tone the period never held', () => {
+    expect(tonesIn(GROUPS).map((portion) => portion.tone)).not.toContain('unwanted');
+  });
+
+  /** The people a website is for come first, wherever they happen to fall in the answer. */
+  it('reads in the same order everywhere else does', () => {
+    const found = tonesIn([group('unknown', 'weak', 4), group('likely-human', 'strong', 1)]);
+
+    expect(found.map((portion) => portion.tone)).toStrictEqual(['people', 'unclear']);
+  });
+
+  it('has nothing to divide when nothing has been judged', () => {
+    expect(tonesIn([])).toStrictEqual([]);
+  });
+});
+
+function group(category: TrafficCategory, strength: EvidenceStrength, sessions: number) {
+  return { category, strength, sessions, pageViews: sessions * 3 };
+}

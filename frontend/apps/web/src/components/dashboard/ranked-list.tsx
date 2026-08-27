@@ -15,6 +15,9 @@ import { cn } from '@/lib/styling';
  * shape is what makes them comparable: a row means the same thing on each, a bar is drawn to the
  * same rule, and a share is taken against the same kind of whole. Keeping the shape in one file
  * is what stops the fourth list drifting a little from the first.
+ *
+ * Beside them are the parts a closed set is built from — a handful of kinds that account for the
+ * whole a card states, drawn as a ring and named in a list rather than ranked against each other.
  */
 
 interface RankedRowBase {
@@ -85,6 +88,88 @@ export function RankedRow({ name, hint, detail, part, whole, most, figure }: Ran
   );
 }
 
+interface SplitListProps {
+  /** The ring, and anything that belongs with it, set beside the list rather than above it. */
+  readonly ring: ReactNode;
+  readonly children: ReactNode;
+}
+
+/**
+ * A ring and the list that names its parts.
+ *
+ * Side by side once there is room for both, one above the other on a phone. The ring is the
+ * summary and the list is the answer: the words carry the figures, and the ring carries the
+ * proportion between them at a glance.
+ */
+export function SplitList({ ring, children }: SplitListProps) {
+  return (
+    // Measured against the card rather than against the screen. Two of these cards sit side by
+    // side on a wide window and are narrower there than the same card is on a tablet, so a rule
+    // written against the window would put the ring beside the list exactly where there is least
+    // room for it.
+    <div className="@container">
+      <div className="flex flex-col gap-5 @2xl:flex-row @2xl:items-center @2xl:gap-6">
+        <div className="flex shrink-0 flex-col items-center gap-3">{ring}</div>
+        <ul className="flex min-w-0 flex-1 flex-col">{children}</ul>
+      </div>
+    </div>
+  );
+}
+
+interface SplitRowProps {
+  /**
+   * The colour this part is drawn in on the ring, as a class.
+   *
+   * Left out where the row is named by something carrying its own colour already, since a dot
+   * beside it would only say the same thing twice.
+   */
+  readonly fill?: string;
+  /** What the part is called. Written by the caller, which knows how its own names read. */
+  readonly name: ReactNode;
+  /** The counts beside it, already written out in the reader's language. */
+  readonly detail: ReactNode;
+  /** How many this part had. */
+  readonly part: number;
+  /** Everything the part is measured against. */
+  readonly whole: number;
+}
+
+/**
+ * One part of a whole, named and counted.
+ *
+ * A row is stacked on a phone and one line from a tablet up. Left to wrap on its own, the share
+ * drops onto a line of its own against the left edge, which reads as a mistake rather than as the
+ * same figure every row above it lines up on.
+ */
+export function SplitRow({ fill, name, detail, part, whole }: SplitRowProps) {
+  const format = useFormatter();
+
+  return (
+    <li className="flex flex-col gap-1 border-t border-border py-2.5 first:border-t-0 first:pt-0 sm:flex-row sm:items-center sm:gap-3">
+      {/*
+        A row marked with a colour keeps its dot against its name and lets the name wrap on its
+        own; the dot landing on a line above the word it belongs to reads as a mistake. A row
+        named by something that carries its own colour is free to wrap between its parts, since
+        those are two things rather than one.
+      */}
+      {fill === undefined ? (
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:flex-1">{name}</span>
+      ) : (
+        <span className="flex min-w-0 items-center gap-2 sm:flex-1">
+          <span aria-hidden className={`size-2.5 shrink-0 rounded-full ${fill}`} />
+          {name}
+        </span>
+      )}
+      <span className="flex items-center justify-between gap-3 sm:justify-end">
+        <span className="text-sm text-foreground-muted tabular-nums">{detail}</span>
+        <span className="w-12 shrink-0 text-right text-sm font-medium text-foreground tabular-nums">
+          {writeShare(part, whole, format)}
+        </span>
+      </span>
+    </li>
+  );
+}
+
 interface RankedNavProps {
   /** What this steps through, for somebody who reaches it without seeing the list. */
   readonly label: string;
@@ -148,6 +233,13 @@ export function RankedNav({ label, offset, shown, total, step, busy, onMove }: R
 interface ListSwitchOption<TValue extends string> {
   readonly value: TValue;
   readonly label: string;
+  /**
+   * A picture instead of the words, where the words would crowd the card.
+   *
+   * The label is still what the control announces and still what a screen reader reads out; the
+   * picture only replaces what is printed.
+   */
+  readonly icon?: LucideIcon;
 }
 
 interface ListSwitchProps<TValue extends string> {
@@ -180,6 +272,7 @@ export function ListSwitch<TValue extends string>({
     >
       {options.map((option) => {
         const chosen = option.value === value;
+        const Picture = option.icon;
 
         return (
           <button
@@ -187,16 +280,19 @@ export function ListSwitch<TValue extends string>({
             type="button"
             role="radio"
             aria-checked={chosen}
+            aria-label={Picture ? option.label : undefined}
+            title={Picture ? option.label : undefined}
             onClick={() => onChange(option.value)}
             className={cn(
-              'rounded-sm px-3 py-1.5 text-sm font-medium transition-colors',
+              'rounded-sm py-1.5 text-sm font-medium transition-colors',
+              Picture ? 'px-2.5' : 'px-3',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong',
               chosen
                 ? 'bg-accent-soft text-accent-strong'
                 : 'text-foreground-muted hover:text-foreground',
             )}
           >
-            {option.label}
+            {Picture ? <Picture aria-hidden className="size-4" /> : option.label}
           </button>
         );
       })}

@@ -6,6 +6,8 @@
   what was already stored.
 - **Follows**: `0017-a-rented-address-is-a-lease-not-a-visitor.md`, which closed the other half of
   the same complaint.
+- **Revised by**: [0034](0034-a-visit-begins-where-somebody-arrived.md), which measured the double
+  count this one recorded as a residual risk and withdrew the credit that caused it.
 
 ## Context
 

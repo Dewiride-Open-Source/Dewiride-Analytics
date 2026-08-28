@@ -959,7 +959,6 @@ public sealed partial class AnalyticsSqlCompilerTests
     [InlineData("greatest(")]
     [InlineData("countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel'))")]
     [InlineData("countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))")]
-    [InlineData("toUInt64(countIf(kind != 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')) > 0)")]
     [InlineData("if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views")]
     public void The_Page_List_Counts_Deliveries_On_The_Same_Terms_As_The_Headline(string arithmetic)
     {
@@ -971,20 +970,16 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     /// <summary>
-    /// A tracker only reports how a page is being read from the page itself, so a progress report
-    /// is evidence the page was delivered even when the report announcing the delivery was lost.
-    /// One delivery is credited however many progress reports arrived, because a page read for
-    /// half an hour and reported on thirty times was still delivered once.
+    /// A page named only by reports about it being read is a page whose arrival was announced under
+    /// another key — the network changed, or the day did — so counting it here counts the same
+    /// delivery a second time, under a second visitor.
     /// </summary>
     [Fact]
-    public void A_Page_Only_Ever_Reported_As_Read_Still_Counts_As_Delivered_Once()
+    public void A_Page_Only_Ever_Reported_As_Read_Is_Not_A_Second_Delivery()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new OverviewQuery(Window()));
 
-        statement.Sql.Should().Contain(
-            "toUInt64(countIf(kind != 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')) > 0)");
-        statement.Sql.Should().NotContain(
-            "countIf(kind != 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),");
+        statement.Sql.Should().NotContain("kind != 'PageView'");
     }
 
     [Theory]
@@ -1718,15 +1713,16 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     /// <summary>
-    /// A visit whose page view never arrived says where somebody was but not what they arrived at,
-    /// so it is no part of a list of doorways.
+    /// A report naming a page its visitor was never seen arriving at says a page was delivered to
+    /// somebody, and nothing about which visit it belonged to. Counted as one, it would put a
+    /// doorway on the list that nobody came through.
     /// </summary>
     [Fact]
-    public void A_Visit_That_Asked_For_No_Page_Is_No_Part_Of_The_Count()
+    public void A_Report_Belonging_To_No_Arrival_Is_No_Part_Of_The_Count()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteVisitShapeQuery(Window(), Visits()));
 
-        statement.Sql.Should().Contain("AND page_count > 0");
+        statement.Sql.Should().Contain("WHERE arrival_ms > 0");
     }
 
     /// <summary>
@@ -1874,7 +1870,8 @@ public sealed partial class AnalyticsSqlCompilerTests
 
         var engine = SessionSqlCompiler.Compile(Judging());
 
-        const string grouping = "sum(toUInt8(since_previous > {idle_seconds:Int64})) OVER (";
+        const string grouping =
+            "sum(toUInt8(kind = 'PageView' AND since_previous > {idle_seconds:Int64})) OVER (";
 
         dashboard.Sql.Should().Contain(grouping);
         engine.Sql.Should().Contain(grouping);
@@ -1903,16 +1900,49 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// A visit already under way when the period opened has to keep its own beginning, because its
     /// beginning is half its name. Read from the period's own start it would be handed an invented
     /// one, and every visit that crossed the edge would quietly disappear from a narrowed list.
-    /// Reading past the far end is what makes the visits at that edge whole in the same way.
+    /// Reading past the far end is what makes the visits at that edge whole in the same way. A day
+    /// either side, because that is as long as a visit can be and a timeout is not.
     /// </summary>
     [Theory]
-    [InlineData("server_ts >= fromUnixTimestamp64Milli({from_ms:Int64} - {idle_seconds:Int64} * 1000, 'UTC')")]
-    [InlineData("server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {idle_seconds:Int64} * 1000, 'UTC')")]
-    public void Rebuilding_A_Visit_Reads_Past_Both_Ends_Of_The_Period(string expected)
+    [InlineData("server_ts >= fromUnixTimestamp64Milli({from_ms:Int64} - {longest_visit_seconds:Int64} * 1000, 'UTC')")]
+    [InlineData("server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {longest_visit_seconds:Int64} * 1000, 'UTC')")]
+    public void Rebuilding_A_Visit_Reads_A_Whole_Visit_Past_Both_Ends_Of_The_Period(string expected)
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail());
 
         statement.Sql.Should().Contain(expected);
+        statement.Parameters.Should().Contain(parameter =>
+            parameter.Name == "longest_visit_seconds" && (long)parameter.Value == 86400);
+    }
+
+    /// <summary>
+    /// A verdict says which activity it was reached from, and the account of the visit shown beside
+    /// it stops there. Otherwise a reader is shown a trail of pages adding up to an hour of reading
+    /// next to a sentence saying the visit was read for four minutes, because a page announcing
+    /// that it is being left can reach the collector long after the visit was judged.
+    /// </summary>
+    [Fact]
+    public void A_Visit_Is_Shown_As_Far_As_Its_Verdict_Was_Reached_From()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200));
+
+        statement.Sql.Should().Contain("AND server_ts <= (");
+        statement.Sql.Should().Contain("argMax(ended_at, (ruleset_major, ruleset_minor, classified_at))");
+        statement.Sql.Should().Contain("FROM session_classifications");
+        statement.Sql.Should().Contain("AND session_key = concat(");
+    }
+
+    /// <summary>
+    /// A visit nothing has judged yet has no verdict to disagree with, so the account of it is all
+    /// there is to show and it is shown whole.
+    /// </summary>
+    [Fact]
+    public void A_Visit_Nothing_Has_Judged_Is_Shown_Whole()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200));
+
+        statement.Sql.Should().Contain("SELECT if(");
+        statement.Sql.Should().Contain("count() = 0,");
     }
 
     /// <summary>
@@ -1992,6 +2022,7 @@ public sealed partial class AnalyticsSqlCompilerTests
             SiteId = SiteId,
             From = From,
             To = To,
+            SettledBefore = To,
             IdleTimeout = IdleTimeout,
             MaxRequestsPerSession = 1000,
         };

@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Dewiride.Analytics.Application.Sessions;
+using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Classification.Sessions;
 using Dewiride.Analytics.Domain.Telemetry;
@@ -31,6 +32,7 @@ internal sealed class JudgingHarness
 
     private readonly List<SessionWindow> _windows = [];
     private readonly List<SessionJudgement> _stored = [];
+    private readonly List<IReadOnlyCollection<string>> _asked = [];
     private DateTimeOffset _bookmark = AddedAt;
 
     /// <summary>Reconstructs visits.</summary>
@@ -41,6 +43,12 @@ internal sealed class JudgingHarness
 
     /// <summary>Remembers where to resume.</summary>
     public IClassificationProgressStore Progress { get; } = Substitute.For<IClassificationProgressStore>();
+
+    /// <summary>Settles an address against the name it answers to. Settles nothing unless told to.</summary>
+    public ICrawlerNameLookup Names { get; } = Substitute.For<ICrawlerNameLookup>();
+
+    /// <summary>Every set of addresses the classifier asked about, in order.</summary>
+    public IReadOnlyList<IReadOnlyCollection<string>> Asked => _asked;
 
     /// <summary>The windows the classifier asked for, in order.</summary>
     public IReadOnlyList<SessionWindow> Windows => _windows;
@@ -54,9 +62,35 @@ internal sealed class JudgingHarness
     /// <summary>How the classifier is tuned.</summary>
     public ClassificationOptions Settings { get; init; } = new();
 
+    /// <summary>What the name check settles, keyed by address.</summary>
+    private readonly Dictionary<string, string> _settles = new(StringComparer.Ordinal);
+
+    /// <summary>Makes the name check settle one address as one company's.</summary>
+    /// <param name="address">The address a visit arrived from.</param>
+    /// <param name="operatorName">The company it turns out to belong to.</param>
+    /// <returns>The harness, for chaining.</returns>
+    public JudgingHarness Settling(string address, string operatorName)
+    {
+        _settles[address] = operatorName;
+
+        return this;
+    }
+
     /// <summary>Builds the harness and wires the stand-ins.</summary>
     public JudgingHarness()
     {
+        Names.OperatorsOfAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var asked = call.Arg<IReadOnlyCollection<string>>();
+
+                _asked.Add([.. asked]);
+
+                return Task.FromResult<IReadOnlyDictionary<string, string>>(
+                    asked.Where(_settles.ContainsKey)
+                        .ToDictionary(address => address, address => _settles[address], StringComparer.Ordinal));
+            });
+
         Progress.ResumeFromAsync(SiteId, Arg.Any<RulesetVersion>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .Returns(_ => _bookmark);
 
@@ -135,17 +169,32 @@ internal sealed class JudgingHarness
                 Verdicts,
                 Progress,
                 TrafficClassifier.Current(),
+                Names,
                 new FakeTimeProvider(Now),
                 Options.Create(Settings),
                 NullLogger<SessionClassifier>.Instance)
             .CatchUpAsync(SiteId, AddedAt, CancellationToken.None);
 
+    /// <summary>An ordinary browser string, which says nothing about who is behind it.</summary>
+    public const string Anonymous =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+        + "Chrome/141.0.0.0 Safari/537.36";
+
     /// <summary>Builds a visit.</summary>
     /// <param name="startedAt">When it began.</param>
     /// <param name="pages">How many pages it asked for.</param>
     /// <param name="isClosed">Whether it is over.</param>
+    /// <param name="address">The address it arrived from, where one is still kept.</param>
+    /// <param name="userAgent">What it called itself.</param>
+    /// <param name="confirmedOperator">Who the collector had already established it to be.</param>
     /// <returns>The visit.</returns>
-    public static ObservedSession Visit(DateTimeOffset startedAt, int pages = 1, bool isClosed = true) =>
+    public static ObservedSession Visit(
+        DateTimeOffset startedAt,
+        int pages = 1,
+        bool isClosed = true,
+        string? address = null,
+        string? userAgent = null,
+        string? confirmedOperator = null) =>
         new(
             new SessionEvidence
             {
@@ -158,7 +207,41 @@ internal sealed class JudgingHarness
                         new ObservedRequest(startedAt.AddMinutes(page), $"/posts/{page}", 200)),
                 ],
                 Surfaces = [IngestSurface.CloudflareWorker],
-                UserAgent = "Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)",
+                UserAgent = userAgent ?? "Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)",
+                ConfirmedOperator = confirmedOperator,
             },
-            isClosed);
+            isClosed,
+            address);
+
+    /// <summary>
+    /// Builds a visit that reads like somebody reading.
+    /// </summary>
+    /// <remarks>
+    /// A browser that ran the tracker, held a page for half a minute, scrolled most of the way
+    /// down and used a pointer. Whether a visit looks like this is what decides whether its
+    /// address is anybody's business, so the shape matters rather than the particular numbers.
+    /// </remarks>
+    /// <param name="startedAt">When it began.</param>
+    /// <param name="address">The address it arrived from.</param>
+    /// <returns>The visit.</returns>
+    public static ObservedSession Reader(DateTimeOffset startedAt, string address) =>
+        new(
+            new SessionEvidence
+            {
+                SessionKey = $"reader:{startedAt.ToUnixTimeMilliseconds()}",
+                StartedAt = startedAt,
+                EndedAt = startedAt.AddMinutes(3),
+                Requests = [new ObservedRequest(startedAt, "/posts/why-authenticity-matters", 200)],
+                Surfaces = [IngestSurface.BrowserTracker],
+                UserAgent = Anonymous,
+                Language = "en-GB",
+                ViewportWidth = 1440,
+                EngagedMs = 42_000,
+                MaxScrollDepthPercent = 78,
+                HadPointerInteraction = true,
+                HadKeyboardInteraction = false,
+                DeclaredWebDriver = false,
+            },
+            true,
+            address);
 }

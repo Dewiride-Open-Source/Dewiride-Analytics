@@ -19,20 +19,51 @@ public readonly record struct RulesetVersion(int Major, int Minor) : IComparable
     /// <summary>The ruleset currently compiled into this build.</summary>
     /// <remarks>
     /// <para>
-    /// Three, because a visit is now told what it did on pages nobody reported it arriving at, and
-    /// what it did is read once per page instead of once per report. Both move sessions between
-    /// categories: a reader whose arrival report was lost had asked for nothing and was answered
-    /// with "not enough to say" under two, and is a reader under three; and a visit whose reading
-    /// was counted once for every report that mentioned it looked more like a person than it was.
+    /// Eight, because a visit is now judged on everything stored about it rather than on the part
+    /// that fell inside the stretch of time being worked through. A backlog is walked in stretches
+    /// of a few hours, and a visit lying across the end of one of them was judged on what fitted
+    /// and never looked at again — so what a verdict rested on depended on where a boundary
+    /// happened to fall, which is the one thing a stored ruleset is supposed to rule out. Whether a
+    /// visit is over is now asked of the moment nothing more can arrive, and activity is read a full
+    /// day either side, which is as long as a visit can be.
     /// </para>
     /// <para>
-    /// The detectors are the same ones. What changed is what they are shown — which is the same
-    /// thing from a customer's side, because it is the same visit answered differently. Verdicts
-    /// are kept per ruleset, so both answers stay on record and history is re-judged rather than
-    /// rewritten.
+    /// No category, band, weight or threshold moved. What changed is how much of a visit the engine
+    /// is shown. Re-judging is where this is repaired: a departure sent hours after the page it
+    /// names has long since arrived by the time history is walked again, so a visit judged in the
+    /// moment on half its reading is judged on all of it now. What cannot be repaired is the last
+    /// stretch before the present, where a report that has not arrived yet is a report nothing can
+    /// account for.
+    /// </para>
+    /// <para>
+    /// Seven, because a visit begins where somebody arrived. A tracker reports how a page is
+    /// going, and reports it being left, from the page itself, and either report can reach the
+    /// collector under a visitor key that never announced anything — a key is derived from the
+    /// network a report came over and the day it arrived, so it changes under a reader who moves
+    /// between networks and again at midnight. Six treated such a report as a visit in its own
+    /// right, which counted one reader twice and put the second of them down as a person who
+    /// arrived, read for a quarter of an hour and left.
+    /// </para>
+    /// <para>
+    /// A report now belongs to the visit its own page was arrived at in, and one naming a page its
+    /// visitor was never seen arriving at is left out. The page was delivered to somebody, but
+    /// nothing on the report says which visit it belonged to, and inventing one is the kind of
+    /// certainty this product does not claim.
+    /// </para>
+    /// <para>
+    /// No category, band, weight or threshold moved. Visits that were always visits are judged on
+    /// exactly the evidence they were judged on before, except where a departure reported after a
+    /// long pause is read in the same pass as the visit it names, in which case the reading it
+    /// carries goes back to that visit. What changed is which activity is a visit at all.
+    /// </para>
+    /// <para>
+    /// Verdicts are kept per ruleset, so every earlier answer stays on record and history is
+    /// re-judged rather than rewritten. What six recorded as a visit and seven does not is removed
+    /// by <c>0008_visits_that_never_began</c>, because no later ruleset can supersede a verdict on
+    /// something that will never be reconstructed again.
     /// </para>
     /// </remarks>
-    public static RulesetVersion Current => new(3, 0);
+    public static RulesetVersion Current => new(8, 0);
 
     /// <summary>Compares two ruleset versions by major then minor component.</summary>
     /// <param name="other">The version to compare against.</param>

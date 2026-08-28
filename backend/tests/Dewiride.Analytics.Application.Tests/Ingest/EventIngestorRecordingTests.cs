@@ -354,6 +354,37 @@ public sealed class EventIngestorRecordingTests
         stored.NetworkOwner.Should().BeNull();
     }
 
+    /// <summary>
+    /// The only thing on a stored event that the sender could not have written for itself, and the
+    /// only basis on which this product will state whose crawler a visit was. Settled here for the
+    /// same reason the place is: the address it is settled from does not outlive the retention
+    /// window, so a visit re-judged under later rules keeps the identity instead of losing it.
+    /// </summary>
+    [Fact]
+    public async Task Records_Whose_Crawler_The_Address_Turned_Out_To_Belong_To()
+    {
+        var harness = IngestHarness.ForSite().Confirming("Microsoft");
+
+        await harness.IngestAsync(IngestHarness.PageView());
+
+        harness.Single.ConfirmedOperator.Should().Be("Microsoft");
+    }
+
+    /// <summary>
+    /// What virtually every real visit records, and never a denial. A company may publish no list
+    /// at all, an installation may have fetched none, and a machine may have been commissioned
+    /// since its operator last republished — so nothing established is stored as nothing.
+    /// </summary>
+    [Fact]
+    public async Task Records_Nothing_About_An_Address_Nobody_Published()
+    {
+        var harness = IngestHarness.ForSite();
+
+        await harness.IngestAsync(IngestHarness.PageView());
+
+        harness.Single.ConfirmedOperator.Should().BeNull();
+    }
+
     [Fact]
     public async Task Records_What_The_Visit_Was_Made_On()
     {

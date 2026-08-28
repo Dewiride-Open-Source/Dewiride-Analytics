@@ -109,7 +109,6 @@ WITH
                 anyIf(source_site, source_site != '') AS site,
                 greatest(
                     countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),
-                    toUInt64(countIf(kind != 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')) > 0),
                     countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) AS delivered,
                 if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
             FROM identified

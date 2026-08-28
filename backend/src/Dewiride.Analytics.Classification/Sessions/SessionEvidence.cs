@@ -46,6 +46,32 @@ public sealed record SessionEvidence
     /// <summary>What the visitor said it was. Attacker-controlled; never treated as identity on its own.</summary>
     public string? UserAgent { get; init; }
 
+    /// <summary>
+    /// The company that vouches for the address the visit arrived from, where one does. Null for
+    /// almost every visit, and that is not a finding.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The one thing on this record that is an identity rather than a claim or a behaviour. It was
+    /// settled by where the request came from — against a file of addresses the company publishes,
+    /// or against the domain it documents its machines as answering to — so it is not something a
+    /// visitor can write for itself the way a user agent is, and it is the only route to
+    /// <see cref="EvidenceStrength.Verified"/>.
+    /// </para>
+    /// <para>
+    /// Settled before the engine is asked anything, never worked out here. The address it was
+    /// settled from is erased 72 hours after the activity was collected, so carrying the answer
+    /// rather than the address is what lets a visit re-judged next year reach the same conclusion
+    /// instead of quietly losing an identity it once had.
+    /// </para>
+    /// <para>
+    /// Absence proves nothing and must never be read as a denial. A company may offer no way to
+    /// check at all, an install may have no way out to the internet, and what a company publishes
+    /// is a snapshot that a newly commissioned crawler is not in until it publishes again.
+    /// </para>
+    /// </remarks>
+    public string? ConfirmedOperator { get; init; }
+
     /// <summary>Language the visitor declared, where any surface could observe one.</summary>
     public string? Language { get; init; }
 

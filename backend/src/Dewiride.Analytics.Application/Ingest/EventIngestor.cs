@@ -18,6 +18,7 @@ namespace Dewiride.Analytics.Application.Ingest;
 /// <param name="allowance">Decides whether this installation is still measuring the site.</param>
 /// <param name="visitorKeyFactory">Derives the daily-rotated visitor key.</param>
 /// <param name="networkLookup">Resolves where the visitor's address is and whose network it is on.</param>
+/// <param name="crawlerAddresses">Recognises an address a company vouches for as its own crawlers'.</param>
 /// <param name="eventSink">Durable storage for accepted events.</param>
 /// <param name="timeProvider">Source of the authoritative server timestamp.</param>
 /// <param name="logger">Records why a report was turned away, for the operator alone.</param>
@@ -26,6 +27,7 @@ public sealed partial class EventIngestor(
     IMeasurementAllowance allowance,
     IVisitorKeyFactory visitorKeyFactory,
     INetworkLookup networkLookup,
+    ICrawlerAddressDirectory crawlerAddresses,
     IEventSink eventSink,
     TimeProvider timeProvider,
     ILogger<EventIngestor> logger)
@@ -180,6 +182,12 @@ public sealed partial class EventIngestor(
         var network = networkLookup.Resolve(context.IpAddress);
         var client = ClientProfiler.Profile(context.UserAgent, context.Hints);
 
+        // The only thing recorded here that the sender could not have written for itself, and the
+        // only route this product has to saying whose crawler a visit was rather than whose it said
+        // it was. Almost every request resolves to nothing, which is the ordinary answer and not a
+        // failure to establish anything.
+        var confirmed = NullIfEmpty(crawlerAddresses.OperatorOf(context.IpAddress));
+
         return new RawEvent
         {
             EventId = Guid.CreateVersion7(receivedAt),
@@ -209,6 +217,7 @@ public sealed partial class EventIngestor(
             City = Truncate(network.City, MaxPlaceNameLength),
             AutonomousSystem = network.AutonomousSystem,
             NetworkOwner = Truncate(network.NetworkOwner, MaxNetworkOwnerLength),
+            ConfirmedOperator = confirmed,
             ViewportWidth = command.ViewportWidth,
             ViewportHeight = command.ViewportHeight,
             Language = Truncate(command.Language, MaxLanguageLength),

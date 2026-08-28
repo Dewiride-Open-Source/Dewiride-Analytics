@@ -36,6 +36,7 @@ internal sealed class IngestHarness
     private readonly ISiteCatalog _catalog = Substitute.For<ISiteCatalog>();
     private readonly IVisitorKeyFactory _visitorKeys = Substitute.For<IVisitorKeyFactory>();
     private readonly INetworkLookup _network = Substitute.For<INetworkLookup>();
+    private readonly ICrawlerAddressDirectory _crawlers = Substitute.For<ICrawlerAddressDirectory>();
     private readonly RecordingSink _sink = new();
     private readonly FakeLogger<EventIngestor> _logger = new();
 
@@ -51,14 +52,31 @@ internal sealed class IngestHarness
             .Returns(visitorKey);
         _network.Resolve(Arg.Any<string?>()).Returns(network);
 
+        // Nobody, unless a test says otherwise. Stated rather than left to the substitute default,
+        // because the difference between no company and an empty name is the difference between
+        // a visit nothing was established about and one attributed to a company with no name.
+        _crawlers.OperatorOf(Arg.Any<string?>()).Returns((string?)null);
+
         Ingestor = new EventIngestor(
             _catalog,
             new FixedAllowance(measuring),
             _visitorKeys,
             _network,
+            _crawlers,
             _sink,
             new FakeTimeProvider(Now),
             _logger);
+    }
+
+    /// <summary>
+    /// Makes every address this harness ingests one the named company publishes for its crawlers.
+    /// </summary>
+    /// <param name="operatorName">The company.</param>
+    /// <returns>The harness, for chaining.</returns>
+    public IngestHarness Confirming(string operatorName)
+    {
+        _crawlers.OperatorOf(Arg.Any<string?>()).Returns(operatorName);
+        return this;
     }
 
     /// <summary>The subject under test.</summary>

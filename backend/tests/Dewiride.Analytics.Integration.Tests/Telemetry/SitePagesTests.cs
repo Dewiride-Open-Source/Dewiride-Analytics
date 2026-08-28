@@ -213,22 +213,23 @@ public sealed class SitePagesTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// A tracker only reports how a page is being read from the page itself, so a page reported as
-    /// read was delivered even though the report announcing it never arrived.
+    /// A page named only by reports about it being read had its arrival announced under another key
+    /// — the network changed under the reader, or the day did — so it is already on this list, once,
+    /// where it was announced. Listing it again puts a page on the site at twice the traffic it had.
     /// </summary>
     [Fact]
-    public async Task A_Page_Reported_As_Read_Is_Listed_Without_Its_Announcement()
+    public async Task A_Page_Only_Ever_Reported_As_Read_Is_Not_A_Second_Delivery()
     {
         var siteId = Guid.NewGuid();
 
         await WriteAsync(
             FromServer(siteId, Midnight.AddHours(1), "visitor-a", "/read"),
-            Engaged(siteId, Midnight.AddHours(2), "visitor-a", "/never-announced"));
+            Engaged(siteId, Midnight.AddHours(2), "visitor-b", "/read"));
 
         var pages = await PageOfAddresses(siteId);
 
-        pages.Pages.Select(page => page.Path).Should().BeEquivalentTo("/read", "/never-announced");
-        pages.TotalPageViews.Should().Be(2);
+        pages.Pages.Select(page => page.Path).Should().BeEquivalentTo("/read");
+        pages.TotalPageViews.Should().Be(1);
     }
 
     /// <summary>
@@ -241,7 +242,8 @@ public sealed class SitePagesTests(AnalyticsStackFixture stack)
         var siteId = Guid.NewGuid();
 
         await WriteAsync(
-            Engaged(siteId, Midnight.AddHours(1), "visitor-a", "/long-read"),
+            FromServer(siteId, Midnight.AddHours(1), "visitor-a", "/long-read"),
+            Engaged(siteId, Midnight.AddHours(1).AddSeconds(15), "visitor-a", "/long-read"),
             Engaged(siteId, Midnight.AddHours(1).AddMinutes(1), "visitor-a", "/long-read"),
             Engaged(siteId, Midnight.AddHours(1).AddMinutes(2), "visitor-a", "/long-read"));
 

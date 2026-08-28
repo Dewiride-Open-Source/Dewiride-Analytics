@@ -69,4 +69,17 @@ public sealed class ClassificationOptions
     /// </remarks>
     [Range(50, 100000)]
     public int MaxRequestsPerSession { get; init; } = 1000;
+
+    /// <summary>
+    /// Most addresses one pass asks a name server about.
+    /// </summary>
+    /// <remarks>
+    /// Only visits that already look like machinery are asked about at all, and an address settled
+    /// once is remembered, so an ordinary pass is well under this. It bounds the unusual case: a
+    /// site whose whole history is being judged at once, where every automated visit in a six-hour
+    /// stretch is a fresh question. A visit past the cap is judged on everything else that is
+    /// known about it, which is what every visit was judged on before this check existed.
+    /// </remarks>
+    [Range(1, 100000)]
+    public int MostNameChecksPerPass { get; init; } = 500;
 }

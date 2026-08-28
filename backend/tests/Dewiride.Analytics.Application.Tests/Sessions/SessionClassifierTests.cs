@@ -186,4 +186,143 @@ public sealed class SessionClassifierTests
         harness.Stored.Should().BeEmpty();
         outcome.Judged.Should().Be(0);
     }
+
+    /// <summary>
+    /// The case no catalogue of names could ever reach: a crawler that says nothing about itself,
+    /// whose operator publishes no list of addresses. All that is left is what its address is
+    /// called, and asking is the only way to find out.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_That_Looks_Like_Machinery_Has_Its_Address_Asked_About()
+    {
+        var harness = new JudgingHarness();
+        harness.Settling("77.88.5.1", "Microsoft");
+        harness.AnswerOnce(JudgingHarness.Visit(
+            JudgingHarness.AddedAt.AddHours(1),
+            address: "77.88.5.1",
+            userAgent: JudgingHarness.Anonymous));
+
+        await harness.RunAsync();
+
+        harness.Asked.Should().ContainSingle().Which.Should().Equal("77.88.5.1");
+        harness.Stored.Should().ContainSingle();
+        harness.Stored[0].Session.ConfirmedOperator.Should().Be("Microsoft");
+        harness.Stored[0].Verdict.Category.Should().Be(TrafficCategory.KnownSearchCrawler);
+        harness.Stored[0].Verdict.Strength.Should().Be(EvidenceStrength.Verified);
+    }
+
+    /// <summary>
+    /// The line this check is not allowed to cross. A visit that reads like somebody reading is
+    /// somebody reading, and their address is not ours to send to a name server out of curiosity.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_That_Looks_Like_Somebody_Reading_Is_Never_Asked_About()
+    {
+        var harness = new JudgingHarness();
+        harness.AnswerOnce(JudgingHarness.Reader(JudgingHarness.AddedAt.AddHours(1), "203.0.113.7"));
+
+        await harness.RunAsync();
+
+        harness.Asked.Should().BeEmpty();
+        harness.Stored.Should().ContainSingle();
+        harness.Stored[0].Verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+    }
+
+    /// <summary>
+    /// Already settled when the activity was collected, against a list the company publishes.
+    /// There is nothing left to establish and no reason to ask anybody.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Already_Settled_At_Collection_Is_Not_Asked_About()
+    {
+        var harness = new JudgingHarness();
+        harness.AnswerOnce(JudgingHarness.Visit(
+            JudgingHarness.AddedAt.AddHours(1),
+            address: "66.249.64.9",
+            userAgent: JudgingHarness.Anonymous,
+            confirmedOperator: "Google"));
+
+        await harness.RunAsync();
+
+        harness.Asked.Should().BeEmpty();
+        harness.Stored[0].Session.ConfirmedOperator.Should().Be("Google");
+    }
+
+    /// <summary>
+    /// Anything older than the retention window has no address left on it, which is the ordinary
+    /// state of a visit being judged again under a later ruleset.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_With_No_Address_Left_Is_Not_Asked_About()
+    {
+        var harness = new JudgingHarness();
+        harness.AnswerOnce(JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(1)));
+
+        await harness.RunAsync();
+
+        harness.Asked.Should().BeEmpty();
+        harness.Stored[0].Session.ConfirmedOperator.Should().BeNull();
+    }
+
+    /// <summary>
+    /// An address that answers to a company's own name belongs to that company whatever any one
+    /// visit from it looked like, and two visits from one address cannot have been two companies.
+    /// </summary>
+    [Fact]
+    public async Task One_Settled_Address_Settles_Every_Visit_From_It()
+    {
+        var harness = new JudgingHarness();
+        harness.Settling("77.88.5.1", "Microsoft");
+        harness.AnswerOnce(
+            JudgingHarness.Visit(
+                JudgingHarness.AddedAt.AddHours(1),
+                address: "77.88.5.1",
+                userAgent: JudgingHarness.Anonymous),
+            JudgingHarness.Reader(JudgingHarness.AddedAt.AddHours(2), "77.88.5.1"));
+
+        await harness.RunAsync();
+
+        harness.Asked.Should().ContainSingle().Which.Should().Equal("77.88.5.1");
+        harness.Stored.Should().HaveCount(2);
+        harness.Stored.Should().OnlyContain(judgement => judgement.Session.ConfirmedOperator == "Microsoft");
+    }
+
+    /// <summary>
+    /// Wearing one company's name while arriving from another's machines. Nothing legitimate
+    /// produces that, and the address establishing it by name rather than by list makes no
+    /// difference to what it means.
+    /// </summary>
+    [Fact]
+    public async Task A_Visitor_Wearing_The_Wrong_Companys_Name_Is_Called_Out()
+    {
+        var harness = new JudgingHarness();
+        harness.Settling("77.88.5.1", "Microsoft");
+        harness.AnswerOnce(JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(1), address: "77.88.5.1"));
+
+        await harness.RunAsync();
+
+        harness.Stored[0].Verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        harness.Stored[0].Verdict.Supporting.Should()
+            .Contain(signal => signal.Code == SignalCodes.FalseCrawlerClaim);
+    }
+
+    /// <summary>
+    /// A site whose whole history is being judged at once is the case this bounds. A visit past
+    /// the cap is judged on everything else known about it, which is what every visit was judged
+    /// on before this check existed.
+    /// </summary>
+    [Fact]
+    public async Task No_More_Addresses_Are_Asked_About_Than_A_Pass_Allows()
+    {
+        var harness = new JudgingHarness { Settings = new ClassificationOptions { MostNameChecksPerPass = 2 } };
+        harness.AnswerOnce(
+            JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(1), address: "198.51.100.1"),
+            JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(2), address: "198.51.100.2"),
+            JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(3), address: "198.51.100.3"));
+
+        await harness.RunAsync();
+
+        harness.Asked.Should().ContainSingle().Which.Should().HaveCount(2);
+        harness.Stored.Should().HaveCount(3);
+    }
 }

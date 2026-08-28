@@ -569,7 +569,6 @@ export const visitSchema = z.object({
   surfaces: z.array(captureSurfaceSchema),
   category: trafficCategorySchema,
   strength: evidenceStrengthSchema,
-  isProvisional: z.boolean(),
   ruleset: z.string(),
   supporting: z.array(visitReasonSchema),
   contradicting: z.array(visitReasonSchema),

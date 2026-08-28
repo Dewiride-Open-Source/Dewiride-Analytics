@@ -1,6 +1,9 @@
 using Dewiride.Analytics.Application.Analytics;
+using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Application.Tenancy;
+using Dewiride.Analytics.Classification;
+using Dewiride.Analytics.Classification.Sessions;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Domain.Telemetry;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
@@ -78,6 +81,90 @@ public sealed class SiteVisitsTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// A departure report announces no arrival, and a visitor's key changes when the network does
+    /// and again at midnight — so the tail of a visit routinely arrives under a key that announced
+    /// nothing. Counting one as a visit reports a single reader as two, the second of them a person
+    /// who arrived, read for a quarter of an hour and left.
+    /// </summary>
+    [Fact]
+    public async Task A_Departure_Nothing_Ever_Arrived_At_Is_Not_A_Visit()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            Asked(siteId, Midnight.AddHours(1), "visitor-a", "/"),
+            Progressed(siteId, Midnight.AddHours(3), "visitor-b", "/posts/hello", 900_000, 80));
+
+        var shape = await ShapeOf(siteId);
+
+        shape.Visits.Should().Be(1);
+        shape.PageViews.Should().Be(1);
+    }
+
+    /// <summary>
+    /// A page announces itself leaving whenever the tab is finally dismissed, which can be the
+    /// following morning. That is the end of the visit it names rather than the whole of a new one,
+    /// and the reading it carries belongs to the page it was measured on.
+    /// </summary>
+    [Fact]
+    public async Task A_Departure_Reported_Hours_Later_Ends_The_Visit_It_Names()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            Asked(siteId, Midnight.AddHours(1), "visitor-a", "/posts/hello"),
+            Progressed(siteId, Midnight.AddHours(9), "visitor-a", "/posts/hello", 240_000, 90));
+
+        var shape = await ShapeOf(siteId);
+
+        shape.Visits.Should().Be(1);
+        shape.PageViews.Should().Be(1);
+    }
+
+    /// <summary>
+    /// A stray report is not somebody being there for the purpose of ending a visit either. Letting
+    /// one bridge the silence in front of a genuine arrival would fold two visits into one and hand
+    /// the first of them an ending eight hours after its reader left.
+    /// </summary>
+    [Fact]
+    public async Task A_Stray_Report_Does_Not_Join_Two_Visits_Together()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            Asked(siteId, Midnight.AddHours(1), "visitor-a", "/"),
+            Progressed(siteId, Midnight.AddHours(9), "visitor-a", "/posts/hello", 240_000, 90),
+            Asked(siteId, Midnight.AddHours(9).AddMinutes(5), "visitor-a", "/"));
+
+        var shape = await ShapeOf(siteId);
+
+        shape.Visits.Should().Be(2);
+        shape.PageViews.Should().Be(2);
+    }
+
+    /// <summary>
+    /// A silence is measured across every report whatever its kind, because any report at all is
+    /// somebody being there. A reader held by one page for an hour and then moving to a second has
+    /// not left and come back.
+    /// </summary>
+    [Fact]
+    public async Task A_Reader_Held_By_One_Page_Past_The_Timeout_Is_Still_One_Visit()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            Asked(siteId, Midnight.AddHours(1), "visitor-a", "/posts/hello"),
+            Progressed(siteId, Midnight.AddHours(1).AddMinutes(25), "visitor-a", "/posts/hello", 1_500_000, 60),
+            Progressed(siteId, Midnight.AddHours(1).AddMinutes(50), "visitor-a", "/posts/hello", 3_000_000, 95),
+            Asked(siteId, Midnight.AddHours(2), "visitor-a", "/pricing"));
+
+        var shape = await ShapeOf(siteId);
+
+        shape.Visits.Should().Be(1);
+        shape.PageViews.Should().Be(2);
+    }
+
+    /// <summary>
     /// A visit whose pages are still arriving would be reported as a reader who read one page and
     /// left. On a quiet website that alone would decide the single-page figure.
     /// </summary>
@@ -132,11 +219,11 @@ public sealed class SiteVisitsTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// A reader whose page view never arrived still reported which page they were reading, and the
-    /// tracker only reports that from the page itself — so the page they named is the doorway.
+    /// A reading says which page somebody was on, never which page they came in at, so a list of
+    /// doorways counts only the visits that came through one.
     /// </summary>
     [Fact]
-    public async Task A_Visit_Whose_Only_Report_Is_A_Reading_Enters_At_The_Page_It_Read()
+    public async Task A_Reading_With_No_Arrival_Behind_It_Is_No_Doorway()
     {
         var siteId = Guid.NewGuid();
 
@@ -147,8 +234,8 @@ public sealed class SiteVisitsTests(AnalyticsStackFixture stack)
         var shape = await ShapeOf(siteId);
         var entries = await FlowOf(siteId, VisitPosition.Entry);
 
-        shape.Visits.Should().Be(2);
-        entries.Pages.Should().ContainSingle().Which.Should().Be(new SiteVisitFlowRow("/", 2));
+        shape.Visits.Should().Be(1);
+        entries.Pages.Should().ContainSingle().Which.Should().Be(new SiteVisitFlowRow("/", 1));
     }
 
     /// <summary>
@@ -250,6 +337,44 @@ public sealed class SiteVisitsTests(AnalyticsStackFixture stack)
 
         journey.Select(step => step.Path).Should().Equal("/", "/pricing", "/contact");
         journey.Select(step => step.At).Should().BeInAscendingOrder();
+    }
+
+    /// <summary>
+    /// A verdict says which activity it was reached from, and the account of the visit shown beside
+    /// it stops there. Otherwise a reader is shown a page the sentences next to it never counted,
+    /// because a page announcing that it is being left reaches the collector after the visit was
+    /// judged.
+    /// </summary>
+    [Fact]
+    public async Task A_Journey_Stops_Where_Its_Verdict_Was_Reached_From()
+    {
+        var siteId = Guid.NewGuid();
+        var began = Midnight.AddHours(2);
+
+        await WriteAsync(LeftOpenAndCameBack(siteId, "visitor-late", began));
+
+        await JudgedAsync(siteId, "visitor-late", began, reachedFrom: began.AddMinutes(1));
+
+        var journey = await JourneyOf(siteId, "visitor-late", began);
+
+        journey.Select(step => step.Path).Should().Equal("/", "/pricing");
+    }
+
+    /// <summary>
+    /// A visit nothing has judged has no verdict to disagree with, so the account of it is all there
+    /// is to show and it is shown whole.
+    /// </summary>
+    [Fact]
+    public async Task A_Journey_Nothing_Has_Judged_Is_Shown_Whole()
+    {
+        var siteId = Guid.NewGuid();
+        var began = Midnight.AddHours(4);
+
+        await WriteAsync(LeftOpenAndCameBack(siteId, "visitor-unjudged", began));
+
+        var journey = await JourneyOf(siteId, "visitor-unjudged", began);
+
+        journey.Select(step => step.Path).Should().Equal("/", "/pricing", "/contact");
     }
 
     /// <summary>
@@ -711,6 +836,47 @@ public sealed class SiteVisitsTests(AnalyticsStackFixture stack)
 
     private Task WriteAsync(params RawEvent[] events) =>
         stack.Services.GetRequiredService<IEventSink>().WriteBatchAsync(events, Cancellation.Token);
+
+    /// <summary>
+    /// One visit that keeps going long after anything would have judged it: two pages read, then a
+    /// page reporting three hours later that it is still open, then a third page a minute after
+    /// that.
+    /// </summary>
+    /// <remarks>
+    /// The middle report is what holds it together. Only an arrival begins a visit and only after a
+    /// silence longer than the timeout, so the page still reporting keeps the silence short and the
+    /// third arrival joins the visit it belongs to rather than starting one.
+    /// </remarks>
+    private static RawEvent[] LeftOpenAndCameBack(Guid siteId, string visitorKey, DateTimeOffset began) =>
+    [
+        Asked(siteId, began, visitorKey, "/"),
+        Asked(siteId, began.AddMinutes(1), visitorKey, "/pricing"),
+        Progressed(siteId, began.AddHours(3), visitorKey, "/pricing", 900_000, 80),
+        Asked(siteId, began.AddHours(3).AddMinutes(1), visitorKey, "/contact"),
+    ];
+
+    /// <summary>Stores a verdict for a visit, reached from activity up to a given instant.</summary>
+    private Task JudgedAsync(
+        Guid siteId,
+        string visitorKey,
+        DateTimeOffset began,
+        DateTimeOffset reachedFrom) =>
+        stack.Services.GetRequiredService<IClassificationStore>().SaveAsync(
+            siteId,
+            [
+                new SessionJudgement(
+                    new SessionEvidence
+                    {
+                        SessionKey = new VisitKey(visitorKey, began).ToString(),
+                        StartedAt = began,
+                        EndedAt = reachedFrom,
+                        Requests = [new ObservedRequest(began, "/", null)],
+                        Surfaces = [IngestSurface.BrowserTracker],
+                    },
+                    ClassificationVerdict.Insufficient(RulesetVersion.Current)),
+            ],
+            reachedFrom,
+            Cancellation.Token);
 
     private static TimeRange Window() => new(Midnight, Midnight.AddDays(1));
 

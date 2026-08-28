@@ -4,6 +4,10 @@
 - **Date**: 2026-08-25
 - **Applies to**: both editions. Adds no column, no migration and no index; collects nothing new and
   widens no retention envelope.
+- **Followed by**: [0034](0034-a-visit-begins-where-somebody-arrived.md), which changes what counts
+  as one visit in the grouping this rebuild derives a visit's name from.
+- **Revised by**: [0035](0035-a-visit-is-judged-on-all-of-itself.md), which bounds the rebuild at the
+  verdict's own evidence so that it is the same visit the engine judged, as this one intended.
 
 ## Context
 

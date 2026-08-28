@@ -15,7 +15,6 @@ public sealed class ClassificationVerdictTests
         verdict.Category.Should().Be(TrafficCategory.InsufficientEvidence);
         verdict.Strength.Should().Be(EvidenceStrength.None);
         verdict.Supporting.Should().BeEmpty();
-        verdict.IsProvisional.Should().BeFalse();
     }
 
     [Fact]
@@ -56,20 +55,6 @@ public sealed class ClassificationVerdictTests
             .Which.Code.Should().Be("traversal.sitemap_order");
         verdict.Contradicting.Should().ContainSingle()
             .Which.Code.Should().Be("interaction.pointer_present");
-    }
-
-    /// <summary>
-    /// A provisional verdict is reached before the session closed. The live view renders it as
-    /// unfinished, so the flag has to survive on the record rather than be inferred later.
-    /// </summary>
-    [Fact]
-    public void A_Verdict_Is_Settled_Unless_It_Says_Otherwise()
-    {
-        var settled = ClassificationVerdict.Insufficient(RulesetVersion.Current);
-        var provisional = settled with { IsProvisional = true };
-
-        settled.IsProvisional.Should().BeFalse();
-        provisional.IsProvisional.Should().BeTrue();
     }
 
     /// <summary>

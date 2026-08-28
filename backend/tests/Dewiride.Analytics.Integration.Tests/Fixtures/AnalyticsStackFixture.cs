@@ -91,5 +91,11 @@ public sealed class AnalyticsStackFixture : WebApplicationFactory<Program>, IAsy
         // The engine is driven directly by the tests that are about judging, so it must not also
         // be running on a timer and writing verdicts in the middle of them.
         builder.UseSetting(TestSettings.BackgroundJudging, "false");
+
+        // Nothing in this suite may reach out to the internet. Both of these would, one to a dozen
+        // other companies' web servers and one to a name server, and neither would make a single
+        // assertion here more truthful.
+        builder.UseSetting(TestSettings.NameChecks, "false");
+        builder.UseSetting(TestSettings.CrawlerRangeDownloads, "false");
     }
 }

@@ -36,10 +36,11 @@
   </ItemGroup>
 
   <!--
-    The reference-data reader is internal because nothing outside this assembly should reach a
-    downloaded file directly — the rest of the product asks INetworkLookup. Its own tests are the
-    exception: what is worth pinning about it is how it copes with a half-million-line file from
-    somebody else's server, which cannot be asked through the port.
+    The readers of downloaded data are internal because nothing outside this assembly should reach
+    a fetched file directly — the rest of the product asks INetworkLookup and
+    ICrawlerAddressDirectory. Their own tests are the exception: what is worth pinning about them
+    is how they cope with files somebody else's server produced, which cannot be asked through a
+    port.
   -->
   <ItemGroup>
     <InternalsVisibleTo Include="Dewiride.Analytics.Integration.Tests" />

@@ -1,3 +1,5 @@
+using Dewiride.Analytics.Application.Telemetry;
+
 namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 
 /// <summary>
@@ -57,27 +59,77 @@ internal static class SendingSites
     /// </summary>
     /// <remarks>
     /// <para>
-    /// What a statement that counts visits asks for instead. A visit is a chain of reports each
-    /// less than an idle timeout apart, so a visit with a report on both sides of an edge must
-    /// have one within an idle timeout of that edge — which is the report that carries the whole
-    /// chain across it. One timeout is therefore exactly enough, and not by estimation.
+    /// What a statement that counts visits asks for instead. A day either side, which is as long as
+    /// a visit can be — see <see cref="VisitorKeys.LongestVisit"/> — so a visit touching the period
+    /// at all is read whole.
     /// </para>
     /// <para>
-    /// Reaching back matters most where a visit's identity is derived from when it began: read
-    /// from the period's own start, a visit already under way is handed an invented beginning and
-    /// so an invented identity, and every row that depended on recognising it silently disappears.
-    /// Reaching forward is what makes "this visit is over" an observation rather than an artefact
-    /// of where the reading stopped.
+    /// Reaching back matters most where a visit's identity is derived from when it began: read from
+    /// the period's own start, a visit already under way has its arrival out of range, every report
+    /// about it takes no part, and the visit vanishes from anything narrowed this way while still
+    /// appearing in the list it was narrowed from. Reaching forward is what makes "this visit is
+    /// over" an observation rather than an artefact of where the reading stopped.
     /// </para>
     /// <para>
-    /// The timeout is bound by the caller, because it is a setting a self-hoster may change and
-    /// every answer that mentions a visit has to be counting the same thing.
+    /// The idle timeout is no reach for this, close to hand as it is. A report about a page belongs
+    /// to the visit that page was arrived at in however long the silence before it, so a visit is a
+    /// chain that can have hours between its links and a timeout spans none of it.
     /// </para>
     /// </remarks>
     public static string ThePeriodAndTheVisitsAcrossIt { get; } = string.Join(
         ConditionIndent,
-        "server_ts >= fromUnixTimestamp64Milli({from_ms:Int64} - {idle_seconds:Int64} * 1000, 'UTC')",
-        "server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {idle_seconds:Int64} * 1000, 'UTC')");
+        "server_ts >= fromUnixTimestamp64Milli({from_ms:Int64} - {longest_visit_seconds:Int64} * 1000, 'UTC')",
+        "server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {longest_visit_seconds:Int64} * 1000, 'UTC')");
+
+    /// <summary>
+    /// The activity one visit's verdict was reached from.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// What a statement that shows a visit beside its verdict asks for. A verdict records the last
+    /// instant of the activity it was reached from, and reading up to that instant is what makes
+    /// the account of a visit and the reasons given for it two views of one thing rather than two
+    /// answers.
+    /// </para>
+    /// <para>
+    /// It matters because they can otherwise differ. The engine judges a visit once it has been
+    /// quiet long enough to be over, and a page announcing that it is being left can reach the
+    /// collector an hour after that — belonging to the visit all the same, and arriving too late
+    /// for the verdict. Read without this bound, a reader is shown a trail of pages adding up to an
+    /// hour of reading beside a sentence saying the visit was read for four minutes, and neither
+    /// number is wrong.
+    /// </para>
+    /// <para>
+    /// A visit nothing has judged yet is read to the end of the period, because there is no verdict
+    /// for it to disagree with and the account is the only thing there is to show.
+    /// </para>
+    /// </remarks>
+    public static string ThePeriodUpToTheVerdict { get; } = string.Join(
+        ConditionIndent,
+        "server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')",
+        "server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')",
+        TheVerdictReached);
+
+    /// <summary>
+    /// The last instant of the activity this visit's verdict was reached from, or the end of the
+    /// period where nothing has judged it.
+    /// </summary>
+    /// <remarks>
+    /// The visit is named the way the engine names one — the visitor and the instant it began,
+    /// which are the two values the calling statement already binds to find it at all — so no
+    /// third value travels and nothing a caller wrote reaches the comparison.
+    /// </remarks>
+    private const string TheVerdictReached = """
+        server_ts <= (
+                      SELECT if(
+                          count() = 0,
+                          fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC'),
+                          argMax(ended_at, (ruleset_major, ruleset_minor, classified_at)))
+                      FROM session_classifications
+                      WHERE site_id = {site_id:UUID}
+                        AND session_key = concat(
+                            {visitor_key:String}, ':', toString({from_ms:Int64})))
+        """;
 
     /// <summary>
     /// Writes the reduction over a window of raw activity, ending in a <c>windowed</c> selection.

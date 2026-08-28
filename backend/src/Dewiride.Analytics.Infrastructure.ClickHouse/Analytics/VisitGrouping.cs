@@ -6,12 +6,36 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A visit is one visitor's activity up to the first silence longer than the idle timeout. The
-/// store has no session function, so the running total of silences crossed below is the
-/// implementation — and it is written once here because more than one statement needs it now: the
-/// one that rebuilds visits for the detection engine, and the ones that answer where visits began,
-/// where they ended, and which pages a single visit went through. A visit is therefore defined in
-/// exactly one place however many questions are asked about one.
+/// A visit begins when somebody arrives, and runs until the first silence longer than the idle
+/// timeout. The store has no session function, so the running total below is the implementation —
+/// and it is written once here because more than one statement needs it: the one that rebuilds
+/// visits for the detection engine, and the ones that answer where visits began, where they ended,
+/// and which pages a single visit went through. A visit is therefore defined in exactly one place
+/// however many questions are asked about one.
+/// </para>
+/// <para>
+/// Only an arrival begins one. A tracker reports how a page is going, and reports it being left,
+/// from the page itself — so a report of either kind is an account of a page somebody was already
+/// on, and carries no beginning of its own. A departure that reaches the collector long after the
+/// reader stopped touching the page, because the tab was dismissed the next morning or the machine
+/// was woken up, is the end of the visit it names rather than the whole of a new one. The silence
+/// is still measured across every report whatever its kind, because any report at all is somebody
+/// being there.
+/// </para>
+/// <para>
+/// Every report belongs to the visit its own page was arrived at in. That is what the report is an
+/// account of, and it is knowable from the report itself: the visitor and the page are both on it.
+/// A report naming a page this visitor was never seen arriving at is left out altogether. The page
+/// was delivered to somebody, but nothing on the report says which visit it belonged to, and the
+/// nearest one is not a safe guess — a visitor's key is derived from the network the report came
+/// over and the day it arrived, so it changes under a reader who moves between networks and again
+/// at midnight, and the tail of a visit routinely arrives under a key that announced nothing.
+/// Counted as a visit of its own, one reader becomes two, the second of them a person who arrived,
+/// read for a quarter of an hour and left.
+/// </para>
+/// <para>
+/// Where an arrival and an account of it fall in the same instant, the arrival is read first, so a
+/// page is never reported on before the visit it belongs to has been settled.
 /// </para>
 /// <para>
 /// A visit watched by both a tracker in the browser and a reporter on the site's own server holds
@@ -21,20 +45,10 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// identifies something probing for a way in.
 /// </para>
 /// <para>
-/// A page the visit went to is every report about one arrival at it, folded into one. A report is
-/// about a page whether or not it announces one: the tracker sends progress and departure reports
-/// naming the page they were measured on, and one of those is evidence that the page was delivered
-/// — the script that sent it was running on the page. Reports travel by a transport that
-/// acknowledges nothing, from pages frequently in the act of being closed, and the report
-/// announcing the arrival is the first of them and the one most easily lost. So a page a visit only
-/// ever reported reading is a page the visit read, and counting nothing for it discards the
-/// strongest evidence this product ever holds that somebody was there.
-/// </para>
-/// <para>
-/// A page cannot be counted twice this way. A path the visit announced arriving at counts once per
-/// announcement whatever else was reported about it, and a path it announced no arrival at counts
-/// once altogether. Where both halves announced the same arrival it is the request path's report
-/// that stands for it, because that one carries the status the site answered with.
+/// A page the visit went to is every report about one arrival at it, folded into one — so a page
+/// read for half an hour and reported on thirty times is the single delivery it was, and a page
+/// asked for twice is two. Where both halves announced the same arrival, the request path's report
+/// is the one that stands for it.
 /// </para>
 /// <para>
 /// Expects a preceding <c>identified</c> selection — see
@@ -46,6 +60,15 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 internal static class VisitGrouping
 {
     /// <summary>
+    /// Reads a visitor's reports in the order the visit happened in.
+    /// </summary>
+    /// <remarks>
+    /// The instant, then the arrival ahead of the accounts of it, then the report's own identity so
+    /// that two written in the same millisecond are read the same way every time.
+    /// </remarks>
+    private const string InOrder = "ORDER BY server_ts, kind != 'PageView', event_id";
+
+    /// <summary>
     /// Writes the grouping, over the visitors the calling statement is asking about.
     /// </summary>
     /// <param name="visitors">
@@ -53,26 +76,47 @@ internal static class VisitGrouping
     /// this assembly and never by a caller: where it narrows to a single visitor, that visitor's
     /// key travels as a bound value and only the parameter's name appears here.
     /// </param>
-    /// <returns>The six expressions, ending in <c>opened</c>.</returns>
+    /// <returns>The eight expressions, ending in <c>opened</c>.</returns>
     public static string Of(string visitors) => $$"""
-        ordered AS
+        reported AS
+            (
+                SELECT
+                    *,
+                    max(if(kind = 'PageView', toUnixTimestamp64Milli(server_ts), 0)) OVER (
+                        PARTITION BY visitor_key, path
+                        {{InOrder}}
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS arrival_ms
+                FROM identified
+                WHERE {{visitors}}
+            ),
+            ordered AS
             (
                 SELECT
                     *,
                     dateDiff('second', lagInFrame(server_ts, 1, server_ts) OVER visit, server_ts) AS since_previous
-                FROM identified
-                WHERE {{visitors}}
-                WINDOW visit AS (PARTITION BY visitor_key ORDER BY server_ts ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
+                FROM reported
+                WHERE arrival_ms > 0
+                WINDOW visit AS (PARTITION BY visitor_key {{InOrder}} ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
+            ),
+            numbered AS
+            (
+                SELECT
+                    *,
+                    sum(toUInt8(kind = 'PageView' AND since_previous > {idle_seconds:Int64})) OVER (
+                        PARTITION BY visitor_key
+                        {{InOrder}}
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS arrival_ordinal
+                FROM ordered
             ),
             grouped AS
             (
                 SELECT
                     *,
-                    sum(toUInt8(since_previous > {idle_seconds:Int64})) OVER (
-                        PARTITION BY visitor_key
-                        ORDER BY server_ts
+                    max(if(kind = 'PageView', arrival_ordinal, 0)) OVER (
+                        PARTITION BY visitor_key, path
+                        {{InOrder}}
                         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS visit_ordinal
-                FROM ordered
+                FROM numbered
             ),
             sighted AS
             (

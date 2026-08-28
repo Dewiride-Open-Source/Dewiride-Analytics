@@ -41,7 +41,6 @@ const READER = {
   surfaces: ['browser-tracker', 'no-script-pixel'],
   category: 'likely-human',
   strength: 'moderate',
-  isProvisional: false,
   ruleset: '3.0',
   supporting: [
     { code: 'browser.script_executed', direction: 'toward-human', weight: 35, values: {} },
@@ -70,7 +69,6 @@ const CRAWLER = {
   surfaces: ['nextjs-middleware', 'aspnetcore-middleware'],
   category: 'suspected-ai-crawler',
   strength: 'strong',
-  isProvisional: false,
   ruleset: '3.0',
   supporting: [
     {

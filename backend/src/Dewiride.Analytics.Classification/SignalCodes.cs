@@ -31,6 +31,35 @@ public static class SignalCodes
     /// </remarks>
     public const string UnverifiedClaim = "identity.unverified_claim";
 
+    /// <summary>
+    /// The request came from an address its operator vouches for as its own crawlers'.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The only observation in this list that establishes who a visitor is rather than what it said
+    /// or what it did, and the only one that may carry a verdict to
+    /// <see cref="EvidenceStrength.Verified"/>. It replaces <see cref="UnverifiedClaim"/> rather
+    /// than joining it: the claim has stopped being a claim.
+    /// </para>
+    /// <para>
+    /// One code for both of the ways a company can vouch — a file of addresses it publishes, and a
+    /// domain its machines answer to that points back at them — because what they establish is the
+    /// same fact to the same certainty, and which of the two settled a particular visit is a
+    /// detail of this product rather than something a customer has any use for.
+    /// </para>
+    /// </remarks>
+    public const string ConfirmedCrawler = "identity.confirmed_crawler";
+
+    /// <summary>
+    /// The visitor named one company's crawler and arrived from an address belonging to another.
+    /// </summary>
+    /// <remarks>
+    /// Reported only on a positive contradiction — the address settled as one company's while the
+    /// visitor named a different one. An address that settles as nobody's is not an impostor; it is
+    /// an address nothing has been established about, which is the ordinary case.
+    /// </remarks>
+    public const string FalseCrawlerClaim = "identity.false_claim";
+
     /// <summary>The visitor named itself as a general-purpose automation tool rather than a crawler.</summary>
     public const string DeclaredTool = "identity.declared_tool";
 

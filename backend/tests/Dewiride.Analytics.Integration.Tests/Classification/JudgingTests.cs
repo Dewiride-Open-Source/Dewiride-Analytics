@@ -32,6 +32,14 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
     private const string Scanner = "python-requests/2.32.3";
 
     /// <summary>
+    /// What the largest search engine sends, which names no crawler at all. Taken from real
+    /// traffic: no catalogue of names can reach this visitor.
+    /// </summary>
+    private const string HeadlessChrome =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+        + "HeadlessChrome/141.0.0.0 Safari/537.36";
+
+    /// <summary>
     /// Alibaba's international network, which is where a live installation's hundred phantom
     /// readers turned out to be sitting.
     /// </summary>
@@ -92,6 +100,60 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         visits.Should().ContainSingle();
         visits[0].Verdict.Category.Should().NotBe(TrafficCategory.LikelyHuman);
         visits[0].Verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.HostingNetwork);
+    }
+
+    /// <summary>
+    /// The whole point of checking addresses, end to end. The visitor renders pages from a rented
+    /// server and says nothing but the name of an ordinary browser, so every other reading the
+    /// engine takes points at either a person or anonymous automation — and it is the largest
+    /// search engine indexing the site. Only the address settles it, and only if it survives the
+    /// round trip through both stores.
+    /// </summary>
+    [Fact]
+    public async Task A_Crawler_Recognised_By_Its_Address_Is_Named_Although_It_Said_Nothing()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Confirmed(Rented(Page(site.Id, "indexer", at, "/", HeadlessChrome)), "Microsoft"),
+            Confirmed(Rented(Page(site.Id, "indexer", at.AddMinutes(2), "/posts/hello", HeadlessChrome)), "Microsoft"));
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.KnownSearchCrawler);
+        visits[0].Verdict.Strength.Should().Be(EvidenceStrength.Verified);
+
+        var confirmed = visits[0].Verdict.Supporting
+            .Single(signal => signal.Code == SignalCodes.ConfirmedCrawler);
+
+        confirmed.Parameters["operator"].Should().Be("Microsoft");
+    }
+
+    /// <summary>
+    /// A crawler asks for several pages and each is checked as it arrives, so one report settling
+    /// the address settles the visit. Requiring every report to agree would lose an identity to a
+    /// list that was republished halfway through a visit.
+    /// </summary>
+    [Fact]
+    public async Task One_Report_Settling_The_Address_Settles_The_Whole_Visit()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "indexer", at, "/", HeadlessChrome),
+            Confirmed(Page(site.Id, "indexer", at.AddMinutes(2), "/posts/hello", HeadlessChrome), "Microsoft"),
+            Page(site.Id, "indexer", at.AddMinutes(4), "/about", HeadlessChrome));
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.KnownSearchCrawler);
     }
 
     /// <summary>
@@ -174,13 +236,13 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// The report announcing an arrival is sent first, on load, and is the one most easily lost.
-    /// What follows it names the page it was measured on, and a tracker only measures a page from
-    /// the page itself — so the visit read what its reports say it read, and is judged on that
-    /// rather than answered with "too little to go on".
+    /// A departure report announces no arrival, and it reaches the collector under whatever key the
+    /// network and the day produced — which is not the key that announced the visit if either has
+    /// changed since. Judged as a visit of its own it becomes a second reader, and a convincing one:
+    /// it carries a quarter of an hour of reading and a scroll to the bottom of the page.
     /// </summary>
     [Fact]
-    public async Task A_Reader_Whose_Arrival_Was_Never_Reported_Is_Still_Judged()
+    public async Task A_Departure_Nothing_Ever_Arrived_At_Is_Not_Judged_As_A_Visit()
     {
         var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
 
@@ -190,9 +252,94 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
 
         var visits = await VisitsAsync(site);
 
-        visits.Should().ContainSingle();
-        visits[0].PageCount.Should().Be(1);
-        visits[0].Verdict.Category.Should().NotBe(TrafficCategory.InsufficientEvidence);
+        visits.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A tab dismissed the following morning announces the page leaving hours after anybody was
+    /// reading it. The reading it carries is the reading of the page it names, so it goes back to
+    /// the visit that page was arrived at in rather than opening one of its own.
+    /// </summary>
+    [Fact]
+    public async Task A_Departure_Reported_Hours_Later_Returns_Its_Reading_To_Its_Own_Visit()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "reader", at, "/posts/hello", Chrome),
+            Read(site.Id, "reader", at.AddHours(4), Chrome, "/posts/hello"));
+
+        var found = await ReadSessionsAsync(site.Id);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.PageCount.Should().Be(1);
+        found[0].Evidence.EngagedMs.Should().Be(30_000);
+        found[0].Evidence.StartedAt.Should().BeCloseTo(at, TimeSpan.FromSeconds(1));
+    }
+
+    /// <summary>
+    /// The same reader, with the window ending in the middle of the four-hour silence. A backlog is
+    /// walked in stretches, and where one ends is an accident of when the engine was last run — so
+    /// the visit is still judged on all of itself rather than on the part that fell inside.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Lying_Across_The_End_Of_A_Window_Is_Judged_On_All_Of_It()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "reader", at, "/posts/hello", Chrome),
+            Read(site.Id, "reader", at.AddHours(4), Chrome, "/posts/hello"));
+
+        var found = await ReadSessionsAsync(site.Id, at.AddMinutes(-1), at.AddHours(2));
+
+        found.Should().ContainSingle();
+        found[0].IsClosed.Should().BeTrue();
+        found[0].Evidence.EngagedMs.Should().Be(30_000);
+        found[0].Evidence.EndedAt.Should().BeCloseTo(at.AddHours(4), TimeSpan.FromSeconds(1));
+    }
+
+    /// <summary>
+    /// A visitor still reading is a visitor who has not left, whatever window they fall in. The
+    /// instant a visit is treated as finished is the present moment less an idle timeout, and it is
+    /// the only thing that decides this.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Still_Under_Way_Is_Not_Judged_Whatever_Window_It_Falls_In()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Now.AddMinutes(-5);
+
+        await WriteAsync(Page(site.Id, "reader", at, "/posts/hello", Chrome));
+
+        var found = await ReadSessionsAsync(site.Id, at.AddMinutes(-1), Now);
+
+        found.Should().ContainSingle();
+        found[0].IsClosed.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// A report about a page this visitor was never seen arriving at says a page was delivered to
+    /// somebody, and nothing about which visit it belonged to. Handing it to the nearest visit would
+    /// credit a reader with a page they never asked for.
+    /// </summary>
+    [Fact]
+    public async Task A_Report_About_A_Page_Nobody_Arrived_At_Joins_No_Visit()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "reader", at, "/posts/hello", Chrome),
+            Read(site.Id, "reader", at.AddHours(4), Chrome, "/pricing"));
+
+        var found = await ReadSessionsAsync(site.Id);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.PageCount.Should().Be(1);
+        found[0].Evidence.Requests.Select(request => request.Path).Should().Equal("/posts/hello");
     }
 
     /// <summary>
@@ -633,6 +780,82 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         stack.Services.GetRequiredService<IEventSink>().WriteBatchAsync(events, Cancellation.Token);
 
     /// <summary>
+    /// The address is what settles the identity of a crawler whose operator publishes no list, and
+    /// it has to survive the whole reconstruction to be of any use. It is carried beside the
+    /// evidence rather than within it: the engine must never be able to reason about where
+    /// somebody lives, and a test that only read the stored column would not notice if it could.
+    /// </summary>
+    [Fact]
+    public async Task The_Address_A_Visit_Arrived_From_Is_Carried_Back_Beside_The_Evidence()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            From(Page(site.Id, "indexer", at, "/", HeadlessChrome), "77.88.5.1"),
+            From(Page(site.Id, "indexer", at.AddMinutes(2), "/posts/hello", HeadlessChrome), "77.88.5.1"));
+
+        var visits = await ReconstructAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Address.Should().Be("77.88.5.1");
+        visits[0].Evidence.ConfirmedOperator.Should().BeNull();
+    }
+
+    /// <summary>
+    /// One report carrying an address is enough. A visit spanning several has one operator behind
+    /// it whichever of its addresses the question is asked about.
+    /// </summary>
+    [Fact]
+    public async Task One_Report_Carrying_An_Address_Is_Enough_To_Ask_About_The_Visit()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "indexer", at, "/", HeadlessChrome),
+            From(Page(site.Id, "indexer", at.AddMinutes(2), "/posts/hello", HeadlessChrome), "77.88.5.1"));
+
+        var visits = await ReconstructAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Address.Should().Be("77.88.5.1");
+    }
+
+    /// <summary>
+    /// What every visit older than three days looks like once the address has been erased, and
+    /// what a surface that never observed one looks like from the beginning.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_With_No_Address_Recorded_Comes_Back_Without_One()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+
+        await WriteAsync(Page(site.Id, "indexer", Yesterday, "/", HeadlessChrome));
+
+        var visits = await ReconstructAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Address.Should().BeNull();
+    }
+
+    /// <summary>Rebuilds the visits the engine would be handed, without judging them.</summary>
+    private async Task<IReadOnlyList<ObservedSession>> ReconstructAsync(Site site) =>
+        await stack.Services.GetRequiredService<ISessionSource>()
+            .ReadAsync(
+                new SessionWindow
+                {
+                    SiteId = site.Id,
+                    From = Now.AddDays(-2),
+                    To = Now.AddMinutes(-31),
+                    SettledBefore = Now.AddMinutes(-30),
+                    IdleTimeout = TimeSpan.FromMinutes(30),
+                    MaxRequestsPerSession = 1000,
+                },
+                Cancellation.Token)
+            .ConfigureAwait(false);
+
+    /// <summary>
     /// Runs the engine over a site, starting far enough back to reach the activity the test wrote.
     /// </summary>
     /// <remarks>
@@ -669,14 +892,21 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
     private Task<IReadOnlyList<ObservedSession>> ReadSessionsAsync(Guid siteId) =>
         ReadSessionsAsync(siteId, Now.AddDays(-2));
 
-    private async Task<IReadOnlyList<ObservedSession>> ReadSessionsAsync(Guid siteId, DateTimeOffset from) =>
+    private Task<IReadOnlyList<ObservedSession>> ReadSessionsAsync(Guid siteId, DateTimeOffset from) =>
+        ReadSessionsAsync(siteId, from, Now.AddMinutes(-30));
+
+    private async Task<IReadOnlyList<ObservedSession>> ReadSessionsAsync(
+        Guid siteId,
+        DateTimeOffset from,
+        DateTimeOffset to) =>
         await stack.Services.GetRequiredService<ISessionSource>()
             .ReadAsync(
                 new SessionWindow
                 {
                     SiteId = siteId,
                     From = from,
-                    To = Now.AddMinutes(-30),
+                    To = to,
+                    SettledBefore = Now.AddMinutes(-30),
                     IdleTimeout = TimeSpan.FromMinutes(30),
                     MaxRequestsPerSession = 1000,
                 },
@@ -732,6 +962,14 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
             HadKeyboardInteraction = false,
             DeclaredWebDriver = false,
         };
+
+    /// <summary>The same activity, arriving from an address the named company vouches for.</summary>
+    private static RawEvent Confirmed(RawEvent observed, string operatorName) =>
+        observed with { ConfirmedOperator = operatorName };
+
+    /// <summary>The same activity, as observed from a particular address.</summary>
+    private static RawEvent From(RawEvent observed, string ipAddress) =>
+        observed with { IpAddress = ipAddress };
 
     /// <summary>The same activity, arriving from a computer rented in a datacentre.</summary>
     private static RawEvent Rented(RawEvent observed) =>

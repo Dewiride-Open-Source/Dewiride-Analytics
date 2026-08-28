@@ -6,6 +6,9 @@
   activity one statement reads, and removes rows that name visits which never happened.
 - **Follows**: `0018-a-page-somebody-reported-reading-is-a-page-they-visited.md`, which fixed the
   other reason a live installation was full of visits with no pages in them.
+- **Revised by**: [0035](0035-a-visit-is-judged-on-all-of-itself.md). The proof below that one idle
+  timeout is enough rests on a visit being a chain of reports each less than one apart, which stopped
+  being true in [0034](0034-a-visit-begins-where-somebody-arrived.md). The reach is now a full day.
 
 ## Context
 

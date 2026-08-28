@@ -7,6 +7,7 @@ using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Infrastructure.Accounts;
 using Dewiride.Analytics.Infrastructure.Classification;
+using Dewiride.Analytics.Infrastructure.Crawlers;
 using Dewiride.Analytics.Infrastructure.Health;
 using Dewiride.Analytics.Infrastructure.Identity;
 using Dewiride.Analytics.Infrastructure.Network;
@@ -22,6 +23,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace Dewiride.Analytics.Infrastructure;
 
@@ -178,6 +180,101 @@ public static class InfrastructureRegistration
         builder.Services.AddSingleton<ReferenceDataStore>();
         builder.Services.AddSingleton<INetworkLookup, ReferenceDataNetworkLookup>();
         builder.Services.AddHostedService<ReferenceDataRefresher>();
+
+        AddCrawlerAddresses(builder);
+    }
+
+    /// <summary>
+    /// Adds the lookup that recognises an address a company vouches for as its own crawlers', and
+    /// the service that keeps the published lists current.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A singleton for the same reason the place lookup is one: it is asked once per accepted
+    /// event, and it holds a table built from a dozen files that would otherwise be reread for
+    /// every page view.
+    /// </para>
+    /// <para>
+    /// The download client is capped rather than left to buffer whatever arrives. These files come
+    /// from other companies' web servers, and the largest of them is a few tens of kilobytes — so
+    /// anything approaching the cap is a redirect to something that is not a list of addresses, and
+    /// should cost a failed refresh rather than the machine's memory.
+    /// </para>
+    /// </remarks>
+    /// <param name="builder">The host application builder.</param>
+    private static void AddCrawlerAddresses(IHostApplicationBuilder builder)
+    {
+        builder.Services.AddOptions<CrawlerRangeOptions>()
+            .Bind(builder.Configuration.GetSection(CrawlerRangeOptions.SectionName))
+            .Validate(
+                settings => !string.IsNullOrWhiteSpace(settings.Directory),
+                $"{CrawlerRangeOptions.SectionName}:Directory must name a directory to keep the "
+                + "published crawler address ranges in.")
+            .Validate(
+                settings => settings.RefreshInterval >= TimeSpan.FromMinutes(5),
+                $"{CrawlerRangeOptions.SectionName}:RefreshInterval must be at least five minutes. "
+                + "The lists behind it are republished no more often than daily.")
+            .Validate(
+                settings => settings.DownloadTimeout >= TimeSpan.FromSeconds(5),
+                $"{CrawlerRangeOptions.SectionName}:DownloadTimeout must be at least five seconds.")
+            .Validate(
+                settings => settings.LargestFileBytes >= 64 * 1024,
+                $"{CrawlerRangeOptions.SectionName}:LargestFileBytes must be at least 64 kilobytes. "
+                + "The largest of these lists is a few tens of kilobytes and grows.")
+            .ValidateOnStart();
+
+        builder.Services.AddHttpClient(
+            CrawlerRangeRefresher.HttpClientName,
+            (services, client) =>
+                client.MaxResponseContentBufferSize =
+                    services.GetRequiredService<IOptions<CrawlerRangeOptions>>().Value.LargestFileBytes);
+
+        builder.Services.AddSingleton<CrawlerRangeStore>();
+        builder.Services.AddSingleton<ICrawlerAddressDirectory>(
+            services => services.GetRequiredService<CrawlerRangeStore>());
+        builder.Services.AddHostedService<CrawlerRangeRefresher>();
+
+        AddCrawlerNames(builder);
+    }
+
+    /// <summary>
+    /// Adds the check that settles whose crawlers an address belongs to from the name it answers to.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A singleton because what it remembers is the point of it. The answers outlive any one pass
+    /// over a site's history, and a fresh instance per pass would ask a name server the same
+    /// question about the same fleet every half hour.
+    /// </para>
+    /// <para>
+    /// It is the one thing registered here that reaches the network while answering, and the only
+    /// caller is the background pass that judges finished visits. Nothing on the ingest path may
+    /// take a dependency on it.
+    /// </para>
+    /// </remarks>
+    /// <param name="builder">The host application builder.</param>
+    private static void AddCrawlerNames(IHostApplicationBuilder builder)
+    {
+        builder.Services.AddOptions<CrawlerNameOptions>()
+            .Bind(builder.Configuration.GetSection(CrawlerNameOptions.SectionName))
+            .Validate(
+                settings => settings.LookupTimeout >= TimeSpan.FromSeconds(1),
+                $"{CrawlerNameOptions.SectionName}:LookupTimeout must be at least one second. It "
+                + "covers two questions put to somebody else's name server.")
+            .Validate(
+                settings => settings.LookupsAtOnce is >= 1 and <= 64,
+                $"{CrawlerNameOptions.SectionName}:LookupsAtOnce must be between one and sixty-four.")
+            .Validate(
+                settings => settings.RememberFor >= TimeSpan.FromMinutes(5),
+                $"{CrawlerNameOptions.SectionName}:RememberFor must be at least five minutes, or a "
+                + "single busy crawler becomes a stream of questions to its operator's name server.")
+            .Validate(
+                settings => settings.RememberedAnswers >= 1000,
+                $"{CrawlerNameOptions.SectionName}:RememberedAnswers must be at least one thousand.")
+            .ValidateOnStart();
+
+        builder.Services.AddSingleton<IReverseNameLookup, SystemNameLookup>();
+        builder.Services.AddSingleton<ICrawlerNameLookup, CrawlerNameLookup>();
     }
 
     /// <summary>

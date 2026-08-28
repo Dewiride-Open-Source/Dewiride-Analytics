@@ -1,3 +1,5 @@
+using Dewiride.Analytics.Application.Telemetry;
+
 namespace Dewiride.Analytics.Application.Analytics;
 
 /// <summary>
@@ -629,7 +631,11 @@ public sealed record SiteVisitJourneyQuery : AnalyticsQuery
     public const int MostSteps = 200;
 
     /// <summary>How far forward a visit is followed from where it began.</summary>
-    public static readonly TimeSpan LongestVisit = TimeSpan.FromHours(24);
+    /// <remarks>
+    /// <see cref="VisitorKeys.LongestVisit"/>, because that is how long a visit can be rather than
+    /// how far anybody chose to look.
+    /// </remarks>
+    public static readonly TimeSpan LongestVisit = VisitorKeys.LongestVisit;
 
     /// <summary>Asks for the pages one visit went through.</summary>
     /// <param name="visit">Which visit.</param>

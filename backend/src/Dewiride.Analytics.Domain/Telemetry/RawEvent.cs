@@ -132,6 +132,19 @@ public sealed record RawEvent
     /// </remarks>
     public string? NetworkOwner { get; init; }
 
+    /// <summary>
+    /// The company that vouches for the address this request came from, or null where nobody does
+    /// — which is the answer for virtually every request.
+    /// </summary>
+    /// <remarks>
+    /// The one identity in this record, as against the several claims: it was settled against what
+    /// the company itself says about its own machines, so unlike a user agent it is not something
+    /// the sender could have written. Derived at ingest for the same reason the network attributes
+    /// above are — the address it was settled from does not outlive the retention window, and
+    /// nothing could recover it later.
+    /// </remarks>
+    public string? ConfirmedOperator { get; init; }
+
     /// <summary>Browser viewport width in CSS pixels, where the surface can observe it.</summary>
     public int? ViewportWidth { get; init; }
 

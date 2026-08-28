@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 
 namespace Dewiride.Analytics.Classification.Scoring;
@@ -13,16 +14,38 @@ namespace Dewiride.Analytics.Classification.Scoring;
 /// whichever detector shouted loudest. A scanner that also scrolled a page is a scanner.
 /// </para>
 /// <para>
-/// Nothing here can produce <see cref="EvidenceStrength.Verified"/>. That band is reserved for an
-/// identity established from an operator's published addresses, which is a check this engine
-/// cannot perform because it performs no I/O. Behaviour has no route to it, by construction
-/// rather than by discipline.
+/// One rule sits outside that order rather than at the top of it: an identity settled against what
+/// a company says about its own crawlers' addresses is not weighed at all. It is the only thing
+/// here the visitor did not author, so it decides the category and the strength together, and it
+/// is the only route to <see cref="EvidenceStrength.Verified"/>. Behaviour never reaches that
+/// band, by construction rather than by discipline — this engine performs no I/O, so it could not
+/// check an address if it wanted to, and the answer arrives as evidence gathered when the visit
+/// was.
 /// </para>
 /// </remarks>
 public static class EvidenceScorecard
 {
-    /// <summary>Purposes that make a crawler an AI crawler rather than a search one.</summary>
-    private static readonly ImmutableArray<string> AiPurposes = ["ai-training", "ai-assistant", "ai-search"];
+    /// <summary>
+    /// What a crawler whose identity was established is called, by what its operator says it is for.
+    /// </summary>
+    /// <remarks>
+    /// Reached only once the address has settled whose crawler it is, which is what makes every
+    /// category here one of the ones with "known" in its name. A purpose absent from this table —
+    /// archiving, auditing who links to whom, or none stated at all — leaves an ordinary crawler,
+    /// which is what those are; the verdict still carries the company's name and the verified band.
+    /// </remarks>
+    private static readonly FrozenDictionary<string, TrafficCategory> ConfirmedCategories =
+        new Dictionary<string, TrafficCategory>(StringComparer.Ordinal)
+        {
+            ["ai-training"] = TrafficCategory.KnownAiCrawler,
+            ["ai-assistant"] = TrafficCategory.KnownAiCrawler,
+            ["ai-search"] = TrafficCategory.KnownAiCrawler,
+            ["search-index"] = TrafficCategory.KnownSearchCrawler,
+            ["monitoring"] = TrafficCategory.MonitoringOrSynthetic,
+            ["social-preview"] = TrafficCategory.KnownAutomatedService,
+            ["site-tooling"] = TrafficCategory.KnownAutomatedService,
+            ["advertising"] = TrafficCategory.KnownAutomatedService,
+        }.ToFrozenDictionary();
 
     /// <summary>Weight at or above which one observation is hard to produce by accident.</summary>
     private const int Decisive = 65;
@@ -77,6 +100,23 @@ public static class EvidenceScorecard
     /// </summary>
     private static TrafficCategory Decide(EvidenceSet evidence)
     {
+        // Wearing one company's name while arriving from another company's crawler addresses.
+        // Nothing legitimate produces that, and it rests on what two companies say about their
+        // own machines rather than on anything the visitor chose to say about itself.
+        if (evidence.Has(SignalCodes.FalseCrawlerClaim))
+        {
+            return TrafficCategory.SuspiciousAutomation;
+        }
+
+        // Who it is, established rather than claimed. Read before the probing rules on purpose: a
+        // search crawler asking for pages that are not there is following links somebody once
+        // published, and calling the largest search engine a scanner of the site it is indexing
+        // would be this product being confidently wrong about the one thing it can actually know.
+        if (evidence.Has(SignalCodes.ConfirmedCrawler))
+        {
+            return WhenConfirmed(evidence.Parameter(SignalCodes.ConfirmedCrawler, "purpose"));
+        }
+
         // Asking for the places only an intruder looks for settles it. Nothing else a visitor does
         // explains a request for a credential store that was never published.
         if (evidence.Has(SignalCodes.SensitivePaths)
@@ -95,10 +135,10 @@ public static class EvidenceScorecard
         {
             var purpose = evidence.Parameter(SignalCodes.DeclaredCrawler, "purpose");
 
-            // Named itself, and the name was not confirmed — so the category says "suspected" and
-            // the interface is obliged to say so too. Confirming the claim is what moves this to
-            // KnownAiCrawler, and only address verification can do that.
-            return purpose is not null && AiPurposes.Contains(purpose)
+            // Named itself, and got past the rule above, so nothing bore the name out — the
+            // category therefore says "suspected" and the interface is obliged to say so too.
+            // The same visit arriving from the company's own addresses is the branch above.
+            return IsAi(purpose)
                 ? TrafficCategory.SuspectedAiCrawler
                 : TrafficCategory.GenericWebCrawler;
         }
@@ -110,6 +150,15 @@ public static class EvidenceScorecard
 
         return Weighed(evidence);
     }
+
+    /// <summary>What a crawler is called once its identity has been established.</summary>
+    private static TrafficCategory WhenConfirmed(string? purpose) =>
+        purpose is not null && ConfirmedCategories.TryGetValue(purpose, out var category)
+            ? category
+            : TrafficCategory.GenericWebCrawler;
+
+    /// <summary>Whether a purpose makes a crawler an AI one rather than a search one.</summary>
+    private static bool IsAi(string? purpose) => WhenConfirmed(purpose) is TrafficCategory.KnownAiCrawler;
 
     /// <summary>
     /// Whether the session took content systematically rather than used the site.
@@ -181,6 +230,15 @@ public static class EvidenceScorecard
             return EvidenceStrength.None;
         }
 
+        // Established, not weighed. How much else was observed about a visitor arriving from an
+        // address its operator vouches for changes nothing about whether it is that operator,
+        // and letting corroboration decide the band would leave the firmest thing this product can
+        // say about a visit depending on how talkative the visit happened to be.
+        if (supporting.Any(Established))
+        {
+            return EvidenceStrength.Verified;
+        }
+
         var counted = supporting.Where(signal => signal.Weight >= Corroborating).ToArray();
 
         if (counted.Length == 0)
@@ -188,6 +246,18 @@ public static class EvidenceScorecard
             return category is TrafficCategory.Unknown ? EvidenceStrength.None : EvidenceStrength.Weak;
         }
 
+        return Corroborated(counted, contradicting);
+    }
+
+    /// <summary>
+    /// How firmly observations that count agree, once anything pointing the other way is allowed
+    /// for.
+    /// </summary>
+    /// <param name="counted">The supporting observations heavy enough to count.</param>
+    /// <param name="contradicting">Everything pointing the other way.</param>
+    /// <returns>The band.</returns>
+    private static EvidenceStrength Corroborated(Signal[] counted, ImmutableArray<Signal> contradicting)
+    {
         var heaviest = counted.Max(signal => signal.Weight);
         var independent = counted.Length;
 
@@ -207,6 +277,10 @@ public static class EvidenceScorecard
             ? EvidenceStrength.Moderate
             : reached;
     }
+
+    /// <summary>Whether an observation is the one that settles who a visitor is.</summary>
+    private static bool Established(Signal signal) =>
+        string.Equals(signal.Code, SignalCodes.ConfirmedCrawler, StringComparison.Ordinal);
 
     /// <summary>Which way a category's evidence has to point to support it.</summary>
     private static SignalDirection DirectionOf(TrafficCategory category) => category switch

@@ -1,4 +1,5 @@
 using Dewiride.Analytics.Application.Sessions;
+using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 
 namespace Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
@@ -24,27 +25,28 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
 /// about, and nothing else.
 /// </para>
 /// <para>
-/// Activity is read a full idle timeout past the end of the window. That is what makes "this visit
-/// is over" a fact rather than an artefact of where the reading stopped: a visit whose last
-/// activity falls before the end of the window has been watched falling silent for long enough to
-/// know nothing more is coming.
+/// Activity is read a full day either side of the window, and the window decides only which visits
+/// this reading is answerable for. A visit belongs to the window its first report falls in; whether
+/// it is over is asked of the moment nothing more can arrive, which the caller passes in. Keeping
+/// those two apart is what stops a verdict depending on where a boundary happened to fall: a
+/// backlog is walked in stretches of a few hours, and a visit lying across the end of one of them
+/// is judged on all of itself rather than on the part that fits.
 /// </para>
 /// <para>
-/// It is read a full idle timeout before the start of the window as well, and that is what stops a
-/// visit being counted twice. The caller works forward through a site in windows, and its bookmark
-/// stops at the earliest visit still in progress rather than at the end of the window it just
-/// read — so the next window routinely opens part-way through a visit that has already been judged.
-/// Read from the window's own start, the remainder of that visit looks like a whole one that began
-/// at whichever report happened to fall first inside it, and it is judged a second time under a
-/// second identity, usually with too little left in it to say anything. The reach back is what
-/// gives that remainder its true beginning, which then falls before the window and is dropped by
-/// the filter below.
+/// The reach back is what stops a visit being counted twice. The caller works forward through a
+/// site, and its bookmark stops at the earliest visit still in progress rather than at the end of
+/// the stretch it just read — so the next window routinely opens part-way through a visit that has
+/// already been judged. Read from the window's own start, the remainder of that visit looks like a
+/// whole one beginning at whichever report happened to fall first inside it, and it is judged a
+/// second time under a second identity. The reach back gives that remainder its true beginning,
+/// which then falls before the window and is dropped by the filter below.
 /// </para>
 /// <para>
-/// One idle timeout is exactly enough, and not by estimation. A visit is a chain of reports each
-/// less than an idle timeout apart, so a visit with a report on both sides of the window's start
-/// must have one within an idle timeout before it — which is the report that carries the whole
-/// chain back and puts the reconstructed beginning outside the window.
+/// A day is exactly enough in both directions, and it is derived rather than estimated — see
+/// <see cref="VisitorKeys.LongestVisit"/>. The idle timeout is no bound on it, close to hand as it
+/// is: a report about a page belongs to the visit that page was arrived at in however long the
+/// silence before it, so a departure sent when a tab is finally closed joins a visit it is hours
+/// adrift of, and a visit is a chain that can have hours between its links.
 /// </para>
 /// </remarks>
 public static class SessionSqlCompiler
@@ -52,7 +54,9 @@ public static class SessionSqlCompiler
     private const string SiteIdParameter = "site_id";
     private const string FromParameter = "from_ms";
     private const string ToParameter = "to_ms";
+    private const string SettledParameter = "settled_ms";
     private const string IdleParameter = "idle_seconds";
+    private const string LongestVisitParameter = "longest_visit_seconds";
     private const string MaxRequestsParameter = "max_requests";
 
     /// <summary>
@@ -142,6 +146,33 @@ public static class SessionSqlCompiler
 
         /// <summary>Who runs that network, for the reader rather than for the rules.</summary>
         public const int NetworkOwner = 19;
+
+        /// <summary>The company that vouches for the address the visit arrived from.</summary>
+        /// <remarks>
+        /// Any one report establishing it settles the visit. A crawler asks for several pages and
+        /// the check is made against each request as it arrives, so a visit where one report
+        /// resolved and the rest did not is a visit whose address was published by then; there is
+        /// no reading of that under which the visit was somebody else.
+        /// </remarks>
+        public const int ConfirmedOperator = 20;
+
+        /// <summary>One of the addresses the visit arrived from, while one is still kept.</summary>
+        /// <remarks>
+        /// <para>
+        /// The only personal data this statement carries, and the only reason it does is to settle
+        /// whose crawlers an address belongs to against the name its operator documents — a
+        /// question the collector cannot ask, because asking it means waiting on a name server
+        /// while a visitor is waiting on a page. It goes no further than the pass that reads it: it
+        /// is never handed to the engine, never stored on a verdict, and never logged.
+        /// </para>
+        /// <para>
+        /// Empty for anything older than three days, which is when the column is cleared. Any one
+        /// of a visit's addresses will do — a crawler fetching a dozen pages from a dozen machines
+        /// in one fleet is one operator whichever of them is picked, and a person who changed
+        /// network mid-visit is a person under either answer.
+        /// </para>
+        /// </remarks>
+        public const int Address = 21;
     }
 
     /// <summary>
@@ -175,11 +206,15 @@ public static class SessionSqlCompiler
                     had_keyboard_interaction,
                     declared_web_driver,
                     autonomous_system,
-                    network_owner
+                    network_owner,
+                    confirmed_operator,
+                    ip_address
                 FROM events
                 WHERE site_id = {site_id:UUID}
-                  AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64} - {idle_seconds:Int64} * 1000, 'UTC')
-                  AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {idle_seconds:Int64} * 1000, 'UTC')
+                  AND server_ts >= fromUnixTimestamp64Milli(
+                      {from_ms:Int64} - {longest_visit_seconds:Int64} * 1000, 'UTC')
+                  AND server_ts < fromUnixTimestamp64Milli(
+                      {to_ms:Int64} + {longest_visit_seconds:Int64} * 1000, 'UTC')
             ),
             {{ReconciledEvents.Reconciliation}},
             {{VisitGrouping.Of(VisitGrouping.EveryVisitor)}},
@@ -195,7 +230,7 @@ public static class SessionSqlCompiler
             concat(visitor_key, ':', toString(toUnixTimestamp64Milli(min(server_ts)))) AS session_key,
             min(server_ts) AS started_at,
             max(server_ts) AS ended_at,
-            toBool(max(server_ts) < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')) AS is_closed,
+            toBool(max(server_ts) < fromUnixTimestamp64Milli({settled_ms:Int64}, 'UTC')) AS is_closed,
             toUInt32(countIf(opens_page)) AS page_count,
             groupArraySortedIf({max_requests:UInt32})(
                 (toUnixTimestamp64Milli(server_ts), path, status_code),
@@ -213,7 +248,9 @@ public static class SessionSqlCompiler
             toUInt32(countIf(declared_web_driver != 'Unobserved')) AS web_driver_observed,
             toUInt32(countIf(declared_web_driver = 'Yes')) AS web_driver_seen,
             max(autonomous_system) AS autonomous_system,
-            anyIf(network_owner, network_owner != '') AS network_owner
+            anyIf(network_owner, network_owner != '') AS network_owner,
+            anyIf(confirmed_operator, confirmed_operator != '') AS confirmed_operator,
+            anyIf(ip_address, ip_address != '') AS ip_address
         FROM attended
         GROUP BY visitor_key, visit_ordinal
         HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
@@ -236,7 +273,9 @@ public static class SessionSqlCompiler
                 new QueryParameter(SiteIdParameter, window.SiteId),
                 new QueryParameter(FromParameter, window.From.ToUnixTimeMilliseconds()),
                 new QueryParameter(ToParameter, window.To.ToUnixTimeMilliseconds()),
+                new QueryParameter(SettledParameter, window.SettledBefore.ToUnixTimeMilliseconds()),
                 new QueryParameter(IdleParameter, (long)window.IdleTimeout.TotalSeconds),
+                new QueryParameter(LongestVisitParameter, (long)VisitorKeys.LongestVisit.TotalSeconds),
                 new QueryParameter(MaxRequestsParameter, (uint)window.MaxRequestsPerSession),
             ]);
     }

@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
 using Dewiride.Analytics.Application.Analytics;
+using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Classification.Identity;
@@ -42,6 +43,7 @@ public static class AnalyticsSqlCompiler
     private const string OffsetParameter = "offset";
     private const string IdleParameter = "idle_seconds";
     private const string SettledParameter = "settled_ms";
+    private const string LongestVisitParameter = "longest_visit_seconds";
     private const string VisitorKeyParameter = "visitor_key";
     private const string SiteDomainParameter = "site_domain";
     private const string SuffixesParameter = "second_levels";
@@ -343,10 +345,9 @@ public static class AnalyticsSqlCompiler
     /// a long article as somebody who read one page and left.
     /// </para>
     /// <para>
-    /// Which pages a visit went to is settled in <see cref="VisitGrouping"/> as well, so a reader
-    /// whose arrival was never announced but whose progress reports were is a reader of the page
-    /// those reports name, here and on the visit's own account of itself alike. A visit that named
-    /// no page at all is still no part of this: nothing about it says where anybody was.
+    /// Which pages a visit went to is settled in <see cref="VisitGrouping"/> as well, so the page a
+    /// visit is recorded as beginning at is the page it arrived at, here and on the visit's own
+    /// account of itself alike.
     /// </para>
     /// </remarks>
     private static readonly string ReconstructedVisits = $$"""
@@ -381,7 +382,6 @@ public static class AnalyticsSqlCompiler
                 HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
                    AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
                    AND ended_at < fromUnixTimestamp64Milli({settled_ms:Int64}, 'UTC')
-                   AND page_count > 0
             )
         """;
 
@@ -401,7 +401,6 @@ public static class AnalyticsSqlCompiler
             surfaces,
             category,
             strength,
-            is_provisional,
             ruleset_major,
             ruleset_minor,
             signal_codes,
@@ -866,8 +865,14 @@ public static class AnalyticsSqlCompiler
     /// A step is one arrival at one page, not one page. A reader who comes back to an article later
     /// in the same visit was there twice, and folding the two together would report one long
     /// reading that never happened. Which arrival a report belongs to is settled in
-    /// <see cref="VisitGrouping"/>, which is also what the visit's own page count is taken from —
-    /// so the number of steps a reader is shown here is the number the row above them says.
+    /// <see cref="VisitGrouping"/>, which is also what the visit's own page count is taken from.
+    /// </para>
+    /// <para>
+    /// That alone would not make the two agree, and this is read up to the verdict's own last
+    /// instant so that they do — see <see cref="SendingSites.ThePeriodUpToTheVerdict"/>. The engine
+    /// judges a visit as soon as it is over and never returns to it, while activity keeps arriving,
+    /// so the same expression over everything stored today answers a wider question than the one
+    /// the verdict answered. What is shown here is the visit the verdict was about.
     /// </para>
     /// <para>
     /// What nothing could be measured on is carried as minus one, on the same terms as a reading
@@ -903,7 +908,7 @@ public static class AnalyticsSqlCompiler
         var sql = $$"""
             WITH
                 {{SendingSites.Of(
-                    SendingSites.ThePeriod,
+                    SendingSites.ThePeriodUpToTheVerdict,
                     "event_id",
                     "surface",
                     "visitor_key",
@@ -1215,6 +1220,7 @@ public static class AnalyticsSqlCompiler
                 .. CatalogueParameters(query.SiteDomain),
                 .. NetworkNames(),
                 new QueryParameter(IdleParameter, (long)query.IdleTimeout.TotalSeconds),
+                LongestVisit(),
                 .. DetailNarrowing(query.Narrowing),
             ]);
 
@@ -1248,6 +1254,7 @@ public static class AnalyticsSqlCompiler
                 .. CatalogueParameters(query.SiteDomain),
                 .. NetworkNames(),
                 new QueryParameter(IdleParameter, (long)query.IdleTimeout.TotalSeconds),
+                LongestVisit(),
                 new QueryParameter(MostValuesParameter, (uint)SiteVisitFacetsQuery.MostValues),
             ]);
 
@@ -2014,4 +2021,18 @@ public static class AnalyticsSqlCompiler
         new QueryParameter(IdleParameter, (long)boundaries.IdleTimeout.TotalSeconds),
         new QueryParameter(SettledParameter, boundaries.SettledBefore.ToUnixTimeMilliseconds()),
     ];
+
+    /// <summary>
+    /// How far either side of a period a statement has to read to see whole the visits that cross
+    /// its edges.
+    /// </summary>
+    /// <remarks>
+    /// Bound rather than written into the statement so that it reads as what it is — a length of
+    /// time — beside the timeout it sits next to. Unlike that timeout it is not a setting: it
+    /// follows from how a visitor key is built, and <see cref="VisitorKeys.LongestVisit"/> is where
+    /// that is explained.
+    /// </remarks>
+    /// <returns>The value.</returns>
+    private static QueryParameter LongestVisit() =>
+        new(LongestVisitParameter, (long)VisitorKeys.LongestVisit.TotalSeconds);
 }

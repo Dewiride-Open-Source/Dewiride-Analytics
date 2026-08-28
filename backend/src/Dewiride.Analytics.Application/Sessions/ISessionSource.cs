@@ -41,25 +41,39 @@ public sealed record SessionWindow
     /// <summary>Only visits that began at or after this instant are returned.</summary>
     /// <remarks>
     /// A visit already under way at this instant is not one that began at it. Activity is read from
-    /// an idle timeout earlier so that such a visit is recognised as having started before the
-    /// window and left out, rather than being returned as a second, shorter visit beginning
-    /// wherever the window happens to open. A caller may therefore move this forward into the
-    /// middle of a visit it has already been given without being handed the remainder as a new one.
+    /// a day earlier so that such a visit is recognised as having started before the window and
+    /// left out, rather than being returned as a second, shorter visit beginning wherever the
+    /// window happens to open. A caller may therefore move this forward into the middle of a visit
+    /// it has already been given without being handed the remainder as a new one.
     /// </remarks>
     public required DateTimeOffset From { get; init; }
 
-    /// <summary>
-    /// Only visits that began before this instant are returned, and a visit whose last activity
-    /// falls before it can no longer grow.
-    /// </summary>
+    /// <summary>Only visits that began before this instant are returned.</summary>
     /// <remarks>
-    /// Both readings come from the same instant on purpose. Activity is read up to
-    /// <see cref="To"/> plus <see cref="IdleTimeout"/>, so a visit that ended before
-    /// <see cref="To"/> has been observed falling silent for a full idle timeout and is therefore
-    /// genuinely over — rather than merely appearing to be over because nothing later was read.
-    /// The caller keeps this at or before the present moment less one idle timeout.
+    /// Which visits this window is answerable for, and nothing else. Where a visit ends decides
+    /// whether it is over; where it began decides whose window it belongs to, so that a caller
+    /// working forward covers a site once and only once however long any one visit ran.
     /// </remarks>
     public required DateTimeOffset To { get; init; }
+
+    /// <summary>
+    /// A visit whose last activity falls before this instant is over.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The present moment less one idle timeout, and never further on than that: a visitor who is
+    /// merely pausing has not left, so nothing after it can be known to have finished. It is a
+    /// separate instant from <see cref="To"/> because the two answer separate questions, and
+    /// reading a visit's fate off the edge of the window it happened to be attributed to is how a
+    /// verdict comes to depend on where a boundary fell rather than on what the visitor did.
+    /// </para>
+    /// <para>
+    /// A caller working through a backlog is asking about visits that finished long ago, and every
+    /// one of them is over whatever window it lands in. A caller that has caught up is asking about
+    /// the last few minutes, where the two instants meet.
+    /// </para>
+    /// </remarks>
+    public required DateTimeOffset SettledBefore { get; init; }
 
     /// <summary>How long a visitor may be quiet before their next activity counts as a new visit.</summary>
     public required TimeSpan IdleTimeout { get; init; }
@@ -84,4 +98,20 @@ public sealed record SessionWindow
 /// through would be replaced within the hour, and the honest thing to do with a visit still in
 /// progress is wait for it.
 /// </param>
-public readonly record struct ObservedSession(SessionEvidence Evidence, bool IsClosed);
+/// <param name="Address">
+/// One of the addresses the visit arrived from, or <see langword="null"/> once none is left.
+/// </param>
+/// <remarks>
+/// The address rides alongside the evidence rather than inside it, and the distinction is the
+/// whole reason this is a record of two parts. <see cref="SessionEvidence"/> is the closed set the
+/// engine reasons about, and an address in it would let a detector reach conclusions from where
+/// somebody lives. What the address is for is settling identity against what an operator publishes
+/// about its own machines, which happens before the engine is asked and never inside it.
+/// <para>
+/// Absent for anything older than the retention window, because the address is erased 72 hours
+/// after the activity was received. A visit re-judged a year later is judged without it, which is
+/// correct: the evidence for that visit no longer includes an address, and inventing one would be
+/// the only alternative.
+/// </para>
+/// </remarks>
+public readonly record struct ObservedSession(SessionEvidence Evidence, bool IsClosed, string? Address = null);

@@ -1527,7 +1527,6 @@ internal static class SiteEndpoints
         [.. visit.Surfaces.Select(surface => ReportedNames.Surfaces[surface])],
         ReportedNames.Categories[visit.Verdict.Category],
         ReportedNames.Strengths[visit.Verdict.Strength],
-        visit.Verdict.IsProvisional,
         visit.Verdict.RulesetVersion.ToString(),
         [.. visit.Verdict.Supporting.Select(Explain)],
         [.. visit.Verdict.Contradicting.Select(Explain)]);

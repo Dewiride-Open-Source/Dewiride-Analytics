@@ -27,15 +27,6 @@ public sealed record ClassificationVerdict
     /// <summary>How much weight stands behind that conclusion.</summary>
     public required EvidenceStrength Strength { get; init; }
 
-    /// <summary>
-    /// Whether this is a provisional verdict from the synchronous path, reached before the
-    /// session closed and before out-of-band enrichment ran. The live view renders these
-    /// visibly as not-final, and they are replaced when the session is closed and classified
-    /// in full. Presenting a provisional verdict as settled would be the product making a
-    /// claim it has not yet earned.
-    /// </summary>
-    public bool IsProvisional { get; init; }
-
     /// <summary>Evidence supporting the conclusion, most significant first.</summary>
     public required ImmutableArray<Signal> Supporting { get; init; }
 

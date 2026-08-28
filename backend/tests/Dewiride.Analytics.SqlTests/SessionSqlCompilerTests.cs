@@ -61,9 +61,9 @@ public sealed class SessionSqlCompilerTests
     }
 
     /// <summary>
-    /// A page is counted from the reports about it rather than from the one that announced it, so
-    /// a reader whose arrival report was lost on the way still read the page the rest of their
-    /// reports name.
+    /// A page is every report about one arrival at it folded into one, so a page read for half an
+    /// hour and reported on thirty times is the single delivery it was, and a page two surfaces
+    /// both watched being delivered is not two.
     /// </summary>
     [Fact]
     public void Pages_Are_Counted_From_Every_Report_About_Them()
@@ -72,6 +72,52 @@ public sealed class SessionSqlCompilerTests
 
         sql.Should().Contain("toUInt32(countIf(opens_page)) AS page_count");
         sql.Should().NotContain("countIf(kind = 'PageView' AND NOT is_second_sighting)) AS page_count");
+    }
+
+    /// <summary>
+    /// Only an arrival begins a visit. A tracker reports how a page is going, and reports it being
+    /// left, from the page itself, so a report of either kind is an account of a page somebody was
+    /// already on — and a departure that reaches the collector an hour after the reader stopped
+    /// touching the page is the end of a visit rather than the whole of a new one.
+    /// </summary>
+    [Fact]
+    public void Only_An_Arrival_Begins_A_Visit()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+
+        sql.Should().Contain(
+            "sum(toUInt8(kind = 'PageView' AND since_previous > {idle_seconds:Int64})) OVER (");
+        sql.Should().NotContain("sum(toUInt8(since_previous > {idle_seconds:Int64})) OVER");
+    }
+
+    /// <summary>
+    /// A report is filed under the arrival it is an account of, which is knowable from the report
+    /// itself: the visitor and the page are both on it. Filing it under whichever visit happened to
+    /// be nearest would hand a reading to a visit that never went to the page it was measured on.
+    /// </summary>
+    [Fact]
+    public void A_Report_Is_Filed_Under_The_Arrival_It_Is_About()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+
+        sql.Should().Contain("max(if(kind = 'PageView', arrival_ordinal, 0)) OVER (");
+        sql.Should().Contain("ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS visit_ordinal");
+    }
+
+    /// <summary>
+    /// A report naming a page its visitor was never seen arriving at takes no part. The page was
+    /// delivered to somebody, but nothing on the report says which visit it belonged to — and a
+    /// visitor's key changes when the network does and again at midnight, so the tail of a visit
+    /// routinely arrives under a key that announced nothing.
+    /// </summary>
+    [Fact]
+    public void A_Report_Belonging_To_No_Arrival_Takes_No_Part()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+
+        sql.Should().Contain("max(if(kind = 'PageView', toUnixTimestamp64Milli(server_ts), 0)) OVER (");
+        sql.Should().Contain("ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS arrival_ms");
+        sql.Should().Contain("WHERE arrival_ms > 0");
     }
 
     /// <summary>
@@ -94,12 +140,42 @@ public sealed class SessionSqlCompilerTests
     /// earlier visit and left out instead of being returned as a second, shorter one.
     /// </summary>
     [Fact]
-    public void Activity_Is_Read_From_An_Idle_Timeout_Before_The_Window()
+    public void Activity_Is_Read_A_Whole_Visit_Before_The_Window()
+    {
+        var statement = SessionSqlCompiler.Compile(Window());
+
+        statement.Sql.Should().Contain("{from_ms:Int64} - {longest_visit_seconds:Int64} * 1000");
+        statement.Sql.Should().Contain("HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')");
+        statement.Parameters.Should().Contain(parameter =>
+            parameter.Name == "longest_visit_seconds" && (long)parameter.Value == 86400);
+    }
+
+    /// <summary>
+    /// A backlog is walked in stretches of a few hours, and where one ends is an accident of when
+    /// the engine was last run. What decides whether a visit is over is the moment nothing more can
+    /// arrive, which the caller passes in, and never the edge of the stretch the visit happened to
+    /// be attributed to.
+    /// </summary>
+    [Fact]
+    public void A_Visit_Is_Over_When_Nothing_More_Can_Arrive_Rather_Than_At_The_Window_Edge()
     {
         var sql = SessionSqlCompiler.Compile(Window()).Sql;
 
-        sql.Should().Contain("server_ts >= fromUnixTimestamp64Milli({from_ms:Int64} - {idle_seconds:Int64} * 1000, 'UTC')");
+        sql.Should().Contain("toBool(max(server_ts) < fromUnixTimestamp64Milli({settled_ms:Int64}, 'UTC')) AS is_closed");
+        sql.Should().NotContain("toBool(max(server_ts) < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC'))");
+    }
+
+    /// <summary>
+    /// Which visits the window is answerable for is still decided by where each one began, so a
+    /// caller working forward covers a site once however long any one visit ran.
+    /// </summary>
+    [Fact]
+    public void A_Visit_Belongs_To_The_Window_It_Began_In()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+
         sql.Should().Contain("HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')");
+        sql.Should().Contain("AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')");
     }
 
     [Fact]
@@ -115,6 +191,7 @@ public sealed class SessionSqlCompilerTests
         SiteId = SiteId,
         From = From,
         To = To,
+        SettledBefore = To,
         IdleTimeout = TimeSpan.FromMinutes(30),
         MaxRequestsPerSession = 1000,
     };

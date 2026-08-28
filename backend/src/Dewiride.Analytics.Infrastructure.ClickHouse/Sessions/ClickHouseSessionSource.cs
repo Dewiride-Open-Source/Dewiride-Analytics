@@ -14,11 +14,18 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
 /// Rebuilds visits from the telemetry store.
 /// </summary>
 /// <remarks>
-/// Turns rows into the closed set of values the engine reasons about, and nothing more. Everything
-/// three-state stays three-state across the boundary: a visit nobody could watch for pointer
-/// activity arrives with that reading absent rather than false, because the difference between
-/// "nobody touched anything" and "nothing was watching" is the difference between evidence and
-/// the absence of it.
+/// <para>
+/// Turns rows into the closed set of values the engine reasons about. Everything three-state stays
+/// three-state across the boundary: a visit nobody could watch for pointer activity arrives with
+/// that reading absent rather than false, because the difference between "nobody touched anything"
+/// and "nothing was watching" is the difference between evidence and the absence of it.
+/// </para>
+/// <para>
+/// One value comes back outside that set. The address a visit arrived from is carried beside the
+/// evidence rather than within it, because what it is for is settling whose crawlers it belongs to
+/// before the engine is asked anything — and a detector that could see an address would be a
+/// detector that could reason about where somebody lives.
+/// </para>
 /// </remarks>
 /// <param name="client">Telemetry store client.</param>
 internal sealed class ClickHouseSessionSource(IClickHouseClient client) : ISessionSource
@@ -46,7 +53,10 @@ internal sealed class ClickHouseSessionSource(IClickHouseClient client) : ISessi
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            found.Add(new ObservedSession(ToEvidence(reader), reader.GetBoolean(Column.IsClosed)));
+            found.Add(new ObservedSession(
+                ToEvidence(reader),
+                reader.GetBoolean(Column.IsClosed),
+                NullIfEmpty(reader.GetString(Column.Address))));
         }
 
         return found.DrainToImmutable();
@@ -70,6 +80,7 @@ internal sealed class ClickHouseSessionSource(IClickHouseClient client) : ISessi
         DeclaredWebDriver = Watched(reader, Column.WebDriverObserved, Column.WebDriverSeen),
         AutonomousSystem = reader.GetFieldValue<uint>(Column.AutonomousSystem),
         NetworkOwner = NullIfEmpty(reader.GetString(Column.NetworkOwner)),
+        ConfirmedOperator = NullIfEmpty(reader.GetString(Column.ConfirmedOperator)),
     };
 
     private static ImmutableArray<ObservedRequest> ToRequests(Tuple<long, string, short?>[] rows) =>

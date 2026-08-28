@@ -85,11 +85,13 @@ what does not.
   and the answer — somebody reading, a crawler that says it is an AI one, a search crawler, a sweep
   for a way in, or an honest "not enough to say" — is stored with the specific reasons behind it,
   including the ones that pointed the other way. A crawler's name is never treated as proof of who
-  sent it; until the address it came from has been checked against what the operator publishes, the
-  answer says it is only a claim. "Not enough to say" is kept for a visit that never named a page
-  at all, rather than for one whose arrival went missing — everything a visit reported about a page
-  is weighed, whether or not the report announcing the page arrived. The verdicts are stamped with
-  the rules that produced them, so a number can still be explained after the rules improve.
+  sent it: where the address it arrived from is one the company itself vouches for, the visit is
+  reported as that company's crawler and marked confirmed, and where it is not, the answer says
+  plainly that this is only what the visitor called itself. A visit begins where somebody arrived, so
+  a page announcing that it is being left hours later belongs to the visit it came from rather than
+  being counted as a second person who read for a quarter of an hour and left. The verdicts are
+  stamped with the rules that produced them, so a number can still be explained after the rules
+  improve.
 - A breakdown of who a period's visitors were on the dashboard, and every individual visit on a
   screen of its own — **User journey** — with the whole case behind each verdict. Narrow it to the
   visits you came for: what generated them, how much evidence stands behind saying so, and how much
@@ -100,11 +102,20 @@ what does not.
   band shown beside the category — never a percentage. A judged visit only appears once it has
   finished, so that screen trails the headline totals and says so.
 
+- Two ways of establishing that a crawler really is whose crawler it says it is, which between
+  them are the only basis on which a visit is ever reported as confirmed. Most companies publish a
+  list of the addresses their crawlers connect from, and those are fetched from each company's own
+  page twice a day and kept on a volume. The rest publish a domain their machines answer to, and
+  that is settled a visit at a time by asking what the address is called and whether that name
+  points back at it — a pair of questions only the company could arrange the answers to. Both reach
+  crawlers that give no name at all: the largest search engine's fetches arrive behind an ordinary
+  browser string. Only visits that already look like machinery are ever asked about, so a reader's
+  address is never sent anywhere. An install with no way out to the internet can be given the lists
+  by hand, or go without either check: traffic is measured the same, and every crawler simply reads
+  as a claim.
+
 **Not built yet**
 
-- **Checking a crawler's claim against its operator's published addresses.** Until that exists
-  nothing is ever reported as a confirmed identity, which is why every recognised crawler is
-  reported as suspected.
 - Ready-made reporters for Cloudflare, WordPress, Netlify and Vercel. The endpoint they will use
   exists and is documented; writing one against it today is a few dozen lines.
 

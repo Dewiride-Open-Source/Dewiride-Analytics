@@ -636,9 +636,15 @@
         "searchIndex": "It called itself {token}, a crawler {operator} uses to build search results.",
         "advertising": "It called itself {token}, a crawler {operator} uses for advertising.",
         "siteTooling": "It called itself {token}, a tool {operator} uses to check websites.",
+        "socialPreview": "It called itself {token}, which fetches a page when somebody shares your link on {operator}.",
+        "monitoring": "It called itself {token}, a checker {operator} uses to see that your pages are still answering.",
+        "archival": "It called itself {token}, a crawler {operator} uses to keep copies of pages.",
+        "seoAudit": "It called itself {token}, a crawler {operator} uses to work out which sites link to yours.",
         "unstated": "It called itself {token}, a crawler run by {operator}."
       },
-      "unverified_claim": "Any visitor can claim that name. We have not checked it against the addresses that company publishes, so this is what it says it is.",
+      "confirmed_crawler": "It came from an address {operator} identifies as its own, so this really is {operator} and not something using the name.",
+      "false_claim": "It named itself as {claimed}, but came from an address {operator} identifies as its own. It is not what it said it was.",
+      "unverified_claim": "Any visitor can claim that name. Nothing about where this one came from confirms it, so this is what it says it is.",
       "declared_tool": {
         "headlessBrowser": "It named itself as a browser running with nobody watching it.",
         "script": "It named itself as a program fetching pages rather than as a browser.",

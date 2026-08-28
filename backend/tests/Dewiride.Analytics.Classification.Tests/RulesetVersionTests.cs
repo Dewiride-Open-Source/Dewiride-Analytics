@@ -124,8 +124,8 @@ public sealed class RulesetVersionTests
     /// it obliges whoever changed the rules to say so here as well.
     /// </remarks>
     [Fact]
-    public void The_Compiled_Ruleset_Is_The_One_That_Counts_A_Page_From_Every_Report_About_It()
+    public void The_Compiled_Ruleset_Is_The_One_Where_A_Visit_Is_Judged_On_All_Of_Itself()
     {
-        RulesetVersion.Current.Should().Be(new RulesetVersion(3, 0));
+        RulesetVersion.Current.Should().Be(new RulesetVersion(8, 0));
     }
 }

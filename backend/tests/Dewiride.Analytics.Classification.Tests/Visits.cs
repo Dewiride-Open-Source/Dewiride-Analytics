@@ -59,6 +59,34 @@ internal static class Visits
     };
 
     /// <summary>
+    /// A visit whose address was inside the ranges a company publishes for its own crawlers.
+    /// </summary>
+    /// <remarks>
+    /// The one visit in this file that carries an identity rather than a claim. What it says about
+    /// itself is separate and optional, because the case that matters most in real traffic is the
+    /// crawler that says nothing recognisable at all and is known only by where it came from.
+    /// </remarks>
+    /// <param name="operatorName">The company whose published addresses it arrived from.</param>
+    /// <param name="userAgent">What it said it was, where it said anything.</param>
+    /// <param name="pages">How many pages it asked for.</param>
+    public static SessionEvidence AConfirmedCrawler(
+        string operatorName,
+        string? userAgent = null,
+        int pages = 6) =>
+        ANamedCrawler(userAgent ?? BrowserLikeCrawler, pages) with { ConfirmedOperator = operatorName };
+
+    /// <summary>
+    /// What the largest search engine's crawler actually sends, which names no crawler at all.
+    /// </summary>
+    /// <remarks>
+    /// Taken from real traffic. It is why address checking exists: no catalogue of names can reach
+    /// this visitor, and under the previous ruleset it was weighed as an anonymous one.
+    /// </remarks>
+    public const string BrowserLikeCrawler =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+        + "HeadlessChrome/141.0.0.0 Safari/537.36";
+
+    /// <summary>
     /// A visit that behaves exactly like a reader, from a computer rented in a datacentre.
     /// </summary>
     /// <remarks>

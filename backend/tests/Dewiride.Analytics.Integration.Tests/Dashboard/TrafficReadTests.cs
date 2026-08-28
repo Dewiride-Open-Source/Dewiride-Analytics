@@ -75,7 +75,6 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
             // Which ruleset is in force is stated once, in the test that exists to make moving it a
             // deliberate act. What matters here is that a visit says which one judged it.
             visit.Ruleset.Should().Be(RulesetVersion.Current.ToString());
-            visit.IsProvisional.Should().BeFalse();
             visit.Surfaces.Should().Equal("cloudflare-worker");
             visit.Supporting.Should().Contain(reason => reason.Code == "probing.sensitive_paths");
             visit.Supporting.Should().OnlyContain(reason => reason.Direction == "toward-automation");

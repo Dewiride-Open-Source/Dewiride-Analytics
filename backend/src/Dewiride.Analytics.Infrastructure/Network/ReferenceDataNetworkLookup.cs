@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Sockets;
 using Dewiride.Analytics.Application.Telemetry;
 using MaxMind.Db;
 
@@ -26,7 +25,7 @@ internal sealed class ReferenceDataNetworkLookup(ReferenceDataStore store) : INe
     /// <inheritdoc />
     public NetworkAttributes Resolve(string? ipAddress)
     {
-        if (!TryReadRoutable(ipAddress, out var address))
+        if (!RoutableAddress.TryRead(ipAddress, out var address))
         {
             return NetworkAttributes.Unresolved;
         }
@@ -41,63 +40,6 @@ internal sealed class ReferenceDataNetworkLookup(ReferenceDataStore store) : INe
             number,
             owner);
     }
-
-    /// <summary>
-    /// Parses an address, and reports only the ones a lookup could mean anything for.
-    /// </summary>
-    /// <remarks>
-    /// A private, loopback or link-local address is not a place. It is what arrives when the
-    /// product is being run locally, or when a proxy in front of it has not been told to pass the
-    /// visitor's own address through — and answering "the Netherlands" for one of those would be
-    /// inventing a fact rather than reporting one.
-    /// </remarks>
-    private static bool TryReadRoutable(string? value, out IPAddress address)
-    {
-        address = IPAddress.None;
-
-        if (string.IsNullOrWhiteSpace(value) || !IPAddress.TryParse(value, out var parsed))
-        {
-            return false;
-        }
-
-        if (parsed.IsIPv4MappedToIPv6)
-        {
-            parsed = parsed.MapToIPv4();
-        }
-
-        if (IsPrivate(parsed))
-        {
-            return false;
-        }
-
-        address = parsed;
-        return true;
-    }
-
-    private static bool IsPrivate(IPAddress address)
-    {
-        if (IPAddress.IsLoopback(address) || address.IsIPv6LinkLocal || address.IsIPv6SiteLocal)
-        {
-            return true;
-        }
-
-        return address.AddressFamily == AddressFamily.InterNetwork
-            ? IsPrivateHouseAddress(address.GetAddressBytes())
-            : IsUniqueLocal(address.GetAddressBytes());
-    }
-
-    /// <summary>The ranges set aside for private networks in the older address family.</summary>
-    private static bool IsPrivateHouseAddress(byte[] octets) => octets[0] switch
-    {
-        10 or 127 => true,
-        169 => octets[1] == 254,
-        172 => octets[1] is >= 16 and <= 31,
-        192 => octets[1] == 168,
-        _ => false,
-    };
-
-    /// <summary>Unique local addresses, the newer family's answer to a private network.</summary>
-    private static bool IsUniqueLocal(byte[] octets) => octets[0] is 0xFC or 0xFD;
 
     private (string Country, string Subdivision, string City) FindPlace(IPAddress address)
     {

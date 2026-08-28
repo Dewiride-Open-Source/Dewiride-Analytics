@@ -584,10 +584,10 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     /// Where the whole-window count sits on a judged-visit row.
     /// </summary>
     /// <remarks>
-    /// Last, after the fifteen columns a visit is built from, so adding it left every index the
+    /// Last, after the fourteen columns a visit is built from, so adding it left every index the
     /// visit itself is read from where it was.
     /// </remarks>
-    private const int TotalVisitsColumn = 15;
+    private const int TotalVisitsColumn = 14;
 
     private static JudgedSession ToJudgedSession(ClickHouseDataReader reader)
     {
@@ -608,10 +608,9 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
             {
                 Category = StoredNames.Categories[reader.GetString(5)],
                 Strength = StoredNames.Strengths[reader.GetString(6)],
-                IsProvisional = reader.GetBoolean(7),
                 RulesetVersion = new RulesetVersion(
-                    reader.GetFieldValue<ushort>(8),
-                    reader.GetFieldValue<ushort>(9)),
+                    reader.GetFieldValue<ushort>(7),
+                    reader.GetFieldValue<ushort>(8)),
                 Supporting = [.. evidence.Where(entry => entry.Supporting).Select(entry => entry.Signal)],
                 Contradicting = [.. evidence.Where(entry => !entry.Supporting).Select(entry => entry.Signal)],
             },
@@ -628,11 +627,11 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     /// </remarks>
     private static ImmutableArray<(Signal Signal, bool Supporting)> ToEvidence(ClickHouseDataReader reader)
     {
-        var codes = reader.GetFieldValue<string[]>(10);
-        var directions = reader.GetFieldValue<string[]>(11);
-        var weights = reader.GetFieldValue<byte[]>(12);
-        var supporting = reader.GetFieldValue<bool[]>(13);
-        var parameters = reader.GetFieldValue<Dictionary<string, string>[]>(14);
+        var codes = reader.GetFieldValue<string[]>(9);
+        var directions = reader.GetFieldValue<string[]>(10);
+        var weights = reader.GetFieldValue<byte[]>(11);
+        var supporting = reader.GetFieldValue<bool[]>(12);
+        var parameters = reader.GetFieldValue<Dictionary<string, string>[]>(13);
 
         var evidence = ImmutableArray.CreateBuilder<(Signal, bool)>(codes.Length);
 

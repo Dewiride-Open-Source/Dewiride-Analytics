@@ -1,0 +1,33 @@
+-- ---------------------------------------------------------------------------
+-- 0007_confirmed_crawler_identity — whose crawler a request actually was.
+--
+-- Everything else the engine reads about a visitor is either something the
+-- visitor said about itself or something it did, and both can be produced
+-- deliberately by anything that wants to be counted as a person. This column
+-- holds the one exception: the company whose own published list of crawler
+-- addresses contains the address the request arrived from. It is the only
+-- basis on which this product will attach a company's name to somebody's
+-- traffic as a fact rather than as a claim, and the only route to the verified
+-- evidence band.
+--
+-- Derived at ingest, for the same reason as every column in 0004: it is
+-- resolved from ip_address, which 0001 clears 72 hours after the event. There
+-- is no later job that could fill it and no way to backfill it. Rows written
+-- before this migration keep the empty string for ever, which is correct —
+-- nothing was ever checked about them — and is why empty means "not
+-- established" and never "not that company".
+--
+-- LowCardinality because the set is the list of companies that publish such a
+-- file at all, which is a dozen or so and grows by one every year or two. The
+-- company is stored rather than the crawler's own name: Google publishes four
+-- files covering all of its crawlers together, so what a matching address
+-- establishes is the company, and the name the visit gave itself is already
+-- kept in user_agent.
+--
+-- Adding a column to a MergeTree is a metadata change. No part is rewritten and
+-- no data is read, so this is safe to run against a self-hoster's existing rows
+-- however many of them there are.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE events
+  ADD COLUMN IF NOT EXISTS confirmed_operator LowCardinality(String) AFTER network_owner;

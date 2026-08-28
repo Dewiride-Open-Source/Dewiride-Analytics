@@ -38,6 +38,15 @@ WITH
         WHERE site_id = {site_id:UUID}
           AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
           AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+          AND server_ts <= (
+              SELECT if(
+                  count() = 0,
+                  fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC'),
+                  argMax(ended_at, (ruleset_major, ruleset_minor, classified_at)))
+              FROM session_classifications
+              WHERE site_id = {site_id:UUID}
+                AND session_key = concat(
+                    {visitor_key:String}, ':', toString({from_ms:Int64})))
     ),
     named AS
     (
@@ -125,24 +134,45 @@ WITH
         FROM windowed
         LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
     ),
+    reported AS
+    (
+        SELECT
+            *,
+            max(if(kind = 'PageView', toUnixTimestamp64Milli(server_ts), 0)) OVER (
+                PARTITION BY visitor_key, path
+                ORDER BY server_ts, kind != 'PageView', event_id
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS arrival_ms
+        FROM identified
+        WHERE visitor_key = {visitor_key:String}
+    ),
     ordered AS
     (
         SELECT
             *,
             dateDiff('second', lagInFrame(server_ts, 1, server_ts) OVER visit, server_ts) AS since_previous
-        FROM identified
-        WHERE visitor_key = {visitor_key:String}
-        WINDOW visit AS (PARTITION BY visitor_key ORDER BY server_ts ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
+        FROM reported
+        WHERE arrival_ms > 0
+        WINDOW visit AS (PARTITION BY visitor_key ORDER BY server_ts, kind != 'PageView', event_id ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
+    ),
+    numbered AS
+    (
+        SELECT
+            *,
+            sum(toUInt8(kind = 'PageView' AND since_previous > {idle_seconds:Int64})) OVER (
+                PARTITION BY visitor_key
+                ORDER BY server_ts, kind != 'PageView', event_id
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS arrival_ordinal
+        FROM ordered
     ),
     grouped AS
     (
         SELECT
             *,
-            sum(toUInt8(since_previous > {idle_seconds:Int64})) OVER (
-                PARTITION BY visitor_key
-                ORDER BY server_ts
+            max(if(kind = 'PageView', arrival_ordinal, 0)) OVER (
+                PARTITION BY visitor_key, path
+                ORDER BY server_ts, kind != 'PageView', event_id
                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS visit_ordinal
-        FROM ordered
+        FROM numbered
     ),
     sighted AS
     (

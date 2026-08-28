@@ -123,6 +123,10 @@ const PURPOSES: Readonly<Record<string, string>> = {
   'search-index': 'searchIndex',
   advertising: 'advertising',
   'site-tooling': 'siteTooling',
+  'social-preview': 'socialPreview',
+  monitoring: 'monitoring',
+  archival: 'archival',
+  'seo-audit': 'seoAudit',
   unstated: 'unstated',
 };
 

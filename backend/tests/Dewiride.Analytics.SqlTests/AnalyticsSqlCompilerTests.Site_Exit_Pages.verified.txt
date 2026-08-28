@@ -43,24 +43,45 @@ WITH
         FROM windowed
         LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
     ),
+    reported AS
+    (
+        SELECT
+            *,
+            max(if(kind = 'PageView', toUnixTimestamp64Milli(server_ts), 0)) OVER (
+                PARTITION BY visitor_key, path
+                ORDER BY server_ts, kind != 'PageView', event_id
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS arrival_ms
+        FROM identified
+        WHERE visitor_key != ''
+    ),
     ordered AS
     (
         SELECT
             *,
             dateDiff('second', lagInFrame(server_ts, 1, server_ts) OVER visit, server_ts) AS since_previous
-        FROM identified
-        WHERE visitor_key != ''
-        WINDOW visit AS (PARTITION BY visitor_key ORDER BY server_ts ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
+        FROM reported
+        WHERE arrival_ms > 0
+        WINDOW visit AS (PARTITION BY visitor_key ORDER BY server_ts, kind != 'PageView', event_id ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
+    ),
+    numbered AS
+    (
+        SELECT
+            *,
+            sum(toUInt8(kind = 'PageView' AND since_previous > {idle_seconds:Int64})) OVER (
+                PARTITION BY visitor_key
+                ORDER BY server_ts, kind != 'PageView', event_id
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS arrival_ordinal
+        FROM ordered
     ),
     grouped AS
     (
         SELECT
             *,
-            sum(toUInt8(since_previous > {idle_seconds:Int64})) OVER (
-                PARTITION BY visitor_key
-                ORDER BY server_ts
+            max(if(kind = 'PageView', arrival_ordinal, 0)) OVER (
+                PARTITION BY visitor_key, path
+                ORDER BY server_ts, kind != 'PageView', event_id
                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS visit_ordinal
-        FROM ordered
+        FROM numbered
     ),
     sighted AS
     (
@@ -116,7 +137,6 @@ WITH
         HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
            AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
            AND ended_at < fromUnixTimestamp64Milli({settled_ms:Int64}, 'UTC')
-           AND page_count > 0
     )
 SELECT
     path,

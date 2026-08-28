@@ -7,7 +7,6 @@ SELECT
     surfaces,
     category,
     strength,
-    is_provisional,
     ruleset_major,
     ruleset_minor,
     signal_codes,

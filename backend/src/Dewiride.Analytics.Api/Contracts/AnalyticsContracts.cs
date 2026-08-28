@@ -410,7 +410,6 @@ public sealed record VisitsResponse(
 /// <param name="Surfaces">Which capture surfaces saw it.</param>
 /// <param name="Category">What generated it.</param>
 /// <param name="Strength">How much weight stands behind that.</param>
-/// <param name="IsProvisional">Whether the verdict was reached before the visit finished.</param>
 /// <param name="Ruleset">Which set of detection rules produced the verdict.</param>
 /// <param name="Supporting">The evidence behind the verdict.</param>
 /// <param name="Contradicting">
@@ -424,7 +423,6 @@ public sealed record VisitSummary(
     IReadOnlyList<string> Surfaces,
     string Category,
     string Strength,
-    bool IsProvisional,
     string Ruleset,
     IReadOnlyList<VisitReason> Supporting,
     IReadOnlyList<VisitReason> Contradicting);

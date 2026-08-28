@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PRESETS } from '@/lib/analytics/period';
+import { reasonKey } from '@/lib/analytics/verdicts';
 import {
   captureSurfaceSchema,
   deviceKindSchema,
@@ -40,6 +41,11 @@ const REPORTED_NAMES = path.join(
   'backend/src/Dewiride.Analytics.Api/Analytics/ReportedNames.cs',
 );
 
+const DECLARED_IDENTITY = path.join(
+  REPOSITORY,
+  'backend/src/Dewiride.Analytics.Classification/Detectors/DeclaredIdentityDetector.cs',
+);
+
 /** Every value a declaration in the engine's source assigns. */
 function declared(file: string, pattern: RegExp): readonly string[] {
   const found = [...readFileSync(file, 'utf8').matchAll(pattern)].map((match) => match[1] ?? '');
@@ -55,6 +61,7 @@ const strengths = declared(REPORTED_NAMES, /\[EvidenceStrength\.\w+\] = "([^"]+)
 const surfaces = declared(REPORTED_NAMES, /\[IngestSurface\.\w+\] = "([^"]+)"/g);
 const directions = declared(REPORTED_NAMES, /\[SignalDirection\.\w+\] = "([^"]+)"/g);
 const devices = declared(REPORTED_NAMES, /\[DeviceClass\.\w+\] = "([^"]+)"/g);
+const purposes = declared(DECLARED_IDENTITY, /\[CrawlerPurpose\.\w+\] = "([^"]+)"/g);
 
 /** What the catalogue holds at a dotted path, whether that is a sentence or a group of them. */
 function wordsAt(dotted: string): unknown {
@@ -115,6 +122,42 @@ describe('the engine vocabulary', () => {
 
   it.each(devices)('has a name for the kind of device %s', (device) => {
     expect(isWritten(wordsAt(`dashboard.devices.kind.${device}`))).toBe(true);
+  });
+
+  // What a crawler is for is the question a publisher opens the page to ask, and it reaches the
+  // screen as a whole sentence chosen by the value rather than as a noun dropped into a shared
+  // one. A purpose the engine can report and this catalogue cannot write is a visit explained in
+  // the wrong words, so the two lists are held against each other in both directions.
+  it.each(purposes)('says in words what a crawler for %s does', (purpose) => {
+    const key = reasonKey({
+      code: 'identity.declared_crawler',
+      direction: 'toward-automation',
+      weight: 0,
+      values: { purpose },
+    });
+
+    expect(isWritten(wordsAt(`reasons.${key}`))).toBe(true);
+  });
+
+  it('writes no sentence for a crawler purpose the engine cannot report', () => {
+    // As with the fallback above, 'unstated' is not one of the engine's purposes: it is what a
+    // purpose added in a later release reads as until somebody writes it a sentence of its own.
+    const written = sentencesUnder('reasons.identity.declared_crawler')
+      .filter((sentence) => sentence !== 'unstated')
+      .sort();
+
+    const reachable = purposes
+      .map((purpose) =>
+        reasonKey({
+          code: 'identity.declared_crawler',
+          direction: 'toward-automation',
+          weight: 0,
+          values: { purpose },
+        }).replace('identity.declared_crawler.', ''),
+      )
+      .sort();
+
+    expect(written).toEqual(reachable);
   });
 
   it('is accepted whole by the shapes the answers are checked against', () => {

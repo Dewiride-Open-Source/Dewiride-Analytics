@@ -142,6 +142,22 @@ services:
       # volume yourself, and everything else behaves the same. Until anything is there, visitors
       # are still counted and their country reads as not known.
       Dewiride__ReferenceData__AutoDownload: ${REFERENCE_DATA_AUTO_DOWNLOAD:-true}
+      # Where the lists of crawler addresses are kept. Each company that runs a crawler publishes
+      # the addresses it connects from, and comparing a visit against them is the only way this
+      # product will say a visit really was Google rather than that it said so. A few hundred
+      # kilobytes in total, on the same volume so a restart keeps recognising them.
+      Dewiride__CrawlerRanges__Directory: /var/lib/dewiride/reference/crawlers
+      # Set this to false on a machine with no way out to the internet. Traffic is still measured
+      # and crawlers are still recognised by name; what stops is confirming that name against the
+      # company's own addresses, and every such visit reads as a claim rather than a fact.
+      Dewiride__CrawlerRanges__AutoDownload: ${CRAWLER_RANGES_AUTO_DOWNLOAD:-true}
+      # The companies that publish no list instead publish a domain their crawlers answer to, and
+      # that is settled by asking a name server what a visit's address is called and whether that
+      # name points back at it. Only visits that already look like machinery are ever asked about,
+      # and it happens well after the visit ended rather than while somebody is waiting for a page.
+      # Set this to false to keep every address inside the building; crawlers whose operators
+      # publish no list then read as claims.
+      Dewiride__CrawlerNames__Enabled: ${CRAWLER_NAME_CHECKS:-true}
       # The whole address people open the dashboard on. Every link the engine sends is built from
       # it, and never from the address a request claims to have arrived at — a hostname taken off
       # an incoming request is written by whoever sent it, so a reset link built that way can be

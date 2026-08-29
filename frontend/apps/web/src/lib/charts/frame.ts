@@ -15,6 +15,15 @@ export const LAYERS = {
 } as const;
 
 /**
+ * How much of its colour a bucket keeps while what it counts is not finished.
+ *
+ * Faded rather than left out. The newest bucket on a chart is a real count that will still grow,
+ * so drawing it at full strength invites a reader to compare it with the finished ones beside it,
+ * and dropping it takes the most recent thing that happened off the picture of what is happening.
+ */
+export const UNSETTLED = 0.35;
+
+/**
  * The frame both pictures on the overview are drawn inside.
  *
  * The grid, the two axes and the tooltip are the same whichever question is being answered, and

@@ -11,6 +11,7 @@
     "sections": "Sections",
     "section": {
       "overview": "Overview",
+      "live": "Live",
       "journeys": "User journey",
       "settings": "Settings"
     }
@@ -510,6 +511,59 @@
       }
     }
   },
+  "live": {
+    "title": "Right now",
+    "caption": "Who has been on {site} in the last half hour.",
+    "count": {
+      "label": "Visitors",
+      "note": "Anyone who opened or read a page in the last half hour.",
+      "quiet": "Nobody has done anything in the last few minutes."
+    },
+    "named": {
+      "title": "Recognised right now",
+      "watching": "{count, plural, one {# visitor is still being watched} other {# visitors are still being watched}}",
+      "settles": "Judged once their visit finishes.",
+      "link": "See finished visits"
+    },
+    "activity": {
+      "title": "Minute by minute",
+      "measure": "Pages read",
+      "summary": "Pages read on {site} each minute over the last half hour.",
+      "zone": "Times are the clock in {zone}.",
+      "filling": "The last column is still filling.",
+      "stillFilling": "still filling",
+      "table": "Show these figures as a table",
+      "columnTime": "Time",
+      "none": "Nothing has been read in the last half hour."
+    },
+    "pages": {
+      "title": "What's being read",
+      "visitors": "{count, plural, one {# visitor} other {# visitors}}",
+      "none": "Once somebody opens a page, it appears here."
+    },
+    "refresh": {
+      "live": "Live · updated {time}",
+      "held": "Paused at {time}",
+      "outOfTouch": "Out of touch — showing {time}",
+      "pause": "Pause",
+      "resume": "Resume"
+    },
+    "list": {
+      "title": "Who's here",
+      "unnamed": "Still watching",
+      "reading": "Reading {path}",
+      "lastOn": "Last on {path}",
+      "pages": "{count, plural, one {# page} other {# pages}}",
+      "active": "{minutes, plural, =0 {Just now} one {1 min ago} other {# min ago}}",
+      "gone": "Gone",
+      "capped": "{count, plural, one {Showing the most recently active visitor.} other {Showing the # most recently active.}}"
+    },
+    "empty": {
+      "title": "Nobody is here right now",
+      "body": "The moment somebody opens a page on {site}, they appear here.",
+      "action": "See today's traffic"
+    }
+  },
   "journeys": {
     "title": "User journey",
     "caption": "Everyone and everything that visited {site}, newest first. Open one to see the pages it went to, what it did there, and what it was judged on.",
@@ -564,8 +618,6 @@
     "list": {
       "pages": "{count, plural, one {# page} other {# pages}}",
       "seenBy": "Seen by {surfaces}",
-      "supporting": "What we saw",
-      "contradicting": "Pointing the other way",
       "nav": {
         "label": "Pages of visits"
       }
@@ -624,6 +676,10 @@
       "automation": "Machinery",
       "unwanted": "Unwanted",
       "unclear": "Can't say"
+    },
+    "evidence": {
+      "supporting": "What we saw",
+      "contradicting": "Pointing the other way"
     }
   },
   "reasons": {

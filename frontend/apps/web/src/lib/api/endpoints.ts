@@ -14,7 +14,11 @@ import {
   type InvitationPreview,
   type IssuedServerKey,
   type Join,
+  type Live,
+  type LiveTrail,
   installationSchema,
+  liveSchema,
+  liveTrailSchema,
   invitationPreviewSchema,
   issuedServerKeySchema,
   joinSchema,
@@ -463,6 +467,30 @@ export function readVisitJourney(siteId: string, visit: string): Promise<VisitJo
   return readResource(
     `${siteAddress(siteId)}/visits/${encodeURIComponent(visit)}/journey`,
     visitJourneySchema,
+  );
+}
+
+/**
+ * What is happening on a website in the last half hour.
+ *
+ * The only question in this file that carries no period. What "now" is and how far back it reaches
+ * belong to the engine, so there is nothing about the present moment for a screen to name — which
+ * is what lets a screen that renews itself ask the very same question every time.
+ */
+export function readLive(siteId: string): Promise<Live> {
+  return readResource(`${siteAddress(siteId)}/live`, liveSchema);
+}
+
+/**
+ * What one visitor who is here has been doing, in order.
+ *
+ * Asked about the same stretch of minutes the row was drawn from, so the pages counted on the row
+ * and the pages listed under it are counted over one window rather than two.
+ */
+export function readLiveTrail(siteId: string, visitor: string): Promise<LiveTrail> {
+  return readResource(
+    `${siteAddress(siteId)}/live/${encodeURIComponent(visitor)}/trail`,
+    liveTrailSchema,
   );
 }
 

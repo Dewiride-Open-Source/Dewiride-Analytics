@@ -7,7 +7,9 @@ using ClickHouse.Driver.Utility;
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
+using Dewiride.Analytics.Classification.Sessions;
 using Dewiride.Analytics.Domain.Telemetry;
+using Column = Dewiride.Analytics.Infrastructure.ClickHouse.Analytics.AnalyticsSqlCompiler.LiveVisitorColumn;
 
 namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 
@@ -760,6 +762,220 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     /// <param name="Value">The value, as the store holds it.</param>
     /// <param name="Visits">How many of the window's judged visits held it.</param>
     private readonly record struct DetailRow(string Detail, string Value, long Visits);
+
+    /// <inheritdoc />
+    public async Task<LiveVisitors> GetSiteLiveVisitorsAsync(
+        TenantScope scope,
+        SiteLiveVisitorsQuery query,
+        CancellationToken cancellationToken)
+    {
+        var visitors = ImmutableArray.CreateBuilder<LiveVisitor>();
+        var seen = 0;
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            visitors.Add(Present(reader));
+
+            // Counted over every group the window produced and repeated on each row, so the answer
+            // says how busy the site is rather than how long its own list was allowed to be.
+            seen = SeenIn(reader);
+        }
+
+        return new LiveVisitors(seen, visitors.DrainToImmutable());
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<LiveMinute>> GetSiteLiveActivityAsync(
+        TenantScope scope,
+        SiteLiveActivityQuery query,
+        CancellationToken cancellationToken)
+    {
+        var minutes = new List<LiveMinute>();
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            minutes.Add(new LiveMinute(reader.GetDateTimeOffset(0), reader.GetInt64(1)));
+        }
+
+        return minutes;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<LivePage>> GetSiteLivePagesAsync(
+        TenantScope scope,
+        SiteLivePagesQuery query,
+        CancellationToken cancellationToken)
+    {
+        var pages = new List<LivePage>();
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            pages.Add(new LivePage(reader.GetString(0), reader.GetInt64(1), reader.GetInt64(2)));
+        }
+
+        return pages;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// The statement opens with the same ten columns the visit reconstruction opens with, in the
+    /// same order and carrying the same "not observed" of minus one, so one visitor being watched
+    /// now and one visit that finished last week are read back by the same two helpers. What it
+    /// does not carry is any account of who the visitor is: that travelled with the row this was
+    /// opened from.
+    /// </remarks>
+    public async Task<IReadOnlyList<VisitStep>> GetSiteLiveTrailAsync(
+        TenantScope scope,
+        SiteLiveTrailQuery query,
+        CancellationToken cancellationToken)
+    {
+        var steps = new List<VisitStep>();
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            steps.Add(new VisitStep(
+                reader.GetDateTimeOffset(0),
+                reader.GetString(2),
+                Observed(reader.GetInt16(3)),
+                Observed(reader.GetInt32(4)),
+                Observed(reader.GetInt16(5)),
+                reader.GetByte(1) == 1 ? Operated(reader) : null));
+        }
+
+        return steps;
+    }
+
+    /// <summary>
+    /// Turns one row of a live reading into the two accounts of a visitor it carries.
+    /// </summary>
+    /// <remarks>
+    /// Everything three-state stays three-state across the boundary, exactly as it does when a visit
+    /// is rebuilt for the engine: a visitor nobody could watch for pointer activity arrives with that
+    /// reading absent rather than false, because the difference between "nobody touched anything" and
+    /// "nothing was watching" is the difference between evidence and the absence of it.
+    /// </remarks>
+    /// <param name="reader">The open row.</param>
+    /// <returns>The visitor.</returns>
+    private static LiveVisitor Present(ClickHouseDataReader reader) => new(
+        reader.GetString(Column.VisitorKey),
+        new SessionEvidence
+        {
+            // The visitor rather than a visit, because this reading has no visit boundaries in it.
+            SessionKey = reader.GetString(Column.VisitorKey),
+            StartedAt = reader.GetDateTimeOffset(Column.FirstSeen),
+            EndedAt = reader.GetDateTimeOffset(Column.LastSeen),
+            PageCount = (int)reader.GetFieldValue<uint>(Column.PageCount),
+            Requests = Asked(reader.GetFieldValue<Tuple<long, string, short?>[]>(Column.Requests)),
+            Surfaces = Watching(reader.GetFieldValue<string[]>(Column.Surfaces)),
+            UserAgent = NothingIfEmpty(reader.GetString(Column.UserAgent)),
+            Language = NothingIfEmpty(reader.GetString(Column.Language)),
+            ViewportWidth = Measured<int>(reader, Column.ViewportWidth),
+            EngagedMs = Attention(reader),
+            MaxScrollDepthPercent = Measured<byte>(reader, Column.MaxScrollDepthPercent),
+            HadPointerInteraction = Watched(reader, Column.PointerObserved, Column.PointerSeen),
+            HadKeyboardInteraction = Watched(reader, Column.KeyboardObserved, Column.KeyboardSeen),
+            DeclaredWebDriver = Watched(reader, Column.WebDriverObserved, Column.WebDriverSeen),
+            AutonomousSystem = reader.GetFieldValue<uint>(Column.AutonomousSystem),
+            NetworkOwner = NothingIfEmpty(reader.GetString(Column.NetworkOwner)),
+            ConfirmedOperator = NothingIfEmpty(reader.GetString(Column.ConfirmedOperator)),
+        },
+        new VisitContext(
+            reader.GetString(Column.SendingSite),
+            AsSourceKind(reader.GetString(Column.SourceKind)),
+            reader.GetString(Column.Country),
+            reader.GetString(Column.Town),
+            reader.GetString(Column.Network),
+            AsDevice(reader.GetString(Column.Device)),
+            reader.GetString(Column.Browser),
+            reader.GetString(Column.System)),
+        reader.GetString(Column.CurrentPath),
+        reader.GetString(Column.ConfirmedOperator),
+        reader.GetFieldValue<uint>(Column.AutonomousSystem));
+
+    /// <summary>How many visitors the window held, which every row of the answer repeats.</summary>
+    private static int SeenIn(ClickHouseDataReader reader) =>
+        (int)reader.GetFieldValue<uint>(Column.VisitorsSeen);
+
+    /// <summary>Turns the pages a visitor was on into what the engine reads them as.</summary>
+    private static ImmutableArray<ObservedRequest> Asked(Tuple<long, string, short?>[] rows) =>
+    [
+        .. rows.Select(row => new ObservedRequest(
+            DateTimeOffset.FromUnixTimeMilliseconds(row.Item1),
+            row.Item2,
+            row.Item3)),
+    ];
+
+    /// <summary>
+    /// Maps stored surface names back onto the enumeration.
+    /// </summary>
+    /// <remarks>
+    /// A name this build has never heard of comes back as unattributed rather than throwing. Rows
+    /// outlive the code that wrote them, and refusing to say who is on a site because one report was
+    /// recorded by a newer build would be a worse answer than answering without knowing which
+    /// surface saw it.
+    /// </remarks>
+    private static ImmutableArray<IngestSurface> Watching(string[] names) =>
+    [
+        .. names.Select(name =>
+            StoredNames.Surfaces.TryGetValue(name, out var surface) ? surface : IngestSurface.Unknown),
+    ];
+
+    /// <summary>
+    /// Resolves a reading that some surfaces can take and others cannot.
+    /// </summary>
+    /// <param name="reader">The open row.</param>
+    /// <param name="observedColumn">How many reports could take the reading.</param>
+    /// <param name="seenColumn">How many of those found something.</param>
+    /// <returns>
+    /// <see langword="null"/> when nothing was in a position to watch, which must never be weighed
+    /// as evidence that nothing happened.
+    /// </returns>
+    private static bool? Watched(ClickHouseDataReader reader, int observedColumn, int seenColumn) =>
+        reader.GetFieldValue<uint>(observedColumn) == 0
+            ? null
+            : reader.GetFieldValue<uint>(seenColumn) > 0;
+
+    /// <summary>
+    /// Totals the time the pages were in front of somebody.
+    /// </summary>
+    /// <remarks>
+    /// Held to what the reading can express rather than trusted. The collector accepts an
+    /// implausible engaged time on purpose — a report that does not add up is itself evidence about
+    /// what produced it — but a visitor who sends a hundred of them would otherwise overflow the
+    /// total and hand the engine a negative one, which no detector is built to read.
+    /// </remarks>
+    /// <param name="reader">The open row.</param>
+    /// <returns>The total, or <see langword="null"/> when nothing measured any.</returns>
+    private static int? Attention(ClickHouseDataReader reader)
+    {
+        var total = Measured<long>(reader, Column.EngagedMs);
+
+        return total is null ? null : (int)Math.Clamp(total.Value, 0, int.MaxValue);
+    }
+
+    private static T? Measured<T>(ClickHouseDataReader reader, int column)
+        where T : struct =>
+        reader.IsDBNull(column) ? null : reader.GetFieldValue<T>(column);
 
     private async Task<ClickHouseDataReader> ExecuteAsync(
         CompiledStatement statement,

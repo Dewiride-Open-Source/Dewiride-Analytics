@@ -9,6 +9,7 @@ import type { Session } from '@/lib/api/schemas';
  * screens, and they stay where they are.
  */
 export const DASHBOARD = '/app';
+export const LIVE = '/app/live';
 export const JOURNEYS = '/app/journeys';
 export const SIGN_IN = '/app/sign-in';
 export const SIGN_UP = '/app/sign-up';
@@ -53,6 +54,7 @@ const SITE_FILES: ReadonlySet<string> = new Set(['/robots.txt', '/sitemap.xml'])
  */
 export const SCREENS: ReadonlySet<string> = new Set([
   DASHBOARD,
+  LIVE,
   JOURNEYS,
   SIGN_IN,
   SIGN_UP,
@@ -92,19 +94,22 @@ const SPENT: ReadonlySet<string> = new Set([SIGN_IN, SIGN_UP, SET_UP]);
 /**
  * The screens somebody moves between once they are signed in, in the order the bar lists them.
  *
- * Two questions about a website — how much traffic it had, and who each of its visitors was — and
- * then everything about the account itself. Journeys is a screen of its own rather than a card at
- * the foot of the first, because it is the one people come back to and work through rather than
- * glance at; the account is one because nobody visits it daily and a bar that grew a tab for every
- * setting would push the two that matter to the edge.
+ * Three questions about a website — how much traffic it had, who is on it at this moment, and who
+ * each of its visitors turned out to be — and then everything about the account itself. Each is a
+ * screen of its own because each is opened for a different reason: the totals are glanced at, the
+ * present moment is watched, and the visits are worked through one at a time. The account is one
+ * because nobody visits it daily and a bar that grew a tab for every setting would push the ones
+ * that matter to the edge.
  *
- * The two about a website carry the period between them, so that somebody looking at a fortnight
- * of numbers who goes to read the visits behind them is still looking at the same fortnight. The
- * account is about the person rather than about any stretch of days, and a period in its address
- * would be a question nothing on it could answer.
+ * Only the screens that answer about a stretch of days carry the period between them, so that
+ * somebody looking at a fortnight of numbers who goes to read the visits behind them is still
+ * looking at the same fortnight. The other two answer about something a period cannot narrow — the
+ * present moment, and the person reading — and a period in either address would be a question
+ * nothing on the screen could answer.
  */
 export const SECTIONS = [
   { path: DASHBOARD, name: 'overview', aboutSite: true },
+  { path: LIVE, name: 'live', aboutSite: false },
   { path: JOURNEYS, name: 'journeys', aboutSite: true },
   { path: SETTINGS, name: 'settings', aboutSite: false },
 ] as const;

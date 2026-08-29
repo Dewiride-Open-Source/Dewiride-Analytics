@@ -20,6 +20,20 @@ const PILLS: Readonly<Record<VerdictTone, string>> = {
   unclear: 'border-border bg-surface-muted text-foreground-muted',
 };
 
+/**
+ * The shape every pill on the product wears, whatever it says.
+ *
+ * Exported so that a screen with something to mark that is not a category — a visitor still being
+ * watched, on the screen about the present moment — marks it at exactly the same weight rather
+ * than at one that happens to look similar. Two markers meaning "nothing can be said yet" drawn a
+ * shade apart would read as two different kinds of answer.
+ */
+export const PILL =
+  'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium';
+
+/** The quiet one, for anything a category cannot be put to. */
+export const QUIET_PILL = `${PILL} ${PILLS.unclear}`;
+
 /** The same four tones as a solid fill, for the bar that shows how a period divides up. */
 export const TONE_FILLS: Readonly<Record<VerdictTone, string>> = {
   people: 'bg-positive',
@@ -32,14 +46,5 @@ export const TONE_FILLS: Readonly<Record<VerdictTone, string>> = {
 export function VerdictBadge({ category }: { readonly category: TrafficCategory }) {
   const t = useTranslations('verdicts.category');
 
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium',
-        PILLS[CATEGORY_TONES[category]],
-      )}
-    >
-      {t(category)}
-    </span>
-  );
+  return <span className={cn(PILL, PILLS[CATEGORY_TONES[category]])}>{t(category)}</span>;
 }

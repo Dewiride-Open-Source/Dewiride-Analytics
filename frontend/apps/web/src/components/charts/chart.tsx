@@ -52,8 +52,13 @@ interface ChartProps {
  */
 export function Chart({ option, label, className }: ChartProps) {
   const holder = useRef<HTMLDivElement>(null);
+  const drawn = useRef<EChartsType | null>(null);
   const { resolvedTheme } = useTheme();
 
+  // The surface outlives whatever is drawn on it, and is rebuilt only when the theme changes the
+  // colours it was built with. A chart whose figures move on their own — the live screen's does,
+  // every few seconds — has to be redrawn rather than rebuilt: a fresh surface starts its columns
+  // at the axis every time, so a busy website would spend the whole half hour growing them back.
   useEffect(() => {
     const node = holder.current;
 
@@ -62,15 +67,8 @@ export function Chart({ option, label, className }: ChartProps) {
     }
 
     const chart: EChartsType = init(node, undefined, { renderer: 'canvas' });
-    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    chart.setOption({
-      animation: !still,
-      // The engine can generate its own spoken description. Ours is written for this chart and
-      // the figures are published as a table besides, so its version would only be noise.
-      aria: { enabled: false },
-      ...option(readChartPalette()),
-    });
+    drawn.current = chart;
 
     const watcher = new ResizeObserver(() => chart.resize());
 
@@ -79,7 +77,33 @@ export function Chart({ option, label, className }: ChartProps) {
     return () => {
       watcher.disconnect();
       chart.dispose();
+      drawn.current = null;
     };
+  }, [resolvedTheme]);
+
+  useEffect(() => {
+    const chart = drawn.current;
+
+    if (!chart) {
+      return;
+    }
+
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    chart.setOption(
+      {
+        animation: !still,
+        // The engine can generate its own spoken description. Ours is written for this chart and
+        // the figures are published as a table besides, so its version would only be noise.
+        aria: { enabled: false },
+        ...option(readChartPalette()),
+      },
+      // What is drawn is replaced rather than matched up by position, so a chart drawn a second
+      // time with fewer parts than before does not keep the ones it has dropped. A part that names
+      // itself is recognised across the redraw and moved to its new figures instead of being
+      // started again, which is what lets a column that has grown by one simply grow by one.
+      { replaceMerge: ['series'] },
+    );
   }, [option, resolvedTheme]);
 
   return (

@@ -1,4 +1,4 @@
-import type { TrafficCategory, TrafficGroup, VisitReason } from '@/lib/api/schemas';
+import type { TrafficCategory, VisitReason } from '@/lib/api/schemas';
 
 /**
  * How a verdict reaches the screen.
@@ -72,20 +72,34 @@ export interface TonePortion {
 }
 
 /**
- * How a period divides between the four tones, in reading order.
+ * The least that has to be known about something for it to be counted into a tone.
  *
- * The summary above the list that names every category exactly — the same fold the chart on the
- * overview makes, over a period counted once rather than bucket by bucket. A tone the period never
- * held is left out rather than carried as a nought, so a website nobody has scraped shows neither
- * a slice for it nor a name.
+ * A category and a count, at whatever size the caller holds them: a period's worth of visits
+ * folded by category, or one judged thing standing for itself. Everything else a caller has — how
+ * strong the evidence was, how many pages were read — has no bearing on which colour the answer is
+ * drawn in, so asking for it would only tie the rule to one shape of caller.
  */
-export function tonesIn(groups: readonly TrafficGroup[]): readonly TonePortion[] {
+export interface Judged {
+  readonly category: TrafficCategory;
+  /** How many visits it stands for, which is one where it is one visitor. */
+  readonly sessions: number;
+}
+
+/**
+ * How a set of judged things divides between the four tones, in reading order.
+ *
+ * The summary above a list that names every category exactly — the same fold the chart on the
+ * overview makes, over a period counted once rather than bucket by bucket. A tone nothing was
+ * judged into is left out rather than carried as a nought, so a website nobody has scraped shows
+ * neither a slice for it nor a name.
+ */
+export function tonesIn(judged: readonly Judged[]): readonly TonePortion[] {
   const counted = new Map<VerdictTone, number>();
 
-  for (const group of groups) {
-    const tone = CATEGORY_TONES[group.category];
+  for (const one of judged) {
+    const tone = CATEGORY_TONES[one.category];
 
-    counted.set(tone, (counted.get(tone) ?? 0) + group.sessions);
+    counted.set(tone, (counted.get(tone) ?? 0) + one.sessions);
   }
 
   return TONE_ORDER.flatMap((tone) => {

@@ -2,7 +2,7 @@ import { color, type EChartsCoreOption } from 'echarts/core';
 import type { TrafficBand } from '@/lib/analytics/traffic-series';
 import type { VerdictTone } from '@/lib/analytics/verdicts';
 import type { Drawing } from '@/lib/charts/drawing';
-import { chartFrame, LAYERS } from '@/lib/charts/frame';
+import { chartFrame, LAYERS, UNSETTLED } from '@/lib/charts/frame';
 import { ghostSeries } from '@/lib/charts/ghost';
 import type { ChartPalette } from '@/lib/charts/palette';
 
@@ -38,9 +38,6 @@ export interface EarlierTotal {
  * traffic.
  */
 const STACK = 'who';
-
-/** How much of its colour a bucket keeps while it is still being judged. */
-const FILLING = 0.35;
 
 /** Who and what visited, bucket by bucket. */
 export function whoOption(chart: WhoChart, palette: ChartPalette): EChartsCoreOption {
@@ -95,7 +92,7 @@ function drawBand(
       type: 'bar',
       stack: STACK,
       data: visits.map((value, bucket) =>
-        stillFilling(chart, bucket) ? { value, itemStyle: { opacity: FILLING } } : value,
+        stillFilling(chart, bucket) ? { value, itemStyle: { opacity: UNSETTLED } } : value,
       ),
       itemStyle: { color: colour },
       barMaxWidth: 28,

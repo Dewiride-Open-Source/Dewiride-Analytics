@@ -17,6 +17,8 @@ import {
   readDevices,
   readEngagement,
   readFacets,
+  readLive,
+  readLiveTrail,
   readLocations,
   readOverview,
   readPageEngagement,
@@ -46,6 +48,8 @@ import {
   devicesKey,
   engagementKey,
   facetsKey,
+  liveKey,
+  liveTrailKey,
   locationsKey,
   overviewKey,
   pageEngagementKey,
@@ -68,6 +72,15 @@ const FRESH_FOR = 30_000;
 
 /** The same, for answers that only change as visits finish. */
 const JUDGED_FRESH_FOR = 120_000;
+
+/**
+ * How often a screen about the present moment asks again.
+ *
+ * Ten seconds. Slower and somebody watching their site being swept sees it in stills; faster and
+ * the reading costs more than it tells anybody, since a visitor counts towards the answer for a
+ * full half hour and almost nothing in it can change from one second to the next.
+ */
+const LIVE_EVERY = 10_000;
 
 /**
  * The websites the signed-in person is allowed to look at.
@@ -453,5 +466,54 @@ export function useVisitJourney(siteId: string, visit: string, enabled: boolean)
     enabled,
     retry: false,
     staleTime: Infinity,
+  });
+}
+
+/**
+ * Who is on a website at this moment, asked again for as long as somebody is watching.
+ *
+ * Never held as current, because an answer about now is out of date the instant it is given: a tab
+ * come back to asks straight away rather than showing the moment it was left on. A tab nobody is
+ * looking at asks nothing at all — the beat still falls and the question is skipped — so a screen
+ * left open overnight costs a screen left open rather than a night of readings.
+ *
+ * Whatever arrived last stays on screen while the next is on its way, and stays there if the next
+ * one never comes. A live screen that emptied itself the moment one reading was refused would spend
+ * a flaky minute telling somebody their site was deserted.
+ *
+ * @param watching Whether to keep asking. Off while the reader has held the screen still.
+ */
+export function useLiveTraffic(siteId: string, watching: boolean) {
+  return useQuery({
+    queryKey: liveKey(siteId),
+    queryFn: () => readLive(siteId),
+    retry: false,
+    staleTime: 0,
+    refetchInterval: watching ? LIVE_EVERY : false,
+    refetchOnWindowFocus: watching,
+  });
+}
+
+/**
+ * What one visitor who is here has been doing, from the moment somebody opens their row.
+ *
+ * Only an opened row asks anything, so the cost of this screen is what the reader is actually
+ * looking at rather than one question per visitor on it.
+ *
+ * Renewed on the same beat as the reading it was opened from, for as long as that visitor is still
+ * reporting. Once they have gone their trail is finished and is kept exactly as it stands — a row
+ * somebody is part-way through reading must not empty itself underneath them.
+ *
+ * @param opened Whether the row has been opened. Nothing is asked for until it has.
+ * @param stillHere Whether the newest reading still carries the visitor.
+ */
+export function useLiveTrail(siteId: string, visitor: string, opened: boolean, stillHere: boolean) {
+  return useQuery({
+    queryKey: liveTrailKey(siteId, visitor),
+    queryFn: () => readLiveTrail(siteId, visitor),
+    enabled: opened,
+    retry: false,
+    staleTime: stillHere ? 0 : Infinity,
+    refetchInterval: opened && stillHere ? LIVE_EVERY : false,
   });
 }

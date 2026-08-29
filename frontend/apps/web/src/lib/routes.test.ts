@@ -11,6 +11,7 @@ import {
   JOIN,
   JOURNEYS,
   isEngineAddress,
+  LIVE,
   isScreen,
   isSiteFile,
   PLAN,
@@ -107,7 +108,7 @@ describe('where somebody belongs', () => {
 });
 
 describe('which addresses name a screen', () => {
-  it.each([DASHBOARD, SIGN_IN, SIGN_UP, SET_UP, FORGOT_PASSWORD, RESET_PASSWORD, PLAN])(
+  it.each([DASHBOARD, LIVE, SIGN_IN, SIGN_UP, SET_UP, FORGOT_PASSWORD, RESET_PASSWORD, PLAN])(
     'recognises %s',
     (screen) => {
       expect(isScreen(screen, routing.locales)).toBe(true);
@@ -174,6 +175,7 @@ describe('what the engine answers rather than the dashboard', () => {
 describe('which part of the product an address is in', () => {
   it.each([
     [DASHBOARD, DASHBOARD],
+    [LIVE, LIVE],
     [JOURNEYS, JOURNEYS],
     [SETTINGS, SETTINGS],
     [SETTINGS_YOU, SETTINGS],

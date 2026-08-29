@@ -1,4 +1,5 @@
-import { cleanup } from '@testing-library/react';
+import { cleanup, fireEvent } from '@testing-library/react';
+import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Chart } from '@/components/charts/chart';
 import { renderScreen } from '@/test/harness';
@@ -37,6 +38,7 @@ class StubObserver {
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', StubObserver);
+  init.mockClear();
   setOption.mockClear();
   resize.mockClear();
   dispose.mockClear();
@@ -44,6 +46,20 @@ beforeEach(() => {
 
 /** A chart with nothing in it: this is about the surface around one, not about a drawing. */
 const EMPTY = () => ({ series: [] });
+
+/** The same surface handed a second set of figures, the way the live screen hands it one. */
+function Moving() {
+  const [option, redraw] = useState<() => { series: unknown[] }>(() => EMPTY);
+
+  return (
+    <>
+      <button type="button" onClick={() => redraw(() => () => ({ series: [{ id: 'minutes' }] }))}>
+        Redraw
+      </button>
+      <Chart option={option} label="Anything" />
+    </>
+  );
+}
 
 describe('the charting surface', () => {
   it('registers only the pieces the product draws with', () => {
@@ -68,14 +84,20 @@ describe('the charting surface', () => {
     renderScreen(<Chart option={EMPTY} label="Anything" />);
 
     expect(init).toHaveBeenCalled();
-    expect(setOption).toHaveBeenCalledWith(expect.objectContaining({ series: [] }));
+    expect(setOption).toHaveBeenCalledWith(
+      expect.objectContaining({ series: [] }),
+      expect.anything(),
+    );
   });
 
   /** The engine writes its own spoken description; ours is written for the chart it is on. */
   it('turns off the description it would otherwise generate for itself', () => {
     renderScreen(<Chart option={EMPTY} label="Anything" />);
 
-    expect(setOption).toHaveBeenCalledWith(expect.objectContaining({ aria: { enabled: false } }));
+    expect(setOption).toHaveBeenCalledWith(
+      expect.objectContaining({ aria: { enabled: false } }),
+      expect.anything(),
+    );
   });
 
   it('holds still for somebody who has asked for less movement', () => {
@@ -87,7 +109,31 @@ describe('the charting surface', () => {
 
     renderScreen(<Chart option={EMPTY} label="Anything" />);
 
-    expect(setOption).toHaveBeenCalledWith(expect.objectContaining({ animation: false }));
+    expect(setOption).toHaveBeenCalledWith(
+      expect.objectContaining({ animation: false }),
+      expect.anything(),
+    );
+  });
+
+  /**
+   * The live screen redraws its chart every few seconds. A surface built afresh each time would
+   * start every column at the axis and grow it out again, so a busy website would never be still.
+   */
+  it('redraws the chart it already has when the figures on it move', () => {
+    const { getByRole } = renderScreen(<Moving />);
+
+    fireEvent.click(getByRole('button'));
+
+    expect(init).toHaveBeenCalledOnce();
+    expect(dispose).not.toHaveBeenCalled();
+    expect(setOption).toHaveBeenCalledTimes(2);
+  });
+
+  /** Anything the surface is not handed a second time is taken off it rather than left behind. */
+  it('replaces what is drawn rather than matching it up with what was there before', () => {
+    renderScreen(<Chart option={EMPTY} label="Anything" />);
+
+    expect(setOption).toHaveBeenCalledWith(expect.anything(), { replaceMerge: ['series'] });
   });
 
   it('takes the chart down with the screen rather than leaving it behind', () => {

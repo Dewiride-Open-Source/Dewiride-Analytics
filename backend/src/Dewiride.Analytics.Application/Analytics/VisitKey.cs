@@ -1,4 +1,5 @@
 using System.Globalization;
+using Dewiride.Analytics.Application.Telemetry;
 
 namespace Dewiride.Analytics.Application.Analytics;
 
@@ -29,16 +30,6 @@ public readonly record struct VisitKey
 {
     /// <summary>Separates the two parts. Absent from the alphabet either of them can use.</summary>
     private const char Separator = ':';
-
-    /// <summary>
-    /// Longest visitor key accepted.
-    /// </summary>
-    /// <remarks>
-    /// A bound rather than the exact length the engine produces, which is a property of how the
-    /// key is derived and not of what a visit is called. Generous enough to survive a change to
-    /// that, and short enough that nothing large is ever parsed.
-    /// </remarks>
-    private const int LongestVisitorKey = 64;
 
     /// <summary>
     /// Latest instant an identity may name, in milliseconds since the epoch.
@@ -84,14 +75,14 @@ public readonly record struct VisitKey
 
         var separator = value.IndexOf(Separator, StringComparison.Ordinal);
 
-        if (separator <= 0 || separator > LongestVisitorKey)
+        if (separator <= 0)
         {
             return false;
         }
 
         var visitorKey = value[..separator];
 
-        if (!IsHexadecimal(visitorKey))
+        if (!VisitorKeys.IsWellFormed(visitorKey))
         {
             return false;
         }
@@ -121,21 +112,4 @@ public readonly record struct VisitKey
         string.Create(
             CultureInfo.InvariantCulture,
             $"{VisitorKey}{Separator}{StartedAt.ToUnixTimeMilliseconds()}");
-
-    /// <summary>
-    /// Tests whether every character is a lower-case hexadecimal digit, which is the whole
-    /// alphabet a derived visitor key is written in.
-    /// </summary>
-    private static bool IsHexadecimal(ReadOnlySpan<char> value)
-    {
-        foreach (var character in value)
-        {
-            if (!char.IsAsciiDigit(character) && !char.IsBetween(character, 'a', 'f'))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
 }

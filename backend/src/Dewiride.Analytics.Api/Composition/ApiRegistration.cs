@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
+using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Dewiride.Analytics.Api.Configuration;
 using Dewiride.Analytics.Api.Contracts;
@@ -234,6 +235,20 @@ internal static class ApiRegistration
                     {
                         PermitLimit = collector.ServerBatchesPerMinutePerAddress,
                         Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0,
+                    }));
+
+            limiter.AddPolicy(
+                RateLimitPolicies.Live,
+                context => RateLimitPartition.GetFixedWindowLimiter(
+                    context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = dashboard.LiveReadingsPerMinute,
+                        Window = TimeSpan.FromMinutes(1),
+                        // A reading of the present moment is worthless once it is late, so a caller
+                        // over the allowance is turned away rather than held behind the readings
+                        // that made them late.
                         QueueLimit = 0,
                     }));
 

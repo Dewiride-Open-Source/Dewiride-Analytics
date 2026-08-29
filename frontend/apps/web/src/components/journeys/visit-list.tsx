@@ -1,15 +1,15 @@
 'use client';
 
-import { Bot, ChevronRight, Info, type LucideIcon, UserRound } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
 import { useState } from 'react';
 import { VerdictBadge } from '@/components/dashboard/verdict-badge';
+import { VisitEvidence } from '@/components/dashboard/visit-evidence';
 import { VisitJourney } from '@/components/dashboard/visit-journey';
 import { Card } from '@/components/ui/card';
 import { Pagination } from '@/components/ui/pagination';
 import { PAGE_SIZES } from '@/lib/analytics/journeys';
-import { byWeight, reasonKey, reasonValues } from '@/lib/analytics/verdicts';
-import type { SignalDirection, Visit, VisitReason } from '@/lib/api/schemas';
+import type { Visit } from '@/lib/api/schemas';
 import { cn } from '@/lib/styling';
 
 interface VisitListProps {
@@ -29,19 +29,6 @@ interface VisitListProps {
   readonly onMove: (offset: number) => void;
   readonly onResize: (perPage: number) => void;
 }
-
-/** What each observation is marked with: somebody, something, or a qualifier on either. */
-const MARKERS: Readonly<Record<SignalDirection, LucideIcon>> = {
-  'toward-human': UserRound,
-  'toward-automation': Bot,
-  neutral: Info,
-};
-
-const TINTS: Readonly<Record<SignalDirection, string>> = {
-  'toward-human': 'text-positive',
-  'toward-automation': 'text-accent-strong',
-  neutral: 'text-foreground-subtle',
-};
 
 /**
  * Every journey a period holds, newest first, a page at a time, each openable to show what it was
@@ -99,6 +86,7 @@ function VisitRow({ siteId, visit, timeZoneId }: VisitRowProps) {
   const t = useTranslations('journeys.list');
   const [opened, setOpened] = useState(false);
   const strengths = useTranslations('verdicts.strength');
+  const evidence = useTranslations('verdicts.evidence');
   const surfaceNames = useTranslations('verdicts.surface');
   const format = useFormatter();
 
@@ -159,52 +147,12 @@ function VisitRow({ siteId, visit, timeZoneId }: VisitRowProps) {
           open={opened}
         />
 
-        <Evidence title={t('supporting')} reasons={visit.supporting} />
+        <VisitEvidence title={evidence('supporting')} reasons={visit.supporting} />
 
         {visit.contradicting.length > 0 ? (
-          <Evidence title={t('contradicting')} reasons={visit.contradicting} />
+          <VisitEvidence title={evidence('contradicting')} reasons={visit.contradicting} />
         ) : null}
       </div>
     </details>
-  );
-}
-
-function Evidence({
-  title,
-  reasons,
-}: {
-  readonly title: string;
-  readonly reasons: readonly VisitReason[];
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <h3 className="text-xs font-medium tracking-wide text-foreground-muted uppercase">{title}</h3>
-      <ul className="flex flex-col gap-1.5">
-        {byWeight(reasons).map((reason) => (
-          <Reason key={reason.code} reason={reason} />
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/**
- * One observation, written out.
- *
- * An observation this build has no sentence for is shown as a plain acknowledgement that
- * something else counted. Its code is a name for our own convenience and would mean nothing to
- * the person reading, and quietly dropping it would leave a verdict looking thinner than the case
- * that actually produced it.
- */
-function Reason({ reason }: { readonly reason: VisitReason }) {
-  const t = useTranslations('reasons');
-  const key = reasonKey(reason);
-  const Marker = MARKERS[reason.direction];
-
-  return (
-    <li className="flex gap-2 text-sm text-foreground-muted">
-      <Marker aria-hidden className={cn('mt-0.5 size-3.5 shrink-0', TINTS[reason.direction])} />
-      <span>{t.has(key) ? t(key, reasonValues(reason)) : t('other')}</span>
-    </li>
   );
 }

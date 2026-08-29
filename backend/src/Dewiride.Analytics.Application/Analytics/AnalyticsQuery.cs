@@ -847,3 +847,194 @@ public sealed record SiteVisitFacetsQuery : AnalyticsQuery
     /// <summary>The measured site's own address, read from the site catalogue and never from a request.</summary>
     public string SiteDomain { get; }
 }
+
+/// <summary>
+/// Everyone seen on a site in the last stretch of minutes, with what each of them did in it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The unit here is a visitor over a fixed trailing window, not a visit, and that is the whole
+/// shape of it. A visit is over once it has been quiet for an idle timeout, and a report about a
+/// page belongs to the visit that page was arrived at in however long the silence before it — so a
+/// tab dismissed the next morning reopens a visit hours after its reader left, and a reader with an
+/// old tab open has two visits running at once. Either would be counted as somebody who is here.
+/// Asking instead which visitors reported in the last few minutes has none of that: it is one row
+/// per visitor, it is exactly the question a reader is asking, and it needs no visit boundaries to
+/// answer.
+/// </para>
+/// <para>
+/// Nothing is read from outside the window, which is what separates this from every other
+/// reconstruction in the vocabulary. Those rebuild a visit and so must reach back to where it
+/// began; this one describes a stretch of minutes and a report outside it is not part of that
+/// description. It is also what makes the question cheap enough to ask over and over.
+/// </para>
+/// <para>
+/// A page here is a page the visitor was on during the window, counted once however many reports
+/// described it. Somebody who returns to a page they were already on is not counted a second time,
+/// because there are no visit boundaries in this answer to make "again" mean anything.
+/// </para>
+/// </remarks>
+public sealed record SiteLiveVisitorsQuery : AnalyticsQuery
+{
+    /// <summary>
+    /// Most visitors any one reading carries back.
+    /// </summary>
+    /// <remarks>
+    /// A sweep can put hundreds of visitors on a site inside a few minutes, and each one carries
+    /// the evidence a conclusion is reached from. This bounds one answer; how many there were is
+    /// counted separately and exactly, so a reading that could not list everybody still says how
+    /// many there are.
+    /// </remarks>
+    public const int MostVisitors = 100;
+
+    /// <summary>
+    /// Most pages carried back for any one visitor.
+    /// </summary>
+    /// <remarks>
+    /// The evidence a conclusion is reached from includes what was asked for, so the pages travel
+    /// with the visitor rather than being fetched again. A sweep can ask for thousands inside the
+    /// window, and carrying all of them would let one visitor decide how much memory answering
+    /// takes. The count of pages stays exact.
+    /// </remarks>
+    public const int MostRequests = 500;
+
+    /// <summary>Asks who has been on a site in the last stretch of minutes.</summary>
+    /// <param name="range">The stretch of minutes, ending at the present moment.</param>
+    /// <param name="siteDomain">The measured site's own address, so it is never one of its own sources.</param>
+    /// <param name="limit">How many visitors to carry back, at most <see cref="MostVisitors"/>.</param>
+    /// <exception cref="ArgumentException">The site's address is missing.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The limit is outside its bounds.</exception>
+    public SiteLiveVisitorsQuery(TimeRange range, string siteDomain, int limit)
+        : base(range)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(siteDomain);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, MostVisitors);
+
+        SiteDomain = siteDomain;
+        Limit = limit;
+    }
+
+    /// <summary>
+    /// The measured site's own address.
+    /// </summary>
+    /// <remarks>
+    /// Read from the site catalogue rather than from the request, on the same terms as
+    /// <see cref="SiteVisitJourneyQuery.SiteDomain"/>: it decides which referrer counts as somewhere
+    /// else, and a caller who could name it could decide what a visit is said to have come from.
+    /// </remarks>
+    public string SiteDomain { get; }
+
+    /// <summary>How many visitors to carry back.</summary>
+    public int Limit { get; }
+}
+
+/// <summary>
+/// How much of a site was read in each minute of the last stretch of them.
+/// </summary>
+/// <remarks>
+/// Counted over the whole window rather than over the visitors an answer had room for, so the
+/// picture is of the site and not of a hundred of its readers. Every minute the window covers comes
+/// back, including the ones nothing happened in, because a gap in a drawing is a fact about the
+/// site and filling it in afterwards would be the reader's own arithmetic.
+/// </remarks>
+/// <param name="Range">The stretch of minutes, ending at the present moment.</param>
+public sealed record SiteLiveActivityQuery(TimeRange Range) : AnalyticsQuery(Range);
+
+/// <summary>
+/// The pages a site's visitors have been on in the last stretch of minutes, busiest first.
+/// </summary>
+/// <remarks>
+/// Counted the same way the visitor list counts a page, so the two agree: a page is a page somebody
+/// was on, once per visitor however many reports described it.
+/// </remarks>
+public sealed record SiteLivePagesQuery : AnalyticsQuery
+{
+    /// <summary>Most pages any one reading carries back.</summary>
+    /// <remarks>
+    /// A short list read at a glance rather than a site map. Somebody who wants the whole picture
+    /// of a period has a screen for it.
+    /// </remarks>
+    public const int MostPages = 25;
+
+    /// <summary>Asks which pages are being read.</summary>
+    /// <param name="range">The stretch of minutes, ending at the present moment.</param>
+    /// <param name="limit">How many pages to carry back, at most <see cref="MostPages"/>.</param>
+    /// <exception cref="ArgumentOutOfRangeException">The limit is outside its bounds.</exception>
+    public SiteLivePagesQuery(TimeRange range, int limit)
+        : base(range)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, MostPages);
+
+        Limit = limit;
+    }
+
+    /// <summary>How many pages to carry back.</summary>
+    public int Limit { get; }
+}
+
+/// <summary>
+/// The pages one visitor has been on in the last stretch of minutes, in the order they reached
+/// them.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A separate question from <see cref="SiteVisitJourneyQuery"/> rather than a narrowing of it, and
+/// the three reasons are the same three that made the visitor list its own question. The journey is
+/// read from where a visit began to as long as one may last, and clamped to the instant a verdict
+/// was reached — which for a visit still under way is no upper bound at all until a verdict appears
+/// and snaps it back. It reads forward with no reach-back, so a departure arriving from a stale tab
+/// is folded into whichever visit last arrived at that page and can print an hour of reading against
+/// a page opened three minutes ago. And its page count comes from a different question over a
+/// different window, so a live panel built on it would say "three of four pages" for a reason that
+/// is nothing but a difference in timing.
+/// </para>
+/// <para>
+/// This asks about the same stretch of minutes the visitor was listed from, so what it shows and
+/// what the list said are one reading of one window. A page is a page the visitor was on during it,
+/// counted once, which is exactly what the list counted — so the steps and the count agree by
+/// construction rather than by hope.
+/// </para>
+/// <para>
+/// Nothing is established about the visitor here. The list already carries where they were, what
+/// they were reading on and who sent them, settled over the same minutes; asking a second time
+/// would be a second reading taken moments later, free to disagree with the row it was opened from.
+/// </para>
+/// </remarks>
+public sealed record SiteLiveTrailQuery : AnalyticsQuery
+{
+    /// <summary>Most steps any one reading carries back.</summary>
+    /// <remarks>
+    /// A sweep asks for thousands of pages inside half an hour and nobody reads a list that long;
+    /// what somebody wants from one is its shape. The visitor's own page count is exact and is
+    /// reported beside it, so a trail that was cut short says so.
+    /// </remarks>
+    public const int MostSteps = 200;
+
+    /// <summary>Asks what one visitor has been doing.</summary>
+    /// <param name="range">The stretch of minutes, ending at the present moment.</param>
+    /// <param name="visitorKey">
+    /// The visitor, as the reading of who is here named them — after both halves of the measurement
+    /// were folded onto one key, which is the only spelling that finds anybody.
+    /// </param>
+    /// <param name="limit">How many steps to carry back, at most <see cref="MostSteps"/>.</param>
+    /// <exception cref="ArgumentException">The visitor key is missing.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The limit is outside its bounds.</exception>
+    public SiteLiveTrailQuery(TimeRange range, string visitorKey, int limit)
+        : base(range)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(visitorKey);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, MostSteps);
+
+        VisitorKey = visitorKey;
+        Limit = limit;
+    }
+
+    /// <summary>Whose activity to read.</summary>
+    public string VisitorKey { get; }
+
+    /// <summary>How many steps to carry back.</summary>
+    public int Limit { get; }
+}

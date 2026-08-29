@@ -738,3 +738,126 @@ public sealed record VisitJourneyStep(
 /// in its own catalogue.
 /// </param>
 public sealed record VisitPressed(string Name, string Control, string? Target, string TargetKind);
+
+/// <summary>
+/// What is happening on a site at this moment.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The one answer in this product that carries no window a caller chose. What "now" is comes from
+/// the engine's own clock, and how far back it reaches is what counts as a visitor still being here
+/// — so there is nothing about the present moment for a caller to name, and a screen that renews
+/// itself asks the same question every time.
+/// </para>
+/// <para>
+/// It says how many visitors there have been and lists as many of them as one answer carries. The
+/// two are separate figures on purpose: a sweep putting three hundred visitors on a site in ten
+/// minutes must be reported as three hundred rather than as however long the list was allowed to be.
+/// </para>
+/// </remarks>
+/// <param name="At">
+/// The moment the reading was taken, by the engine's clock. Everything about how long ago something
+/// happened is measured against this rather than against the reader's own clock, which on a machine
+/// that is an hour out would otherwise report visitors arriving in the future.
+/// </param>
+/// <param name="From">Where the stretch of minutes it covers begins.</param>
+/// <param name="VisitorsSeen">How many visitors reported in that stretch, counted over all of them.</param>
+/// <param name="Visitors">Those this answer carried, the one most recently active first.</param>
+/// <param name="Minutes">Every minute the stretch covers, oldest first, including the empty ones.</param>
+/// <param name="Pages">The pages being read, busiest first.</param>
+public sealed record LiveResponse(
+    DateTimeOffset At,
+    DateTimeOffset From,
+    int VisitorsSeen,
+    IReadOnlyList<LiveVisitorSummary> Visitors,
+    IReadOnlyList<LiveMinuteRow> Minutes,
+    IReadOnlyList<LivePageRow> Pages);
+
+/// <summary>
+/// One visitor who has been on the site in the last stretch of minutes.
+/// </summary>
+/// <remarks>
+/// A visitor rather than a visit. A visit ends when it has been quiet long enough, and a report
+/// about a page belongs to the visit that page was arrived at in however long the silence before
+/// it — so a tab dismissed the next morning reopens a visit whose reader left hours ago, and a
+/// reader with an old tab open has two visits running at once. Neither is somebody who is here.
+/// </remarks>
+/// <param name="Visitor">
+/// Handle for asking a second question about the same visitor. Derived, rotates daily, and names a
+/// visitor rather than a person; it is never shown to anybody.
+/// </param>
+/// <param name="FirstSeen">The first report from them inside the stretch.</param>
+/// <param name="LastSeen">The last.</param>
+/// <param name="PageCount">How many pages they have been on during it.</param>
+/// <param name="CurrentPath">
+/// The page they were on most recently. Written by whoever is visiting the site, so it reaches a
+/// screen as text and is never followed.
+/// </param>
+/// <param name="Category">
+/// What they are, where that can be settled from evidence nothing they do next can withdraw, and
+/// <see langword="null"/> otherwise — which is the answer for most people and is not a gap.
+/// </param>
+/// <param name="Strength">How much weight stands behind that, or nothing where there is no verdict.</param>
+/// <param name="Ruleset">Which set of detection rules reached it, or nothing.</param>
+/// <param name="Supporting">The evidence behind it, or nothing.</param>
+/// <param name="Contradicting">The evidence that pointed the other way, kept and shown.</param>
+/// <param name="Operator">
+/// The company that vouches for the address they arrived from, or empty where none does.
+/// </param>
+/// <param name="Network">The routing number of the network they arrived over, or nought.</param>
+/// <param name="Context">What can be said about them to a reader, which may be nothing.</param>
+public sealed record LiveVisitorSummary(
+    string Visitor,
+    DateTimeOffset FirstSeen,
+    DateTimeOffset LastSeen,
+    int PageCount,
+    string CurrentPath,
+    string? Category,
+    string? Strength,
+    string? Ruleset,
+    IReadOnlyList<VisitReason> Supporting,
+    IReadOnlyList<VisitReason> Contradicting,
+    string Operator,
+    long Network,
+    VisitContextResponse Context);
+
+/// <summary>
+/// One minute of a site's reading.
+/// </summary>
+/// <param name="Start">The minute began here.</param>
+/// <param name="PageViews">How many pages were delivered in it.</param>
+public sealed record LiveMinuteRow(DateTimeOffset Start, long PageViews);
+
+/// <summary>
+/// One page being read.
+/// </summary>
+/// <param name="Path">
+/// The address, as it was asked for. Written by whoever is visiting the site, so it reaches a screen
+/// as text and is never followed.
+/// </param>
+/// <param name="PageViews">How many times it was delivered during the stretch.</param>
+/// <param name="Visitors">How many separate visitors were on it.</param>
+public sealed record LivePageRow(string Path, long PageViews, long Visitors);
+
+/// <summary>
+/// What one visitor who is on the site now has been doing, in the order they did it.
+/// </summary>
+/// <remarks>
+/// It carries no account of who the visitor is, and that is deliberate rather than an omission.
+/// Where they are, what they are reading on and who sent them travel on the row this was opened
+/// from, settled over the same minutes; answering the question a second time moments later would be
+/// a second answer free to disagree with the first.
+/// </remarks>
+/// <param name="Visitor">The visitor this describes, as the reading of who is here named them.</param>
+/// <param name="At">
+/// The moment the reading was taken, by the engine's clock, so how long ago each step happened is
+/// measured against the same clock the steps were measured against.
+/// </param>
+/// <param name="Steps">
+/// The steps, oldest first. Empty where the key names nobody the last stretch of minutes holds —
+/// which is what a visitor who has gone looks like, rather than a failure.
+/// </param>
+public sealed record LiveTrailResponse(
+    string Visitor,
+    DateTimeOffset At,
+    IReadOnlyList<VisitJourneyStep> Steps);

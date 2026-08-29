@@ -116,8 +116,8 @@ describe('the bar across the top', () => {
   });
 
   /**
-   * The two screens are two views of the same website, so moving between them is part of the
-   * chrome rather than a link buried at the foot of one of them.
+   * The screens are views of the same website, so moving between them is part of the chrome rather
+   * than a link buried at the foot of one of them.
    */
   it('offers the way between the screens once somebody is signed in', async () => {
     engineWith([SITE]);
@@ -130,6 +130,10 @@ describe('the bar across the top', () => {
       'href',
       '/app',
     );
+    expect(within(sections).getByRole('link', { name: 'Live' })).toHaveAttribute(
+      'href',
+      '/app/live',
+    );
     expect(within(sections).getByRole('link', { name: 'User journey' })).toHaveAttribute(
       'href',
       '/app/journeys',
@@ -137,11 +141,11 @@ describe('the bar across the top', () => {
   });
 
   /**
-   * The two screens are two questions about the same days, so the way between them carries the
-   * days. The account is about the person rather than about any stretch of them, and a period in
-   * its address would be a question nothing on it could answer.
+   * The overview and the journeys are two questions about the same days, so the way between them
+   * carries the days. The present moment and the account are not about any stretch of days at all,
+   * and a period in either address would be a question nothing on the screen could answer.
    */
-  it('hands the period between the two screens about a website, and not to the account', async () => {
+  it('hands the period between the screens about a stretch of days, and to no other', async () => {
     engineWith([SITE]);
 
     withTheme(<AppHeader />, '?period=yesterday');
@@ -155,6 +159,10 @@ describe('the bar across the top', () => {
     expect(within(sections).getByRole('link', { name: 'User journey' })).toHaveAttribute(
       'href',
       '/app/journeys?period=yesterday',
+    );
+    expect(within(sections).getByRole('link', { name: 'Live' })).toHaveAttribute(
+      'href',
+      '/app/live',
     );
     expect(within(sections).getByRole('link', { name: 'Settings' })).toHaveAttribute(
       'href',
@@ -172,6 +180,9 @@ describe('the bar across the top', () => {
     expect(within(sections).getByRole('link', { name: 'Overview' })).toHaveAttribute(
       'aria-current',
       'page',
+    );
+    expect(within(sections).getByRole('link', { name: 'Live' })).not.toHaveAttribute(
+      'aria-current',
     );
     expect(within(sections).getByRole('link', { name: 'User journey' })).not.toHaveAttribute(
       'aria-current',

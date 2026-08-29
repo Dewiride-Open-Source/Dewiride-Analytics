@@ -164,6 +164,22 @@ export function facetsKey(siteId: string, window: AnalyticsWindow) {
   return ['sites', siteId, 'visits', 'facets', window.from, window.to] as const;
 }
 
+/**
+ * What is happening on a website now, filed under the website alone.
+ *
+ * Every other reading is named after the days it covers. This one asks the same question every
+ * time, so its name never moves — which is precisely what gives the answer arriving ten seconds
+ * from now somewhere to sit, and what keeps the last one on screen while it is on its way.
+ */
+export function liveKey(siteId: string) {
+  return ['sites', siteId, 'live'] as const;
+}
+
+/** One visitor's trail through the same minutes, filed under the visitor for the same reason. */
+export function liveTrailKey(siteId: string, visitor: string) {
+  return ['sites', siteId, 'live', visitor, 'trail'] as const;
+}
+
 export function serverKeysKey(siteId: string) {
   return ['sites', siteId, 'server-keys'] as const;
 }

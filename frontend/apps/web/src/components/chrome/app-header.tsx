@@ -99,16 +99,22 @@ export function AppHeader() {
           aria-label={t('header.sections')}
           className="border-t border-border/60 bg-background/40"
         >
-          <ul className="mx-auto flex max-w-6xl items-center gap-1 px-2 sm:px-4">
+          {/*
+            The row scrolls sideways rather than wrapping. On the narrowest phones the tabs are a
+            little wider than the screen, and a bar that folded onto a second line would push the
+            heading below it down on exactly the devices with the least room to spare.
+          */}
+          <ul className="mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto px-2 [-ms-overflow-style:none] [scrollbar-width:none] sm:px-4 [&::-webkit-scrollbar]:hidden">
             {SECTIONS.map((section) => {
               const current = here !== null && currentSection(here) === section.path;
 
               return (
                 <li key={section.path}>
                   {/*
-                    The two screens about a website hand each other the period, so that moving
-                    between them is moving between two questions about the same days rather than
-                    starting again.
+                    The screens that answer about a stretch of days hand each other the period, so
+                    that moving between them is moving between two questions about the same days
+                    rather than starting again. The one about the present moment takes none: there
+                    is no stretch of days for it to be asked about.
                   */}
                   <Link
                     href={section.aboutSite ? withPeriod(section.path, period) : section.path}

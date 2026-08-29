@@ -30,6 +30,30 @@ public sealed class DashboardOptions
     public int SignInAttemptsPerFiveMinutes { get; init; } = 10;
 
     /// <summary>
+    /// Readings of the present moment allowed to one signed-in person in a minute.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The screen that answers who is on a site renews itself every ten seconds, so six a minute is
+    /// what watching costs — and another six for each visitor opened on it, since a trail is renewed
+    /// on the same beat for as long as its row is open. Somebody reading a busy half hour with a
+    /// handful of visitors open, in two windows, spends several times what one screen alone does.
+    /// </para>
+    /// <para>
+    /// The allowance is set well above that rather than close to it, because what it protects
+    /// against is a signed-in account turned into a load generator, and what it must never do is
+    /// break a screen for somebody using it as intended. How long any one of these readings may
+    /// occupy the store is bounded separately and on the store's own terms.
+    /// </para>
+    /// <para>
+    /// Counted per person rather than per address, since an office of two hundred behind one
+    /// connection would otherwise ration each other out of a screen they are each entitled to.
+    /// </para>
+    /// </remarks>
+    [Range(1, 100000)]
+    public int LiveReadingsPerMinute { get; init; } = 300;
+
+    /// <summary>
     /// The address people open this installation on, used to build the links sent by email.
     /// </summary>
     /// <remarks>

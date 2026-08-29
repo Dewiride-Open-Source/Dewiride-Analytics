@@ -5,6 +5,7 @@ using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Sites;
+using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Domain.Sites;
@@ -377,6 +378,16 @@ internal static class SiteEndpoints
         routes.MapGet("/api/sites/{siteId:guid}/visits/{visitKey}/journey", VisitJourneyAsync)
             .WithName("SiteVisitJourney")
             .WithSummary("Returns the pages one visit went through, in order.");
+
+        routes.MapGet("/api/sites/{siteId:guid}/live", LiveAsync)
+            .WithName("SiteLive")
+            .WithSummary("Returns who has been on a website in the last half hour, and what they are reading.")
+            .RequireRateLimiting(RateLimitPolicies.Live);
+
+        routes.MapGet("/api/sites/{siteId:guid}/live/{visitorKey}/trail", LiveTrailAsync)
+            .WithName("SiteLiveTrail")
+            .WithSummary("Returns the pages one visitor has been on in the last half hour, in order.")
+            .RequireRateLimiting(RateLimitPolicies.Live);
     }
 
     private static async Task<Results<Ok<PagesResponse>, NotFound, ProblemHttpResult>> PagesAsync(
@@ -1537,6 +1548,146 @@ internal static class SiteEndpoints
         signal.Weight,
         signal.Parameters);
 
+    /// <summary>
+    /// Answers what is happening on a site at this moment.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The one reading in this product that takes no window. What "now" is comes from the engine's
+    /// clock and how far back it reaches is what counts as still being here, so there is nothing
+    /// about the present moment a caller could name — which is also what lets a screen renewing
+    /// itself ask the same question every time and keep the last answer while the next is on its way.
+    /// </para>
+    /// <para>
+    /// Answered without storing anything and without asking a name server about anybody. It is a
+    /// reading of a stretch of minutes that is still running, not a verdict, and most visitors in it
+    /// are carried back with nothing said about them at all.
+    /// </para>
+    /// </remarks>
+    private static async Task<Results<Ok<LiveResponse>, NotFound>> LiveAsync(
+        [AsParameters] LiveParameters parameters,
+        ITenantScopeProvider scopes,
+        ISiteCatalog sites,
+        LiveTrafficReader live,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var site = await sites.FindAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (site is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        // An answer about this moment is out of date the instant it is given, and the address it was
+        // asked at says nothing about who asked — so a cache between here and the reader holding one
+        // would hand somebody else's site to whoever asked next. Some of these answers carry a
+        // renewed sign-in with them, which makes that a way of handing over a session rather than
+        // merely a stale figure.
+        context.Response.Headers.CacheControl = "no-store";
+        context.Response.Headers.Vary = "Cookie";
+
+        var reading = await live.ReadAsync(scope, site.Domain, cancellationToken).ConfigureAwait(false);
+
+        return TypedResults.Ok(new LiveResponse(
+            reading.At,
+            reading.From,
+            reading.VisitorsSeen,
+            [.. reading.Visitors.Select(Here)],
+            [.. reading.Minutes.Select(minute => new LiveMinuteRow(minute.Start, minute.PageViews))],
+            [.. reading.Pages.Select(page => new LivePageRow(page.Path, page.PageViews, page.Visitors))]));
+    }
+
+    /// <summary>
+    /// Reports one visitor who is here, and what may be said about them.
+    /// </summary>
+    /// <remarks>
+    /// A visitor nothing may yet be said about carries no conclusion at all rather than a placeholder
+    /// one. There is no category in the vocabulary meaning "we have not looked long enough", and
+    /// borrowing one that means something else would be this product saying a thing it does not know
+    /// in order to fill a column.
+    /// </remarks>
+    /// <param name="reading">The visitor, and the conclusion where there is one.</param>
+    /// <returns>The row, as the wire carries it.</returns>
+    private static LiveVisitorSummary Here(LiveReading reading) => new(
+        reading.Visitor.VisitorKey,
+        reading.Visitor.Evidence.StartedAt,
+        reading.Visitor.Evidence.EndedAt,
+        reading.Visitor.Evidence.PageCount,
+        reading.Visitor.CurrentPath,
+        reading.Named is null ? null : ReportedNames.Categories[reading.Named.Category],
+        reading.Named is null ? null : ReportedNames.Strengths[reading.Named.Strength],
+        reading.Named?.RulesetVersion.ToString(),
+        reading.Named is null ? [] : [.. reading.Named.Supporting.Select(Explain)],
+        reading.Named is null ? [] : [.. reading.Named.Contradicting.Select(Explain)],
+        reading.Visitor.ConfirmedOperator,
+        reading.Visitor.AutonomousSystem,
+        Established(reading.Visitor.Context));
+
+    /// <summary>
+    /// Answers what one visitor who is here has been doing.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The key is read before the site is resolved, so a value that could name nobody is refused
+    /// identically whether or not the site exists. What comes back names the visitor in the
+    /// spelling the reading of who is here used, so nothing a caller wrote is echoed.
+    /// </para>
+    /// <para>
+    /// A key naming somebody who has since left the stretch of minutes is answered with an empty
+    /// trail rather than with a refusal, because a visitor going is what happens to every visitor
+    /// and is not an error. It is also why this cannot be used to find out which keys are real.
+    /// </para>
+    /// </remarks>
+    private static async Task<Results<Ok<LiveTrailResponse>, NotFound, ProblemHttpResult>> LiveTrailAsync(
+        [AsParameters] LiveTrailParameters parameters,
+        ITenantScopeProvider scopes,
+        LiveTrafficReader live,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!VisitorKeys.IsWellFormed(parameters.VisitorKey))
+        {
+            return Unusable("Ask about a visitor by the identifier the live reading gives them.");
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        // Renewed on every beat for as long as somebody is watching, on the same terms as the
+        // reading it was opened from.
+        context.Response.Headers.CacheControl = "no-store";
+        context.Response.Headers.Vary = "Cookie";
+
+        var trail = await live
+            .ReadTrailAsync(scope, parameters.VisitorKey!, cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Ok(new LiveTrailResponse(
+            parameters.VisitorKey!,
+            trail.At,
+            [
+                .. trail.Steps.Select(step => new VisitJourneyStep(
+                    step.At,
+                    step.Path,
+                    step.StatusCode,
+                    step.EngagedMs,
+                    step.ScrollDepthPercent,
+                    Operated(step.Press))),
+            ]));
+    }
+
     private static async Task<Results<Ok<IReadOnlyList<SiteSummary>>, UnauthorizedHttpResult>> ListAsync(
         ISiteDirectory directory,
         ICurrentPrincipalAccessor caller,
@@ -2122,3 +2273,19 @@ internal readonly record struct VisitPagesParameters(
 /// <param name="SiteId">The site the visit belongs to.</param>
 /// <param name="VisitKey">The visit, as the visit list names it.</param>
 internal readonly record struct VisitJourneyParameters(Guid SiteId, string? VisitKey);
+
+/// <summary>Which website is being watched.</summary>
+/// <param name="SiteId">The website.</param>
+internal readonly record struct LiveParameters(Guid SiteId);
+
+/// <summary>
+/// What the live trail endpoint reads from the path.
+/// </summary>
+/// <remarks>
+/// No window, for the same reason the reading it belongs to has none: how far back a trail reaches
+/// is what counts as still being here, and it is settled by the engine rather than named by a
+/// caller.
+/// </remarks>
+/// <param name="SiteId">The website.</param>
+/// <param name="VisitorKey">The visitor, as the live reading names them.</param>
+internal readonly record struct LiveTrailParameters(Guid SiteId, string? VisitorKey);

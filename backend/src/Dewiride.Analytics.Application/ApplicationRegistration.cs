@@ -30,6 +30,7 @@ public static class ApplicationRegistration
         // performs no I/O, and is safe to use from as many threads as ask.
         builder.Services.AddSingleton(TrafficClassifier.Current());
         builder.Services.AddScoped<SessionClassifier>();
+        builder.Services.AddScoped<LiveTrafficReader>();
 
         return builder;
     }

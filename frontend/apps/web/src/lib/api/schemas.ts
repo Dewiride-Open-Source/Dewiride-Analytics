@@ -615,6 +615,79 @@ export const visitFacetsSchema = z.object({
   entryPages: z.array(visitDetailRowSchema),
 });
 
+/** One minute of a website's reading, including the ones nothing happened in. */
+export const liveMinuteSchema = z.object({
+  start: timestamp,
+  pageViews: z.number().int(),
+});
+
+/** One page being read at this moment. */
+export const livePageSchema = z.object({
+  path: z.string(),
+  pageViews: z.number().int(),
+  visitors: z.number().int(),
+});
+
+/**
+ * One visitor who has been on a website in the last stretch of minutes.
+ *
+ * A visitor rather than a visit, because a visit ends only after it has been quiet long enough and
+ * so cannot say who is here now.
+ *
+ * The conclusion is absent rather than hedged. Most visitors carry no category and no strength at
+ * all, and that is the honest answer while their visit is still running: a naming is only offered
+ * where nothing the visitor does next could withdraw it. A row with nothing said about it is not a
+ * gap in the answer — it is the answer.
+ */
+export const liveVisitorSchema = z.object({
+  visitor: z.string(),
+  firstSeen: timestamp,
+  lastSeen: timestamp,
+  pageCount: z.number().int(),
+  currentPath: z.string(),
+  category: trafficCategorySchema.nullable(),
+  strength: evidenceStrengthSchema.nullable(),
+  ruleset: z.string().nullable(),
+  supporting: z.array(visitReasonSchema),
+  contradicting: z.array(visitReasonSchema),
+  operator: z.string(),
+  network: z.number().int(),
+  context: visitContextSchema,
+});
+
+/**
+ * What is happening on a website at this moment.
+ *
+ * How many visitors there have been and how many of them one answer carried are separate figures,
+ * because a sweep putting three hundred visitors on a website in ten minutes has to be reported as
+ * three hundred rather than as however long a list was allowed to be.
+ *
+ * Everything about how long ago something happened is measured against the moment the reading was
+ * taken rather than against the reader's own clock, which on a machine that is an hour out would
+ * otherwise report visitors arriving in the future.
+ */
+export const liveSchema = z.object({
+  at: timestamp,
+  from: timestamp,
+  visitorsSeen: z.number().int(),
+  visitors: z.array(liveVisitorSchema),
+  minutes: z.array(liveMinuteSchema),
+  pages: z.array(livePageSchema),
+});
+
+/**
+ * What one visitor who is here has been doing, in the order they did it.
+ *
+ * It carries no account of who they are. That travels on the row it was opened from, settled over
+ * the same minutes; answering the question a second time moments later would be a second answer
+ * free to disagree with the first.
+ */
+export const liveTrailSchema = z.object({
+  visitor: z.string(),
+  at: timestamp,
+  steps: z.array(visitJourneyStepSchema),
+});
+
 /** One key a website's own server may report with, described without its secret. */
 export const serverKeySchema = z.object({
   id: z.uuid(),
@@ -699,5 +772,10 @@ export type VisitJourneyStep = z.infer<typeof visitJourneyStepSchema>;
 export type VisitJourney = z.infer<typeof visitJourneySchema>;
 export type VisitContext = z.infer<typeof visitContextSchema>;
 export type VisitSourceKind = z.infer<typeof visitSourceKindSchema>;
+export type LiveMinute = z.infer<typeof liveMinuteSchema>;
+export type LivePage = z.infer<typeof livePageSchema>;
+export type LiveVisitor = z.infer<typeof liveVisitorSchema>;
+export type Live = z.infer<typeof liveSchema>;
+export type LiveTrail = z.infer<typeof liveTrailSchema>;
 export type ServerKey = z.infer<typeof serverKeySchema>;
 export type IssuedServerKey = z.infer<typeof issuedServerKeySchema>;

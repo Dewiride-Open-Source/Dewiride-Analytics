@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
+using Dewiride.Analytics.Classification.Sessions;
 using Dewiride.Analytics.Domain.Telemetry;
 
 namespace Dewiride.Analytics.Application.Analytics;
@@ -192,6 +193,52 @@ public interface ITelemetryQueries
     Task<VisitFacets> GetSiteVisitFacetsAsync(
         TenantScope scope,
         SiteVisitFacetsQuery query,
+        CancellationToken cancellationToken);
+
+    /// <summary>Returns everyone seen on a site in the last stretch of minutes.</summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The stretch of minutes, and how many visitors to carry back.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// The visitors, the one most recently active first, and how many there were altogether — which
+    /// is counted over the whole window and is therefore right even when the list was cut short.
+    /// </returns>
+    Task<LiveVisitors> GetSiteLiveVisitorsAsync(
+        TenantScope scope,
+        SiteLiveVisitorsQuery query,
+        CancellationToken cancellationToken);
+
+    /// <summary>Returns how much of a site was read in each minute of the last stretch of them.</summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The stretch of minutes.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Every minute the window covers, oldest first, including the empty ones.</returns>
+    Task<IReadOnlyList<LiveMinute>> GetSiteLiveActivityAsync(
+        TenantScope scope,
+        SiteLiveActivityQuery query,
+        CancellationToken cancellationToken);
+
+    /// <summary>Returns the pages being read in the last stretch of minutes, busiest first.</summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The stretch of minutes, and how many pages to carry back.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The busiest pages, and how many visitors each of them held.</returns>
+    Task<IReadOnlyList<LivePage>> GetSiteLivePagesAsync(
+        TenantScope scope,
+        SiteLivePagesQuery query,
+        CancellationToken cancellationToken);
+
+    /// <summary>Returns what one visitor has done in the last stretch of minutes.</summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The stretch of minutes, whose activity, and how many steps to carry back.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// The steps, oldest first. Empty where the key names nobody the window holds — including a
+    /// visitor who has since left it, which is a visitor who has gone rather than a failure.
+    /// </returns>
+    Task<IReadOnlyList<VisitStep>> GetSiteLiveTrailAsync(
+        TenantScope scope,
+        SiteLiveTrailQuery query,
         CancellationToken cancellationToken);
 }
 
@@ -820,3 +867,83 @@ public readonly record struct VisitPress(
     ControlKind Control,
     string? Target,
     TargetKind TargetKind);
+
+/// <summary>
+/// Everyone seen on a site in the last stretch of minutes.
+/// </summary>
+/// <remarks>
+/// How many there were is counted over the whole window and the list may be shorter than it, so a
+/// reading that had room for a hundred of two hundred visitors still says two hundred rather than
+/// quietly reporting the size of its own answer.
+/// </remarks>
+/// <param name="VisitorsSeen">How many visitors reported during the window.</param>
+/// <param name="Visitors">The visitors, the one most recently active first.</param>
+public sealed record LiveVisitors(int VisitorsSeen, ImmutableArray<LiveVisitor> Visitors)
+{
+    /// <summary>What a site nobody has been on answers with.</summary>
+    public static LiveVisitors None { get; } = new(0, []);
+}
+
+/// <summary>
+/// One visitor seen during the window, and everything known about their time in it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Two accounts of the same visitor, kept apart on purpose. <see cref="Evidence"/> is the closed
+/// set the detection engine reasons about and nothing else may be added to it;
+/// <see cref="Context"/> is what a reader is shown and the engine never sees. The split is the same
+/// one the classifier works to, and it is what stops a detector reaching a conclusion from where
+/// somebody lives.
+/// </para>
+/// <para>
+/// The evidence is what the window holds rather than what the whole visit will eventually hold, so
+/// a conclusion drawn from it is only safe to show where more evidence could not withdraw it. That
+/// judgement is not made here.
+/// </para>
+/// </remarks>
+/// <param name="VisitorKey">
+/// The visitor's derived identity, after the two halves of the measurement have been folded onto
+/// one key. It names a visitor rather than a person and rotates daily; it is a handle for asking a
+/// second question about the same visitor, and is never shown.
+/// </param>
+/// <param name="Evidence">Everything the engine is allowed to reason about, over this window.</param>
+/// <param name="Context">What can be said about the visitor to a reader, which may be nothing.</param>
+/// <param name="CurrentPath">
+/// The page the visitor was on most recently. Written by whoever is visiting the site, so it is
+/// shown as text and never followed.
+/// </param>
+/// <param name="ConfirmedOperator">
+/// The company that vouches for the address the visitor arrived from, or empty where none does.
+/// Settled at ingest against what the company publishes about its own machines, so it is the one
+/// thing here that cannot be withdrawn by anything the visitor does next.
+/// </param>
+/// <param name="AutonomousSystem">
+/// The routing number of the network the visitor arrived over, or nought where nothing resolved
+/// one. Carried beside the owner's name because the number outlives the names its holders trade
+/// under, which is what makes it the thing to match on.
+/// </param>
+public readonly record struct LiveVisitor(
+    string VisitorKey,
+    SessionEvidence Evidence,
+    VisitContext Context,
+    string CurrentPath,
+    string ConfirmedOperator,
+    long AutonomousSystem);
+
+/// <summary>
+/// One minute of a site's reading.
+/// </summary>
+/// <param name="Start">The minute began here, by the collector's own clock.</param>
+/// <param name="PageViews">How many pages were delivered in it.</param>
+public readonly record struct LiveMinute(DateTimeOffset Start, long PageViews);
+
+/// <summary>
+/// One page being read.
+/// </summary>
+/// <param name="Path">
+/// The address, as it was asked for. Written by whoever is visiting the site, so it is shown as
+/// text and never followed.
+/// </param>
+/// <param name="PageViews">How many times it was delivered during the window.</param>
+/// <param name="Visitors">How many separate visitors were on it.</param>
+public readonly record struct LivePage(string Path, long PageViews, long Visitors);

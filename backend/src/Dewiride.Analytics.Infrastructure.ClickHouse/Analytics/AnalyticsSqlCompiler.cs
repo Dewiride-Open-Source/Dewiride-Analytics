@@ -65,6 +65,7 @@ public static class AnalyticsSqlCompiler
     private const string SourcesParameter = "sources";
     private const string EntryPagesParameter = "entry_pages";
     private const string MostValuesParameter = "most_values";
+    private const string MaxRequestsParameter = "max_requests";
 
     /// <summary>
     /// Bucket function per granularity. Bucketing runs in the site's own time zone, so the
@@ -516,6 +517,7 @@ public static class AnalyticsSqlCompiler
             ?? CompileFromReadings(scope, query)
             ?? CompileFromVisits(scope, query)
             ?? CompileFromVerdicts(scope, query)
+            ?? CompileFromNow(scope, query)
             ?? throw new NotSupportedException($"No statement is defined for {query.GetType().Name}.");
     }
 
@@ -671,6 +673,506 @@ public static class AnalyticsSqlCompiler
             _ => null,
         };
 
+    /// <summary>
+    /// Compiles a question about the present moment, or nothing where it is not one.
+    /// </summary>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement, or <see langword="null"/> where this is not one of these questions.</returns>
+    /// <remarks>
+    /// <para>
+    /// These are the only statements here that read a stretch of activity and nothing on either
+    /// side of it. Every other question about visitors rebuilds visits, and a visit has to be read
+    /// from where it began, so those reach a full day back; these describe a few minutes, and a
+    /// report outside them is not part of that description.
+    /// </para>
+    /// <para>
+    /// They are asked again every few seconds while somebody is watching, which is what the narrow
+    /// reading buys and what the time limit each of them carries protects.
+    /// </para>
+    /// </remarks>
+    private static CompiledStatement? CompileFromNow(TenantScope scope, AnalyticsQuery query) =>
+        query switch
+        {
+            SiteLiveVisitorsQuery visitors => CompileSiteLiveVisitors(scope, visitors),
+            SiteLiveActivityQuery activity => CompileSiteLiveActivity(scope, activity),
+            SiteLivePagesQuery pages => CompileSiteLivePages(scope, pages),
+            SiteLiveTrailQuery trail => CompileSiteLiveTrail(scope, trail),
+            _ => null,
+        };
+
+    /// <summary>
+    /// Where each column of a reading about who is here sits, so the statement and the reader
+    /// cannot drift.
+    /// </summary>
+    internal static class LiveVisitorColumn
+    {
+        /// <summary>The visitor's derived identity, after both halves were folded onto one key.</summary>
+        public const int VisitorKey = 0;
+
+        /// <summary>The first report from them inside the window.</summary>
+        public const int FirstSeen = 1;
+
+        /// <summary>The last.</summary>
+        public const int LastSeen = 2;
+
+        /// <summary>How many pages they were on during it.</summary>
+        public const int PageCount = 3;
+
+        /// <summary>The page they were on most recently.</summary>
+        public const int CurrentPath = 4;
+
+        /// <summary>The pages themselves, oldest first, capped at what the caller asked for.</summary>
+        public const int Requests = 5;
+
+        /// <summary>Which capture surfaces saw them.</summary>
+        public const int Surfaces = 6;
+
+        /// <summary>What they said they were.</summary>
+        public const int UserAgent = 7;
+
+        /// <summary>The language they asked for.</summary>
+        public const int Language = 8;
+
+        /// <summary>Widest viewport reported.</summary>
+        public const int ViewportWidth = 9;
+
+        /// <summary>Milliseconds the pages were in front of them, added up across the window.</summary>
+        public const int EngagedMs = 10;
+
+        /// <summary>Furthest any page was scrolled.</summary>
+        public const int MaxScrollDepthPercent = 11;
+
+        /// <summary>How many reports could see pointer activity.</summary>
+        public const int PointerObserved = 12;
+
+        /// <summary>How many of those saw some.</summary>
+        public const int PointerSeen = 13;
+
+        /// <summary>How many reports could see keyboard activity.</summary>
+        public const int KeyboardObserved = 14;
+
+        /// <summary>How many of those saw some.</summary>
+        public const int KeyboardSeen = 15;
+
+        /// <summary>How many reports could see an automation declaration.</summary>
+        public const int WebDriverObserved = 16;
+
+        /// <summary>How many of those carried one.</summary>
+        public const int WebDriverSeen = 17;
+
+        /// <summary>Routing number of the network they arrived over, or nought.</summary>
+        public const int AutonomousSystem = 18;
+
+        /// <summary>Who runs that network, as the routing registry names them.</summary>
+        public const int NetworkOwner = 19;
+
+        /// <summary>The company that vouches for the address they arrived from.</summary>
+        public const int ConfirmedOperator = 20;
+
+        /// <summary>The site that sent them.</summary>
+        public const int SendingSite = 21;
+
+        /// <summary>What kind of place that was.</summary>
+        public const int SourceKind = 22;
+
+        /// <summary>The country they arrived from.</summary>
+        public const int Country = 23;
+
+        /// <summary>The town within it.</summary>
+        public const int Town = 24;
+
+        /// <summary>Who runs the network, as this product names them.</summary>
+        public const int Network = 25;
+
+        /// <summary>The kind of device.</summary>
+        public const int Device = 26;
+
+        /// <summary>The browser.</summary>
+        public const int Browser = 27;
+
+        /// <summary>The operating system underneath it.</summary>
+        public const int System = 28;
+
+        /// <summary>How many visitors the window held altogether, before the list was cut short.</summary>
+        public const int VisitorsSeen = 29;
+    }
+
+    /// <summary>
+    /// Gathers everyone seen in the last stretch of minutes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One row per visitor and none per visit. What a reader is asking is who is on the site, and a
+    /// visit is a poor answer to that: a departure reported when a tab is finally dismissed reopens
+    /// a visit whose reader left hours ago, and a reader with an old tab open has two of them
+    /// running at once. Neither is somebody who is here. Which visitors reported in the last few
+    /// minutes has no such trouble, and needs no visit boundaries to settle.
+    /// </para>
+    /// <para>
+    /// Every visitor is carried back with both accounts of themselves at once: the closed set the
+    /// detection engine reasons about, and the separate set of facts a reader is shown. Asking twice
+    /// would be two readings of the same minutes taken moments apart, which is how a screen comes to
+    /// print a page count that disagrees with the pages beside it.
+    /// </para>
+    /// <para>
+    /// The address the visitor arrived from is deliberately not among them. It is the one personal
+    /// value on the row; the visit reconstruction carries it only to settle whose crawlers an
+    /// address belongs to before the engine is asked anything, and there is no such question here —
+    /// what a company publishes about its own machines was settled by the collector and travels as
+    /// an answer.
+    /// </para>
+    /// <para>
+    /// How many visitors there were is counted over every group the window produced rather than over
+    /// the rows that fitted, so a busy site says how busy it is instead of describing the size of
+    /// its own answer.
+    /// </para>
+    /// </remarks>
+    private static CompiledStatement CompileSiteLiveVisitors(TenantScope scope, SiteLiveVisitorsQuery query)
+    {
+        var sql = $$"""
+            WITH
+                {{LiveActivity.WithSources(
+                    LiveActivity.EveryVisitor,
+                    "event_id",
+                    "surface",
+                    "visitor_key",
+                    "correlation_id",
+                    "server_ts",
+                    "kind",
+                    "path",
+                    "status_code",
+                    "user_agent",
+                    "language",
+                    "viewport_width",
+                    "engaged_ms",
+                    "scroll_depth_percent",
+                    "had_pointer_interaction",
+                    "had_keyboard_interaction",
+                    "declared_web_driver",
+                    "country_code",
+                    "city",
+                    "autonomous_system",
+                    "network_owner",
+                    "confirmed_operator",
+                    "device_class",
+                    "browser_family",
+                    "operating_system")}},
+                gathered AS
+                (
+                    SELECT
+                        visitor_key,
+                        min(server_ts) AS first_seen,
+                        max(server_ts) AS last_seen,
+                        toUInt32(countIf(opens_page)) AS page_count,
+                        argMax(path, (server_ts, event_id)) AS current_path,
+                        groupArraySortedIf({max_requests:UInt32})(
+                            (toUnixTimestamp64Milli(server_ts), path, status_code),
+                            opens_page) AS requests,
+                        groupUniqArray(toString(surface)) AS surfaces,
+                        anyIf(user_agent, user_agent != '') AS user_agent,
+                        anyIf(language, language != '') AS language,
+                        max(viewport_width) AS viewport_width,
+                        sumIf(page_engaged_ms, opens_page) AS engaged_ms,
+                        max(scroll_depth_percent) AS max_scroll_depth_percent,
+                        toUInt32(countIf(had_pointer_interaction != 'Unobserved')) AS pointer_observed,
+                        toUInt32(countIf(had_pointer_interaction = 'Yes')) AS pointer_seen,
+                        toUInt32(countIf(had_keyboard_interaction != 'Unobserved')) AS keyboard_observed,
+                        toUInt32(countIf(had_keyboard_interaction = 'Yes')) AS keyboard_seen,
+                        toUInt32(countIf(declared_web_driver != 'Unobserved')) AS web_driver_observed,
+                        toUInt32(countIf(declared_web_driver = 'Yes')) AS web_driver_seen,
+                        max(autonomous_system) AS autonomous_system,
+                        anyIf(network_owner, network_owner != '') AS network_owner,
+                        anyIf(confirmed_operator, confirmed_operator != '') AS confirmed_operator,
+                        argMinIf(source_site, (server_ts, event_id), sending_host != '') AS from_site,
+                        argMinIf(source_channel, (server_ts, event_id), sending_host != '') AS from_kind,
+                        argMinIf(country_code, (server_ts, event_id), country_code != '') AS country,
+                        argMinIf(city, (server_ts, event_id), city != '') AS town,
+                        argMinIf(
+                            toString(device_class),
+                            (server_ts, event_id),
+                            device_class != 'Unknown') AS device,
+                        argMinIf(browser_family, (server_ts, event_id), browser_family != '') AS browser,
+                        argMinIf(
+                            operating_system,
+                            (server_ts, event_id),
+                            operating_system != '') AS system_name,
+                        toUInt32(count() OVER ()) AS visitors_seen
+                    FROM present
+                    GROUP BY visitor_key
+                )
+            SELECT
+                visitor_key,
+                first_seen,
+                last_seen,
+                page_count,
+                current_path,
+                requests,
+                surfaces,
+                user_agent,
+                language,
+                viewport_width,
+                engaged_ms,
+                max_scroll_depth_percent,
+                pointer_observed,
+                pointer_seen,
+                keyboard_observed,
+                keyboard_seen,
+                web_driver_observed,
+                web_driver_seen,
+                autonomous_system,
+                network_owner,
+                confirmed_operator,
+                from_site,
+                from_kind,
+                country,
+                town,
+                {{NamedNetworks.From(4)}} AS network,
+                device,
+                browser,
+                system_name,
+                visitors_seen
+            FROM gathered
+            ORDER BY last_seen DESC, visitor_key
+            LIMIT {limit:UInt32}
+            {{LiveActivity.WithinTheBeat}}
+            """;
+
+        return new CompiledStatement(
+            sql,
+            [
+                .. WindowParameters(scope, query.Range),
+                .. CatalogueParameters(query.SiteDomain),
+                .. NetworkNames(),
+                new QueryParameter(MaxRequestsParameter, (uint)SiteLiveVisitorsQuery.MostRequests),
+                new QueryParameter(LimitParameter, (uint)query.Limit),
+            ]);
+    }
+
+    /// <summary>
+    /// Counts how much of a site was read in each minute of the last stretch of them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every minute the window covers comes back, including the ones nothing happened in. A store
+    /// answers only about minutes that produced a row, and a drawing built from those alone would
+    /// close the gaps up and show a busy half hour where there was a quiet one — so the empty
+    /// minutes are filled here, where the window is known, rather than reconstructed by whoever
+    /// draws them.
+    /// </para>
+    /// <para>
+    /// Counted over the whole window rather than over the visitors an answer had room for, because
+    /// this describes the site and not a hundred of its readers. A page reported by both halves of
+    /// the measurement is the one delivery it was, on the same terms as every other count of pages
+    /// in this file.
+    /// </para>
+    /// </remarks>
+    private static CompiledStatement CompileSiteLiveActivity(TenantScope scope, SiteLiveActivityQuery query)
+    {
+        var sql = $$"""
+            WITH
+                {{LiveActivity.Window(
+                    "event_id",
+                    "surface",
+                    "visitor_key",
+                    "correlation_id",
+                    "server_ts",
+                    "kind",
+                    "path")}},
+                {{ReconciledEvents.Reconciliation}},
+                delivered AS
+                (
+                    SELECT
+                        toStartOfMinute(server_ts) AS minute,
+                        visitor_key,
+                        path,
+                        {{ReconciledEvents.DeliveredPageViews(12)}}
+                    FROM identified
+                    GROUP BY minute, visitor_key, path
+                )
+            SELECT
+                minute,
+                toInt64(sum(page_views)) AS page_views
+            FROM delivered
+            GROUP BY minute
+            ORDER BY minute WITH FILL
+                FROM toStartOfMinute(fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC'))
+                TO toStartOfMinute(fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')) + INTERVAL 1 MINUTE
+                STEP INTERVAL 1 MINUTE
+            {{LiveActivity.WithinTheBeat}}
+            """;
+
+        return new CompiledStatement(sql, [.. WindowParameters(scope, query.Range)]);
+    }
+
+    /// <summary>
+    /// Ranks the pages a site's visitors have been on in the last stretch of minutes.
+    /// </summary>
+    /// <remarks>
+    /// How many visitors a page held is counted beside how often it was delivered, because a page
+    /// one visitor reloaded twenty times and a page twenty visitors opened are the same number and
+    /// not the same news. Both are counted the way the rest of the product counts a page, so this
+    /// list and the busiest-pages list for a longer period are answering with the same arithmetic.
+    /// </remarks>
+    private static CompiledStatement CompileSiteLivePages(TenantScope scope, SiteLivePagesQuery query)
+    {
+        var sql = $$"""
+            WITH
+                {{LiveActivity.Window(
+                    "event_id",
+                    "surface",
+                    "visitor_key",
+                    "correlation_id",
+                    "server_ts",
+                    "kind",
+                    "path")}},
+                {{ReconciledEvents.Reconciliation}}
+            SELECT
+                path,
+                toInt64(sum(page_views)) AS page_views,
+                toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS visitors
+            FROM
+            (
+                SELECT
+                    path,
+                    visitor_key,
+                    {{ReconciledEvents.DeliveredPageViews(8)}}
+                FROM identified
+                GROUP BY path, visitor_key
+            )
+            GROUP BY path
+            HAVING page_views > 0
+            ORDER BY page_views DESC, path
+            LIMIT {limit:UInt32}
+            {{LiveActivity.WithinTheBeat}}
+            """;
+
+        return new CompiledStatement(
+            sql,
+            [
+                .. WindowParameters(scope, query.Range),
+                new QueryParameter(LimitParameter, (uint)query.Limit),
+            ]);
+    }
+
+    /// <summary>
+    /// Reads back what one visitor has been doing in the last stretch of minutes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Its own statement rather than the visit reconstruction narrowed to one visitor, and the
+    /// reasons are three. That statement is read from where a visit began until as long as one may
+    /// last, clamped to the instant a verdict was written — which for a visit still under way is no
+    /// upper bound at all, until a verdict appears and snaps it back. It reads forward with no
+    /// reach-back, so a departure arriving from a stale tab is folded into whichever visit last
+    /// arrived at that page, and can print an hour of reading against a page opened three minutes
+    /// ago. And the page count beside it is taken over a different window again, so a panel built on
+    /// it would say "three of four pages" for a reason that is nothing but a difference in timing.
+    /// </para>
+    /// <para>
+    /// This reads the same stretch of minutes the visitor was listed from, so the trail and the row
+    /// it was opened from are one reading of one window. A step is a page the visitor was on during
+    /// it, gathered once however many reports described it and whichever surfaces sent them — which
+    /// is exactly what the list counted, so the number of steps and the number beside the row agree
+    /// by construction. Somebody who leaves a page and comes back to it inside the window is on one
+    /// page here, because there are no visit boundaries in this question for "again" to mean
+    /// anything against.
+    /// </para>
+    /// <para>
+    /// Presses are laid alongside the pages rather than folded into them, on the same terms as the
+    /// visit reconstruction: a page is every report about it reduced to one row, while somebody who
+    /// pressed the same control twice pressed it twice. Where the two share an instant the page
+    /// comes first, since a control cannot be operated on a page nobody has reached. A page nothing
+    /// but a press was seen on is still a page, which is what a visitor who arrived before the
+    /// window opened looks like.
+    /// </para>
+    /// <para>
+    /// Nothing is established about the visitor here, and no catalogue is consulted. Where they
+    /// were, what they were reading on and who sent them travel on the row this was opened from,
+    /// settled over these same minutes; asking again would be a second reading taken moments later
+    /// and free to disagree with the first. What nothing could be measured on is carried as minus
+    /// one, on the same terms as the visit reconstruction and read back by the same code.
+    /// </para>
+    /// </remarks>
+    private static CompiledStatement CompileSiteLiveTrail(TenantScope scope, SiteLiveTrailQuery query)
+    {
+        var sql = $$"""
+            WITH
+                {{LiveActivity.Window(
+                    "event_id",
+                    "surface",
+                    "visitor_key",
+                    "correlation_id",
+                    "server_ts",
+                    "kind",
+                    "path",
+                    "status_code",
+                    "engaged_ms",
+                    "scroll_depth_percent",
+                    "action_control",
+                    "action_label",
+                    "action_target",
+                    "action_target_kind")}},
+                {{ReconciledEvents.Reconciliation}},
+                theirs AS
+                (
+                    SELECT *
+                    FROM identified
+                    WHERE visitor_key = {visitor_key:String}
+                ),
+                pages AS
+                (
+                    SELECT
+                        min(server_ts) AS at,
+                        toUInt8(0) AS press,
+                        path,
+                        toInt16(ifNull(max(status_code), -1)) AS status_code,
+                        toInt32(ifNull(max(engaged_ms), -1)) AS engaged_ms,
+                        toInt16(ifNull(max(scroll_depth_percent), -1)) AS depth,
+                        '' AS label,
+                        'Unknown' AS control,
+                        '' AS target,
+                        'None' AS target_kind
+                    FROM theirs
+                    GROUP BY path
+                ),
+                pressed AS
+                (
+                    SELECT
+                        server_ts AS at,
+                        toUInt8(1) AS press,
+                        path,
+                        toInt16(-1) AS status_code,
+                        toInt32(-1) AS engaged_ms,
+                        toInt16(-1) AS depth,
+                        action_label AS label,
+                        toString(action_control) AS control,
+                        action_target AS target,
+                        toString(action_target_kind) AS target_kind
+                    FROM theirs
+                    WHERE kind = 'Action'
+                )
+            SELECT
+                at, press, path, status_code, engaged_ms, depth, label, control, target, target_kind
+            FROM
+            (
+                SELECT * FROM pages
+                UNION ALL
+                SELECT * FROM pressed
+            ) AS steps
+            ORDER BY at, press, path
+            LIMIT {limit:UInt32}
+            {{LiveActivity.WithinTheBeat}}
+            """;
+
+        return new CompiledStatement(
+            sql,
+            [
+                .. WindowParameters(scope, query.Range),
+                new QueryParameter(VisitorKeyParameter, query.VisitorKey),
+                new QueryParameter(LimitParameter, (uint)query.Limit),
+            ]);
+    }
 
     /// <summary>
     /// Reduces a window to how its pages were actually read.

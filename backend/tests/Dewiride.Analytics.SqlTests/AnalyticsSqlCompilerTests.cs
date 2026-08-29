@@ -441,6 +441,208 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     [Fact]
+    public Task Live_Visitors()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), LiveVisitors());
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Live_Activity()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteLiveActivityQuery(HalfHour()));
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Live_Pages()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteLivePagesQuery(HalfHour(), 10));
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Live_Trail()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), LiveTrail());
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    /// <summary>
+    /// A trail is opened from a row on the reading of who is here, and the number of pages it shows
+    /// has to be the number that row printed. That holds only while both count a page the same way:
+    /// one page the visitor was on, gathered once however many reports described it. Two statements
+    /// gathering by different things would disagree intermittently, on a screen, in front of the
+    /// customer — so both group a visitor's activity by the path alone and neither knows anything
+    /// about arrivals.
+    /// </summary>
+    [Fact]
+    public void A_Trail_Counts_A_Page_The_Way_The_Row_It_Was_Opened_From_Counted_One()
+    {
+        var trail = AnalyticsSqlCompiler.Compile(Scope(), LiveTrail());
+
+        trail.Sql.Should().Contain("GROUP BY path");
+        trail.Sql.Should().NotContain("page_ordinal");
+        trail.Sql.Should().NotContain("visit_ordinal");
+    }
+
+    /// <summary>
+    /// The trail and the visit reconstruction open with the same ten columns in the same order, and
+    /// one pair of helpers reads a step back from either. A change to one that left the other alone
+    /// would not fail to compile; it would quietly read a press as an arrival.
+    /// </summary>
+    [Fact]
+    public void A_Trail_Names_A_Step_The_Way_A_Finished_Visit_Names_One()
+    {
+        var trail = AnalyticsSqlCompiler.Compile(Scope(), LiveTrail());
+        var journey = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200));
+
+        const string step = "at, press, path, status_code, engaged_ms, depth, label, control, target, target_kind";
+
+        trail.Sql.Should().Contain(step);
+        journey.Sql.Should().Contain(step);
+    }
+
+    /// <summary>
+    /// A trail names one visitor and the name arrives from an address somebody typed. It is refused
+    /// at the edge for being the wrong shape, and it reaches the store as a bound value regardless —
+    /// so no spelling of it can become part of a statement.
+    /// </summary>
+    [Fact]
+    public void A_Trail_Carries_Whose_It_Is_As_A_Value_Rather_Than_As_Text()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), LiveTrail());
+
+        statement.Sql.Should().NotContain(Visit.VisitorKey);
+        statement.Sql.Should().Contain("WHERE visitor_key = {visitor_key:String}");
+        statement.Parameters.Should().Contain(parameter =>
+            parameter.Name == "visitor_key" && (string)parameter.Value == Visit.VisitorKey);
+    }
+
+    /// <summary>
+    /// The address a visitor arrived from is the one personal value on an event, and the only
+    /// reason any statement reads it is to settle whose crawlers an address belongs to before the
+    /// engine is asked anything. Nothing about the present moment asks that question, and every one
+    /// of these statements answers a screen — so an address must not travel with any of them. It is
+    /// asserted rather than left to the reading of a column list, because the statement it would
+    /// most naturally be copied from does select one.
+    /// </summary>
+    [Fact]
+    public void No_Reading_About_Now_Asks_For_An_Address()
+    {
+        foreach (var statement in EveryReadingAboutNow())
+        {
+            statement.Sql.Should().NotContain("ip_address");
+        }
+    }
+
+    /// <summary>
+    /// A reading about the present moment is asked again every few seconds for as long as somebody
+    /// is watching, so one that has become slow must give up rather than occupy the store until it
+    /// finishes. The store's own default is no limit at all, and its setting for abandoning a query
+    /// whose caller has gone away does not do it — so the limit is stated on every one of these
+    /// statements, and this is what keeps it stated when a fourth is added.
+    /// </summary>
+    [Fact]
+    public void Every_Reading_About_Now_Gives_Up_Rather_Than_Running_On()
+    {
+        foreach (var statement in EveryReadingAboutNow())
+        {
+            statement.Sql.Should().EndWith("SETTINGS max_execution_time = 10");
+        }
+    }
+
+    /// <summary>
+    /// Every other reconstruction of a visitor reaches a full day either side of its window, because
+    /// a visit has to be read from where it began. These do not, and that is the decision that makes
+    /// them cheap enough to ask on a beat: they describe a stretch of minutes rather than rebuilding
+    /// anything, so a report outside the stretch is not part of the answer. A reach-back appearing
+    /// here would be somebody assuming the shape of the statement beside it.
+    /// </summary>
+    [Fact]
+    public void No_Reading_About_Now_Reaches_Outside_Its_Own_Minutes()
+    {
+        foreach (var statement in EveryReadingAboutNow())
+        {
+            statement.Sql.Should().NotContain("longest_visit_seconds");
+            statement.Parameters.Should().NotContain(parameter => parameter.Name == "longest_visit_seconds");
+        }
+    }
+
+    /// <summary>
+    /// The two halves of the measurement are folded onto one key before anybody is counted. Without
+    /// it a site reported by both its own server and the browser shows every visitor twice for the
+    /// second or so before the browser echoes what it was given, which on a screen that renews
+    /// itself is a number visibly disagreeing with itself.
+    /// </summary>
+    [Fact]
+    public void Every_Reading_About_Now_Folds_The_Two_Halves_Together_First()
+    {
+        foreach (var statement in EveryReadingAboutNow())
+        {
+            statement.Sql.Should().Contain("identified AS");
+        }
+    }
+
+    /// <summary>
+    /// How busy a site is, and how much of that one answer had room for, are separate figures. A
+    /// reading capped at a hundred visitors on a site holding three hundred has to say three
+    /// hundred, or a sweep would be reported as exactly as busy as the list is long.
+    /// </summary>
+    [Fact]
+    public void A_Reading_Of_Who_Is_Here_Counts_Everybody_Before_It_Is_Cut_Short()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), LiveVisitors());
+
+        statement.Sql.Should().Contain("toUInt32(count() OVER ()) AS visitors_seen");
+        statement.Sql.Should().Contain("LIMIT {limit:UInt32}");
+        statement.Sql.IndexOf("visitors_seen", StringComparison.Ordinal)
+            .Should().BeLessThan(statement.Sql.IndexOf("LIMIT {limit:UInt32}", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A drawing of the last half hour has a column for every minute in it, including the minutes
+    /// nothing happened in. The store answers only about minutes that produced a row, and a drawing
+    /// built from those alone closes the gaps up and shows a busy half hour where there was a quiet
+    /// one — so the filling is the statement's job, where the window is known.
+    /// </summary>
+    [Fact]
+    public void A_Reading_Of_The_Last_Half_Hour_Leaves_No_Minute_Out()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteLiveActivityQuery(HalfHour()));
+
+        statement.Sql.Should().Contain("ORDER BY minute WITH FILL");
+        statement.Sql.Should().Contain("STEP INTERVAL 1 MINUTE");
+    }
+
+    /// <summary>
+    /// A question the compiler has not been taught produces no statement rather than a partial one,
+    /// and adding a group of them must not turn that into a statement that happens to compile.
+    /// </summary>
+    [Fact]
+    public void A_Reading_Refuses_A_Limit_Beyond_What_One_Answer_Carries()
+    {
+        var beyondTheCap = () => new SiteLiveVisitorsQuery(
+            HalfHour(),
+            "example.com",
+            SiteLiveVisitorsQuery.MostVisitors + 1);
+
+        var beyondTheTrail = () => new SiteLiveTrailQuery(
+            HalfHour(),
+            Visit.VisitorKey,
+            SiteLiveTrailQuery.MostSteps + 1);
+
+        beyondTheCap.Should().Throw<ArgumentOutOfRangeException>();
+        beyondTheTrail.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
     public Task Traffic_Breakdown()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new TrafficBreakdownQuery(Window()));
@@ -2011,6 +2213,31 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// <summary>A slice of the standard window's judged visits, narrowed by what a visit itself was.</summary>
     private static JudgedSessionsQuery JudgedByDetail() =>
         Judged(new VisitNarrowing { Devices = [DeviceClass.Phone] });
+
+    /// <summary>The half hour ending at the standard window, which is what a live reading covers.</summary>
+    private static TimeRange HalfHour() => TimeRange.EndingAt(To, IdleTimeout);
+
+    /// <summary>Everyone seen on the site in that half hour.</summary>
+    private static SiteLiveVisitorsQuery LiveVisitors() => new(HalfHour(), "example.com", 50);
+
+    /// <summary>One visitor's trail through that same half hour.</summary>
+    private static SiteLiveTrailQuery LiveTrail() => new(HalfHour(), Visit.VisitorKey, 200);
+
+    /// <summary>
+    /// Every statement that answers about the present moment.
+    /// </summary>
+    /// <remarks>
+    /// Held together so a property all of them have to have is asserted over all of them rather
+    /// than over whichever one happened to be in mind, and so the next cannot be added without it.
+    /// </remarks>
+    /// <returns>The statements.</returns>
+    private static CompiledStatement[] EveryReadingAboutNow() =>
+    [
+        AnalyticsSqlCompiler.Compile(Scope(), LiveVisitors()),
+        AnalyticsSqlCompiler.Compile(Scope(), new SiteLiveActivityQuery(HalfHour())),
+        AnalyticsSqlCompiler.Compile(Scope(), new SiteLivePagesQuery(HalfHour(), 10)),
+        AnalyticsSqlCompiler.Compile(Scope(), LiveTrail()),
+    ];
 
     /// <summary>What each detail of the standard window's judged visits held.</summary>
     private static SiteVisitFacetsQuery Facets() => new(Window(), IdleTimeout, "example.com");

@@ -9,8 +9,10 @@ import {
   ScanSearch,
 } from 'lucide-react';
 import { type DateTimeFormatOptions, useFormatter, useTranslations } from 'next-intl';
-import { type ReactNode, useCallback, useMemo } from 'react';
-import { Chart } from '@/components/charts/chart';
+import { useCallback, useMemo } from 'react';
+import { CELL, FIGURE, Figures } from '@/components/charts/figures';
+import { Keys } from '@/components/charts/keys';
+import { NothingDrawn, Picture, Settling } from '@/components/charts/picture';
 import { activityOption } from '@/components/dashboard/activity-chart';
 import { ListSwitch } from '@/components/dashboard/ranked-list';
 import { TONE_FILLS } from '@/components/dashboard/verdict-badge';
@@ -396,9 +398,20 @@ function WhoView({ series, comparison, siteName, drawing, buckets, onShowActivit
     [labels, bands, names, drawing, stillJudging, earlier],
   );
 
+  // A website whose verdicts are still coming has usually had plenty of traffic, so the way out
+  // is offered here rather than left for somebody to find: how much of it there was can be read
+  // straight away, in the other view of this same card.
   if (bands.length === 0) {
     return (
-      <NothingJudged body={t('who.none')} action={t('who.noneAction')} onAction={onShowActivity} />
+      <NothingDrawn
+        icon={ScanSearch}
+        body={t('who.none')}
+        action={
+          <Button tone="secondary" size="sm" onClick={onShowActivity}>
+            {t('who.noneAction')}
+          </Button>
+        }
+      />
     );
   }
 
@@ -478,12 +491,6 @@ function WhoView({ series, comparison, siteName, drawing, buckets, onShowActivit
   );
 }
 
-/** One cell of either table, spaced so the columns read apart and the last one sits flush. */
-const CELL = 'whitespace-nowrap py-1.5 pr-3 last:pr-0 sm:pr-4';
-
-/** The same, for a cell holding a number. */
-const FIGURE = `${CELL} text-right tabular-nums`;
-
 /** Stands in for a bucket that the period being compared with never had. */
 const MISSING = '—';
 
@@ -531,97 +538,4 @@ function labelling(buckets: Buckets): DateTimeFormatOptions {
  */
 function write(bucket: string, format: ReturnType<typeof useFormatter>, buckets: Buckets): string {
   return format.dateTime(new Date(bucket), labelling(buckets));
-}
-
-/** One entry in the key above the drawing. */
-interface ChartKey {
-  /** The class that paints the mark beside the words. */
-  readonly fill: string;
-  readonly label: string;
-  /** Whether it stands for the period before, which is drawn as a dashed line. */
-  readonly dashed?: boolean;
-}
-
-/** What each colour on the drawing means. */
-function Keys({ items }: { readonly items: readonly ChartKey[] }) {
-  return (
-    <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-foreground-muted">
-      {items.map((item) => (
-        <li key={item.label} className="flex items-center gap-1.5">
-          {item.dashed ? (
-            <span aria-hidden className="flex shrink-0 items-center gap-0.5 opacity-60">
-              <span className={`h-0.5 w-1.5 rounded-full ${item.fill}`} />
-              <span className={`h-0.5 w-1.5 rounded-full ${item.fill}`} />
-            </span>
-          ) : (
-            <span aria-hidden className={`size-2 shrink-0 rounded-full ${item.fill}`} />
-          )}
-          {item.label}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-interface PictureProps {
-  readonly option: (palette: ChartPalette) => Record<string, unknown>;
-  readonly label: string;
-}
-
-/** The drawing itself, at the one height both views keep so switching does not jump the page. */
-function Picture({ option, label }: PictureProps) {
-  return (
-    <div className="h-56 w-full sm:h-72">
-      <Chart option={option} label={label} />
-    </div>
-  );
-}
-
-/** The same figures as a table, for anybody who reads rather than looks. */
-function Figures({ label, children }: { readonly label: string; readonly children: ReactNode }) {
-  return (
-    <details className="group border-t border-border pt-3">
-      <summary className="cursor-pointer text-sm font-medium text-foreground-muted marker:text-foreground-subtle hover:text-foreground">
-        {label}
-      </summary>
-      <div className="mt-3 max-h-72 overflow-auto">
-        <table className="w-full min-w-max text-left text-sm">{children}</table>
-      </div>
-    </details>
-  );
-}
-
-/** The shape of the drawing, held while its figures are on their way. */
-function Settling() {
-  return <div className="h-56 w-full animate-pulse rounded-md bg-surface-muted sm:h-72" />;
-}
-
-interface NothingJudgedProps {
-  readonly body: string;
-  readonly action: string;
-  readonly onAction: () => void;
-}
-
-/**
- * A period whose visits have not been judged yet.
- *
- * A designed state rather than an absence, and it carries the one thing worth doing from here.
- * A website whose verdicts are still coming has usually had plenty of traffic, and how much of it
- * there was can be read straight away.
- */
-function NothingJudged({ body, action, onAction }: NothingJudgedProps) {
-  return (
-    <div className="flex h-56 flex-col items-center justify-center gap-3 text-center sm:h-72">
-      <span
-        aria-hidden
-        className="flex size-11 items-center justify-center rounded-full bg-accent-soft"
-      >
-        <ScanSearch className="size-5 text-accent-strong" />
-      </span>
-      <p className="max-w-xs text-sm text-foreground-muted">{body}</p>
-      <Button tone="secondary" size="sm" onClick={onAction}>
-        {action}
-      </Button>
-    </div>
-  );
 }

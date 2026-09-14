@@ -121,6 +121,47 @@ internal static class Visits
         UserAgent = "python-requests/2.32.3",
     };
 
+    /// <summary>
+    /// Somebody who opened one page with the tracker running and did nothing anybody watched.
+    /// </summary>
+    /// <remarks>
+    /// The commonest visit a website gets, and the one the engine must not flatter: a page opened
+    /// and left, every reading present and every reading nought.
+    /// </remarks>
+    public static SessionEvidence AGlance() => AReader(pages: 1, engagedMs: 0) with
+    {
+        SessionKey = "glance",
+        EndedAt = Noon,
+        MaxScrollDepthPercent = 0,
+        HadPointerInteraction = false,
+        HadKeyboardInteraction = false,
+    };
+
+    /// <summary>What a crawler says when it introduces itself under a name nobody has catalogued.</summary>
+    public const string NamelessCrawler = "Mozilla/5.0 (compatible; NobodysBot/1.0; +https://example.com/bot)";
+
+    /// <summary>A crawler describing itself as one, in a name this product has no entry for.</summary>
+    public static SessionEvidence ANamelessCrawler() =>
+        ANamedCrawler(NamelessCrawler) with { SessionKey = "nameless" };
+
+    /// <summary>A site's own owner signing in to run it, as the site's own server sees it.</summary>
+    public static SessionEvidence AnOwnerSigningIn() => new()
+    {
+        SessionKey = "owner",
+        StartedAt = Noon,
+        EndedAt = Noon.AddMinutes(3),
+        Requests =
+        [
+            new ObservedRequest(Noon, "/wp-login.php", 200),
+            new ObservedRequest(Noon.AddSeconds(20), "/wp-login.php", 302),
+            new ObservedRequest(Noon.AddSeconds(21), "/wp-admin/", 200),
+            new ObservedRequest(Noon.AddMinutes(3), "/wp-admin/post.php", 200),
+        ],
+        Surfaces = [IngestSurface.WordPressPlugin],
+        UserAgent = ChromeOnWindows,
+        Language = "en-GB",
+    };
+
     /// <summary>A session about which nothing whatever is known.</summary>
     public static SessionEvidence Anonymous() => new()
     {

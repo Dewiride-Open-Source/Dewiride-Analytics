@@ -31,6 +31,9 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
 
     private const string Scanner = "python-requests/2.32.3";
 
+    /// <summary>What a crawler says when it introduces itself under a name nobody has catalogued.</summary>
+    private const string Nameless = "Mozilla/5.0 (compatible; NobodysBot/1.0; +https://example.com/bot)";
+
     /// <summary>
     /// What the largest search engine sends, which names no crawler at all. Taken from real
     /// traffic: no catalogue of names can reach this visitor.
@@ -433,6 +436,77 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         visits.Should().ContainSingle();
         visits[0].Verdict.Category.Should().Be(TrafficCategory.SecurityScanner);
         visits[0].Verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.SensitivePaths);
+    }
+
+    /// <summary>
+    /// The paths a sweep asks for are the paths a site's owner asks for too. The site answers the
+    /// owner, and that answer has to survive the round trip through both stores to keep the owner
+    /// off the scanner list.
+    /// </summary>
+    [Fact]
+    public async Task A_Site_Owner_Opening_Their_Own_Administration_Pages_Is_Not_Called_A_Scanner()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Probe(site.Id, "owner", at, "/wp-login.php") with { UserAgent = Chrome, StatusCode = 200 },
+            Probe(site.Id, "owner", at.AddSeconds(30), "/wp-admin/") with { UserAgent = Chrome, StatusCode = 302 });
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().NotBe(TrafficCategory.SecurityScanner);
+        visits[0].Verdict.Supporting.Should().NotContain(signal => signal.Code == SignalCodes.SensitivePaths);
+        visits[0].Verdict.Contradicting.Should().NotContain(signal => signal.Code == SignalCodes.SensitivePaths);
+    }
+
+    /// <summary>
+    /// The commonest visit a website gets: one page, the tracker ran, nothing else was seen. The
+    /// engine settles nothing about it, and the honest answer survives the round trip.
+    /// </summary>
+    [Fact]
+    public async Task One_Page_With_The_Tracker_Running_And_Nothing_Else_Is_Not_Called_A_Person()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+
+        await WriteAsync(Page(site.Id, "glance", Yesterday, "/", Chrome));
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.Unknown);
+        visits[0].Verdict.Strength.Should().NotBe(EvidenceStrength.Verified);
+        visits[0].Verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.ScriptExecuted);
+    }
+
+    /// <summary>
+    /// A crawler introducing itself under a name nobody has catalogued is called a crawler, and the
+    /// observation reaches the store and comes back carrying nothing the visitor wrote.
+    /// </summary>
+    [Fact]
+    public async Task A_Crawler_Naming_Itself_Only_As_A_Crawler_Is_Called_One()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Probe(site.Id, "nameless", at, "/") with { UserAgent = Nameless, StatusCode = 200 },
+            Probe(site.Id, "nameless", at.AddSeconds(2), "/posts/hello") with { UserAgent = Nameless, StatusCode = 200 });
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.GenericWebCrawler);
+        visits[0].Verdict.Supporting
+            .Should().ContainSingle(signal => signal.Code == SignalCodes.DeclaredGenericCrawler)
+            .Which.Parameters.Should().BeEmpty();
     }
 
     /// <summary>

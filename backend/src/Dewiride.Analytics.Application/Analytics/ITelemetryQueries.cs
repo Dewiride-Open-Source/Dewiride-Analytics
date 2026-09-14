@@ -171,11 +171,17 @@ public interface ITelemetryQueries
         TrafficSeriesQuery query,
         CancellationToken cancellationToken);
 
-    /// <summary>Returns individual judged visits with the evidence behind each verdict.</summary>
+    /// <summary>
+    /// Returns individual judged visits, each with the evidence behind its verdict and what the
+    /// visit itself was.
+    /// </summary>
     /// <param name="scope">Proof the caller may read this site.</param>
     /// <param name="query">The window, and which slice of it to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The slice, newest first, and how many visits the window holds altogether.</returns>
+    /// <returns>
+    /// The slice, newest first, each visit carrying what it was, and how many visits the window
+    /// holds altogether.
+    /// </returns>
     Task<JudgedSessions> GetJudgedSessionsAsync(
         TenantScope scope,
         JudgedSessionsQuery query,
@@ -218,11 +224,16 @@ public interface ITelemetryQueries
         SiteLiveActivityQuery query,
         CancellationToken cancellationToken);
 
-    /// <summary>Returns the pages being read in the last stretch of minutes, busiest first.</summary>
+    /// <summary>
+    /// Returns the pages visitors are on in the last stretch of minutes, the one holding most first.
+    /// </summary>
     /// <param name="scope">Proof the caller may read this site.</param>
     /// <param name="query">The stretch of minutes, and how many pages to carry back.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The busiest pages, and how many visitors each of them held.</returns>
+    /// <returns>
+    /// The pages, and how many visitors stand on each. Every visitor the stretch holds stands on
+    /// exactly one of them, so across every page they add up to the visitors seen.
+    /// </returns>
     Task<IReadOnlyList<LivePage>> GetSiteLivePagesAsync(
         TenantScope scope,
         SiteLivePagesQuery query,
@@ -321,6 +332,14 @@ public sealed record JudgedSession
 
     /// <summary>The conclusion, with the evidence for and against it.</summary>
     public required ClassificationVerdict Verdict { get; init; }
+
+    /// <summary>
+    /// What the visit was — where it was sent from, where it was, whose network it came over and
+    /// what it was read with — rebuilt from the activity behind the verdict on the same terms as the
+    /// account a visit gives of itself when opened. <see cref="VisitContext.Nothing"/> where that
+    /// activity has aged out of the store.
+    /// </summary>
+    public required VisitContext Context { get; init; }
 }
 
 /// <summary>
@@ -938,12 +957,13 @@ public readonly record struct LiveVisitor(
 public readonly record struct LiveMinute(DateTimeOffset Start, long PageViews);
 
 /// <summary>
-/// One page being read.
+/// One page visitors are on.
 /// </summary>
 /// <param name="Path">
 /// The address, as it was asked for. Written by whoever is visiting the site, so it is shown as
 /// text and never followed.
 /// </param>
-/// <param name="PageViews">How many times it was delivered during the window.</param>
-/// <param name="Visitors">How many separate visitors were on it.</param>
-public readonly record struct LivePage(string Path, long PageViews, long Visitors);
+/// <param name="Visitors">
+/// How many visitors are on it — each visitor counted once, on the one page they are on.
+/// </param>
+public readonly record struct LivePage(string Path, long Visitors);

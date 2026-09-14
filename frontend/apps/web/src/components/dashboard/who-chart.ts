@@ -2,9 +2,10 @@ import { color, type EChartsCoreOption } from 'echarts/core';
 import type { TrafficBand } from '@/lib/analytics/traffic-series';
 import type { VerdictTone } from '@/lib/analytics/verdicts';
 import type { Drawing } from '@/lib/charts/drawing';
-import { chartFrame, LAYERS, UNSETTLED } from '@/lib/charts/frame';
+import { chartFrame } from '@/lib/charts/frame';
 import { ghostSeries } from '@/lib/charts/ghost';
 import type { ChartPalette } from '@/lib/charts/palette';
+import { quietened, washOver } from '@/lib/charts/wash';
 
 /** What generated a website's traffic over a period, ready to be drawn. */
 export interface WhoChart {
@@ -45,7 +46,7 @@ export function whoOption(chart: WhoChart, palette: ChartPalette): EChartsCoreOp
   const drawn: Record<string, unknown>[] = chart.bands.map((band) =>
     drawBand(chart.names[band.tone], band.visits, palette.tones[band.tone], chart),
   );
-  const wash = columns ? undefined : washOver(chart, palette);
+  const wash = columns ? undefined : washOver(chart.labels, chart.stillJudging, palette);
 
   if (wash) {
     drawn.push(wash);
@@ -73,12 +74,8 @@ export function whoOption(chart: WhoChart, palette: ChartPalette): EChartsCoreOp
 /**
  * One tone's visits, stacked on whatever is beneath it.
  *
- * The buckets still being judged are quietened by different means in each style, because a column
- * and an area offer different things to quieten. A column has a fill of its own and is faded one
- * column at a time, which lands exactly on the buckets it belongs to. An area has one fill for the
- * whole run and none per bucket, so a wash is laid over the tail instead — and that wash cannot be
- * used on columns, because it is placed against the points the labels sit at and would cut the
- * first and last column of the run down the middle.
+ * Drawn as columns, each bucket still being judged is faded on its own; drawn as an area, the
+ * wash the option lays over the tail does the quietening instead.
  */
 function drawBand(
   name: string,
@@ -91,9 +88,7 @@ function drawBand(
       name,
       type: 'bar',
       stack: STACK,
-      data: visits.map((value, bucket) =>
-        stillFilling(chart, bucket) ? { value, itemStyle: { opacity: UNSETTLED } } : value,
-      ),
+      data: quietened(visits, chart.stillJudging),
       itemStyle: { color: colour },
       barMaxWidth: 28,
     };
@@ -110,42 +105,5 @@ function drawBand(
     symbol: 'none',
     lineStyle: { width: 1, color: colour },
     areaStyle: { color: color.modifyAlpha(colour, 0.78) },
-  };
-}
-
-/** Whether a bucket is one of those still being judged. */
-function stillFilling(chart: WhoChart, bucket: number): boolean {
-  return chart.stillJudging !== null && bucket >= chart.stillJudging;
-}
-
-/**
- * The wash over the buckets that have not finished being judged.
- *
- * Carried by a series of its own, at a depth of its own, so that it sits over the bands it is
- * quietening rather than behind them. It is the card's own background at part strength, so the
- * tail reads as faded rather than as a different colour that might mean something.
- */
-function washOver(chart: WhoChart, palette: ChartPalette): Record<string, unknown> | undefined {
-  if (chart.stillJudging === null) {
-    return undefined;
-  }
-
-  const from = chart.labels[chart.stillJudging];
-  const to = chart.labels.at(-1);
-
-  if (from === undefined || to === undefined) {
-    return undefined;
-  }
-
-  return {
-    type: 'line',
-    data: [],
-    silent: true,
-    markArea: {
-      silent: true,
-      itemStyle: { color: palette.surface, opacity: 0.62 },
-      z: LAYERS.unsettled,
-      data: [[{ xAxis: from }, { xAxis: to }]],
-    },
   };
 }

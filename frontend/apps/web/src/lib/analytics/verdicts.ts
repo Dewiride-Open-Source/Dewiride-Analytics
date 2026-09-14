@@ -122,6 +122,12 @@ const DECLARED_TOOL = 'identity.declared_tool';
 const READ_TIME = 'engagement.read_time';
 
 /**
+ * The observation that the address belongs to a company's own crawlers, which is what lets a row
+ * name it.
+ */
+const CONFIRMED_CRAWLER = 'identity.confirmed_crawler';
+
+/**
  * The point at which a length of time is better said in minutes.
  *
  * Nobody describes their own afternoon as two hundred seconds. Below this the seconds are the
@@ -224,4 +230,28 @@ function secondsIn(reason: VisitReason): number {
  */
 export function byWeight(reasons: readonly VisitReason[]): readonly VisitReason[] {
   return [...reasons].sort((first, second) => second.weight - first.weight);
+}
+
+/**
+ * The name a confirmed crawler is called on a row, or nothing where the visitor is not one.
+ *
+ * Only a confirmed identity is named. The token a crawler declared is what people know it by — a
+ * name from this product's own catalogue, never the words the request arrived with — but it is
+ * taken onto the row only once the company behind it has vouched for the address, and the operator
+ * stands in where a confirmed crawler declared no token this product recognises. A name any visitor
+ * can claim is never lifted onto the row, however loudly it was claimed.
+ *
+ * Takes the observations rather than a visit, so a row that is still being watched can be named
+ * the same way as one that has finished.
+ */
+export function namedAs(supporting: readonly VisitReason[]): string | null {
+  const confirmed = supporting.find((reason) => reason.code === CONFIRMED_CRAWLER);
+
+  if (confirmed === undefined) {
+    return null;
+  }
+
+  const declared = supporting.find((reason) => reason.code === DECLARED_CRAWLER);
+
+  return declared?.values.token || confirmed.values.operator || null;
 }

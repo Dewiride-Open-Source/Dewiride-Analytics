@@ -3,6 +3,7 @@ import { TONE_FILLS } from '@/components/dashboard/verdict-badge';
 import {
   byWeight,
   CATEGORY_TONES,
+  namedAs,
   reasonKey,
   reasonValues,
   TONE_ORDER,
@@ -141,6 +142,49 @@ describe('the order observations are read in', () => {
     byWeight(given);
 
     expect(given.map((found) => found.code)).toEqual(['a', 'b']);
+  });
+});
+
+describe('the name a crawler is called on a row', () => {
+  const CONFIRMED = reason(
+    'identity.confirmed_crawler',
+    { operator: 'Google', purpose: 'search-index' },
+    100,
+  );
+
+  it('names a crawler on the row only once the company behind it vouched for the address', () => {
+    const found = namedAs([
+      CONFIRMED,
+      reason(
+        'identity.declared_crawler',
+        { operator: 'Google', token: 'Googlebot', purpose: 'search-index' },
+        70,
+      ),
+    ]);
+
+    expect(found).toBe('Googlebot');
+  });
+
+  it('falls back to the operator where a confirmed crawler declared no name this product knows', () => {
+    expect(namedAs([CONFIRMED])).toBe('Google');
+  });
+
+  /** A name any visitor can claim is never lifted onto the row, however loudly it was claimed. */
+  it('names nothing for a claim nobody confirmed', () => {
+    const found = namedAs([
+      reason('identity.declared_crawler', {
+        operator: 'OpenAI',
+        token: 'GPTBot',
+        purpose: 'ai-training',
+      }),
+      reason('identity.unverified_claim', {}, 0, 'neutral'),
+    ]);
+
+    expect(found).toBeNull();
+  });
+
+  it('names nothing where nothing was said', () => {
+    expect(namedAs([])).toBeNull();
   });
 });
 

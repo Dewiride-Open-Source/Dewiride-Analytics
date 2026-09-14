@@ -1,5 +1,8 @@
 using Dewiride.Analytics.Application.Analytics;
+using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Tenancy;
+using Dewiride.Analytics.Classification;
+using Dewiride.Analytics.Classification.Sessions;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Domain.Telemetry;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
@@ -156,6 +159,121 @@ public sealed class VisitDetailsTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// Every listed visit carries what it was, rebuilt from the activity behind its verdict and
+    /// joined on the same derived identity the narrowing joins on. The ordinary list reads only the
+    /// page it is showing, so this is the shape that proves the page-bounded rebuild derives the
+    /// identity the engine stored: a rebuild whose window cut off the visit's first report, or
+    /// whose reconciliation wrote the key differently, would match nothing and hand back eight
+    /// empties with no error anywhere.
+    /// </summary>
+    [Fact]
+    public async Task A_Listed_Visit_Says_What_It_Was()
+    {
+        var site = await DescribedTraffic.ADescribedVisitAsync(stack);
+
+        var visits = await VisitsOfAsync(site, VisitNarrowing.Nothing);
+
+        visits.Visits.Should().ContainSingle().Which.Context.Should().Be(Described());
+    }
+
+    /// <summary>
+    /// A narrowed list carries the same eight facts in the same words as an unnarrowed one, taken
+    /// from the rebuild it was narrowed by.
+    /// </summary>
+    [Fact]
+    public async Task A_Narrowed_Visit_Says_What_It_Was()
+    {
+        var site = await DescribedTraffic.ADescribedVisitAsync(stack);
+
+        var visits = await VisitsOfAsync(site, new VisitNarrowing { Devices = [DescribedTraffic.Device] });
+
+        visits.Visits.Should().ContainSingle().Which.Context.Should().Be(Described());
+    }
+
+    /// <summary>
+    /// A page is a slice, and the account each row carries is that row's own — whichever slice it
+    /// falls on, and whether or not the list was narrowed. The rebuild behind a page reads every
+    /// visit around it and the join is what hands each verdict its own account; two visits handed
+    /// each other's would pass every one-visit test above.
+    /// </summary>
+    [Fact]
+    public async Task Each_Visit_On_A_Page_Of_Several_Carries_Its_Own_Account()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var began = Yesterday;
+
+        await DescribedTraffic.WriteAsync(
+            stack,
+            DescribedTraffic.Placed(DescribedTraffic.Arrived(site.Id, began, "/pricing")) with
+            {
+                Referrer = "https://www.bing.com/search?q=analytics",
+                ReferrerDomain = "www.bing.com",
+            },
+            DescribedTraffic.Placed(DescribedTraffic.Arrived(site.Id, began.AddHours(1), "/docs")) with
+            {
+                VisitorKey = "0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+                CountryCode = "FR",
+                City = "Lyon",
+            });
+
+        await DescribedTraffic.JudgeAsync(stack, site);
+
+        var fromBing = Described() with { SendingSite = "Bing" };
+        var straightToLyon = Described() with
+        {
+            SendingSite = string.Empty,
+            Channel = SourceChannel.Direct,
+            CountryCode = "FR",
+            Town = "Lyon",
+        };
+
+        var newest = await VisitsOfAsync(site, VisitNarrowing.Nothing, limit: 1, offset: 0);
+        var older = await VisitsOfAsync(site, VisitNarrowing.Nothing, limit: 1, offset: 1);
+        var both = await VisitsOfAsync(site, VisitNarrowing.Nothing);
+        var narrowed = await VisitsOfAsync(site, new VisitNarrowing { Towns = ["Lyon"] });
+
+        newest.Visits.Should().ContainSingle().Which.Context.Should().Be(straightToLyon);
+        older.Visits.Should().ContainSingle().Which.Context.Should().Be(fromBing);
+        both.Visits.Select(visit => visit.Context).Should().Equal(straightToLyon, fromBing);
+        narrowed.Visits.Should().ContainSingle().Which.Context.Should().Be(straightToLyon);
+    }
+
+    /// <summary>
+    /// A verdict outlives the activity it was reached from, and the visit is still listed once
+    /// that activity is gone — saying nothing about itself, in the vocabulary's own words for
+    /// nothing established. This is also what proves the store hands back empty texts rather than
+    /// nothing at all for a visit the rebuild could not describe.
+    /// </summary>
+    [Fact]
+    public async Task A_Listed_Visit_Whose_Activity_Is_Gone_Says_Nothing_About_Itself()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var began = Yesterday;
+
+        await stack.Services.GetRequiredService<IClassificationStore>().SaveAsync(
+            site.Id,
+            [
+                new SessionJudgement(
+                    new SessionEvidence
+                    {
+                        SessionKey = new VisitKey("2f8a1c0b4d6e7f905a1b2c3d4e5f6071", began).ToString(),
+                        StartedAt = began,
+                        EndedAt = began.AddMinutes(1),
+                        Requests = [new ObservedRequest(began, "/", null)],
+                        Surfaces = [IngestSurface.BrowserTracker],
+                    },
+                    ClassificationVerdict.Insufficient(RulesetVersion.Current)),
+            ],
+            began.AddMinutes(1),
+            Cancellation.Token);
+
+        var visits = await VisitsOfAsync(site, VisitNarrowing.Nothing);
+
+        visits.TotalVisits.Should().Be(1);
+        visits.Visits.Should().ContainSingle().Which.Context.Should().Be(VisitContext.Nothing);
+    }
+
+    /// <summary>
     /// A visitor who typed the address came from nowhere in particular, and an install behind a
     /// proxy that passes on no address places nobody. Both are answers rather than gaps, and both
     /// have to be askable — so what nothing established is offered and narrowed to as an empty
@@ -243,17 +361,38 @@ public sealed class VisitDetailsTests(AnalyticsStackFixture stack)
                 new SiteVisitFacetsQuery(period, IdleTimeout, site.Domain),
                 Cancellation.Token);
 
-    private Task<JudgedSessions> VisitsOfAsync(Site site, VisitNarrowing narrowing) =>
-        VisitsOfAsync(site, narrowing, Window());
+    private Task<JudgedSessions> VisitsOfAsync(
+        Site site,
+        VisitNarrowing narrowing,
+        int limit = 50,
+        int offset = 0) =>
+        VisitsOfAsync(site, narrowing, Window(), limit, offset);
 
-    private Task<JudgedSessions> VisitsOfAsync(Site site, VisitNarrowing narrowing, TimeRange period) =>
+    private Task<JudgedSessions> VisitsOfAsync(
+        Site site,
+        VisitNarrowing narrowing,
+        TimeRange period,
+        int limit = 50,
+        int offset = 0) =>
         stack.Services.GetRequiredService<ITelemetryQueries>()
             .GetJudgedSessionsAsync(
                 Scope(site),
-                new JudgedSessionsQuery(period, IdleTimeout, site.Domain, 50) { Narrowing = narrowing },
+                new JudgedSessionsQuery(period, IdleTimeout, site.Domain, limit, offset) { Narrowing = narrowing },
                 Cancellation.Token);
 
     private TimeRange Window() => new(Now.AddDays(-2), Now.AddMinutes(1));
+
+    /// <summary>The account the described visit gives of itself, as the opened visit gives it.</summary>
+    private static VisitContext Described() =>
+        new(
+            DescribedTraffic.Source,
+            DescribedTraffic.SentBy,
+            DescribedTraffic.Country,
+            DescribedTraffic.Town,
+            DescribedTraffic.Network,
+            DescribedTraffic.Device,
+            DescribedTraffic.Browser,
+            DescribedTraffic.SystemName);
 
     private static TimeSpan IdleTimeout => TimeSpan.FromMinutes(30);
 

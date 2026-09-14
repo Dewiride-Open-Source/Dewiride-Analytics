@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { type RenderResult, render } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { NuqsTestingAdapter, type OnUrlUpdateFunction } from 'nuqs/adapters/testing';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import type { SignedInUser } from '@/lib/api/schemas';
 import { sessionKey } from '@/lib/queries/session';
 import messages from '../../messages/en.json';
@@ -40,6 +40,17 @@ interface Options {
    * they could send back.
    */
   readonly watchingAddress?: OnUrlUpdateFunction;
+
+  /**
+   * Whether the screen is mounted one step after the address rather than in the same moment.
+   *
+   * Off by default. The stand-in address renders once more the moment it is mounted, to take up
+   * what it was given, and throws away whatever is waiting to be written every time it renders.
+   * A screen mounted in that same moment has anything it writes on arrival thrown away with it —
+   * which the browser's own address never does — so a test of whether a screen writes on arrival
+   * mounts it a step later, or its answer is the same whether the screen writes or not.
+   */
+  readonly arrivingAfterAddress?: boolean;
 }
 
 /**
@@ -51,7 +62,13 @@ interface Options {
  */
 export function renderScreen(
   ui: ReactElement,
-  { sessionAlreadyRead = true, signedInAs = null, searchParams, watchingAddress }: Options = {},
+  {
+    sessionAlreadyRead = true,
+    signedInAs = null,
+    searchParams,
+    watchingAddress,
+    arrivingAfterAddress = false,
+  }: Options = {},
 ): RenderResult & { readonly cache: QueryClient } {
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -65,16 +82,26 @@ export function renderScreen(
     });
   }
 
-  const result = render(
-    // The address remembers what is written to it, the way the browser's own does. Left frozen on
-    // what it started with, a screen would read back the period it opened on however many times
-    // somebody changed it, and every test of a choice would be a test of nothing.
-    <NuqsTestingAdapter searchParams={searchParams} onUrlUpdate={watchingAddress} hasMemory>
-      <NextIntlClientProvider locale="en" messages={messages}>
-        <QueryClientProvider client={cache}>{ui}</QueryClientProvider>
-      </NextIntlClientProvider>
-    </NuqsTestingAdapter>,
-  );
+  // Wrapped around whatever is rendered rather than rendered once with the screen inside, so that
+  // the same address and the same cache are still there when the screen is swapped in a step later.
+  function Providers({ children }: { readonly children: ReactNode }) {
+    return (
+      // The address remembers what is written to it, the way the browser's own does. Left frozen
+      // on what it started with, a screen would read back the period it opened on however many
+      // times somebody changed it, and every test of a choice would be a test of nothing.
+      <NuqsTestingAdapter searchParams={searchParams} onUrlUpdate={watchingAddress} hasMemory>
+        <NextIntlClientProvider locale="en" messages={messages}>
+          <QueryClientProvider client={cache}>{children}</QueryClientProvider>
+        </NextIntlClientProvider>
+      </NuqsTestingAdapter>
+    );
+  }
+
+  const result = render(arrivingAfterAddress ? <></> : ui, { wrapper: Providers });
+
+  if (arrivingAfterAddress) {
+    result.rerender(ui);
+  }
 
   return { ...result, cache };
 }

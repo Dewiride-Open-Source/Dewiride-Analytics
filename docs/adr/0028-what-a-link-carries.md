@@ -3,6 +3,9 @@
 - **Status**: accepted
 - **Date**: 2026-08-25
 - **Applies to**: both editions. Adds no column, collects nothing new, and widens no envelope.
+- **Revised by**: [0040](0040-what-a-screen-remembers.md), which narrows "the period every screen
+  opens on leaves no trace" to the built-in default: a choice the reader made is remembered by the
+  browser, and an address that says nothing is given it on first paint.
 
 ## Context
 

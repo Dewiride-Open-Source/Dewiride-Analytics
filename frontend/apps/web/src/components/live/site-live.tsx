@@ -45,7 +45,9 @@ export function SiteLive({ site }: SiteLiveProps) {
 
   if (live.data !== answered) {
     setAnswered(live.data);
-    setShown(rowsToShow(live.data?.visitors ?? [], shown, opened));
+    setShown(
+      live.data === undefined ? [] : rowsToShow(live.data.visitors, shown, opened, live.data.at),
+    );
   }
 
   function hold(visitor: string, open: boolean) {
@@ -141,8 +143,9 @@ function Reading({ site, answer, failure, rows, opened, onOpen }: ReadingProps) 
 
   // A designed state rather than a headline reading nought above a list with nothing in it. The
   // figure and the empty card would be saying the same thing twice, and only one of them carries
-  // the reason and the way out of it.
-  if (rows.length === 0) {
+  // the reason and the way out of it. Keyed on the count rather than the list, because the count
+  // is the whole and the list is what fitted; and a row somebody is holding open keeps the screen.
+  if (answer.visitorsSeen === 0 && rows.length === 0) {
     return (
       <ListEmpty
         icon={Radio}
@@ -162,7 +165,7 @@ function Reading({ site, answer, failure, rows, opened, onOpen }: ReadingProps) 
       <div className="flex flex-col gap-6">
         <LiveHeadline answer={answer} />
 
-        <LivePages pages={answer.pages} />
+        <LivePages pages={answer.pages} visitorsSeen={answer.visitorsSeen} />
       </div>
 
       <div className="flex flex-col gap-6">

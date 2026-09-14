@@ -175,9 +175,14 @@ export function liveKey(siteId: string) {
   return ['sites', siteId, 'live'] as const;
 }
 
-/** One visitor's trail through the same minutes, filed under the visitor for the same reason. */
-export function liveTrailKey(siteId: string, visitor: string) {
-  return ['sites', siteId, 'live', visitor, 'trail'] as const;
+/**
+ * One visitor's trail through the minutes of one reading.
+ *
+ * Filed under the reading it belongs to, so a new reading is a new question and the old answer
+ * stays on screen until the new one lands.
+ */
+export function liveTrailKey(siteId: string, visitor: string, at: string) {
+  return ['sites', siteId, 'live', visitor, 'trail', at] as const;
 }
 
 export function serverKeysKey(siteId: string) {

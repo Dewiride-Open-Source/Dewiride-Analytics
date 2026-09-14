@@ -572,6 +572,11 @@ export const visitSchema = z.object({
   ruleset: z.string(),
   supporting: z.array(visitReasonSchema),
   contradicting: z.array(visitReasonSchema),
+  /**
+   * Who the visitor was, where that could be established, and empty where it could not — the same
+   * account the journey carries, so a row and the panel under it never disagree.
+   */
+  context: visitContextSchema,
 });
 
 export const visitsSchema = z.object({
@@ -621,10 +626,14 @@ export const liveMinuteSchema = z.object({
   pageViews: z.number().int(),
 });
 
-/** One page being read at this moment. */
+/**
+ * One page, and how many of the visitors here were last on it.
+ *
+ * Every visitor is on exactly one, so the pages of the half hour add up to the count above them,
+ * though only the leading ones are carried.
+ */
 export const livePageSchema = z.object({
   path: z.string(),
-  pageViews: z.number().int(),
   visitors: z.number().int(),
 });
 

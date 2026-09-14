@@ -49,6 +49,72 @@ public sealed class ProbingDetectorTests
             .Should().OnlyContain(value => !value.Contains("script", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// A site's owner asks for exactly the paths a sweep asks for, and the difference is that the
+    /// site answers them. A refusal is the sweep it usually is; a page served was a page that
+    /// exists and was meant for whoever asked.
+    /// </summary>
+    [Theory]
+    [InlineData(200, false)]
+    [InlineData(301, false)]
+    [InlineData(302, false)]
+    [InlineData(401, true)]
+    [InlineData(403, true)]
+    [InlineData(404, true)]
+    [InlineData(500, true)]
+    public void Only_A_Request_The_Site_Refused_Counts_As_Probing(int status, bool counted)
+    {
+        var asked = Asking((short)status, "/.env", "/.git/config", "/wp-login.php");
+
+        var found = Detector.Examine(asked).Where(signal => signal.Code == SignalCodes.SensitivePaths).ToArray();
+
+        if (counted)
+        {
+            found.Should().ContainSingle().Which.Parameters["attemptCount"].Should().Be("3");
+        }
+        else
+        {
+            found.Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// No status at all means only the page's own browser reported it, which is a page that was
+    /// served and rendered far enough to run the tracker. A sweep executes nothing.
+    /// </summary>
+    [Fact]
+    public void A_Page_Only_The_Browser_Saw_Was_Served_And_Is_Not_Probing()
+    {
+        var served = Asking((short?)null, "/wp-admin/", "/wp-login.php", "/wp-admin/post.php") with
+        {
+            Surfaces = [IngestSurface.BrowserTracker],
+        };
+
+        Detector.Examine(served).Should().NotContain(signal => signal.Code == SignalCodes.SensitivePaths);
+    }
+
+    [Fact]
+    public void An_Owner_Opening_Their_Own_Administration_Panel_Is_Not_A_Sweep()
+    {
+        Detector.Examine(Visits.AnOwnerSigningIn()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_Sweep_That_Also_Found_One_Real_Page_Is_Still_A_Sweep()
+    {
+        var sweep = Asking("/.env", "/.git/config", "/phpmyadmin/index.php") with
+        {
+            Requests =
+            [
+                .. Asking("/.env", "/.git/config", "/phpmyadmin/index.php").Requests,
+                new ObservedRequest(Visits.Noon.AddSeconds(3), "/wp-login.php", 200),
+            ],
+        };
+
+        Detector.Examine(sweep).Single(signal => signal.Code == SignalCodes.SensitivePaths)
+            .Parameters["attemptCount"].Should().Be("3");
+    }
+
     [Fact]
     public void A_Site_With_A_Couple_Of_Broken_Links_Is_Not_Accused_Of_Anything()
     {
@@ -85,7 +151,9 @@ public sealed class ProbingDetectorTests
         mostly.Should().BeGreaterThan(some);
     }
 
-    private static SessionEvidence Asking(params string[] paths) => new()
+    private static SessionEvidence Asking(params string[] paths) => Asking((short)404, paths);
+
+    private static SessionEvidence Asking(short? status, params string[] paths) => new()
     {
         SessionKey = "probe",
         StartedAt = Visits.Noon,
@@ -93,7 +161,7 @@ public sealed class ProbingDetectorTests
         Requests =
         [
             .. paths.Select((path, index) =>
-                new ObservedRequest(Visits.Noon.AddSeconds(index), path, (short)404)),
+                new ObservedRequest(Visits.Noon.AddSeconds(index), path, status)),
         ],
         Surfaces = [IngestSurface.CloudflareWorker],
     };

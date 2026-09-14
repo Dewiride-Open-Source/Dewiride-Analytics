@@ -7,6 +7,8 @@
   first thing in this product that sends a visitor's address anywhere.
 - **Completes**: [0032](0032-a-claim-becomes-an-identity-at-the-address.md), which built the half of
   this that works from published lists and recorded this half as unbuilt.
+- **Revised by**: [0037](0037-a-person-is-not-concluded-from-one-thing.md), which stops asking about
+  a visit the product could not rule out as somebody reading, not only one it concluded was.
 
 ## Context
 

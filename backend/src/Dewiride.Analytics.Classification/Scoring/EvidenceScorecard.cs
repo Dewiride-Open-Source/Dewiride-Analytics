@@ -60,6 +60,12 @@ public static class EvidenceScorecard
     private const int Troubling = 50;
 
     /// <summary>
+    /// How many counted observations, agreeing, reach the firmest behavioural band whatever the
+    /// heaviest of them weighs.
+    /// </summary>
+    private const int Agreeing = 3;
+
+    /// <summary>
     /// Weighs the evidence.
     /// </summary>
     /// <param name="evidence">What the detectors observed.</param>
@@ -143,6 +149,14 @@ public static class EvidenceScorecard
                 : TrafficCategory.GenericWebCrawler;
         }
 
+        // Called itself a crawler, in no name this product could look up. There is no operator to
+        // confirm and no purpose to file it under, but what it said is still the most specific
+        // thing known about it, and nothing it did on the way past makes it a person.
+        if (evidence.Has(SignalCodes.DeclaredGenericCrawler))
+        {
+            return TrafficCategory.GenericWebCrawler;
+        }
+
         if (IsSystematicRetrieval(evidence))
         {
             return TrafficCategory.ContentScraper;
@@ -185,17 +199,26 @@ public static class EvidenceScorecard
     /// enough to be worth saying?
     /// </summary>
     /// <remarks>
+    /// <para>
     /// A near-tie produces <see cref="TrafficCategory.Unknown"/> rather than the side that happens
     /// to be a point ahead. That is a real answer — the evidence was gathered and weighed and it
     /// does not support a conclusion — and reporting it honestly is worth more than a coin toss
     /// dressed up as a classification.
+    /// </para>
+    /// <para>
+    /// A person is concluded only from corroboration: two observations that each count, or one
+    /// that is substantial on its own. One thing pointing toward a person against nothing at all
+    /// is a lean rather than a conclusion, and is answered as something the product could not
+    /// tell — which is the honest reading of a page opened and left. So a person is never reported
+    /// on slight signs.
+    /// </para>
     /// </remarks>
     private static TrafficCategory Weighed(EvidenceSet evidence)
     {
         var human = evidence.HeaviestPointing(SignalDirection.TowardHuman);
         var automation = evidence.HeaviestPointing(SignalDirection.TowardAutomation);
 
-        if (human >= Corroborating && human > automation)
+        if (PointsFirmly(evidence, SignalDirection.TowardHuman) && human > automation)
         {
             return TrafficCategory.LikelyHuman;
         }
@@ -213,12 +236,33 @@ public static class EvidenceScorecard
     }
 
     /// <summary>
+    /// Whether what points one way is enough to conclude that way: one substantial observation, or
+    /// two that each count.
+    /// </summary>
+    /// <remarks>
+    /// One passing remark is a lean rather than a conclusion. A browser running the tracker is the
+    /// commonest thing an automated browser does too, so on its own it decides nothing; the same
+    /// browser with somebody scrolling is two things agreeing, and somebody reading for a while is
+    /// substantial by itself.
+    /// </remarks>
+    private static bool PointsFirmly(EvidenceSet evidence, SignalDirection direction) =>
+        evidence.HeaviestPointing(direction) >= Substantial
+        || evidence.CountPointing(direction, Corroborating) >= 2;
+
+    /// <summary>
     /// How much weight stands behind the conclusion.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Corroboration matters more than magnitude. Two independent observations agreeing is a
     /// stronger position than one loud one, because a single heavy signal is usually a single
     /// thing the visitor chose to say about itself.
+    /// </para>
+    /// <para>
+    /// Three observations agreeing reach the firmest behavioural band whatever the heaviest of them
+    /// weighs: nothing a person does is decisive on its own, and a reader who read, scrolled and
+    /// clicked has done three things that each had to be produced.
+    /// </para>
     /// </remarks>
     private static EvidenceStrength Strength(
         TrafficCategory category,
@@ -263,6 +307,7 @@ public static class EvidenceScorecard
 
         var reached = (heaviest, independent) switch
         {
+            (_, >= Agreeing) => EvidenceStrength.Strong,
             ( >= Decisive, >= 2) => EvidenceStrength.Strong,
             ( >= Substantial, _) => EvidenceStrength.Moderate,
             (_, >= 2) => EvidenceStrength.Moderate,

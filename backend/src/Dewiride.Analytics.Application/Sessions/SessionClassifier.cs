@@ -196,13 +196,28 @@ public sealed partial class SessionClassifier(
     /// <remarks>
     /// Three conditions, and each rules out a different waste. There is no address left on a visit
     /// older than the retention window; there is nothing to settle where the collector settled it
-    /// already; and a visit that looks like somebody reading is somebody reading, whose address
-    /// is not ours to ask anybody about.
+    /// already; and a visit that may be somebody reading is treated as somebody reading, whose
+    /// address is not ours to ask anybody about.
     /// </remarks>
     private static bool WorthAsking(Reading reading) =>
         !string.IsNullOrEmpty(reading.Session.Address)
         && string.IsNullOrEmpty(reading.Session.Evidence.ConfirmedOperator)
-        && reading.Verdict.Category is not TrafficCategory.LikelyHuman;
+        && !MayBeSomebodyReading(reading.Verdict);
+
+    /// <summary>
+    /// Whether a person may be behind a verdict: called one outright, or left open with something
+    /// pointing toward one.
+    /// </summary>
+    /// <remarks>
+    /// A visit nothing could be concluded about is not thereby machinery. Where anything observed
+    /// points toward a person the address is treated as a person's, which is the only safe way to
+    /// treat an address the product is not sure about. For an open verdict every observation is
+    /// carried as supporting, so the ones pointing toward a person are found there.
+    /// </remarks>
+    private static bool MayBeSomebodyReading(ClassificationVerdict verdict) =>
+        verdict.Category is TrafficCategory.LikelyHuman
+        || (verdict.Category is TrafficCategory.Unknown
+            && verdict.Supporting.Any(signal => signal.Direction == SignalDirection.TowardHuman));
 
     /// <summary>
     /// Judges a visit again where the address turned out to belong to a company's own crawlers.

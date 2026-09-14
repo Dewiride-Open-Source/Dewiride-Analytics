@@ -49,8 +49,8 @@ const MINUTES: readonly LiveMinute[] = [
   { start: '2026-08-29T10:30:00.000Z', pageViews: 1 },
 ];
 
-function row(visitorKey: string, stillHere = true): LiveRow {
-  return { visitor: visitor({ visitor: visitorKey }), stillHere };
+function row(visitorKey: string, stillHere = true, at = AT): LiveRow {
+  return { visitor: visitor({ visitor: visitorKey }), stillHere, at };
 }
 
 describe('how long ago something happened', () => {
@@ -105,11 +105,13 @@ describe('whether the moment is a busy one', () => {
 
 describe('what can be named among the visitors here', () => {
   it('counts each category and puts the commonest first', () => {
-    const named = namedNow([
+    const visitors = [
       visitor({ visitor: 'a1', category: 'known-search-crawler' }),
       visitor({ visitor: 'a2', category: 'security-scanner' }),
       visitor({ visitor: 'a3', category: 'known-search-crawler' }),
-    ]);
+    ];
+
+    const named = namedNow(visitors, visitors.length);
 
     expect(named.groups).toEqual([
       { category: 'known-search-crawler', visitors: 2 },
@@ -122,10 +124,12 @@ describe('what can be named among the visitors here', () => {
    * since nothing a reader could see would have changed.
    */
   it('settles a tie by name so the order does not move on its own', () => {
-    const named = namedNow([
+    const visitors = [
       visitor({ visitor: 'a1', category: 'security-scanner' }),
       visitor({ visitor: 'a2', category: 'known-ai-crawler' }),
-    ]);
+    ];
+
+    const named = namedNow(visitors, visitors.length);
 
     expect(named.groups.map((group) => group.category)).toEqual([
       'known-ai-crawler',
@@ -134,21 +138,42 @@ describe('what can be named among the visitors here', () => {
   });
 
   it('counts a visitor nothing has been said about apart from the named ones', () => {
-    const named = namedNow([
+    const visitors = [
       visitor({ visitor: 'a1', category: 'known-ai-crawler' }),
       visitor({ visitor: 'a2' }),
       visitor({ visitor: 'a3' }),
-    ]);
+    ];
+
+    const named = namedNow(visitors, visitors.length);
 
     expect(named.groups).toEqual([{ category: 'known-ai-crawler', visitors: 1 }]);
     expect(named.unnamed).toBe(2);
   });
 
   it('names nothing at all where nothing has been settled about anybody', () => {
-    const named = namedNow([visitor({ visitor: 'a1' }), visitor({ visitor: 'a2' })]);
+    const visitors = [visitor({ visitor: 'a1' }), visitor({ visitor: 'a2' })];
+
+    const named = namedNow(visitors, visitors.length);
 
     expect(named.groups).toEqual([]);
     expect(named.unnamed).toBe(2);
+  });
+
+  /**
+   * The list is cut short at a hundred and the count is not. A sweep of three hundred with one
+   * named would otherwise be reported as ninety-odd still being watched.
+   */
+  it('counts everybody the list could not carry among those still being watched', () => {
+    const named = namedNow([visitor({ visitor: 'a1', category: 'security-scanner' })], 214);
+
+    expect(named.groups).toEqual([{ category: 'security-scanner', visitors: 1 }]);
+    expect(named.unnamed).toBe(213);
+  });
+
+  it('never counts fewer than nobody', () => {
+    const named = namedNow([visitor({ visitor: 'a1', category: 'security-scanner' })], 0);
+
+    expect(named.unnamed).toBe(0);
   });
 });
 
@@ -160,7 +185,7 @@ describe('the rows a reading leaves on screen', () => {
       visitor({ visitor: 'a3' }),
     ];
 
-    const shown = rowsToShow(here, [], new Set());
+    const shown = rowsToShow(here, [], new Set(), AT);
 
     expect(shown.map((one) => one.visitor.visitor)).toEqual(['a1', 'a2', 'a3']);
     expect(shown.every((one) => one.stillHere)).toBe(true);
@@ -171,26 +196,31 @@ describe('the rows a reading leaves on screen', () => {
    * can actually cause, so a row somebody has opened outlives the visitor behind it.
    */
   it('keeps a row somebody has open after its visitor has gone, and marks it gone', () => {
-    const shown = rowsToShow([visitor({ visitor: 'a2' })], [row('a1'), row('a2')], new Set(['a1']));
+    const shown = rowsToShow(
+      [visitor({ visitor: 'a2' })],
+      [row('a1'), row('a2')],
+      new Set(['a1']),
+      AT,
+    );
 
     expect(shown.map((one) => one.visitor.visitor)).toEqual(['a2', 'a1']);
     expect(shown.map((one) => one.stillHere)).toEqual([true, false]);
   });
 
   it('lets a row nobody has open go the moment its visitor does', () => {
-    const shown = rowsToShow([visitor({ visitor: 'a2' })], [row('a1'), row('a2')], new Set());
+    const shown = rowsToShow([visitor({ visitor: 'a2' })], [row('a1'), row('a2')], new Set(), AT);
 
     expect(shown.map((one) => one.visitor.visitor)).toEqual(['a2']);
   });
 
   it('lets a row that had been held go once the reader closes it', () => {
-    const shown = rowsToShow([], [row('a1', false)], new Set());
+    const shown = rowsToShow([], [row('a1', false)], new Set(), AT);
 
     expect(shown).toEqual([]);
   });
 
   it('keeps holding a row that has already gone for as long as it stays open', () => {
-    const shown = rowsToShow([], [row('a1', false)], new Set(['a1']));
+    const shown = rowsToShow([], [row('a1', false)], new Set(['a1']), AT);
 
     expect(shown.map((one) => one.visitor.visitor)).toEqual(['a1']);
     expect(shown.map((one) => one.stillHere)).toEqual([false]);
@@ -201,10 +231,40 @@ describe('the rows a reading leaves on screen', () => {
    * carries them again and the held row is dropped rather than drawn a second time.
    */
   it('draws a visitor who has come back once rather than twice', () => {
-    const shown = rowsToShow([visitor({ visitor: 'a1' })], [row('a1', false)], new Set(['a1']));
+    const shown = rowsToShow([visitor({ visitor: 'a1' })], [row('a1', false)], new Set(['a1']), AT);
 
     expect(shown.map((one) => one.visitor.visitor)).toEqual(['a1']);
     expect(shown.map((one) => one.stillHere)).toEqual([true]);
+  });
+
+  /**
+   * What is asked under a row is asked over the minutes of the reading the row came from, so every
+   * row carries the instant of the reading that drew it.
+   */
+  it('stamps every row with the reading it was drawn from', () => {
+    const here = [visitor({ visitor: 'a1' }), visitor({ visitor: 'a2' })];
+
+    const shown = rowsToShow(here, [], new Set(), AT);
+
+    expect(shown.every((one) => one.at === AT)).toBe(true);
+  });
+
+  /**
+   * A row held after its visitor has gone keeps the instant it was last seen in. Stamping it with
+   * each new reading would ask a fresh question about somebody who is not in the answer.
+   */
+  it('keeps the reading a held row was last seen in', () => {
+    const earlier = '2026-08-29T10:29:40.000Z';
+
+    const shown = rowsToShow(
+      [visitor({ visitor: 'a3' })],
+      [row('a1', true, earlier), row('a2', false, earlier), row('a3', true, earlier)],
+      new Set(['a1', 'a2']),
+      AT,
+    );
+
+    expect(shown.map((one) => one.visitor.visitor)).toEqual(['a3', 'a1', 'a2']);
+    expect(shown.map((one) => one.at)).toEqual([AT, earlier, earlier]);
   });
 });
 

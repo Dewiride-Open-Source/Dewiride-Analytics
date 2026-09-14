@@ -233,6 +233,18 @@
         "label": "Compare with the period before",
         "measure": "{name} before",
         "lines": "The dashed lines are {days}."
+      },
+      "people": {
+        "action": "People only",
+        "label": "People only: show just the visits judged to be people",
+        "pageViews": "Pages read by people",
+        "visits": "Visits by people",
+        "summary": "Visits judged to be people on {site} over the chosen period.",
+        "days": "Finished visits judged to be people, by day in {zone}.",
+        "hours": "Finished visits judged to be people, by the clock in {zone}.",
+        "judging": "The newest are still being judged.",
+        "none": "No visits in this period were judged to be people.",
+        "noneAction": "Show everyone"
       }
     },
     "list": {
@@ -436,6 +448,8 @@
         "title": "Who this was",
         "from": "Came from",
         "direct": "Came straight here",
+        "fromNamed": "From {source}",
+        "viaNetwork": "Via {network}",
         "place": "Where",
         "readOn": "Read on",
         "network": "Network",
@@ -516,7 +530,7 @@
     "caption": "Who has been on {site} in the last half hour.",
     "count": {
       "label": "Visitors",
-      "note": "Anyone who opened or read a page in the last half hour.",
+      "note": "Anyone the site has heard from in the last half hour.",
       "quiet": "Nobody has done anything in the last few minutes."
     },
     "named": {
@@ -539,7 +553,9 @@
     "pages": {
       "title": "What's being read",
       "visitors": "{count, plural, one {# visitor} other {# visitors}}",
-      "none": "Once somebody opens a page, it appears here."
+      "none": "Once somebody opens a page, it appears here.",
+      "caption": "Each visitor is counted once, on the page they were last on.",
+      "elsewhere": "{count, plural, one {# more on another page} other {# more on other pages}}"
     },
     "refresh": {
       "live": "Live · updated {time}",
@@ -593,10 +609,10 @@
       },
       "arrived": {
         "direct": "Came straight here",
-        "search": "A search engine",
-        "assistant": "An AI assistant",
-        "social": "A social network",
-        "link": "A link on another site"
+        "search": "From a search engine",
+        "assistant": "From an AI assistant",
+        "social": "From a social network",
+        "link": "From a link on another site"
       },
       "unplaced": {
         "browsers": "Not known",
@@ -637,7 +653,7 @@
   "verdicts": {
     "category": {
       "likely-human": "A person",
-      "known-search-crawler": "A search engine",
+      "known-search-crawler": "A search engine's crawler",
       "known-ai-crawler": "An AI crawler",
       "suspected-ai-crawler": "Says it's an AI crawler",
       "known-automated-service": "A known service",
@@ -649,7 +665,7 @@
       "suspicious-automation": "Something automated",
       "likely-analytics-spam": "Fake traffic",
       "insufficient-evidence": "Too little to go on",
-      "unknown": "Not recognised"
+      "unknown": "Couldn't tell"
     },
     "strength": {
       "none": "nothing to go on",
@@ -708,6 +724,7 @@
         "commandLine": "It named itself as a download tool rather than as a browser.",
         "other": "It named itself as software rather than as a browser."
       },
+      "declared_generic_crawler": "It called itself a crawler, but not by any name we know.",
       "no_user_agent": "It did not say what it was. Every ordinary browser does."
     },
     "engagement": {

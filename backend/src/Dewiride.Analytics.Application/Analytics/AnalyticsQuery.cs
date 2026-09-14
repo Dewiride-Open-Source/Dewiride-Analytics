@@ -720,10 +720,10 @@ public sealed record TrafficSeriesQuery(TimeRange Range, TimeGranularity Granula
 /// surface would leave every caller and every statement free to handle half of it.
 /// </para>
 /// <para>
-/// What counts as one visit, and which address is the site's own, are carried whether or not the
-/// narrowing turns out to need them. Which statement answers this question is the compiler's
-/// decision rather than the caller's, and a question that could arrive half filled in would leave
-/// every caller guessing which half.
+/// What counts as one visit, and which address is the site's own, are needed by every shape of
+/// the question, because every row carries what the visit was. Which statement answers this
+/// question is the compiler's decision rather than the caller's, and a question that could arrive
+/// half filled in would leave every caller guessing which half.
 /// </para>
 /// </remarks>
 public sealed record JudgedSessionsQuery : AnalyticsQuery
@@ -942,22 +942,27 @@ public sealed record SiteLiveVisitorsQuery : AnalyticsQuery
 public sealed record SiteLiveActivityQuery(TimeRange Range) : AnalyticsQuery(Range);
 
 /// <summary>
-/// The pages a site's visitors have been on in the last stretch of minutes, busiest first.
+/// The pages a site's visitors are on at this moment, the one holding most visitors first.
 /// </summary>
 /// <remarks>
-/// Counted the same way the visitor list counts a page, so the two agree: a page is a page somebody
-/// was on, once per visitor however many reports described it.
+/// Each visitor is placed on one page — the one their most recent report named, which is the page
+/// the row listing them prints — and the pages are counted by how many visitors stand on each. So
+/// the visitors across every page add up to the visitors seen, because it is the same population
+/// placed rather than a second count taken on other terms, and a page one visitor reloaded twenty
+/// times holds one visitor. How often pages were delivered is
+/// <see cref="SiteLiveActivityQuery"/>'s question.
 /// </remarks>
 public sealed record SiteLivePagesQuery : AnalyticsQuery
 {
     /// <summary>Most pages any one reading carries back.</summary>
     /// <remarks>
     /// A short list read at a glance rather than a site map. Somebody who wants the whole picture
-    /// of a period has a screen for it.
+    /// of a period has a screen for it. A list cut short falls short of the visitors seen by exactly
+    /// the visitors on the pages it left out, which a screen can say without a further figure.
     /// </remarks>
     public const int MostPages = 25;
 
-    /// <summary>Asks which pages are being read.</summary>
+    /// <summary>Asks which pages visitors are on.</summary>
     /// <param name="range">The stretch of minutes, ending at the present moment.</param>
     /// <param name="limit">How many pages to carry back, at most <see cref="MostPages"/>.</param>
     /// <exception cref="ArgumentOutOfRangeException">The limit is outside its bounds.</exception>
@@ -991,10 +996,11 @@ public sealed record SiteLivePagesQuery : AnalyticsQuery
 /// is nothing but a difference in timing.
 /// </para>
 /// <para>
-/// This asks about the same stretch of minutes the visitor was listed from, so what it shows and
-/// what the list said are one reading of one window. A page is a page the visitor was on during it,
-/// counted once, which is exactly what the list counted — so the steps and the count agree by
-/// construction rather than by hope.
+/// This asks about the stretch of minutes the visitor's row was drawn from — the caller carries
+/// that reading's instant back, and the reach from it is the same — so what it shows and what the
+/// list said are one reading of one window even when a beat has passed between them. A page is a
+/// page the visitor was on during it, counted once, which is exactly what the list counted — so
+/// the steps and the count agree by construction rather than by hope.
 /// </para>
 /// <para>
 /// Nothing is established about the visitor here. The list already carries where they were, what
@@ -1013,7 +1019,7 @@ public sealed record SiteLiveTrailQuery : AnalyticsQuery
     public const int MostSteps = 200;
 
     /// <summary>Asks what one visitor has been doing.</summary>
-    /// <param name="range">The stretch of minutes, ending at the present moment.</param>
+    /// <param name="range">The stretch of minutes the row was drawn from.</param>
     /// <param name="visitorKey">
     /// The visitor, as the reading of who is here named them — after both halves of the measurement
     /// were folded onto one key, which is the only spelling that finds anybody.

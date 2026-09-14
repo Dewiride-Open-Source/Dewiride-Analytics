@@ -7,13 +7,14 @@ import {
   History,
   type LucideIcon,
   ScanSearch,
+  UserRound,
 } from 'lucide-react';
 import { type DateTimeFormatOptions, useFormatter, useTranslations } from 'next-intl';
 import { useCallback, useMemo } from 'react';
 import { CELL, FIGURE, Figures } from '@/components/charts/figures';
-import { Keys } from '@/components/charts/keys';
+import { type ChartKey, Keys } from '@/components/charts/keys';
 import { NothingDrawn, Picture, Settling } from '@/components/charts/picture';
-import { activityOption } from '@/components/dashboard/activity-chart';
+import { activityOption, type Measure } from '@/components/dashboard/activity-chart';
 import { ListSwitch } from '@/components/dashboard/ranked-list';
 import { TONE_FILLS } from '@/components/dashboard/verdict-badge';
 import { whoOption } from '@/components/dashboard/who-chart';
@@ -22,7 +23,7 @@ import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { CHART_VIEWS, type ChartView } from '@/lib/analytics/chart-view';
 import type { Granularity } from '@/lib/analytics/period';
-import { bandsIn, stillJudgingFrom, totalsIn } from '@/lib/analytics/traffic-series';
+import { bandsIn, peopleIn, stillJudgingFrom, totalsIn } from '@/lib/analytics/traffic-series';
 import { TONE_ORDER, type VerdictTone } from '@/lib/analytics/verdicts';
 import type { TrafficSeries } from '@/lib/api/schemas';
 import { type Drawing, drawingFor, drawingsFor } from '@/lib/charts/drawing';
@@ -71,6 +72,9 @@ interface Buckets {
 interface TrafficChartProps extends Buckets {
   readonly view: ChartView;
   readonly onView: (view: ChartView) => void;
+  /** Whether only the visits judged to be people are drawn. */
+  readonly peopleOnly: boolean;
+  readonly onPeopleOnly: (peopleOnly: boolean) => void;
   /** Page views and visitors, or nothing while they are still on their way. */
   readonly activity: readonly TrafficPoint[] | undefined;
   /** What generated the traffic, or nothing while that is still on its way. */
@@ -82,12 +86,12 @@ interface TrafficChartProps extends Buckets {
 }
 
 /**
- * The picture at the top of a website's overview, in whichever of its two views is being read.
+ * The picture at the top of a website's overview, in whichever of its views is being read.
  *
- * The views answer different questions about the same days and count different things doing it:
- * one counts everything a website recorded as it happened, the other counts visits that have
- * finished and been judged. They will not add up, so neither is ever labelled as the other, and
- * the view being read says which it is.
+ * Three pictures of the same days. One counts everything a website recorded as it happened and
+ * says how much of it was read. The other two count visits that have finished and been judged:
+ * who and what they were, or how much the people among them read. Recorded and judged will not
+ * add up, so neither is ever labelled as the other, and the picture being read says which it is.
  *
  * Whichever is on, the same figures are published twice — once as a drawing, and once as a table
  * anybody can open. A canvas tells a screen reader nothing at all, and a chart whose numbers exist
@@ -96,6 +100,8 @@ interface TrafficChartProps extends Buckets {
 export function TrafficChart({
   view,
   onView,
+  peopleOnly,
+  onPeopleOnly,
   activity,
   who,
   problem,
@@ -146,6 +152,22 @@ export function TrafficChart({
             value={drawing}
             onChange={choose}
           />
+          {/*
+            Green while it is on, because green is the tone a person is drawn in everywhere else
+            on the dashboard. The control then reads as the green band rather than as a second
+            accent beside the one the comparison wears.
+          */}
+          <Button
+            tone="secondary"
+            size="sm"
+            aria-pressed={peopleOnly}
+            aria-label={t('people.label')}
+            onClick={() => onPeopleOnly(!peopleOnly)}
+            className={peopleOnly ? 'border-positive/40 bg-positive/12 text-positive' : undefined}
+          >
+            <UserRound aria-hidden className="size-4" />
+            {t('people.action')}
+          </Button>
           <Button
             tone="secondary"
             size="sm"
@@ -165,13 +187,26 @@ export function TrafficChart({
       {problem === null || problem === undefined ? (
         <Drawn
           view={view}
+          peopleOnly={peopleOnly}
           activity={activity}
           who={who}
           comparison={comparison}
           siteName={siteName}
           drawing={drawing}
           buckets={buckets}
-          onShowActivity={() => onView('activity')}
+          onShowActivity={() => {
+            // Everything the website recorded, drawn as how much: the one picture that waits on
+            // nothing being judged. Only what is not already so is written, because an address
+            // written to unchanged is still another entry in the history.
+            if (peopleOnly) {
+              onPeopleOnly(false);
+            }
+
+            if (view !== 'activity') {
+              onView('activity');
+            }
+          }}
+          onShowEveryone={() => onPeopleOnly(false)}
         />
       ) : (
         <FailureNotice error={problem} />
@@ -180,20 +215,27 @@ export function TrafficChart({
   );
 }
 
-interface DrawnProps {
-  readonly view: ChartView;
-  readonly activity: readonly TrafficPoint[] | undefined;
-  readonly who: TrafficSeries | undefined;
+/** What every picture on the card is drawn from, whichever question it answers. */
+interface ViewProps {
   readonly comparison: TrafficComparison;
   readonly siteName: string;
   readonly drawing: Drawing;
   readonly buckets: Buckets;
+}
+
+interface DrawnProps extends ViewProps {
+  readonly view: ChartView;
+  readonly peopleOnly: boolean;
+  readonly activity: readonly TrafficPoint[] | undefined;
+  readonly who: TrafficSeries | undefined;
   readonly onShowActivity: () => void;
+  readonly onShowEveryone: () => void;
 }
 
 /** The picture the current view calls for, or the shape of one while its figures are on the way. */
 function Drawn({
   view,
+  peopleOnly,
   activity,
   who,
   comparison,
@@ -201,41 +243,56 @@ function Drawn({
   drawing,
   buckets,
   onShowActivity,
+  onShowEveryone,
 }: DrawnProps) {
-  if (view === 'who') {
-    return who === undefined ? (
+  if (view === 'activity' && !peopleOnly) {
+    return activity === undefined ? (
       <Settling />
     ) : (
+      <ActivityView
+        points={activity}
+        comparison={comparison}
+        siteName={siteName}
+        drawing={drawing}
+        buckets={buckets}
+      />
+    );
+  }
+
+  if (who === undefined) {
+    return <Settling />;
+  }
+
+  if (view === 'who') {
+    return (
       <WhoView
         series={who}
         comparison={comparison}
         siteName={siteName}
         drawing={drawing}
         buckets={buckets}
+        peopleOnly={peopleOnly}
         onShowActivity={onShowActivity}
+        onShowEveryone={onShowEveryone}
       />
     );
   }
 
-  return activity === undefined ? (
-    <Settling />
-  ) : (
-    <ActivityView
-      points={activity}
+  return (
+    <PeopleView
+      series={who}
       comparison={comparison}
       siteName={siteName}
       drawing={drawing}
       buckets={buckets}
+      onShowActivity={onShowActivity}
+      onShowEveryone={onShowEveryone}
     />
   );
 }
 
-interface ActivityViewProps {
+interface ActivityViewProps extends ViewProps {
   readonly points: readonly TrafficPoint[];
-  readonly comparison: TrafficComparison;
-  readonly siteName: string;
-  readonly drawing: Drawing;
-  readonly buckets: Buckets;
 }
 
 /** Page views and visitors across the period. */
@@ -244,9 +301,11 @@ function ActivityView({ points, comparison, siteName, drawing, buckets }: Activi
   const format = useFormatter();
   const { granularity, zone } = buckets;
 
+  const starts = useMemo(() => points.map((point) => point.start), [points]);
+
   const labels = useMemo(
-    () => points.map((point) => write(point.start, format, buckets)),
-    [points, format, buckets],
+    () => starts.map((start) => write(start, format, buckets)),
+    [starts, format, buckets],
   );
 
   // Counted in an hour, distinct visitors are the people who were there in that hour, which is a
@@ -256,43 +315,37 @@ function ActivityView({ points, comparison, siteName, drawing, buckets }: Activi
     [t, granularity],
   );
 
-  const pageViews = useMemo(() => points.map((point) => point.pageViews), [points]);
-  const visitors = useMemo(() => points.map((point) => point.visitors), [points]);
+  const measures = useMemo(
+    () =>
+      measured(
+        names,
+        points.map((point) => point.pageViews),
+        points.map((point) => point.visitors),
+      ),
+    [names, points],
+  );
+
   const before = comparison.on ? comparison.activity : undefined;
 
   const earlier = useMemo(
     () =>
-      before && {
-        names: [
-          t('against.measure', { name: names[0] }),
-          t('against.measure', { name: names[1] }),
-        ] as const,
-        pageViews: before.map((point) => point.pageViews),
-        visitors: before.map((point) => point.visitors),
-      },
+      before &&
+      measured(
+        [t('against.measure', { name: names[0] }), t('against.measure', { name: names[1] })],
+        before.map((point) => point.pageViews),
+        before.map((point) => point.visitors),
+      ),
     [before, names, t],
   );
 
   const option = useCallback(
-    (palette: ChartPalette) =>
-      activityOption({ labels, names, pageViews, visitors, drawing, earlier }, palette),
-    [labels, names, pageViews, visitors, drawing, earlier],
+    (palette: ChartPalette) => activityOption({ labels, measures, drawing, earlier }, palette),
+    [labels, measures, drawing, earlier],
   );
 
   return (
     <>
-      <Keys
-        items={[
-          { fill: 'bg-chart-1', label: names[0] },
-          { fill: 'bg-chart-2', label: names[1] },
-          ...(earlier
-            ? [
-                { fill: 'bg-chart-1', label: earlier.names[0], dashed: true },
-                { fill: 'bg-chart-2', label: earlier.names[1], dashed: true },
-              ]
-            : []),
-        ]}
-      />
+      <Keys items={measureKeys(measures, earlier)} />
 
       <Picture option={option} label={t('summary', { site: siteName })} />
 
@@ -301,69 +354,142 @@ function ActivityView({ points, comparison, siteName, drawing, buckets }: Activi
         {earlier ? <> {t('against.lines', { days: comparison.days })}</> : null}
       </p>
 
-      <Figures label={t('table')}>
-        <thead className="text-xs text-foreground-subtle">
-          <tr>
-            <th scope="col" className={`${CELL} font-medium`}>
-              {granularity === 'day' ? t('columnDay') : t('columnHour')}
-            </th>
-            <th scope="col" className={`${CELL} text-right font-medium`}>
-              {names[0]}
-            </th>
-            <th scope="col" className={`${CELL} text-right font-medium`}>
-              {names[1]}
-            </th>
-            {earlier ? (
-              <>
-                <th scope="col" className={`${CELL} text-right font-medium`}>
-                  {earlier.names[0]}
-                </th>
-                <th scope="col" className={`${CELL} text-right font-medium`}>
-                  {earlier.names[1]}
-                </th>
-              </>
-            ) : null}
-          </tr>
-        </thead>
-        <tbody className="text-foreground-muted">
-          {points.map((point, at) => (
-            <tr key={point.start} className="border-t border-border">
-              <th scope="row" className={`${CELL} font-normal`}>
-                {labels[at]}
-              </th>
-              <td className={FIGURE}>{format.number(point.pageViews)}</td>
-              <td className={FIGURE}>{format.number(point.visitors)}</td>
-              {earlier ? (
-                <>
-                  <td className={FIGURE}>{count(earlier.pageViews[at], format)}</td>
-                  <td className={FIGURE}>{count(earlier.visitors[at], format)}</td>
-                </>
-              ) : null}
-            </tr>
-          ))}
-        </tbody>
-      </Figures>
+      <FiguresTable
+        keys={starts}
+        labels={labels}
+        granularity={granularity}
+        columns={measureColumns(measures, earlier)}
+        stillJudging={null}
+      />
     </>
   );
 }
 
-interface WhoViewProps {
+interface PeopleViewProps extends ViewProps {
   readonly series: TrafficSeries;
-  readonly comparison: TrafficComparison;
-  readonly siteName: string;
-  readonly drawing: Drawing;
-  readonly buckets: Buckets;
   readonly onShowActivity: () => void;
+  readonly onShowEveryone: () => void;
+}
+
+/**
+ * How much the people a website is for read, across the period.
+ *
+ * Counts finished visits judged to be people and the pages those visits read — the population of
+ * the picture of who came, not of the page-view figures in the cards above, which count everything
+ * the website recorded as it happened. The two will not agree, and the caption says which this is.
+ */
+function PeopleView({
+  series,
+  comparison,
+  siteName,
+  drawing,
+  buckets,
+  onShowActivity,
+  onShowEveryone,
+}: PeopleViewProps) {
+  const t = useTranslations('dashboard.chart');
+  const format = useFormatter();
+  const { granularity, zone } = buckets;
+
+  const people = useMemo(() => peopleIn(series), [series]);
+  const bands = useMemo(() => bandsIn(series), [series]);
+  const stillJudging = useMemo(() => stillJudgingFrom(series), [series]);
+
+  const labels = useMemo(
+    () => series.buckets.map((bucket) => write(bucket, format, buckets)),
+    [series, format, buckets],
+  );
+
+  const names = useMemo(() => [t('people.pageViews'), t('people.visits')] as const, [t]);
+
+  const measures = useMemo(() => measured(names, people.pageViews, people.visits), [names, people]);
+
+  const before = comparison.on ? comparison.who : undefined;
+
+  const earlier = useMemo(() => {
+    if (!before) {
+      return undefined;
+    }
+
+    const theirs = peopleIn(before);
+
+    return measured(
+      [t('against.measure', { name: names[0] }), t('against.measure', { name: names[1] })],
+      theirs.pageViews,
+      theirs.visits,
+    );
+  }, [before, names, t]);
+
+  const option = useCallback(
+    (palette: ChartPalette) =>
+      activityOption({ labels, measures, drawing, stillJudging, earlier }, palette),
+    [labels, measures, drawing, stillJudging, earlier],
+  );
+
+  if (series.groups.length === 0) {
+    return <NothingJudged onShowActivity={onShowActivity} />;
+  }
+
+  if (!bands.some((band) => band.tone === 'people')) {
+    return <NobodyDrawn onShowEveryone={onShowEveryone} />;
+  }
+
+  return (
+    <>
+      <Keys items={measureKeys(measures, earlier)} />
+
+      <Picture option={option} label={t('people.summary', { site: siteName })} />
+
+      <p className="text-xs text-foreground-subtle">
+        {granularity === 'day' ? t('people.days', { zone }) : t('people.hours', { zone })}
+        {stillJudging === null ? null : <> {t('people.judging')}</>}
+        {earlier ? <> {t('against.lines', { days: comparison.days })}</> : null}
+      </p>
+
+      <FiguresTable
+        keys={series.buckets}
+        labels={labels}
+        granularity={granularity}
+        columns={measureColumns(measures, earlier)}
+        stillJudging={stillJudging}
+      />
+    </>
+  );
+}
+
+interface WhoViewProps extends ViewProps {
+  readonly series: TrafficSeries;
+  /** Whether the stack is kept to the people a website is for. */
+  readonly peopleOnly: boolean;
+  readonly onShowActivity: () => void;
+  readonly onShowEveryone: () => void;
 }
 
 /** Who and what visited, stacked across the period. */
-function WhoView({ series, comparison, siteName, drawing, buckets, onShowActivity }: WhoViewProps) {
+function WhoView({
+  series,
+  comparison,
+  siteName,
+  drawing,
+  buckets,
+  peopleOnly,
+  onShowActivity,
+  onShowEveryone,
+}: WhoViewProps) {
   const t = useTranslations('dashboard.chart');
   const tones = useTranslations('verdicts.tone');
   const format = useFormatter();
   const { granularity, zone } = buckets;
 
-  const bands = useMemo(() => bandsIn(series), [series]);
+  // Which of the two pictures is being drawn, since its words are found under that name.
+  const wording = peopleOnly ? 'people' : 'who';
+
+  const bands = useMemo(() => {
+    const all = bandsIn(series);
+
+    return peopleOnly ? all.filter((band) => band.tone === 'people') : all;
+  }, [series, peopleOnly]);
+
   const totals = useMemo(() => totalsIn(series), [series]);
   const stillJudging = useMemo(() => stillJudgingFrom(series), [series]);
 
@@ -383,13 +509,16 @@ function WhoView({ series, comparison, siteName, drawing, buckets, onShowActivit
 
   const before = comparison.on ? comparison.who : undefined;
 
+  // The whole of the earlier period, or its people alone where that is all this one is showing:
+  // a dashed line for everybody behind a stack kept to people would tower over it and say nothing
+  // about whether more of them came.
   const earlier = useMemo(
     () =>
-      before && {
-        name: t('against.measure', { name: t('who.total') }),
-        visits: totalsIn(before),
-      },
-    [before, t],
+      before &&
+      (peopleOnly
+        ? { name: t('against.measure', { name: names.people }), visits: peopleIn(before).visits }
+        : { name: t('against.measure', { name: t('who.total') }), visits: totalsIn(before) }),
+    [before, peopleOnly, names, t],
   );
 
   const option = useCallback(
@@ -398,21 +527,29 @@ function WhoView({ series, comparison, siteName, drawing, buckets, onShowActivit
     [labels, bands, names, drawing, stillJudging, earlier],
   );
 
-  // A website whose verdicts are still coming has usually had plenty of traffic, so the way out
-  // is offered here rather than left for somebody to find: how much of it there was can be read
-  // straight away, in the other view of this same card.
+  // The whole first, then what it was made of: a reader wants the day's figure before its parts,
+  // and on a phone the columns run off the side of the card, so the one number everybody came for
+  // is the one that is there without anybody having to scroll for it. Kept to people, the one
+  // band is that number, and the period before follows it.
+  const columns = useMemo<readonly Column[]>(() => {
+    const parts = bands.map((band) => ({
+      key: band.tone,
+      name: names[band.tone],
+      values: band.visits,
+    }));
+    const before = earlier ? [{ key: 'earlier', name: earlier.name, values: earlier.visits }] : [];
+
+    return peopleOnly
+      ? [...parts, ...before]
+      : [{ key: 'whole', name: t('who.total'), values: totals, whole: true }, ...before, ...parts];
+  }, [bands, names, earlier, peopleOnly, totals, t]);
+
+  if (series.groups.length === 0) {
+    return <NothingJudged onShowActivity={onShowActivity} />;
+  }
+
   if (bands.length === 0) {
-    return (
-      <NothingDrawn
-        icon={ScanSearch}
-        body={t('who.none')}
-        action={
-          <Button tone="secondary" size="sm" onClick={onShowActivity}>
-            {t('who.noneAction')}
-          </Button>
-        }
-      />
-    );
+    return <NobodyDrawn onShowEveryone={onShowEveryone} />;
   }
 
   return (
@@ -424,71 +561,208 @@ function WhoView({ series, comparison, siteName, drawing, buckets, onShowActivit
         ]}
       />
 
-      <Picture option={option} label={t('who.summary', { site: siteName })} />
+      <Picture option={option} label={t(`${wording}.summary`, { site: siteName })} />
 
       <p className="text-xs text-foreground-subtle">
-        {granularity === 'day' ? t('who.days', { zone }) : t('who.hours', { zone })}
-        {stillJudging === null ? null : <> {t('who.judging')}</>}
+        {granularity === 'day' ? t(`${wording}.days`, { zone }) : t(`${wording}.hours`, { zone })}
+        {stillJudging === null ? null : <> {t(`${wording}.judging`)}</>}
         {earlier ? <> {t('who.against', { days: comparison.days })}</> : null}
       </p>
 
-      <Figures label={t('table')}>
-        <thead className="text-xs text-foreground-subtle">
-          <tr>
-            <th scope="col" className={`${CELL} font-medium`}>
-              {granularity === 'day' ? t('columnDay') : t('columnHour')}
-            </th>
-            {/*
-              The whole first, then what it was made of. A reader wants the day's figure before its
-              parts, and on a phone the columns run off the side of the card — so the one number
-              everybody came for is the one that is there without anybody having to scroll for it.
-            */}
-            <th scope="col" className={`${CELL} text-right font-medium`}>
-              {t('who.total')}
-            </th>
-            {earlier ? (
-              <th scope="col" className={`${CELL} text-right font-medium`}>
-                {earlier.name}
-              </th>
-            ) : null}
-            {bands.map((band) => (
-              <th key={band.tone} scope="col" className={`${CELL} text-right font-medium`}>
-                {names[band.tone]}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="text-foreground-muted">
-          {series.buckets.map((bucket, at) => (
-            <tr key={bucket} className="border-t border-border">
-              <th scope="row" className="py-1.5 pr-3 font-normal last:pr-0 sm:pr-4">
-                <span className="whitespace-nowrap">{labels[at]}</span>
-                {/*
-                  Beneath the bucket rather than beside it. Said inline it would set the width of
-                  the first column for every row in the table, on account of the one or two rows
-                  that carry it.
-                */}
-                {stillJudging !== null && at >= stillJudging ? (
-                  <span className="block whitespace-nowrap text-xs text-foreground-subtle">
-                    {t('who.stillJudging')}
-                  </span>
-                ) : null}
-              </th>
-              <td className={`${FIGURE} font-medium text-foreground`}>
-                {count(totals[at], format)}
-              </td>
-              {earlier ? <td className={FIGURE}>{count(earlier.visits[at], format)}</td> : null}
-              {bands.map((band) => (
-                <td key={band.tone} className={FIGURE}>
-                  {format.number(band.visits[at] ?? 0)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </Figures>
+      <FiguresTable
+        keys={series.buckets}
+        labels={labels}
+        granularity={granularity}
+        columns={columns}
+        stillJudging={stillJudging}
+      />
     </>
   );
+}
+
+interface NothingJudgedProps {
+  readonly onShowActivity: () => void;
+}
+
+/**
+ * A judged picture of a period nothing has been judged in yet.
+ *
+ * A website whose verdicts are still coming has usually had plenty of traffic, so the way out is
+ * offered here rather than left for somebody to find: how much of it there was can be read
+ * straight away, in the one picture on this card that waits on nothing being judged — and that is
+ * everybody's picture, whether or not this one was kept to people.
+ */
+function NothingJudged({ onShowActivity }: NothingJudgedProps) {
+  const t = useTranslations('dashboard.chart');
+
+  return (
+    <NothingDrawn
+      icon={ScanSearch}
+      body={t('who.none')}
+      action={
+        <Button tone="secondary" size="sm" onClick={onShowActivity}>
+          {t('who.noneAction')}
+        </Button>
+      }
+    />
+  );
+}
+
+interface NobodyDrawnProps {
+  readonly onShowEveryone: () => void;
+}
+
+/**
+ * A picture kept to people, over a period judged to hold none.
+ *
+ * An answer rather than a matter of waiting, and the way out is everyone: the picture was kept to
+ * people on purpose, and the control that did so is the one to undo it.
+ */
+function NobodyDrawn({ onShowEveryone }: NobodyDrawnProps) {
+  const t = useTranslations('dashboard.chart');
+
+  return (
+    <NothingDrawn
+      icon={UserRound}
+      body={t('people.none')}
+      action={
+        <Button tone="secondary" size="sm" onClick={onShowEveryone}>
+          {t('people.noneAction')}
+        </Button>
+      }
+    />
+  );
+}
+
+/** One column of figures, a figure a bucket. */
+interface Column extends Measure {
+  /** What tells this column from the others, since two may share a name. */
+  readonly key: string;
+  /** Whether it is the whole the other columns are parts of, which is set in a heavier hand. */
+  readonly whole?: boolean;
+}
+
+interface FiguresTableProps {
+  /** What tells one row from another, one per bucket. */
+  readonly keys: readonly string[];
+  readonly labels: readonly string[];
+  readonly granularity: Granularity;
+  /** The columns, in the order they are read. */
+  readonly columns: readonly Column[];
+  /** The first bucket still being judged, or nothing when every figure in the table is settled. */
+  readonly stillJudging: number | null;
+}
+
+/** The figures a picture was drawn from, as a table with a row a bucket. */
+function FiguresTable({ keys, labels, granularity, columns, stillJudging }: FiguresTableProps) {
+  const t = useTranslations('dashboard.chart');
+  const format = useFormatter();
+
+  return (
+    <Figures label={t('table')}>
+      <thead className="text-xs text-foreground-subtle">
+        <tr>
+          <th scope="col" className={`${CELL} font-medium`}>
+            {granularity === 'day' ? t('columnDay') : t('columnHour')}
+          </th>
+          {columns.map((column) => (
+            <th key={column.key} scope="col" className={`${CELL} text-right font-medium`}>
+              {column.name}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody className="text-foreground-muted">
+        {keys.map((key, at) => (
+          <tr key={key} className="border-t border-border">
+            <BucketHeading
+              label={labels[at]}
+              filling={stillJudging !== null && at >= stillJudging}
+            />
+            {columns.map((column) => (
+              <td
+                key={column.key}
+                className={column.whole ? `${FIGURE} font-medium text-foreground` : FIGURE}
+              >
+                {count(column.values[at], format)}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </Figures>
+  );
+}
+
+interface BucketHeadingProps {
+  readonly label: string | undefined;
+  /** Whether the bucket is one of those still being judged. */
+  readonly filling: boolean;
+}
+
+/** A row's bucket, marked beneath where that bucket has not finished being judged. */
+function BucketHeading({ label, filling }: BucketHeadingProps) {
+  const t = useTranslations('dashboard.chart');
+
+  return (
+    <th scope="row" className="py-1.5 pr-3 font-normal last:pr-0 sm:pr-4">
+      <span className="whitespace-nowrap">{label}</span>
+      {/*
+        Beneath the bucket rather than beside it. Said inline it would set the width of the first
+        column for every row in the table, on account of the one or two rows that carry it.
+      */}
+      {filling ? (
+        <span className="block whitespace-nowrap text-xs text-foreground-subtle">
+          {t('who.stillJudging')}
+        </span>
+      ) : null}
+    </th>
+  );
+}
+
+/** Two measures of a period, in the order they are drawn, keyed and tabled. */
+function measured(
+  names: readonly [string, string],
+  first: readonly number[],
+  second: readonly number[],
+): readonly [Measure, Measure] {
+  return [
+    { name: names[0], values: first },
+    { name: names[1], values: second },
+  ];
+}
+
+/** Two measures as the columns of a table, with the period before's beside them where drawn. */
+function measureColumns(
+  measures: readonly [Measure, Measure],
+  earlier: readonly [Measure, Measure] | undefined,
+): readonly Column[] {
+  return (earlier ? [...measures, ...earlier] : measures).map((measure) => ({
+    ...measure,
+    key: measure.name,
+  }));
+}
+
+/**
+ * The key above two measures, each in the chart's own colour for it.
+ *
+ * The period before is keyed dashed in the same two colours, so that the pair a rise or a fall is
+ * read off is a pair in the key as well.
+ */
+function measureKeys(
+  measures: readonly [Measure, Measure],
+  earlier: readonly [Measure, Measure] | undefined,
+): readonly ChartKey[] {
+  return [
+    { fill: 'bg-chart-1', label: measures[0].name },
+    { fill: 'bg-chart-2', label: measures[1].name },
+    ...(earlier
+      ? [
+          { fill: 'bg-chart-1', label: earlier[0].name, dashed: true },
+          { fill: 'bg-chart-2', label: earlier[1].name, dashed: true },
+        ]
+      : []),
+  ];
 }
 
 /** Stands in for a bucket that the period being compared with never had. */

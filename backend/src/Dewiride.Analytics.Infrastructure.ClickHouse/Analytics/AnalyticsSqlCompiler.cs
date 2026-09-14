@@ -387,68 +387,80 @@ public static class AnalyticsSqlCompiler
         """;
 
     /// <summary>
-    /// A window's judged visits, reduced to one verdict each and narrowed to what a verdict holds.
+    /// The visit list, for a narrowing the stored verdicts answer on their own.
     /// </summary>
     /// <remarks>
-    /// Everything up to the slice, because both shapes of the visit list end the same way and only
-    /// one of them has anything to say between the narrowing and the ordering.
+    /// <para>
+    /// The slice is taken first, from the verdicts alone, and the count of the whole narrowed
+    /// window is worked out inside it before the slice is cut. The activity behind the visits on
+    /// that page is then read from a day before the earliest of them began to a day after the latest
+    /// of them ended, rebuilt into what each visit was, and joined on the identity the engine
+    /// derives. The store writes the page out wherever it is named — once for the rows and once
+    /// for each end of its span — which is three bounded, indexed reads of verdicts; the activity
+    /// behind the page is rebuilt once.
+    /// </para>
+    /// <para>
+    /// A left join, so a visit whose activity has aged out of the store is still listed, saying
+    /// nothing about itself: every column the rebuild would have filled reads as empty, which is
+    /// the answer the panel opened from that visit gives too. The rows are put back in order
+    /// after the join, because a join keeps no promise about the order it hands rows on in.
+    /// </para>
     /// </remarks>
-    private const string JudgedVisits = """
+    private static readonly string JudgedVerdicts = $$"""
+        WITH
+            page AS
+            (
+                SELECT
+                    {{VerdictColumns(12)}},
+                    toInt64(count() OVER ()) AS total_visits
+                FROM
+                {{OneVerdictPerVisit(8)}}
+                {{VerdictConditions(8)}}
+                ORDER BY started_at DESC, session_key
+                LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+            ),
+            span AS
+            (
+                SELECT
+                    toUnixTimestamp64Milli(min(started_at)) AS earliest_ms,
+                    toUnixTimestamp64Milli(max(ended_at)) AS latest_ms
+                FROM page
+            ),
+            {{JudgedVisitDetails.OfThePage}}
         SELECT
-            session_key,
-            started_at,
-            ended_at,
-            page_count,
-            surfaces,
-            category,
-            strength,
-            ruleset_major,
-            ruleset_minor,
-            signal_codes,
-            signal_directions,
-            signal_weights,
-            signal_supporting,
-            signal_parameters,
-            toInt64(count() OVER ()) AS total_visits
-        FROM
-        (
-            SELECT *
-            FROM session_classifications
-            WHERE site_id = {site_id:UUID}
-              AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-              AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
-            ORDER BY ruleset_major DESC, ruleset_minor DESC, classified_at DESC
-            LIMIT 1 BY session_key
-        )
-        WHERE (empty({categories:Array(String)}) OR toString(category) IN {categories:Array(String)})
-          AND (empty({strengths:Array(String)}) OR toString(strength) IN {strengths:Array(String)})
-          AND page_count >= {least_pages:UInt32}
-        """;
-
-    /// <summary>Which of the narrowed visits a slice holds, in the order that makes slices agree.</summary>
-    private const string JudgedSlice = """
+            {{VerdictColumns(4)}},
+            total_visits,
+            {{ContextColumns(4)}}
+        FROM page
+        LEFT JOIN described USING (session_key)
         ORDER BY started_at DESC, session_key
-        LIMIT {limit:UInt32} OFFSET {offset:UInt32}
         """;
-
-    /// <summary>The whole statement for a narrowing the stored verdicts answer on their own.</summary>
-    private const string JudgedVerdicts = $"{JudgedVisits}\n{JudgedSlice}";
 
     /// <summary>
-    /// The same, with the rebuild in front of it and the nine conditions only the visits themselves
-    /// can answer.
+    /// The visit list, for a narrowing that also asks what the visits themselves were.
     /// </summary>
     /// <remarks>
-    /// The further condition sits in the same outer selection as the other three, so it still
-    /// applies after each visit has been reduced to one verdict and the count still describes the
-    /// narrowed list rather than the whole window.
+    /// <para>
+    /// The whole period is rebuilt in front of it, because a visit has to be described before it
+    /// can be kept or dropped by what it was. The nine conditions only the visits themselves can
+    /// answer are applied to that rebuild, and the verdicts are joined to what survives them — an
+    /// inner join, which both keeps the visits asked for and carries what each of them was, so
+    /// the period is rebuilt once and named once.
+    /// </para>
+    /// <para>
+    /// The three conditions a verdict answers on its own stay on the outer selection, after each
+    /// visit has been reduced to one verdict, so a visit is kept or dropped on the verdict a
+    /// reader would be shown and the count still describes the narrowed list.
+    /// </para>
     /// </remarks>
     private static readonly string JudgedVerdictsByDetail = $$"""
         WITH
             {{JudgedVisitDetails.Fragment}},
             narrowed AS
             (
-                SELECT session_key
+                SELECT
+                    session_key,
+                    {{ContextColumns(12)}}
                 FROM described
                 WHERE (empty({devices:Array(String)}) OR device IN {devices:Array(String)})
                   AND (empty({source_kinds:Array(String)}) OR from_kind IN {source_kinds:Array(String)})
@@ -460,10 +472,104 @@ public static class AnalyticsSqlCompiler
                   AND (empty({sources:Array(String)}) OR from_site IN {sources:Array(String)})
                   AND (empty({entry_pages:Array(String)}) OR entry_path IN {entry_pages:Array(String)})
             )
-        {{JudgedVisits}}
-          AND session_key IN (SELECT session_key FROM narrowed)
-        {{JudgedSlice}}
+        SELECT
+            {{VerdictColumns(4)}},
+            toInt64(count() OVER ()) AS total_visits,
+            {{ContextColumns(4)}}
+        FROM
+        {{OneVerdictPerVisit(0)}} AS judged
+        INNER JOIN narrowed USING (session_key)
+        {{VerdictConditions(0)}}
+        ORDER BY started_at DESC, session_key
+        LIMIT {limit:UInt32} OFFSET {offset:UInt32}
         """;
+
+    /// <summary>
+    /// The fourteen columns a verdict is read back from, in the order the reader takes them.
+    /// </summary>
+    /// <param name="indent">The column the calling statement lays the list out at.</param>
+    /// <returns>The columns, one per line.</returns>
+    private static string VerdictColumns(int indent) =>
+        Listed(
+            indent,
+            "session_key",
+            "started_at",
+            "ended_at",
+            "page_count",
+            "surfaces",
+            "category",
+            "strength",
+            "ruleset_major",
+            "ruleset_minor",
+            "signal_codes",
+            "signal_directions",
+            "signal_weights",
+            "signal_supporting",
+            "signal_parameters");
+
+    /// <summary>
+    /// The eight columns the account of what a visit was is read back from, in the order the
+    /// reader takes them — the same order the opened visit's account is read in.
+    /// </summary>
+    /// <param name="indent">The column the calling statement lays the list out at.</param>
+    /// <returns>The columns, one per line.</returns>
+    private static string ContextColumns(int indent) =>
+        Listed(
+            indent,
+            JudgedVisitDetails.Source,
+            JudgedVisitDetails.SourceKind,
+            JudgedVisitDetails.Country,
+            JudgedVisitDetails.Town,
+            JudgedVisitDetails.Network,
+            JudgedVisitDetails.Device,
+            JudgedVisitDetails.Browser,
+            JudgedVisitDetails.System);
+
+    /// <summary>Lays columns out one per line at a column, the first on the calling line.</summary>
+    /// <param name="indent">The column the calling statement lays the list out at.</param>
+    /// <param name="columns">The columns, each a fixed identifier written here and never by a caller.</param>
+    /// <returns>The list.</returns>
+    private static string Listed(int indent, params string[] columns) =>
+        string.Join($",\n{new string(' ', indent)}", columns);
+
+    /// <summary>
+    /// A window's judged visits reduced to one verdict each, under the newest ruleset that judged
+    /// it, as a selection to read from.
+    /// </summary>
+    /// <param name="indent">The column the calling statement places the opening bracket at.</param>
+    /// <returns>The selection, ready to place at that column.</returns>
+    private static string OneVerdictPerVisit(int indent)
+    {
+        var pad = new string(' ', indent);
+
+        return $$"""
+            (
+            {{pad}}    SELECT *
+            {{pad}}    FROM session_classifications
+            {{pad}}    WHERE site_id = {site_id:UUID}
+            {{pad}}      AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+            {{pad}}      AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+            {{pad}}    ORDER BY ruleset_major DESC, ruleset_minor DESC, classified_at DESC
+            {{pad}}    LIMIT 1 BY session_key
+            {{pad}})
+            """;
+    }
+
+    /// <summary>
+    /// The three conditions a verdict answers on its own, each empty set meaning "all of them".
+    /// </summary>
+    /// <param name="indent">The column the calling statement places the <c>WHERE</c> at.</param>
+    /// <returns>The conditions, ready to place at that column.</returns>
+    private static string VerdictConditions(int indent)
+    {
+        var pad = new string(' ', indent);
+
+        return $$"""
+            WHERE (empty({categories:Array(String)}) OR toString(category) IN {categories:Array(String)})
+            {{pad}}  AND (empty({strengths:Array(String)}) OR toString(strength) IN {strengths:Array(String)})
+            {{pad}}  AND page_count >= {least_pages:UInt32}
+            """;
+    }
 
     /// <summary>
     /// What each detail of a window's judged visits held, counted per visit.
@@ -658,9 +764,10 @@ public static class AnalyticsSqlCompiler
     /// states rather than papers over.
     /// </para>
     /// <para>
-    /// Two of them may then reach back into the activity behind those verdicts, because what a
-    /// visit was is a different thing from what it was concluded to be, is stored nowhere, and has
-    /// to be rebuilt before it can be asked about.
+    /// Two of them then reach back into the activity behind those verdicts — the list for every row
+    /// it shows, and both it and the facets for the whole period when what a visit was is what is
+    /// being asked — because what a visit was is a different thing from what it was concluded to
+    /// be, is stored nowhere, and has to be rebuilt before it can be shown or asked about.
     /// </para>
     /// </remarks>
     private static CompiledStatement? CompileFromVerdicts(TenantScope scope, AnalyticsQuery query) =>
@@ -865,7 +972,7 @@ public static class AnalyticsSqlCompiler
                         min(server_ts) AS first_seen,
                         max(server_ts) AS last_seen,
                         toUInt32(countIf(opens_page)) AS page_count,
-                        argMax(path, (server_ts, event_id)) AS current_path,
+                        {{LiveActivity.CurrentPage}} AS current_path,
                         groupArraySortedIf({max_requests:UInt32})(
                             (toUnixTimestamp64Milli(server_ts), path, status_code),
                             opens_page) AS requests,
@@ -1006,13 +1113,21 @@ public static class AnalyticsSqlCompiler
     }
 
     /// <summary>
-    /// Ranks the pages a site's visitors have been on in the last stretch of minutes.
+    /// Counts the visitors on each page of a site in the last stretch of minutes, the page holding
+    /// most first.
     /// </summary>
     /// <remarks>
-    /// How many visitors a page held is counted beside how often it was delivered, because a page
-    /// one visitor reloaded twenty times and a page twenty visitors opened are the same number and
-    /// not the same news. Both are counted the way the rest of the product counts a page, so this
-    /// list and the busiest-pages list for a longer period are answering with the same arithmetic.
+    /// <para>
+    /// Every visitor the window holds stands on one page — the page their most recent report named,
+    /// which is the page printed beside their row — and the pages are counted by how many visitors
+    /// stand on each. Gathered from the same population as the reading of who is here, on the same
+    /// terms, so the visitors across every page add up to the visitors seen; a list cut short at
+    /// its cap falls short of that figure by exactly the visitors on the pages it left out.
+    /// </para>
+    /// <para>
+    /// A report carrying no visitor key names nobody to place, and takes no part. How often pages
+    /// were delivered is the minute-by-minute reading's question.
+    /// </para>
     /// </remarks>
     private static CompiledStatement CompileSiteLivePages(TenantScope scope, SiteLivePagesQuery query)
     {
@@ -1024,25 +1139,23 @@ public static class AnalyticsSqlCompiler
                     "visitor_key",
                     "correlation_id",
                     "server_ts",
-                    "kind",
                     "path")}},
-                {{ReconciledEvents.Reconciliation}}
+                {{ReconciledEvents.Reconciliation}},
+                gathered AS
+                (
+                    SELECT
+                        visitor_key,
+                        {{LiveActivity.CurrentPage}} AS current_path
+                    FROM identified
+                    WHERE {{LiveActivity.EveryVisitor}}
+                    GROUP BY visitor_key
+                )
             SELECT
-                path,
-                toInt64(sum(page_views)) AS page_views,
-                toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS visitors
-            FROM
-            (
-                SELECT
-                    path,
-                    visitor_key,
-                    {{ReconciledEvents.DeliveredPageViews(8)}}
-                FROM identified
-                GROUP BY path, visitor_key
-            )
+                current_path AS path,
+                toInt64(count()) AS visitors
+            FROM gathered
             GROUP BY path
-            HAVING page_views > 0
-            ORDER BY page_views DESC, path
+            ORDER BY visitors DESC, path
             LIMIT {limit:UInt32}
             {{LiveActivity.WithinTheBeat}}
             """;
@@ -1633,16 +1746,18 @@ public static class AnalyticsSqlCompiler
             sql,
             [.. WindowParameters(scope, query.Range), new QueryParameter(TimeZoneParameter, scope.TimeZoneId)]);
     }
+
     /// <summary>
-    /// Returns individual judged visits with the evidence behind each verdict.
+    /// Returns individual judged visits, each with the evidence behind its verdict and what the
+    /// visit itself was.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Two statements rather than one, chosen by what the caller narrowed to. Everything a verdict
-    /// itself holds is a condition on rows the store already has; anything about the activity behind
-    /// a verdict has to be rebuilt from events before it can be compared against anything, and
-    /// rebuilding unconditionally would charge every reader of the ordinary list for work nobody
-    /// asked for.
+    /// Two statements rather than one, chosen by what the caller narrowed to. Every row carries
+    /// what the visit was, and that is rebuilt from activity rather than stored — so the ordinary
+    /// list rebuilds the visits on the page it is showing, bounded to that page's own span, while
+    /// a list narrowed by what a visit was has to rebuild the whole period before it can narrow at
+    /// all, and takes each row's account from that same rebuild rather than paying twice.
     /// </para>
     /// <para>
     /// Within each shape the text does not vary, which is what keeps one plan for the store to reuse
@@ -1684,21 +1799,29 @@ public static class AnalyticsSqlCompiler
     /// The count of the whole window is taken after the narrowing for the same reason: a list that
     /// says how far through it somebody is has to be counting the list they are looking at.
     /// </para>
+    /// <para>
+    /// The slice is taken first, from the verdicts alone; the activity behind it is then read from
+    /// a day before the earliest visit on it began to a day after the latest one ended, and joined
+    /// on the identity the engine derives. It is a left join: a visit whose activity has aged out
+    /// is still listed, saying nothing about itself, which is the answer the panel opened from it
+    /// gives too.
+    /// </para>
     /// </remarks>
     /// <param name="scope">The authorisation decision the statement is bound to.</param>
     /// <param name="query">The question.</param>
     /// <returns>The statement and its bound values.</returns>
     private static CompiledStatement CompileJudgedByVerdict(TenantScope scope, JudgedSessionsQuery query) =>
-        new(JudgedVerdicts, VerdictNarrowing(scope, query));
+        new(JudgedVerdicts, [.. VerdictNarrowing(scope, query), .. RebuildParameters(query)]);
 
     /// <summary>
     /// The shape for a narrowing that also asks what the visits themselves were.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The shape above with the rebuild in front of it and one further condition on the same outer
-    /// selection — so the narrowing still applies after each visit has been reduced to one verdict,
-    /// and the count still describes the list the reader is looking at.
+    /// The rebuild in front, over the whole period, and the verdicts joined to the narrowed
+    /// rebuild — which both keeps the visits asked for and describes them, so the period is
+    /// rebuilt once and named once. The narrowing on the verdict still applies after each visit
+    /// has been reduced to one, and the count still describes the list the reader is looking at.
     /// </para>
     /// <para>
     /// The nine conditions are written out whatever was asked for, each empty set meaning "all of
@@ -1719,12 +1842,22 @@ public static class AnalyticsSqlCompiler
             JudgedVerdictsByDetail,
             [
                 .. VerdictNarrowing(scope, query),
-                .. CatalogueParameters(query.SiteDomain),
-                .. NetworkNames(),
-                new QueryParameter(IdleParameter, (long)query.IdleTimeout.TotalSeconds),
-                LongestVisit(),
+                .. RebuildParameters(query),
                 .. DetailNarrowing(query.Narrowing),
             ]);
+
+    /// <summary>
+    /// What the rebuild needs bound, which every shape of the list carries.
+    /// </summary>
+    /// <param name="query">The question.</param>
+    /// <returns>The two catalogues, what counts as one visit, and how long a visit can be.</returns>
+    private static QueryParameter[] RebuildParameters(JudgedSessionsQuery query) =>
+    [
+        .. CatalogueParameters(query.SiteDomain),
+        .. NetworkNames(),
+        new QueryParameter(IdleParameter, (long)query.IdleTimeout.TotalSeconds),
+        LongestVisit(),
+    ];
 
     /// <summary>
     /// Counts what each detail of a window's judged visits held.

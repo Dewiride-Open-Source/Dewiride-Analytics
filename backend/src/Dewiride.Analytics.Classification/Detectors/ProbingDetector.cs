@@ -16,9 +16,11 @@ namespace Dewiride.Analytics.Classification.Detectors;
 /// </para>
 /// <para>
 /// The paths matched below are the ones that only appear in an automated sweep. None of them is
-/// reachable by following a link on an ordinary site, so a request for one is not a mistake
-/// somebody made — but the visitor's own path is never carried into a signal parameter, because
-/// it is written by whoever is probing and has no business reaching a screen.
+/// reachable by following a link on an ordinary site, and a site that has one of them serves it
+/// only to its owner — so a request for one that the site refused is not a mistake somebody made,
+/// while one the site answered is the owner at their own door. The visitor's own path is never
+/// carried into a signal parameter, because it is written by whoever is probing and has no
+/// business reaching a screen.
 /// </para>
 /// </remarks>
 public sealed class ProbingDetector : IDetector
@@ -79,7 +81,7 @@ public sealed class ProbingDetector : IDetector
                 ("pageCount", Observed.Number(session.PageCount))));
         }
 
-        var intrusive = session.Requests.Count(request => IsSoughtByIntruders(request.Path));
+        var intrusive = session.Requests.Count(request => IsSoughtByIntruders(request.Path) && Refused(request));
 
         if (intrusive > 0)
         {
@@ -95,4 +97,16 @@ public sealed class ProbingDetector : IDetector
 
     private static bool IsSoughtByIntruders(string path) =>
         SoughtByIntruders.Any(fragment => path.Contains(fragment, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Whether the site declined to serve the request.
+    /// </summary>
+    /// <remarks>
+    /// A site's own owner asks for exactly the paths a sweep asks for — the login page, the
+    /// administration panel — and the difference is that the site answers them. A refusal is read
+    /// as the sweep it usually is. No status at all means no request-path surface saw the page and
+    /// only the page's own browser reported it, which is a page that was served and rendered far
+    /// enough to run the tracker: the owner at their own door, never a sweep, which executes nothing.
+    /// </remarks>
+    private static bool Refused(ObservedRequest request) => request.StatusCode is >= 400;
 }

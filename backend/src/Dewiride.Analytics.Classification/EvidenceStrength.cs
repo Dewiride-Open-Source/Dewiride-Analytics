@@ -39,8 +39,8 @@ public enum EvidenceStrength
     Moderate = 2,
 
     /// <summary>
-    /// Multiple independent signals agree, including at least one that is difficult to
-    /// produce accidentally.
+    /// Several independent signals agree — three of them, or two with one that is difficult to
+    /// produce accidentally — and nothing troubling points the other way.
     /// </summary>
     Strong = 3,
 

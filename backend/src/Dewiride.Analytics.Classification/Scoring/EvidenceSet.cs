@@ -61,4 +61,11 @@ public sealed class EvidenceSet
     /// <returns>The weight.</returns>
     public int HeaviestPointing(SignalDirection direction) =>
         All.Where(signal => signal.Direction == direction).Select(signal => signal.Weight).DefaultIfEmpty(0).Max();
+
+    /// <summary>How many observations point a given way and weigh at least a given amount.</summary>
+    /// <param name="direction">The direction.</param>
+    /// <param name="atLeast">The least weight an observation must carry to be counted.</param>
+    /// <returns>The count.</returns>
+    public int CountPointing(SignalDirection direction, int atLeast) =>
+        All.Count(signal => signal.Direction == direction && signal.Weight >= atLeast);
 }

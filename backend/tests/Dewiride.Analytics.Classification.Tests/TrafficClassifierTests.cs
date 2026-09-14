@@ -25,6 +25,124 @@ public sealed class TrafficClassifierTests
     }
 
     /// <summary>
+    /// Somebody who read for most of a minute, scrolled most of the way down and used a pointer
+    /// has done three things that each had to be produced, and is stated firmly.
+    /// </summary>
+    [Fact]
+    public void Somebody_Reading_Scrolling_And_Clicking_Is_Stated_Firmly()
+    {
+        var verdict = Engine.Classify(Visits.AReader());
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Strong);
+    }
+
+    /// <summary>
+    /// The visit this product was flattering in the field: one page, the tracker ran, and nothing
+    /// else was seen. A browser under a script does exactly this, so the honest answer is that
+    /// nothing was settled — never a person on slight signs.
+    /// </summary>
+    [Fact]
+    public void One_Page_Whose_Browser_Ran_The_Tracker_And_Nothing_Else_Is_Answered_As_Could_Not_Be_Told()
+    {
+        var verdict = Engine.Classify(Visits.AGlance());
+
+        verdict.Category.Should().Be(TrafficCategory.Unknown);
+        verdict.Strength.Should().Be(EvidenceStrength.Weak);
+        verdict.Supporting.Select(signal => signal.Code).Should().Equal(SignalCodes.ScriptExecuted);
+    }
+
+    [Fact]
+    public void A_Page_Somebody_Scrolled_Is_A_Person()
+    {
+        var verdict = Engine.Classify(Visits.AGlance() with { MaxScrollDepthPercent = 60 });
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+    }
+
+    [Fact]
+    public void A_Page_Somebody_Read_For_A_While_Is_A_Person()
+    {
+        var verdict = Engine.Classify(Visits.AGlance() with { EngagedMs = 16_000 });
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+    }
+
+    /// <summary>
+    /// Whatever a person did, the engine either says so with some evidence behind it or does not
+    /// say so at all.
+    /// </summary>
+    [Fact]
+    public void A_Person_Is_Never_Reported_On_Slight_Signs()
+    {
+        SessionEvidence[] readers =
+        [
+            Visits.AReader(),
+            Visits.AGlance(),
+            Visits.AGlance() with { MaxScrollDepthPercent = 60 },
+            Visits.AGlance() with { EngagedMs = 16_000 },
+            Visits.AGlance() with { HadPointerInteraction = true },
+            Visits.AGlance() with { EngagedMs = 3_000 },
+        ];
+
+        foreach (var reader in readers)
+        {
+            var verdict = Engine.Classify(reader);
+
+            if (verdict.Category == TrafficCategory.LikelyHuman)
+            {
+                verdict.Strength.Should().BeOneOf(EvidenceStrength.Moderate, EvidenceStrength.Strong);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A visitor that introduces itself as a crawler under a name nobody has catalogued is a
+    /// crawler, and is said to be one without the name it used being repeated.
+    /// </summary>
+    [Fact]
+    public void A_Crawler_Naming_Itself_Only_As_A_Crawler_Is_Called_A_Crawler()
+    {
+        var verdict = Engine.Classify(Visits.ANamelessCrawler());
+
+        verdict.Category.Should().Be(TrafficCategory.GenericWebCrawler);
+        verdict.Supporting.Should().ContainSingle(signal => signal.Code == SignalCodes.DeclaredGenericCrawler)
+            .Which.Parameters.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_Nameless_Crawler_That_Also_Read_A_Page_Is_Still_A_Crawler()
+    {
+        var busy = Visits.ANamelessCrawler() with
+        {
+            Surfaces = [IngestSurface.CloudflareWorker, IngestSurface.BrowserTracker],
+            EngagedMs = 30_000,
+            MaxScrollDepthPercent = 90,
+        };
+
+        var verdict = Engine.Classify(busy);
+
+        verdict.Category.Should().Be(TrafficCategory.GenericWebCrawler);
+        verdict.Contradicting.Should().NotBeEmpty();
+    }
+
+    /// <summary>
+    /// The paths a sweep asks for are the paths a site's owner asks for too. The difference is
+    /// that the site answers the owner, and a request the site served is not probing.
+    /// </summary>
+    [Fact]
+    public void A_Site_Owner_Signing_In_Is_Not_Probing_For_A_Way_In()
+    {
+        var verdict = Engine.Classify(Visits.AnOwnerSigningIn());
+
+        verdict.Category.Should().NotBe(TrafficCategory.SecurityScanner);
+        verdict.Supporting.Should().NotContain(signal => signal.Code == SignalCodes.SensitivePaths);
+        verdict.Contradicting.Should().NotContain(signal => signal.Code == SignalCodes.SensitivePaths);
+    }
+
+    /// <summary>
     /// The rule the whole product rests on. A user agent is one line of text the visitor writes
     /// itself, so a name that has not been checked against the operator's published addresses is
     /// a claim — and the category has to keep saying so.
@@ -53,8 +171,11 @@ public sealed class TrafficClassifierTests
         SessionEvidence[] everything =
         [
             Visits.AReader(),
+            Visits.AGlance(),
             Visits.AScanner(),
             Visits.Anonymous(),
+            Visits.ANamelessCrawler(),
+            Visits.AnOwnerSigningIn(),
             Visits.ANamedCrawler("Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)"),
             Visits.ANamedCrawler("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"),
         ];

@@ -30,6 +30,22 @@ public sealed class CatalogueTests
     [InlineData("Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)", "Ahrefs", "AhrefsBot")]
     [InlineData("Mozilla/5.0 (compatible; Baiduspider/2.0; +http://www.baidu.com/search/spider.html)", "Baidu", "Baiduspider")]
     [InlineData("DuckDuckBot/1.1; (+http://duckduckgo.com/duckduckbot.html)", "DuckDuckGo", "DuckDuckBot")]
+    [InlineData("Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)", "Semrush", "SemrushBot")]
+    [InlineData("Mozilla/5.0 (compatible; SiteAuditBot/0.97; +http://www.semrush.com/bot.html)", "Semrush", "SiteAuditBot")]
+    [InlineData("Mozilla/5.0 (compatible; MJ12bot/v1.4.8; http://mj12bot.com/)", "Majestic", "MJ12bot")]
+    [InlineData("Mozilla/5.0 (compatible; DotBot/1.2; +https://opensiteexplorer.org/dotbot; help@moz.com)", "Moz", "DotBot")]
+    [InlineData("Mozilla/5.0 (compatible; Pinterestbot/1.0; +https://www.pinterest.com/bot.html)", "Pinterest", "Pinterestbot")]
+    [InlineData("Mozilla/5.0 (compatible; Yahoo! Slurp; http://help.yahoo.com/help/us/ysearch/slurp)", "Yahoo", "Yahoo! Slurp")]
+    [InlineData("Mozilla/5.0 (compatible; SeznamBot/4.0; +https://o-seznam.cz/napoveda/vyhledavani/en/seznambot-crawler/)", "Seznam", "SeznamBot")]
+    [InlineData("Mozilla/5.0 (compatible; coccocbot-web/1.0; +http://help.coccoc.com/searchengine)", "Cốc Cốc", "coccocbot")]
+    [InlineData("Mozilla/5.0 (compatible; coccocbot-ads/1.0; +http://help.coccoc.com/searchengine)", "Cốc Cốc", "coccocbot-ads")]
+    [InlineData("Mozilla/5.0+(compatible; UptimeRobot/2.0; http://www.uptimerobot.com/)", "UptimeRobot", "UptimeRobot")]
+    [InlineData("Pingdom.com_bot_version_1.4_(http://www.pingdom.com/)", "Pingdom", "Pingdom.com_bot")]
+    [InlineData("Mozilla/5.0 (X11; Linux x86_64) StatusCake/1.0", "StatusCake", "StatusCake")]
+    [InlineData("Better Stack Better Uptime Bot Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36", "Better Stack", "Better Uptime Bot")]
+    [InlineData("Mozilla/5.0 (compatible; DataForSeoBot; +https://dataforseo.com/dataforseo-bot)", "DataForSEO", "DataForSeoBot")]
+    [InlineData("Mozilla/5.0 (compatible; barkrowler/0.9; +https://babbar.tech/crawler)", "Babbar", "barkrowler")]
+    [InlineData("FeedFetcher-Google; (+http://www.google.com/feedfetcher.html)", "Google", "FeedFetcher-Google")]
     public void A_Crawler_Is_Attributed_To_The_Operator_That_Publishes_It(
         string userAgent,
         string expectedOperator,

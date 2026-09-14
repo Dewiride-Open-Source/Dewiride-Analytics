@@ -59,6 +59,16 @@ const READER = {
       values: { pageCount: '3' },
     },
   ],
+  context: {
+    source: 'Google',
+    kind: 'search',
+    countryCode: 'IN',
+    town: 'Jaipur',
+    network: 'Reliance Jio Infocomm Limited',
+    device: 'phone',
+    browser: 'Firefox',
+    system: 'Android',
+  },
 };
 
 const CRAWLER = {
@@ -80,6 +90,53 @@ const CRAWLER = {
     { code: 'identity.unverified_claim', direction: 'neutral', weight: 0, values: {} },
   ],
   contradicting: [],
+  context: {
+    source: '',
+    kind: 'direct',
+    countryCode: 'US',
+    town: '',
+    network: 'Amazon Web Services',
+    device: 'unknown',
+    browser: '',
+    system: '',
+  },
+};
+
+/** A crawler whose operator vouched for the address, seen only by the website's own server. */
+const VERIFIED = {
+  id: 'visit-verified',
+  startedAt: '2026-08-17T06:40:00+00:00',
+  endedAt: '2026-08-17T06:41:00+00:00',
+  pageCount: 12,
+  surfaces: ['wordpress-plugin'],
+  category: 'known-search-crawler',
+  strength: 'verified',
+  ruleset: '9.0',
+  supporting: [
+    {
+      code: 'identity.declared_crawler',
+      direction: 'toward-automation',
+      weight: 70,
+      values: { operator: 'Google', token: 'Googlebot', purpose: 'search-index' },
+    },
+    {
+      code: 'identity.confirmed_crawler',
+      direction: 'toward-automation',
+      weight: 100,
+      values: { operator: 'Google', purpose: 'search-index' },
+    },
+  ],
+  contradicting: [],
+  context: {
+    source: '',
+    kind: 'direct',
+    countryCode: '',
+    town: '',
+    network: '',
+    device: 'unknown',
+    browser: '',
+    system: '',
+  },
 };
 
 /** The pages one opened visit turns out to have gone through. */
@@ -231,6 +288,21 @@ function askedWhatIsHere(sent: readonly Sent[]): string[] {
   return sent.map((one) => one.path).filter((path) => path.includes('/visits/facets'));
 }
 
+/**
+ * The shut row of one visit, found by its page count, which is the one thing every row says.
+ *
+ * What the row says before it is opened is the point of the row, so a test about it looks inside
+ * the row alone: the same name or town found in the evidence beneath would pass for the wrong
+ * reason.
+ */
+async function rowSaying(pages: string): Promise<HTMLElement> {
+  const row = (await screen.findByText(pages)).closest('summary');
+
+  expect(row).not.toBeNull();
+
+  return row as HTMLElement;
+}
+
 /** Opens one of the controls that narrows the list by something about the visit. */
 async function open(filter: string) {
   await userEvent.click(screen.getByRole('button', { name: filter }));
@@ -376,13 +448,123 @@ describe('the user journey screen', () => {
     expect(journeys.asked).toBe(0);
   });
 
-  it('shows nothing the engine calls by a name of its own', async () => {
+  /**
+   * The name is on the row only once the company behind it has vouched for the address. A name
+   * any visitor can claim stays inside the opened row, beside the sentence saying it was claimed.
+   */
+  it('names a crawler on the row once the name has been confirmed', async () => {
+    engineWith(GROUPS, [VERIFIED]);
+
+    show();
+
+    expect(within(await rowSaying('12 pages')).getByText('Googlebot')).toBeInTheDocument();
+  });
+
+  it('shows no name for a crawler that only claimed one', async () => {
+    engineWith(GROUPS, [CRAWLER]);
+
+    show();
+
+    await screen.findByText('64 pages');
+
+    expect(screen.queryByText('GPTBot')).not.toBeInTheDocument();
+  });
+
+  it('says on the row where each visit came from', async () => {
     engineWith(GROUPS, [READER, CRAWLER]);
+
+    show();
+
+    expect(within(await rowSaying('3 pages')).getByText('From Google')).toBeInTheDocument();
+    expect(within(await rowSaying('64 pages')).getByText('Came straight here')).toBeInTheDocument();
+  });
+
+  it('says roughly where a visit was and what it was read on, without opening it', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    const row = within(await rowSaying('3 pages'));
+
+    expect(row.getByText('Jaipur, India')).toBeInTheDocument();
+    expect(row.getByText('Via Reliance Jio Infocomm Limited')).toBeInTheDocument();
+    expect(row.getByText('Firefox on Android')).toBeInTheDocument();
+  });
+
+  /**
+   * The row's line is only for a shut row. Opening it lays the same facts out in full an inch
+   * below, and a screen that says "Jaipur, India" twice in two lines reads as a mistake.
+   */
+  it('puts the facts away while the row is open and brings them back when it is shut', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    const row = within(await rowSaying('3 pages'));
+
+    expect(row.getByText('Jaipur, India')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('3 pages'));
+
+    expect(row.queryByText('Jaipur, India')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('3 pages'));
+
+    expect(row.getByText('Jaipur, India')).toBeInTheDocument();
+  });
+
+  /**
+   * A visit nothing was established about — one whose activity has aged out, or one nothing
+   * placed — still says how it arrived, because a visit that named nowhere came straight here,
+   * and says nothing else rather than a line of absences.
+   */
+  it('says only that a visit came straight here where nothing else was established', async () => {
+    engineWith(GROUPS, [VERIFIED]);
+
+    show();
+
+    const row = within(await rowSaying('12 pages'));
+
+    expect(row.getByText('Came straight here')).toBeInTheDocument();
+    expect(row.queryByText(/Via /)).not.toBeInTheDocument();
+    expect(row.queryByText('Not known')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Each licence asks for a link back wherever its results appear. The panel that offers the
+   * countries and networks a period held is one such place and the foot of a list naming them is
+   * another, so each is credited twice on a screen showing both.
+   */
+  it('credits the data behind the rows', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+
+    expect(screen.getAllByRole('link', { name: 'DB-IP' })).toHaveLength(2);
+    expect(screen.getAllByRole('link', { name: 'iptoasn.com' })).toHaveLength(2);
+  });
+
+  it('credits nothing under a list nothing was placed in', async () => {
+    engineWith(GROUPS, [VERIFIED]);
+
+    show();
+
+    await screen.findByText('12 pages');
+
+    expect(screen.getAllByRole('link', { name: 'DB-IP' })).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: 'iptoasn.com' })).toHaveLength(1);
+  });
+
+  it('shows nothing the engine calls by a name of its own', async () => {
+    engineWith(GROUPS, [READER, CRAWLER, VERIFIED]);
 
     show();
 
     await userEvent.click(await screen.findByText('3 pages'));
     await userEvent.click(await screen.findByText('64 pages'));
+    await userEvent.click(await screen.findByText('12 pages'));
 
     const shown = document.body.textContent ?? '';
 
@@ -390,7 +572,10 @@ describe('the user journey screen', () => {
       'suspected-ai-crawler',
       'likely-human',
       'security-scanner',
+      'known-search-crawler',
       'identity.declared_crawler',
+      'identity.confirmed_crawler',
+      'search-index',
       'browser.script_executed',
       'toward-automation',
       'nextjs-middleware',

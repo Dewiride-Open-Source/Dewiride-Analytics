@@ -3,37 +3,42 @@ import type { Drawing } from '@/lib/charts/drawing';
 import { chartFrame } from '@/lib/charts/frame';
 import { ghostSeries } from '@/lib/charts/ghost';
 import type { ChartPalette } from '@/lib/charts/palette';
+import { quietened, washOver } from '@/lib/charts/wash';
 
-/** How much of a website was read over a period, ready to be drawn. */
+/** One thing counted across a period, named in the reader's own language. */
+export interface Measure {
+  readonly name: string;
+  readonly values: readonly number[];
+}
+
+/** Two measures of how much of a website was read over a period, ready to be drawn. */
 export interface ActivityChart {
   /** What each bucket is called, in the website's own zone. */
   readonly labels: readonly string[];
-  /** What the two measures are called, which depends on how wide a bucket is. */
-  readonly names: readonly [string, string];
-  readonly pageViews: readonly number[];
-  readonly visitors: readonly number[];
+  /** The two measures, in the order they are keyed and tabled. */
+  readonly measures: readonly [Measure, Measure];
   readonly drawing: Drawing;
-  /** The same two measures over the period before, where that is being drawn behind this one. */
-  readonly earlier?: EarlierActivity;
+  /**
+   * The first bucket still being judged, or nothing when every figure is settled — which
+   * everything recorded as it happened always is.
+   */
+  readonly stillJudging?: number | null;
+  /** The same two measures over the period before, where that is drawn behind this one. */
+  readonly earlier?: readonly [Measure, Measure];
 }
 
-/** How much was read over the period before, ready to be drawn behind the period being read. */
-export interface EarlierActivity {
-  /** What the two measures are called when they are the earlier period's. */
-  readonly names: readonly [string, string];
-  readonly pageViews: readonly number[];
-  readonly visitors: readonly number[];
-}
-
-/** Page views and visitors across a period. */
+/** Two measures across a period, each in the chart's own colour for it. */
 export function activityOption(chart: ActivityChart, palette: ChartPalette): EChartsCoreOption {
   const columns = chart.drawing === 'columns';
+  const stillJudging = chart.stillJudging ?? null;
+  const wash = columns ? undefined : washOver(chart.labels, stillJudging, palette);
 
   return {
     ...chartFrame(palette, chart.labels, columns),
     series: [
-      measure(chart.names[0], chart.pageViews, palette.series[0], chart.drawing),
-      measure(chart.names[1], chart.visitors, palette.series[1], chart.drawing),
+      measure(chart.measures[0], palette.series[0], chart.drawing, stillJudging),
+      measure(chart.measures[1], palette.series[1], chart.drawing, stillJudging),
+      ...(wash ? [wash] : []),
       ...ghosts(chart, palette),
     ],
   };
@@ -54,22 +59,11 @@ function ghosts(chart: ActivityChart, palette: ChartPalette): Record<string, unk
 
   const buckets = chart.labels.length;
   const smooth = curve(chart.drawing);
+  const [first, second] = earlier;
 
   return [
-    {
-      name: earlier.names[0],
-      values: earlier.pageViews,
-      colour: palette.series[0],
-      buckets,
-      smooth,
-    },
-    {
-      name: earlier.names[1],
-      values: earlier.visitors,
-      colour: palette.series[1],
-      buckets,
-      smooth,
-    },
+    { ...first, colour: palette.series[0], buckets, smooth },
+    { ...second, colour: palette.series[1], buckets, smooth },
   ].map((earlierMeasure) => ghostSeries(earlierMeasure));
 }
 
@@ -86,33 +80,38 @@ function curve(drawing: Drawing): number | false {
   return drawing === 'columns' ? false : CURVE;
 }
 
-/** One measure drawn across the period, in whichever style was asked for. */
+/**
+ * One measure drawn across the period, in whichever style was asked for.
+ *
+ * Drawn as columns, each bucket still being judged is faded on its own; drawn as a line or an
+ * area, the wash the option lays over the tail does the quietening instead.
+ */
 function measure(
-  name: string,
-  values: readonly number[],
+  one: Measure,
   colour: string,
   drawing: Drawing,
+  stillJudging: number | null,
 ): Record<string, unknown> {
   if (drawing === 'columns') {
     return {
-      name,
+      name: one.name,
       type: 'bar',
-      data: [...values],
+      data: quietened(one.values, stillJudging),
       itemStyle: { color: colour, borderRadius: [2, 2, 0, 0] },
       barMaxWidth: 22,
     };
   }
 
   return {
-    name,
+    name: one.name,
     type: 'line',
-    data: [...values],
+    data: [...one.values],
     smooth: CURVE,
     symbol: 'circle',
     symbolSize: 6,
     // A dot on every bucket of a quarter is a smear. They earn their place only where there are
     // few enough of them to point at one and read its figure.
-    showSymbol: values.length <= 14,
+    showSymbol: one.values.length <= 14,
     lineStyle: { width: 2, color: colour },
     itemStyle: { color: colour },
     areaStyle: drawing === 'area' ? { color: fade(colour) } : undefined,

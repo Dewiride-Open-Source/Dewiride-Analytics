@@ -82,6 +82,13 @@ internal static class ApiRegistration
         builder.Services.AddProblemDetails();
         builder.Services.AddOpenApi();
 
+        // A value the framework itself cannot read — a date that is not one, a number that is not
+        // one — is refused with a 400 wherever the product is running. The framework's own default
+        // throws instead while it is being developed, and the exception handler then answers the
+        // same request with a 500 on one machine and a 400 on another; a refusal whose status
+        // depends on where the product runs is not one a test can hold it to.
+        builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
+
         return builder;
     }
 

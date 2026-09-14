@@ -43,6 +43,38 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// <summary>The free-text narrowings a hostile value is proved to reach the store as a value.</summary>
     private static readonly string[] FreeTextNarrowings = ["towns", "browsers", "entry_pages"];
 
+    /// <summary>
+    /// How each of the eight facts about a visit is settled, exactly as the opened visit settles
+    /// it: the earliest report of the visit that carried one, and the network named from the
+    /// catalogue.
+    /// </summary>
+    private static readonly string[] ContextExpressions =
+    [
+        "argMinIf(source_site, (server_ts, event_id), sending_host != '') AS from_site",
+        "argMinIf(source_channel, (server_ts, event_id), sending_host != '') AS from_kind",
+        "argMinIf(country_code, (server_ts, event_id), country_code != '') AS country",
+        "argMinIf(city, (server_ts, event_id), city != '') AS town",
+        "argMinIf(network_owner, (server_ts, event_id), network_owner != '') AS network_owner",
+        """
+        argMinIf(
+                        toString(device_class),
+                        (server_ts, event_id),
+                        device_class != 'Unknown') AS device
+        """,
+        "argMinIf(browser_family, (server_ts, event_id), browser_family != '') AS browser",
+        """
+        argMinIf(
+                        operating_system,
+                        (server_ts, event_id),
+                        operating_system != '') AS system_name
+        """,
+        "network_owner)) AS network",
+    ];
+
+    /// <summary>The eight facts in the order every statement hands them back, which is the order the reader takes them in.</summary>
+    private static readonly string[] ContextColumns =
+        ["from_site", "from_kind", "country", "town", "network", "device", "browser", "system_name"];
+
     [Fact]
     public Task Overview()
     {
@@ -622,6 +654,66 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     /// <summary>
+    /// The page beside a visitor's row and the page they are counted under in the list of pages
+    /// being read are the same page, because both statements place a visitor by the same
+    /// expression over the same population. A visitor printed beside one page and counted under
+    /// another would be the four panels of the screen disagreeing in front of the customer.
+    /// </summary>
+    [Fact]
+    public void The_Pages_Being_Read_Place_Each_Visitor_Where_The_Row_Listing_Them_Does()
+    {
+        var rows = AnalyticsSqlCompiler.Compile(Scope(), LiveVisitors());
+        var pages = AnalyticsSqlCompiler.Compile(Scope(), new SiteLivePagesQuery(HalfHour(), 10));
+
+        foreach (var statement in new[] { rows, pages })
+        {
+            statement.Sql.Should().Contain("argMax(path, (server_ts, event_id)) AS current_path");
+            statement.Sql.Should().Contain("GROUP BY visitor_key");
+            statement.Sql.Should().Contain("WHERE visitor_key != ''");
+        }
+    }
+
+    /// <summary>
+    /// Each visitor stands on one page and the pages count visitors, so across every page they add
+    /// up to the visitors seen. Counting deliveries, or keeping a page only where something was
+    /// delivered, would break the sum in a way no test of the figures alone would catch.
+    /// </summary>
+    [Fact]
+    public void The_Pages_Being_Read_Add_Up_To_The_Visitors_Seen()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteLivePagesQuery(HalfHour(), 10));
+        var counted = statement.Sql[statement.Sql.IndexOf("FROM gathered", StringComparison.Ordinal)..];
+
+        counted.Should().Contain("GROUP BY path");
+        counted.Should().Contain("ORDER BY visitors DESC, path");
+        counted.Should().NotContain("HAVING");
+        statement.Sql.Should().Contain("toInt64(count()) AS visitors");
+        statement.Sql.Should().NotContain("page_views");
+        statement.Sql.Should().NotContain("uniqExact");
+    }
+
+    /// <summary>
+    /// A page both halves of the measurement saw is opened, in the live reading, by the sighting a
+    /// finished visit opens it with: the request path's, which is the one that knows what the site
+    /// answered. A rule that turns on whether a page was served then reaches the same conclusion
+    /// about a visitor while they are here as once they have gone.
+    /// </summary>
+    [Fact]
+    public void A_Live_Reading_Opens_A_Page_With_The_Sighting_A_Finished_Visit_Opens_It_With()
+    {
+        var rows = AnalyticsSqlCompiler.Compile(Scope(), LiveVisitors());
+        var journey = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200));
+
+        // The request path's sighting sorts first because the browser test sorts false before true.
+        rows.Sql.Should().Contain(
+            "ORDER BY surface IN ('BrowserTracker', 'NoScriptPixel'), kind != 'PageView', server_ts, event_id) = 1 AS opens_page");
+        journey.Sql.Should().Contain(
+            "ORDER BY is_second_sighting, kind != 'PageView', server_ts, event_id) = 1 AS opens_page");
+    }
+
+    /// <summary>
     /// A question the compiler has not been taught produces no statement rather than a partial one,
     /// and adding a group of them must not turn that into a statement that happens to compile.
     /// </summary>
@@ -891,8 +983,8 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// judged, and leave the same visit filed one way on a card and another way in this list.
     /// </summary>
     [Theory]
-    [InlineData("described AS")]
-    [InlineData("AND session_key IN (SELECT session_key FROM narrowed)")]
+    [InlineData("server_ts >= fromUnixTimestamp64Milli({from_ms:Int64} - {longest_visit_seconds:Int64} * 1000, 'UTC')")]
+    [InlineData("INNER JOIN narrowed USING (session_key)")]
     public void Narrowing_The_Visit_List_By_What_A_Visit_Was_Rebuilds_The_Period(string expected)
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail());
@@ -901,17 +993,125 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     /// <summary>
-    /// The ordinary list pays nothing for the nine narrowings it was not given. A rebuild is a
-    /// second reading of every event in the period rather than a condition on rows the store
-    /// already has, and doing it unconditionally would charge every reader for work nobody asked
-    /// for.
+    /// Every row says what its visit was, so the ordinary list rebuilds too — but only the visits
+    /// on the page it is showing. The slice of verdicts is taken first and the activity read is
+    /// bounded by that slice's own span, never by the period: a page of twenty-five visits costs
+    /// about two days of activity however long the period is.
     /// </summary>
     [Fact]
-    public void Narrowing_By_Nothing_A_Visit_Did_Rebuilds_Nothing()
+    public void The_Ordinary_List_Rebuilds_The_Page_It_Shows_And_Not_The_Period()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), Judged(10));
 
-        statement.Sql.Should().NotContain("described");
+        statement.Sql.Should().Contain("described AS");
+        statement.Sql.Should().Contain("(SELECT earliest_ms FROM span) - {longest_visit_seconds:Int64} * 1000");
+        statement.Sql.Should().Contain("(SELECT latest_ms FROM span) + {longest_visit_seconds:Int64} * 1000");
+        statement.Sql.Should().NotContain("{from_ms:Int64} - {longest_visit_seconds:Int64}");
+        statement.Sql.Should().NotContain("{to_ms:Int64} + {longest_visit_seconds:Int64}");
+    }
+
+    /// <summary>
+    /// The page's span is settled from the verdicts on it before any activity is read, and the
+    /// read reaches a day either side of that span — as long as a visit can be — so every visit on
+    /// the page is read whole. The reach is bound, never written in.
+    /// </summary>
+    [Fact]
+    public void The_Page_Is_Read_A_Day_Either_Side_Of_The_Visits_On_It()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), Judged(10));
+
+        statement.Sql.Should().Contain("toUnixTimestamp64Milli(min(started_at)) AS earliest_ms");
+        statement.Sql.Should().Contain("toUnixTimestamp64Milli(max(ended_at)) AS latest_ms");
+        statement.Parameters.Should().Contain(parameter =>
+            parameter.Name == "longest_visit_seconds" && (long)parameter.Value == 86400);
+    }
+
+    /// <summary>
+    /// The rebuild names two catalogues and what counts as one visit, and the ordinary list
+    /// carries the rebuild, so it binds all of them. A statement naming a placeholder nothing is
+    /// bound to is refused by the store outright.
+    /// </summary>
+    [Fact]
+    public void The_Ordinary_List_Binds_The_Catalogues_It_Names()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), Judged(10));
+
+        statement.Parameters.Select(parameter => parameter.Name).Should()
+            .Contain(["site_domain", "source_keys", "hosting_numbers", "idle_seconds", "longest_visit_seconds"]);
+    }
+
+    /// <summary>
+    /// The store writes a common table expression out again wherever it is named, so a period
+    /// rebuilt for narrowing and rebuilt a second time for describing would cost two rebuilds. The
+    /// narrowed list writes the rebuild once and joins the verdicts to it, so the rows are
+    /// described from the same rebuild that kept them.
+    /// </summary>
+    [Fact]
+    public void A_Narrowed_List_Rebuilds_The_Period_Once_And_Describes_Its_Rows_From_That_Rebuild()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail());
+
+        ActivityRead().Matches(statement.Sql).Should().ContainSingle();
+        statement.Sql.Should().NotContain("FROM span");
+        statement.Sql.Should().Contain("INNER JOIN narrowed USING (session_key)");
+    }
+
+    /// <summary>
+    /// The page is named once by the rows and once by each end of its span, but the rebuild of the
+    /// activity behind it is written once. Verdicts are a bounded, indexed read; a rebuild is not.
+    /// </summary>
+    [Fact]
+    public void The_Ordinary_List_Writes_One_Rebuild_Too()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), Judged(10));
+
+        ActivityRead().Matches(statement.Sql).Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// A visit whose activity has aged out of the store is still a visit that was judged, and the
+    /// list shows it, saying nothing about itself — which is what the panel opened from it says
+    /// too. Dropping it would make the count at the foot of the list disagree with the rows.
+    /// </summary>
+    [Fact]
+    public void Every_Listed_Visit_Is_Listed_Whether_Or_Not_Its_Activity_Remains()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), Judged(10));
+
+        statement.Sql.Should().Contain("LEFT JOIN described USING (session_key)");
+    }
+
+    /// <summary>
+    /// A row and the panel opened from it describe one visit, so both shapes of the list settle
+    /// each of the eight facts with the expression the opened visit settles it with, and hand them
+    /// back in the order the opened visit does. Two expressions for one fact would eventually name
+    /// a different browser on the row and under it.
+    /// </summary>
+    [Fact]
+    public void A_Listed_Visit_Is_Described_On_The_Same_Terms_As_The_Visit_Opened_From_It()
+    {
+        var journey = new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200);
+
+        CompiledStatement[] statements =
+        [
+            AnalyticsSqlCompiler.Compile(Scope(), Judged(10)),
+            AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail()),
+            AnalyticsSqlCompiler.Compile(Scope(), journey),
+        ];
+
+        foreach (var statement in statements)
+        {
+            foreach (var expression in ContextExpressions)
+            {
+                statement.Sql.Should().Contain(expression);
+            }
+
+            var tail = statement.Sql[statement.Sql.LastIndexOf("\nSELECT\n", StringComparison.Ordinal)..];
+            var positions = ContextColumns.Select(column => tail.IndexOf(column, StringComparison.Ordinal)).ToArray();
+
+            positions.Should().OnlyContain(position => position >= 0);
+            positions.Should().BeInAscendingOrder();
+        }
     }
 
     /// <summary>
@@ -972,8 +1172,8 @@ public sealed partial class AnalyticsSqlCompilerTests
 
     /// <summary>
     /// A visit is still kept or dropped on the verdict a reader would be shown, and the count still
-    /// describes the narrowed list — so the further condition sits in the same outer selection as
-    /// the other three rather than inside the rebuild.
+    /// describes the narrowed list — so the verdicts are reduced to one per visit before they are
+    /// joined to the narrowed rebuild, and the count is taken over what the join kept.
     /// </summary>
     [Fact]
     public void Narrowing_By_What_A_Visit_Was_Still_Counts_The_Narrowed_List()
@@ -981,7 +1181,7 @@ public sealed partial class AnalyticsSqlCompilerTests
         var statement = AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail());
 
         statement.Sql.IndexOf("LIMIT 1 BY session_key", StringComparison.Ordinal).Should()
-            .BeLessThan(statement.Sql.IndexOf("FROM narrowed", StringComparison.Ordinal));
+            .BeLessThan(statement.Sql.IndexOf("INNER JOIN narrowed", StringComparison.Ordinal));
 
         statement.Sql.Should().Contain("count() OVER ()");
     }
@@ -2275,6 +2475,11 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// <returns>The pattern.</returns>
     [GeneratedRegex(@"\{(\w+):")]
     private static partial Regex Placeholder();
+
+    /// <summary>Finds every place a statement reads the activity behind the verdicts.</summary>
+    /// <returns>The pattern.</returns>
+    [GeneratedRegex(@"\bFROM events\b")]
+    private static partial Regex ActivityRead();
 
     /// <summary>
     /// Finds every detail an answer offers.

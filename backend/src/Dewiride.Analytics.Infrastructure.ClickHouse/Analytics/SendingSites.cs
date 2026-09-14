@@ -22,9 +22,10 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// </para>
 /// <para>
 /// Written once here because several statements need it: the one that ranks where a window's
-/// visitors came from, the one that opens a single visit, and the one that rebuilds what each
-/// visit was so a reader can narrow to the sites that sent them. A site is therefore named
-/// identically wherever it is shown, and a correction to the catalogue reaches all of them.
+/// visitors came from, the one that opens a single visit, the one that rebuilds what each visit
+/// was so a reader can narrow to the sites that sent them, the one that lists visits with what
+/// each was, and the reading of who is here now. A site is therefore named identically wherever
+/// it is shown, and a correction to the catalogue reaches all of them.
 /// </para>
 /// <para>
 /// Every value it depends on is bound by the caller — the site's own address, the approximate
@@ -82,6 +83,33 @@ internal static class SendingSites
         "server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {longest_visit_seconds:Int64} * 1000, 'UTC')");
 
     /// <summary>
+    /// The activity behind the visits on one page of a list, and enough on either side of them to
+    /// see them whole.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// What a statement that describes the visits it is about to show asks for, rather than every
+    /// visit the period holds. The page is a slice of verdicts already taken, so its span is known
+    /// before any activity is read: from the earliest of those visits began to the latest of them
+    /// ended, and a day either side on the same terms as
+    /// <see cref="ThePeriodAndTheVisitsAcrossIt"/>. A page of twenty-five visits on a busy site
+    /// costs about two days of that site's activity however long the period is.
+    /// </para>
+    /// <para>
+    /// Expects a preceding <c>span</c> selection carrying <c>earliest_ms</c> and <c>latest_ms</c>,
+    /// written by the compiler beside the page it describes and never by a caller. The store
+    /// settles each scalar once and reads the activity as a range of its primary key, on the same
+    /// terms as the bound a verdict puts on a single visit in <see cref="ThePeriodUpToTheVerdict"/>.
+    /// A page holding no visits has no earliest or latest to settle, so both fall at the origin of
+    /// the store's clock, where nothing was ever recorded, and the read returns nothing.
+    /// </para>
+    /// </remarks>
+    public static string ThePageAndTheVisitsAcrossIt { get; } = string.Join(
+        ConditionIndent,
+        "server_ts >= fromUnixTimestamp64Milli((SELECT earliest_ms FROM span) - {longest_visit_seconds:Int64} * 1000, 'UTC')",
+        "server_ts < fromUnixTimestamp64Milli((SELECT latest_ms FROM span) + {longest_visit_seconds:Int64} * 1000, 'UTC')");
+
+    /// <summary>
     /// The activity one visit's verdict was reached from.
     /// </summary>
     /// <remarks>
@@ -136,7 +164,7 @@ internal static class SendingSites
     /// </summary>
     /// <param name="window">
     /// Which activity takes part, as a condition over <c>events</c> beside the site. One of the
-    /// two above, both written in this file: which one is a statement's choice, never a caller's.
+    /// four above, all written in this file: which one is a statement's choice, never a caller's.
     /// </param>
     /// <param name="carried">
     /// The columns of <c>events</c> the calling statement needs carried through. Each is a fixed

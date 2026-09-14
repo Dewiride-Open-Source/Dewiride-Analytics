@@ -71,13 +71,18 @@ function reading(visitors: readonly LiveVisitor[], overrides: Partial<Live> = {}
   };
 }
 
-/** What the engine answers, one entry per beat, staying on the last once they run out. */
+/**
+ * What the engine answers, one entry per beat, staying on the last once they run out.
+ *
+ * A trail is answered over whatever instant it was asked about, as the engine answers it, so a
+ * test can read back which reading a row was asked under.
+ */
 function engineReading(answers: readonly (Live | 'refused')[]) {
   let beat = 0;
 
   return engineDoing(async (path) => {
     if (path.includes('/trail')) {
-      return respondWith(200, { visitor: 'a1', at: AT, steps: [] });
+      return respondWith(200, { visitor: 'a1', at: instantAsked(path) ?? AT, steps: [] });
     }
 
     const answer = answers[Math.min(beat, answers.length - 1)];
@@ -95,9 +100,22 @@ function readings(engine: ReturnType<typeof engineDoing>): number {
   return engine.all().filter((sent) => !sent.path.includes('/trail')).length;
 }
 
+/** Every time it has asked what one visitor has been doing, in the order it asked. */
+function trailsAsked(engine: ReturnType<typeof engineDoing>): string[] {
+  return engine
+    .all()
+    .map((sent) => sent.path)
+    .filter((path) => path.includes('/trail'));
+}
+
 /** How many times it has asked what one visitor has been doing. */
 function trails(engine: ReturnType<typeof engineDoing>): number {
-  return engine.all().filter((sent) => sent.path.includes('/trail')).length;
+  return trailsAsked(engine).length;
+}
+
+/** The instant a trail was asked over, read back from the question. */
+function instantAsked(path: string): string | null {
+  return new URLSearchParams(path.slice(path.indexOf('?') + 1)).get('at');
 }
 
 beforeEach(() => {
@@ -277,6 +295,27 @@ describe('who is here now', () => {
   });
 
   /**
+   * The list is cut short at a hundred and the count is not. The visitors it had no room for are
+   * still being watched, and the headline has to count them from the whole rather than the list —
+   * a sweep of two hundred would otherwise be reported as one still being watched.
+   */
+  it('counts everybody the list could not carry among those still being watched', async () => {
+    engineReading([
+      reading(
+        [
+          visitor({ visitor: 'a1', category: 'security-scanner', strength: 'strong' }),
+          visitor({ visitor: 'a2', currentPath: '/other' }),
+        ],
+        { visitorsSeen: 214 },
+      ),
+    ]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    expect(await screen.findByText('213 visitors are still being watched')).toBeInTheDocument();
+  });
+
+  /**
    * The engine puts the most recently active first. The browser draws that order and never sorts
    * again: a list rearranging itself under somebody's hand every ten seconds would be unreadable
    * however correct each rearrangement was.
@@ -312,7 +351,7 @@ describe('what the half hour looked like', () => {
           { start: '2026-08-29T10:29:00.000Z', pageViews: 6 },
           { start: '2026-08-29T10:30:00.000Z', pageViews: 1 },
         ],
-        pages: [{ path: '/writing/how-we-measure', pageViews: 9, visitors: 5 }],
+        pages: [{ path: '/writing/how-we-measure', visitors: 1 }],
       }),
     ]);
 
@@ -325,7 +364,7 @@ describe('what the half hour looked like', () => {
     ).toBeInTheDocument();
 
     expect(screen.getByRole('heading', { name: "What's being read" })).toBeInTheDocument();
-    expect(screen.getByText('5 visitors')).toBeInTheDocument();
+    expect(screen.getByText('1 visitor')).toBeInTheDocument();
   });
 
   it('says so plainly when the half hour has nothing in it to draw', async () => {
@@ -361,6 +400,44 @@ describe('a half hour with nobody in it', () => {
     expect(
       await screen.findByText('Nobody has done anything in the last few minutes.'),
     ).toBeInTheDocument();
+  });
+
+  /**
+   * The count is the whole and the list is what fitted, so it is the count that decides whether
+   * the half hour is empty: a reading counting three and carrying nobody is not an empty one.
+   */
+  it('says nobody is here only when the count says so', async () => {
+    engineReading([reading([]), reading([], { visitorsSeen: 3 })]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    expect(await screen.findByText('Nobody is here right now')).toBeInTheDocument();
+
+    await beat(2);
+
+    const count = await screen.findByText('Visitors');
+
+    expect(count.parentElement).toHaveTextContent('3');
+    expect(screen.queryByText('Nobody is here right now')).not.toBeInTheDocument();
+  });
+
+  /**
+   * A row somebody is holding open outlives the reading that emptied the half hour. The screen
+   * stays, with the row saying its visitor has gone, rather than closing over the reader.
+   */
+  it('keeps the screen for a row somebody is holding open after everybody has gone', async () => {
+    engineReading([reading([visitor()]), reading([])]);
+
+    const { container } = renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /writing/how-we-measure');
+
+    await press().click(container.querySelector('details summary')!);
+
+    await beat(2);
+
+    expect(await screen.findByText('Gone')).toBeInTheDocument();
+    expect(screen.queryByText('Nobody is here right now')).not.toBeInTheDocument();
   });
 });
 
@@ -457,6 +534,88 @@ describe('a visitor somebody has opened', () => {
   });
 
   /**
+   * The pages counted on the row and the pages listed under it have to be one reading of one
+   * window, so the trail is asked over the instant of the reading the row was drawn from.
+   */
+  it('asks for the trail over the minutes of the reading it sits under', async () => {
+    const engine = engineReading([reading([visitor()])]);
+
+    const { container } = renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /writing/how-we-measure');
+
+    await press().click(container.querySelector('details summary')!);
+
+    await waitFor(() => expect(trails(engine)).toBe(1));
+
+    expect(trailsAsked(engine)[0]).toContain(`at=${encodeURIComponent(AT)}`);
+  });
+
+  /**
+   * The trail has no beat of its own. Each reading's instant renames the question, so a row still
+   * here is asked about under every new reading and never in between.
+   */
+  it('asks again with each new reading, and not on a clock of its own', async () => {
+    const later = '2026-08-29T10:30:10.000Z';
+    const renewed = engineReading([reading([visitor()]), reading([visitor()], { at: later })]);
+
+    const first = renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /writing/how-we-measure');
+
+    await press().click(first.container.querySelector('details summary')!);
+
+    await waitFor(() => expect(trails(renewed)).toBe(1));
+
+    await beat(2);
+
+    await waitFor(() => expect(trails(renewed)).toBe(2));
+    expect(instantAsked(trailsAsked(renewed)[1] ?? '')).toBe(later);
+
+    first.unmount();
+
+    const unchanged = engineReading([reading([visitor()])]);
+
+    const second = renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /writing/how-we-measure');
+
+    await press().click(second.container.querySelector('details summary')!);
+
+    await waitFor(() => expect(trails(unchanged)).toBe(1));
+
+    await beat(3);
+
+    expect(trails(unchanged)).toBe(1);
+  });
+
+  /**
+   * A row held after its visitor has gone keeps the instant it was last seen in, so its trail is
+   * never asked for again and stays exactly as it stood.
+   */
+  it("keeps a held row's trail as it was once the visitor has gone", async () => {
+    const engine = engineReading([
+      reading([visitor({ visitor: 'a1' }), visitor({ visitor: 'a2', currentPath: '/other' })]),
+      reading([visitor({ visitor: 'a2', currentPath: '/other' })], {
+        at: '2026-08-29T10:30:10.000Z',
+      }),
+    ]);
+
+    const { container } = renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /writing/how-we-measure');
+
+    await press().click(container.querySelector('details summary')!);
+
+    await waitFor(() => expect(trails(engine)).toBe(1));
+
+    await beat(2);
+
+    expect(await screen.findByText('Gone')).toBeInTheDocument();
+    expect(trails(engine)).toBe(1);
+  });
+
+  /**
    * A row vanishing from under a reader part-way through it is the one failure this screen can
    * actually cause. An opened row outlives its visitor and says what happened to them.
    */
@@ -525,9 +684,110 @@ describe('a visitor somebody has opened', () => {
 
     await screen.findByRole('heading', { name: "Who's here" });
 
-    await press().click(within(list()).getByText('A search engine'));
+    await press().click(within(list()).getByText("A search engine's crawler"));
 
     expect(await screen.findByRole('heading', { name: 'What we saw' })).toBeInTheDocument();
+  });
+
+  /**
+   * A crawler whose owner vouched for the address is named on the row, by the name people know
+   * it by, while it is still crawling — the same way the journeys list names it once the visit
+   * has finished.
+   */
+  it('names a crawler on the row once its owner has vouched for it', async () => {
+    engineReading([
+      reading([
+        visitor({
+          category: 'known-search-crawler',
+          strength: 'verified',
+          supporting: [
+            {
+              code: 'identity.declared_crawler',
+              direction: 'toward-automation',
+              weight: 70,
+              values: { operator: 'Google', token: 'Googlebot', purpose: 'search-index' },
+            },
+            {
+              code: 'identity.confirmed_crawler',
+              direction: 'toward-automation',
+              weight: 90,
+              values: { operator: 'Google', purpose: 'search-index' },
+            },
+          ],
+        }),
+      ]),
+    ]);
+
+    const { container } = renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByRole('heading', { name: "Who's here" });
+
+    expect(
+      within(container.querySelector('details summary')!).getByText('Googlebot'),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * A live row says roughly where and on what, and no more: who sent the visitor and whose
+   * network they came over are under the row once it is opened, and a row still being watched is
+   * read for the two facts that tell a person from a rented server at a glance.
+   */
+  it('says where a visitor roughly is and what they are reading on, and nothing more', async () => {
+    engineReading([
+      reading([
+        visitor({
+          context: {
+            source: 'Google',
+            kind: 'search',
+            countryCode: 'GB',
+            town: 'Leeds',
+            network: 'Example Networks',
+            device: 'phone',
+            browser: 'Chrome',
+            system: 'Android',
+          },
+        }),
+      ]),
+    ]);
+
+    const { container } = renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByRole('heading', { name: "Who's here" });
+
+    const row = within(container.querySelector('details summary')!);
+
+    expect(row.getByText('Leeds, United Kingdom')).toBeInTheDocument();
+    expect(row.getByText('Chrome on Android')).toBeInTheDocument();
+    expect(row.queryByText('From Google')).not.toBeInTheDocument();
+    expect(row.queryByText(/Example Networks/)).not.toBeInTheDocument();
+  });
+
+  it('names nothing on the row of a visitor that only claimed a name', async () => {
+    engineReading([
+      reading([
+        visitor({
+          category: 'suspected-ai-crawler',
+          strength: 'moderate',
+          supporting: [
+            {
+              code: 'identity.declared_crawler',
+              direction: 'toward-automation',
+              weight: 70,
+              values: { operator: 'OpenAI', token: 'GPTBot', purpose: 'ai-training' },
+            },
+            { code: 'identity.unverified_claim', direction: 'neutral', weight: 0, values: {} },
+          ],
+        }),
+      ]),
+    ]);
+
+    const { container } = renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByRole('heading', { name: "Who's here" });
+
+    expect(
+      within(container.querySelector('details summary')!).queryByText('GPTBot'),
+    ).not.toBeInTheDocument();
   });
 
   it('shows no evidence for a visitor nothing has been said about', async () => {

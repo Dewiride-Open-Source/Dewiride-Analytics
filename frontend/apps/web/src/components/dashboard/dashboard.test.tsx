@@ -500,3 +500,98 @@ describe('the period before', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('what the overview remembers', () => {
+  /**
+   * The stretch of days somebody reads their website over is a habit rather than a decision made
+   * afresh each morning, so the one chosen last is the one the screen opens on next.
+   */
+  it('remembers the period once chosen', async () => {
+    busy();
+
+    renderScreen(<Dashboard />);
+
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Period' }), 'today');
+
+    expect(window.localStorage.getItem('dewiride.period')).toBe('today');
+  });
+
+  it('opens on the period last chosen when the address says nothing', async () => {
+    window.localStorage.setItem('dewiride.period', 'yesterday');
+    busy();
+
+    renderScreen(<Dashboard />);
+
+    expect(await screen.findByRole('combobox', { name: 'Period' })).toHaveValue('yesterday');
+  });
+
+  /** A link names what its sender was looking at, and the reader's own habit gives way to it. */
+  it("lets a link's period win over the remembered one", async () => {
+    window.localStorage.setItem('dewiride.period', 'yesterday');
+    busy();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=today' });
+
+    expect(await screen.findByRole('combobox', { name: 'Period' })).toHaveValue('today');
+  });
+
+  /**
+   * The link in the bar should still say what is on the screen, and nothing anybody pressed put
+   * the period there, so it is written in over the entry somebody is already on.
+   */
+  it('writes the remembered period into the address without adding to the history', async () => {
+    const watching = vi.fn();
+
+    window.localStorage.setItem('dewiride.period', 'yesterday');
+    busy();
+
+    renderScreen(<Dashboard />, { watchingAddress: watching });
+
+    await waitFor(() => expect(watching).toHaveBeenCalled());
+    expect(watching.mock.calls[0]?.[0].queryString).toContain('period=yesterday');
+    expect(watching.mock.calls[0]?.[0].options.history).toBe('replace');
+  });
+
+  it('opens on the view last read', async () => {
+    window.localStorage.setItem('dewiride.chart-view', 'activity');
+    watched();
+
+    renderScreen(<Dashboard />);
+
+    expect(
+      await screen.findByRole('img', { name: /Page views and visitors for/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('draws only people when that was what somebody last asked for', async () => {
+    window.localStorage.setItem('dewiride.chart-people', 'people');
+    watched();
+
+    renderScreen(<Dashboard />);
+
+    expect(
+      await screen.findByRole('img', { name: /Visits judged to be people on/ }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('Show these figures as a table'));
+
+    expect(screen.getByRole('columnheader', { name: 'People' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'All visits' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * Pages read by people are counted from visits that have finished and been judged, which is a
+   * different store from the one everything recorded as it happened comes out of. A picture kept
+   * to people reads the judged one and leaves the other alone.
+   */
+  it('asks for judged visits rather than page views when only people are wanted', async () => {
+    const engine = watched();
+
+    renderScreen(<Dashboard />, { searchParams: '?show=activity&only=people' });
+
+    await waitFor(() =>
+      expect(engine.all().some(({ path }) => path.includes('/traffic/series'))).toBe(true),
+    );
+    expect(engine.all().some(({ path }) => /\/series\?metric=/.test(path))).toBe(false);
+  });
+});

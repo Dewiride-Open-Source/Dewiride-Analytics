@@ -80,6 +80,52 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
             visit.Supporting.Should().OnlyContain(reason => reason.Direction == "toward-automation");
             visit.Supporting.Single(reason => reason.Code == "probing.sensitive_paths")
                 .Values["attemptCount"].Should().Be("3");
+
+            // What nothing established reaches the wire as the vocabulary's own words rather than
+            // as blanks: a scanner named no referrer and no browser, and the row says so.
+            visit.Context.Kind.Should().Be("direct");
+            visit.Context.Device.Should().Be("unknown");
+        }
+    }
+
+    /// <summary>
+    /// A row on the list and the panel opened from it describe one visit, so the list says what
+    /// each visit was in exactly the words the opened visit uses — and says the same whether the
+    /// list was narrowed or not, because the two shapes of it take the account from the same
+    /// rebuild the opened visit does.
+    /// </summary>
+    [Fact]
+    public async Task A_Listed_Visit_Carries_The_Same_Account_Of_Itself_As_The_Visit_Opened_From_It()
+    {
+        var site = await DescribedTraffic.ADescribedVisitAsync(stack);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var visits = await ReadVisitsAsync(browser, site.Id, "limit=10");
+            var listed = visits.Visits.Should().ContainSingle().Which;
+
+            var opened = await browser.GetAsync($"/api/sites/{site.Id}/visits/{listed.Id}/journey");
+
+            opened.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var journey = await opened.Content.ReadFromJsonAsync<VisitJourneyResponse>(Cancellation.Token);
+
+            journey.Should().NotBeNull();
+            listed.Context.Should().Be(journey.Context);
+
+            listed.Context.Source.Should().Be(DescribedTraffic.Source);
+            listed.Context.Kind.Should().Be("search");
+            listed.Context.CountryCode.Should().Be(DescribedTraffic.Country);
+            listed.Context.Town.Should().Be(DescribedTraffic.Town);
+            listed.Context.Network.Should().Be(DescribedTraffic.Network);
+            listed.Context.Device.Should().Be("phone");
+            listed.Context.Browser.Should().Be(DescribedTraffic.Browser);
+            listed.Context.System.Should().Be(DescribedTraffic.SystemName);
+
+            var narrowed = await ReadVisitsAsync(browser, site.Id, "device=phone");
+
+            narrowed.Visits.Should().ContainSingle().Which.Context.Should().Be(journey.Context);
         }
     }
 

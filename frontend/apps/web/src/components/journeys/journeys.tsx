@@ -60,7 +60,7 @@ function listName(period: Period, filters: JourneyFilters, perPage: number): str
 /** One website's journeys, over one period, narrowed to whatever was asked for. */
 function SiteJourneys({ site }: { readonly site: Site }) {
   const t = useTranslations('journeys');
-  const { period, choose } = usePeriod();
+  const { period, choose } = usePeriod({ seeding: true });
   const { filters, narrow } = useJourneyFilters();
   const [perPage, setPerPage] = useState<number>(DEFAULT_PAGE_SIZE);
   const [offset, setOffset] = useState(0);

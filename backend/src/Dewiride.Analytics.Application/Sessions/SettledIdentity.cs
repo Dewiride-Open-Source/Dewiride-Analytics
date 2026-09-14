@@ -21,9 +21,9 @@ namespace Dewiride.Analytics.Application.Sessions;
 /// <para>
 /// So a live reading says nothing about most visitors, and says nothing deliberately. What it does
 /// say is what rests on evidence that cannot later be taken back: a crawler whose operator vouches
-/// for the address it arrived from, a crawler that named itself, a browser declaring that it is
-/// being driven, and a visitor asking for the places only an intruder looks for. Every one of those
-/// is a thing that happened rather than a balance that was struck.
+/// for the address it arrived from, a crawler that named itself or merely called itself one, a
+/// browser declaring that it is being driven, and a visitor asking for the places only an intruder
+/// looks for. Every one of those is a thing that happened rather than a balance that was struck.
 /// </para>
 /// <para>
 /// The rule is a set of observations rather than a set of categories, on purpose. What a category
@@ -60,6 +60,11 @@ public static class SettledIdentity
     /// interface is obliged to keep and a live reading must not blur.
     /// </item>
     /// <item>
+    /// <see cref="SignalCodes.DeclaredGenericCrawler"/> — a visitor describing itself as a crawler
+    /// in a name this product has no entry for. The description travels with every request it
+    /// makes, and a later request cannot withdraw it.
+    /// </item>
+    /// <item>
     /// <see cref="SignalCodes.DeclaredWebDriver"/> — the browser volunteered that it is being
     /// driven. A declaration already made is not withdrawn by a later request.
     /// </item>
@@ -82,6 +87,7 @@ public static class SettledIdentity
         SignalCodes.ConfirmedCrawler,
         SignalCodes.FalseCrawlerClaim,
         SignalCodes.DeclaredCrawler,
+        SignalCodes.DeclaredGenericCrawler,
         SignalCodes.DeclaredWebDriver,
         SignalCodes.SensitivePaths,
     }.ToFrozenSet(StringComparer.Ordinal);

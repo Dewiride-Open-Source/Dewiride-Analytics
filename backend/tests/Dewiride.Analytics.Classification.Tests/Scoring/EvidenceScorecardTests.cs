@@ -137,6 +137,180 @@ public sealed class EvidenceScorecardTests
             .Contain(SignalCodes.ReadTime).And.Contain(SignalCodes.NoScriptExecution);
     }
 
+    /// <summary>
+    /// A browser running the tracker is the commonest thing an automated browser does too. On its
+    /// own it is a lean rather than a conclusion, and the honest answer is that nothing was settled.
+    /// </summary>
+    [Fact]
+    public void One_Thing_Pointing_At_A_Person_Is_Not_A_Person()
+    {
+        var verdict = Weigh(Signal(SignalCodes.ScriptExecuted, SignalDirection.TowardHuman, 35));
+
+        verdict.Category.Should().Be(TrafficCategory.Unknown);
+        verdict.Supporting.Should().ContainSingle().Which.Code.Should().Be(SignalCodes.ScriptExecuted);
+    }
+
+    [Fact]
+    public void A_Browser_That_Fetched_Pictures_And_Nothing_Else_Is_Not_A_Person()
+    {
+        Weigh(Signal(SignalCodes.ImagesOnly, SignalDirection.TowardHuman, 25))
+            .Category.Should().Be(TrafficCategory.Unknown);
+    }
+
+    [Fact]
+    public void Two_Things_Pointing_At_A_Person_Are_A_Person()
+    {
+        var verdict = Weigh(
+            Signal(SignalCodes.ScriptExecuted, SignalDirection.TowardHuman, 35),
+            Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 45));
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+    }
+
+    [Fact]
+    public void One_Substantial_Thing_Pointing_At_A_Person_Is_Enough()
+    {
+        var verdict = Weigh(Signal(SignalCodes.PointerUsed, SignalDirection.TowardHuman, 55));
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+    }
+
+    /// <summary>
+    /// A lean toward a person is not settled by a passing remark the other way. Neither side is
+    /// firm enough to be a conclusion, and the answer says so.
+    /// </summary>
+    [Fact]
+    public void A_Lean_Toward_A_Person_Against_A_Passing_Remark_The_Other_Way_Settles_Nothing()
+    {
+        Weigh(
+                Signal(SignalCodes.ScriptExecuted, SignalDirection.TowardHuman, 35),
+                Signal(SignalCodes.NoLanguageDeclared, SignalDirection.TowardAutomation, 25))
+            .Category.Should().Be(TrafficCategory.Unknown);
+    }
+
+    /// <summary>
+    /// The promise behind every row that names a person: it is never said on slight signs. Every
+    /// combination of a person's own observations that reaches the conclusion reaches it with at
+    /// least some evidence behind it, by construction rather than by luck.
+    /// </summary>
+    [Fact]
+    public void A_Person_Is_Never_Reported_On_Slight_Signs()
+    {
+        Signal[][] readings =
+        [
+            [Signal(SignalCodes.ScriptExecuted, SignalDirection.TowardHuman, 35)],
+            [Signal(SignalCodes.ImagesOnly, SignalDirection.TowardHuman, 25)],
+            [
+                Signal(SignalCodes.ScriptExecuted, SignalDirection.TowardHuman, 35),
+                Signal(SignalCodes.NoLanguageDeclared, SignalDirection.TowardAutomation, 25),
+            ],
+            [
+                Signal(SignalCodes.ScriptExecuted, SignalDirection.TowardHuman, 35),
+                Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 45),
+            ],
+            [Signal(SignalCodes.PointerUsed, SignalDirection.TowardHuman, 55)],
+            [
+                Signal(SignalCodes.ScriptExecuted, SignalDirection.TowardHuman, 35),
+                Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 45),
+                Signal(SignalCodes.ReadTime, SignalDirection.TowardHuman, 40),
+            ],
+            [
+                Signal(SignalCodes.ReadTime, SignalDirection.TowardHuman, 60),
+                Signal(SignalCodes.PointerUsed, SignalDirection.TowardHuman, 55),
+                Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 45),
+                Signal(SignalCodes.ScriptExecuted, SignalDirection.TowardHuman, 35),
+            ],
+        ];
+
+        foreach (var reading in readings)
+        {
+            var verdict = Weigh(reading);
+
+            if (verdict.Category == TrafficCategory.LikelyHuman)
+            {
+                verdict.Strength.Should().BeOneOf(EvidenceStrength.Moderate, EvidenceStrength.Strong);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Nothing a person does is decisive on its own, so three ordinary observations agreeing is the
+    /// firmest position their behaviour can reach — and two is not.
+    /// </summary>
+    [Fact]
+    public void Three_Ordinary_Observations_Agreeing_Are_Stated_Firmly()
+    {
+        var verdict = Weigh(
+            Signal(SignalCodes.ScriptExecuted, SignalDirection.TowardHuman, 35),
+            Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 45),
+            Signal(SignalCodes.ReadTime, SignalDirection.TowardHuman, 40));
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Strong);
+    }
+
+    [Fact]
+    public void Two_Ordinary_Observations_Agreeing_Are_Not_Stated_Firmly()
+    {
+        Weigh(
+                Signal(SignalCodes.ScriptExecuted, SignalDirection.TowardHuman, 35),
+                Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 45))
+            .Strength.Should().Be(EvidenceStrength.Moderate);
+    }
+
+    /// <summary>
+    /// Agreement reaches the firmest band and a troubling observation the other way still takes it
+    /// back down, because the objection is not answered by there being more on the other side.
+    /// </summary>
+    [Fact]
+    public void Three_Agreeing_Observations_Are_Still_Held_Back_By_A_Troubling_One()
+    {
+        var verdict = Weigh(
+            Signal(SignalCodes.HostingNetwork, SignalDirection.TowardAutomation, 65),
+            Signal(SignalCodes.RetrievalRate, SignalDirection.TowardAutomation, 50),
+            Signal(SignalCodes.NoScriptExecution, SignalDirection.TowardAutomation, 50),
+            Signal(SignalCodes.ReadTime, SignalDirection.TowardHuman, 60));
+
+        verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        verdict.Contradicting.Should().ContainSingle().Which.Code.Should().Be(SignalCodes.ReadTime);
+    }
+
+    /// <summary>
+    /// What a visitor said about itself is the most specific thing known about it, and nothing it
+    /// did on the way past makes a self-described crawler a person.
+    /// </summary>
+    [Fact]
+    public void A_Nameless_Crawler_Is_A_Crawler_Whatever_Else_It_Did()
+    {
+        var verdict = Weigh(
+            Signal(SignalCodes.DeclaredGenericCrawler, SignalDirection.TowardAutomation, 60),
+            Signal(SignalCodes.ReadTime, SignalDirection.TowardHuman, 60),
+            Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 45));
+
+        verdict.Category.Should().Be(TrafficCategory.GenericWebCrawler);
+        verdict.Contradicting.Select(signal => signal.Code).Should()
+            .Contain(SignalCodes.ReadTime).And.Contain(SignalCodes.Scrolled);
+    }
+
+    [Fact]
+    public void A_Nameless_Crawler_Sweeping_For_A_Way_In_Is_A_Scanner()
+    {
+        Weigh(
+                Signal(SignalCodes.SensitivePaths, SignalDirection.TowardAutomation, 85),
+                Signal(SignalCodes.DeclaredGenericCrawler, SignalDirection.TowardAutomation, 60))
+            .Category.Should().Be(TrafficCategory.SecurityScanner);
+    }
+
+    [Fact]
+    public void A_Nameless_Crawler_Is_Never_Reported_As_Confirmed()
+    {
+        Weigh(Signal(SignalCodes.DeclaredGenericCrawler, SignalDirection.TowardAutomation, 60))
+            .Strength.Should().NotBe(EvidenceStrength.Verified);
+    }
+
     [Fact]
     public void Nothing_Observed_Is_Answered_As_Nothing_To_Go_On()
     {

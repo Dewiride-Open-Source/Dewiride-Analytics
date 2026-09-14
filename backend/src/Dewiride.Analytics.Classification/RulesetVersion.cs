@@ -19,6 +19,37 @@ public readonly record struct RulesetVersion(int Major, int Minor) : IComparable
     /// <summary>The ruleset currently compiled into this build.</summary>
     /// <remarks>
     /// <para>
+    /// Nine, because a person is never concluded from one thing. A browser running the tracker is
+    /// the commonest thing an automated browser does too, so on its own it decides nothing: a
+    /// visit is called a person only where two observations point that way and each is worth
+    /// counting, or where one of them is substantial by itself — somebody scrolled, or read for a
+    /// while, or used a pointer. One page opened and left, with the tracker having run and nothing
+    /// else observed, is answered as something the product could not tell rather than as a person
+    /// on slight signs, and a person is therefore never reported on slight signs at all.
+    /// </para>
+    /// <para>
+    /// Three things moved besides. Three observations agreeing reach the firmest behavioural band
+    /// whatever the heaviest of them weighs, so a reader who read, scrolled and clicked is stated
+    /// firmly rather than held to a band no combination of a person's own behaviour could leave. A
+    /// request for an administration page counts as probing only where the site refused it, so a
+    /// site's own owner signing in is not a sweep for a way in. And a visitor that describes itself
+    /// as a crawler in a name this product has no entry for is a crawler, and is said to be one
+    /// without the name it gave being repeated.
+    /// </para>
+    /// <para>
+    /// Categories move, so this is a major version: what eight called a person on one observation
+    /// nine leaves open, what eight called a scanner for asking after its own login page nine calls
+    /// whatever else it was, and what eight weighed as anonymous automation nine names as the
+    /// crawler it said it was. Verdicts are kept per ruleset, so every earlier answer stays on
+    /// record and history is re-judged rather than rewritten. No migration removes anything: every
+    /// visit keeps its name, so the new verdict supersedes the old one under the same key. Both
+    /// catalogues grew under this number too — sixteen crawler names, each from its operator's own
+    /// page, and six data-centre networks that thirty days of real traffic showed sending visits
+    /// nothing could name — so those visits move at the same time. A crawler name, a network or an
+    /// exception added after this ships moves visits between categories as well, and is the next
+    /// major rather than a footnote to this one.
+    /// </para>
+    /// <para>
     /// Eight, because a visit is now judged on everything stored about it rather than on the part
     /// that fell inside the stretch of time being worked through. A backlog is walked in stretches
     /// of a few hours, and a visit lying across the end of one of them was judged on what fitted
@@ -63,7 +94,7 @@ public readonly record struct RulesetVersion(int Major, int Minor) : IComparable
     /// something that will never be reconstructed again.
     /// </para>
     /// </remarks>
-    public static RulesetVersion Current => new(8, 0);
+    public static RulesetVersion Current => new(9, 0);
 
     /// <summary>Compares two ruleset versions by major then minor component.</summary>
     /// <param name="other">The version to compare against.</param>

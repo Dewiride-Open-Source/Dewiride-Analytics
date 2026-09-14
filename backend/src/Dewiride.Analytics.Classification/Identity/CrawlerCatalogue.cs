@@ -135,6 +135,19 @@ public static class CrawlerCatalogue
     private const string Baidu = "Baidu";
     private const string Slack = "Slack";
     private const string Ahrefs = "Ahrefs";
+    private const string Semrush = "Semrush";
+    private const string Majestic = "Majestic";
+    private const string Moz = "Moz";
+    private const string Pinterest = "Pinterest";
+    private const string Yahoo = "Yahoo";
+    private const string Seznam = "Seznam";
+    private const string CocCoc = "Cốc Cốc";
+    private const string UptimeRobot = "UptimeRobot";
+    private const string Pingdom = "Pingdom";
+    private const string StatusCake = "StatusCake";
+    private const string BetterStack = "Better Stack";
+    private const string DataForSeo = "DataForSEO";
+    private const string Babbar = "Babbar";
 
     /// <summary>Where Google publishes each of its files, before the file's own name.</summary>
     private const string GoogleRanges = "https://developers.google.com/static/crawling/ipranges/";
@@ -151,9 +164,10 @@ public static class CrawlerCatalogue
     /// </para>
     /// <para>
     /// Absent by design: Amazon, which publishes its crawler addresses as a web page rather than as
-    /// a file anything can read; and Meta and Slack, which publish neither route. Their crawlers
-    /// are recognised by name and reported as unverified claims, which is the whole truth about
-    /// them.
+    /// a file anything can read; UptimeRobot and Better Stack, whose files list addresses in a shape
+    /// of their own that nothing here reads; and Meta, Slack, Semrush, Majestic, Moz, Yahoo, Pingdom
+    /// and StatusCake, which publish neither route. Their crawlers are recognised by name and
+    /// reported as unverified claims, which is the whole truth about them.
     /// </para>
     /// </remarks>
     public static readonly ImmutableArray<OperatorProof> Proofs =
@@ -226,6 +240,22 @@ public static class CrawlerCatalogue
 
         // https://ahrefs.com/robot
         new(Ahrefs, [], ["ahrefs.com", "ahrefs.net"]),
+
+        // https://help.pinterest.com/en/business/article/pinterest-crawler — the address range on
+        // the page is prose rather than a file, and the page itself says not to rely on it.
+        new(Pinterest, [], ["pinterest.com", "pinterestcrawler.com"]),
+
+        // https://o-seznam.cz/napoveda/vyhledavani/en/seznambot-crawler/
+        new(Seznam, ["https://search.seznam.cz/ipranges/seznambot.json"], ["seznam.cz"]),
+
+        // https://coccoc.com/search/console/en/coc-coc-robots
+        new(CocCoc, [], ["coccoc.com"]),
+
+        // https://dataforseo.com/dataforseo-bot — the subnets on the page are prose, not a file.
+        new(DataForSeo, [], ["dataforseo.com"]),
+
+        // https://www.babbar.tech/crawler
+        new(Babbar, ["https://www.babbar.tech/barkrowler-ip-ranges.json"], ["babbar.eu"]),
     ];
 
     /// <summary>
@@ -330,6 +360,53 @@ public static class CrawlerCatalogue
             // Ahrefs — https://ahrefs.com/robot
             new("AhrefsSiteAudit", Ahrefs, CrawlerPurpose.SiteTooling),
             new("AhrefsBot", Ahrefs, CrawlerPurpose.SeoAudit),
+
+            // Semrush — https://www.semrush.com/bot/. The first token is the prefix of every
+            // Semrush crawler that builds its link index; the site auditor names itself apart.
+            new("SiteAuditBot", Semrush, CrawlerPurpose.SiteTooling),
+            new("SemrushBot", Semrush, CrawlerPurpose.SeoAudit),
+
+            // Majestic — https://mj12bot.com/
+            new("MJ12bot", Majestic, CrawlerPurpose.SeoAudit),
+
+            // Moz — https://moz.com/help/moz-procedures/crawlers/dotbot
+            new("DotBot", Moz, CrawlerPurpose.SeoAudit),
+
+            // Pinterest — https://help.pinterest.com/en/business/article/pinterest-crawler
+            new("Pinterestbot", Pinterest, CrawlerPurpose.SocialPreview),
+
+            // Yahoo — https://help.yahoo.com/kb/SLN22600.html
+            new("Yahoo! Slurp", Yahoo, CrawlerPurpose.SearchIndex),
+
+            // Seznam — https://o-seznam.cz/napoveda/vyhledavani/en/seznambot-crawler/
+            new("SeznamBot", Seznam, CrawlerPurpose.SearchIndex),
+
+            // Cốc Cốc — https://coccoc.com/search/console/en/coc-coc-robots. The advertising
+            // robot names itself apart; the plain token covers the web, image, fast and shopping
+            // robots, which are all search.
+            new("coccocbot-ads", CocCoc, CrawlerPurpose.Advertising),
+            new("coccocbot", CocCoc, CrawlerPurpose.SearchIndex),
+
+            // UptimeRobot — https://help.uptimerobot.com/en/articles/11358489-what-is-the-uptimerobot-user-agent-string
+            new("UptimeRobot", UptimeRobot, CrawlerPurpose.Monitoring),
+
+            // Pingdom — https://www.pingdom.com/resources/webhooks/
+            new("Pingdom.com_bot", Pingdom, CrawlerPurpose.Monitoring),
+
+            // StatusCake — https://www.statuscake.com/kb/knowledge-base/how-do-i-exclude-statuscake-from-google-analytics/
+            new("StatusCake", StatusCake, CrawlerPurpose.Monitoring),
+
+            // Better Stack — https://betterstack.com/docs/uptime/frequently-asked-questions/
+            new("Better Uptime Bot", BetterStack, CrawlerPurpose.Monitoring),
+
+            // DataForSEO — https://dataforseo.com/dataforseo-bot
+            new("DataForSeoBot", DataForSeo, CrawlerPurpose.SeoAudit),
+
+            // Babbar — https://www.babbar.tech/crawler
+            new("barkrowler", Babbar, CrawlerPurpose.SeoAudit),
+
+            // Google — https://developers.google.com/search/docs/crawling-indexing/google-user-triggered-fetchers
+            new("FeedFetcher-Google", Google, CrawlerPurpose.SearchIndex),
         ]),
     ];
 

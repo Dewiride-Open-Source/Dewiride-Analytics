@@ -73,7 +73,41 @@ export function stillJudgingFrom(series: TrafficSeries): number | null {
  * and what an earlier period is drawn as when one is set behind this one.
  */
 export function totalsIn(series: TrafficSeries): readonly number[] {
-  return series.buckets.map((_, bucket) =>
-    series.groups.reduce((running, group) => running + (group.sessions[bucket] ?? 0), 0),
+  return summed(series.buckets, series.groups, (group) => group.sessions);
+}
+
+/**
+ * What the people a website is for did across a period: the visits judged to be theirs and the
+ * pages those visits read, bucket by bucket.
+ *
+ * Nought in a bucket nobody was judged a person in, so an earlier period with no people draws as
+ * none rather than as missing.
+ */
+export interface PeopleSeries {
+  readonly visits: readonly number[];
+  readonly pageViews: readonly number[];
+}
+
+/** The visits judged to be people and the pages those visits read, bucket by bucket. */
+export function peopleIn(series: TrafficSeries): PeopleSeries {
+  const people = series.groups.filter((group) => CATEGORY_TONES[group.category] === 'people');
+
+  return {
+    visits: summed(series.buckets, people, (group) => group.sessions),
+    pageViews: summed(series.buckets, people, (group) => group.pageViews),
+  };
+}
+
+/** One of the groups the engine answers with: a category and what it counted, bucket by bucket. */
+type CategoryGroup = TrafficSeries['groups'][number];
+
+/** One figure per bucket, added up across the groups from whichever run each of them carries. */
+function summed(
+  buckets: readonly string[],
+  groups: readonly CategoryGroup[],
+  counted: (group: CategoryGroup) => readonly number[],
+): readonly number[] {
+  return buckets.map((_, bucket) =>
+    groups.reduce((running, group) => running + (counted(group)[bucket] ?? 0), 0),
   );
 }

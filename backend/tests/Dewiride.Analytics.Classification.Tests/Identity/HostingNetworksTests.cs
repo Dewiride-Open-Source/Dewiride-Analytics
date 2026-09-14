@@ -46,6 +46,11 @@ public sealed class HostingNetworksTests
     [InlineData(24940u, "Hetzner")]
     [InlineData(14061u, "DigitalOcean")]
     [InlineData(396982u, "Google Cloud")]
+    [InlineData(55960u, "Sinnet")]
+    [InlineData(203020u, "HostRoyale")]
+    [InlineData(137718u, "Volcano Engine")]
+    [InlineData(134756u, "China Telecom")]
+    [InlineData(134543u, "China Unicom")]
     public void A_Catalogued_Network_Is_Named(uint autonomousSystem, string expected)
     {
         HostingNetworks.TryFind(autonomousSystem, out var operatorName).Should().BeTrue();
@@ -54,8 +59,9 @@ public sealed class HostingNetworksTests
 
     /// <summary>
     /// Kept out on purpose, and the test says so rather than the absence being an accident nobody
-    /// notices. Real people browse from all three, and a catalogue holding them would call a whole
-    /// customer's audience automation on the day they put a delivery network in front of their site.
+    /// notices. Real people browse from all of them, and a catalogue holding them would call a whole
+    /// customer's audience automation on the day they put a delivery network in front of their site,
+    /// or a whole country's readers automation because its carrier also rents racks.
     /// </summary>
     /// <param name="autonomousSystem">A network that carries people rather than servers.</param>
     [Theory]
@@ -64,6 +70,9 @@ public sealed class HostingNetworksTests
     [InlineData(53813u)] // Zscaler, behind which everybody is an employee at a desk.
     [InlineData(16247u)] // M247, which mostly carries consumer privacy services.
     [InlineData(55836u)] // Reliance Jio, a household network.
+    [InlineData(4134u)] // ChinaNet, the backbone most of China browses from; its data centres are numbered apart.
+    [InlineData(4837u)] // China169, China Unicom's, the same.
+    [InlineData(9808u)] // China Mobile, the same.
     public void Networks_That_Carry_People_Are_Deliberately_Absent(uint autonomousSystem)
     {
         HostingNetworks.TryFind(autonomousSystem, out _).Should().BeFalse();

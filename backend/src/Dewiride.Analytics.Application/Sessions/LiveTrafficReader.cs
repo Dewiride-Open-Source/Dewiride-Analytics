@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Dewiride.Analytics.Application.Analytics;
+using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
 using Microsoft.Extensions.Options;
@@ -35,13 +36,18 @@ namespace Dewiride.Analytics.Application.Sessions;
 /// <para>
 /// The three readings are taken one after another rather than at once. They are small range scans
 /// over the same few minutes of one site, the store serves them from the same marks, and asking for
-/// three at a time would treble what one watched screen costs the store on every beat.
+/// three at a time would treble what one watched screen costs the store on every beat. They are
+/// three reads a few milliseconds apart of a store that is still being written to, so a report that
+/// becomes visible between two of them is in one and not the other; the pages can stand a visitor
+/// out from the headline for one beat, and the next beat resolves it.
 /// </para>
 /// <para>
-/// What one visitor did is asked here too, rather than anywhere nearer the request, for one reason:
-/// what "now" means has to be settled in a single place. A trail read over a stretch of minutes even
-/// slightly different from the one its row was drawn from would show a number of pages that
-/// disagreed with the number printed beside it, and would do so intermittently.
+/// What one visitor did is read over the minutes of the reading it was opened from rather than over
+/// a fresh present moment. The row was drawn from one stretch of minutes, and a trail read over a
+/// stretch even slightly different — a beat later, across a minute boundary — shows a number of
+/// pages that disagrees with the number printed beside it. So a trail is asked for under a
+/// reading's own instant, that instant is held to being about now, and the reach back from it is
+/// the same one the row had.
 /// </para>
 /// </remarks>
 /// <param name="telemetry">Reads the telemetry store.</param>
@@ -54,6 +60,16 @@ public sealed class LiveTrafficReader(
     TimeProvider clock,
     IOptions<ClassificationOptions> settings)
 {
+    /// <summary>
+    /// How far ahead of this clock a reading's instant may be and still be about now.
+    /// </summary>
+    /// <remarks>
+    /// A reading is stamped by the engine's own clock, so an instant ahead of it is another
+    /// instance of the engine a few seconds off, or a request somebody wrote by hand. One minute
+    /// covers the first and refuses the second.
+    /// </remarks>
+    public static readonly TimeSpan Skew = TimeSpan.FromMinutes(1);
+
     /// <summary>
     /// Reads what is happening on one site now.
     /// </summary>
@@ -102,40 +118,85 @@ public sealed class LiveTrafficReader(
     }
 
     /// <summary>
-    /// Reads what one visitor has been doing, over the same minutes they were listed from.
+    /// Whether an instant is one a reading could have been taken at.
     /// </summary>
     /// <remarks>
+    /// No further ahead than <see cref="Skew"/>, and no further back than a visit can reach. A
+    /// screen somebody has held still may be an hour old and its rows must still open; a day back
+    /// is as far as any visit runs and is what the list of finished visits already answers about,
+    /// so a trail under a reading older than that would be a question about the past wearing the
+    /// clothes of one about now.
+    /// </remarks>
+    /// <param name="at">The instant a reading reported itself taken at.</param>
+    /// <returns>Whether a trail may be read under it.</returns>
+    public bool IsAboutNow(DateTimeOffset at) => IsAboutNow(at, clock.GetUtcNow(), TimeSpan.Zero);
+
+    /// <summary>
+    /// Whether an instant is about now against one reading of the clock, with some grace behind the
+    /// far end.
+    /// </summary>
+    /// <param name="at">The instant a reading reported itself taken at.</param>
+    /// <param name="now">The clock, read once by the caller.</param>
+    /// <param name="grace">How far behind the far end the instant may still fall.</param>
+    /// <returns>Whether the instant is within the bounds.</returns>
+    private static bool IsAboutNow(DateTimeOffset at, DateTimeOffset now, TimeSpan grace) =>
+        at <= now + Skew && at >= now - VisitorKeys.LongestVisit - grace;
+
+    /// <summary>
+    /// Reads what one visitor has been doing, over the minutes of the reading their row was drawn
+    /// from.
+    /// </summary>
+    /// <remarks>
+    /// <para>
     /// Nothing is asked of the engine here. A trail is what the reports say, and what may be said
     /// about the visitor was settled when their row was drawn — so this adds no conclusion, and a
     /// visitor nothing may yet be said about is opened and read without one appearing.
+    /// </para>
+    /// <para>
+    /// The instant is held to <see cref="IsAboutNow(DateTimeOffset)"/>, with <see cref="Skew"/> of
+    /// grace behind the far end. The caller asks that question first, against its own reading of
+    /// the clock, and an instant it admitted must not be refused here because the clock moved on
+    /// between the two.
+    /// </para>
     /// </remarks>
     /// <param name="scope">Proof the caller may read this site.</param>
     /// <param name="visitorKey">The visitor, as the reading of who is here named them.</param>
+    /// <param name="at">
+    /// The instant of the reading the visitor's row was drawn from, which is the stretch of minutes
+    /// the trail is read over.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// The steps, oldest first, and the moment the reading was taken. Empty where the key names
-    /// nobody these minutes hold, which is what a visitor who has left looks like.
+    /// The steps, oldest first, and the instant they were read under. Empty where the key names
+    /// nobody those minutes hold, which is what a visitor who has left looks like.
     /// </returns>
     /// <exception cref="ArgumentNullException">The scope is missing.</exception>
     /// <exception cref="ArgumentException">The visitor key is missing.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The instant is not one a reading could have been taken at.
+    /// </exception>
     public async Task<LiveTrail> ReadTrailAsync(
         TenantScope scope,
         string visitorKey,
+        DateTimeOffset at,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(scope);
         ArgumentException.ThrowIfNullOrWhiteSpace(visitorKey);
 
-        var now = clock.GetUtcNow();
+        if (!IsAboutNow(at, clock.GetUtcNow(), Skew))
+        {
+            throw new ArgumentOutOfRangeException(nameof(at), at, "A trail is read under a reading taken about now.");
+        }
 
         var steps = await telemetry
             .GetSiteLiveTrailAsync(
                 scope,
-                new SiteLiveTrailQuery(TheseMinutes(now), visitorKey, SiteLiveTrailQuery.MostSteps),
+                new SiteLiveTrailQuery(TheseMinutes(at), visitorKey, SiteLiveTrailQuery.MostSteps),
                 cancellationToken)
             .ConfigureAwait(false);
 
-        return new LiveTrail(now, [.. steps]);
+        return new LiveTrail(at, [.. steps]);
     }
 
     /// <summary>
@@ -156,13 +217,13 @@ public sealed class LiveTrafficReader(
     /// direction: nobody who is here is left out of it.
     /// </para>
     /// </remarks>
-    /// <param name="now">The present moment.</param>
+    /// <param name="at">The instant the reading is taken at.</param>
     /// <returns>The window.</returns>
-    private TimeRange TheseMinutes(DateTimeOffset now)
+    private TimeRange TheseMinutes(DateTimeOffset at)
     {
-        var opened = now - settings.Value.IdleTimeout;
+        var opened = at - settings.Value.IdleTimeout;
 
-        return new TimeRange(opened - TimeSpan.FromTicks(opened.Ticks % TimeSpan.TicksPerMinute), now);
+        return new TimeRange(opened - TimeSpan.FromTicks(opened.Ticks % TimeSpan.TicksPerMinute), at);
     }
 
     /// <summary>
@@ -191,7 +252,10 @@ public sealed class LiveTrafficReader(
 /// </param>
 /// <param name="Visitors">Those it had room for, the one most recently active first.</param>
 /// <param name="Minutes">Every minute the stretch covers, oldest first, including the empty ones.</param>
-/// <param name="Pages">The pages being read, busiest first.</param>
+/// <param name="Pages">
+/// The pages visitors are on, the one holding most first; every visitor seen stands on exactly one
+/// of them.
+/// </param>
 public sealed record LiveTraffic(
     DateTimeOffset At,
     DateTimeOffset From,
@@ -217,9 +281,13 @@ public readonly record struct LiveReading(LiveVisitor Visitor, ClassificationVer
 /// <remarks>
 /// Carries no account of who they are. That was settled when their row was drawn, over these same
 /// minutes, and a second answer to the same question taken moments later would be free to disagree
-/// with the first.
+/// with the first. Read over the reading's own minutes, which is what makes its steps and the row's
+/// page count one reading.
 /// </remarks>
-/// <param name="At">The moment the reading was taken.</param>
+/// <param name="At">
+/// The instant of the reading this trail sits under, which names the stretch of minutes the steps
+/// were read over.
+/// </param>
 /// <param name="Steps">
 /// The pages they were on and the controls they operated, oldest first. Empty where the key names
 /// nobody the stretch holds.

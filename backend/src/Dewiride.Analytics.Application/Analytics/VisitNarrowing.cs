@@ -198,8 +198,9 @@ public sealed record VisitNarrowing
     /// The three narrowings on the verdict itself are a comparison against a row that already
     /// exists. The nine after them are not: what a visitor was on, where they came from and where
     /// they arrived are properties of their events, so a window's visits have to be rebuilt before
-    /// any of it can be compared. Asked once here, so a statement is built the expensive way only
-    /// when the question genuinely needs it.
+    /// any of it can be compared. Asked once here, so the whole period is rebuilt only when the
+    /// question genuinely needs it; the page a list shows is rebuilt regardless, because every row
+    /// carries what its visit was.
     /// </remarks>
     public bool ReadsActivity =>
         !devices.IsEmpty

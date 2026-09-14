@@ -5,10 +5,11 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Written once here because the three statements that answer about the present moment need the
-/// same activity and the same idea of a page: who has been here, how much was read minute by
-/// minute, and which pages they were on. Three answers on one screen that disagreed about what a
-/// page is would be worse than any one of them being absent.
+/// Written once here because the four statements that answer about the present moment need the
+/// same activity and the same visitor: who has been here, how much was read minute by minute,
+/// which pages they are on, and what one of them has been doing. Four answers on one screen that
+/// disagreed about who a visitor is or which page they are on would be worse than any one of them
+/// being absent.
 /// </para>
 /// <para>
 /// <strong>Nothing is read from outside the window</strong>, and that is the difference between this
@@ -26,6 +27,11 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// where each arrival was: a visitor who leaves a page and comes back to it inside the window is on
 /// one page here and on two there. That is the honest reading of a question with no visit
 /// boundaries in it — there is nothing here for "again" to mean.
+/// </para>
+/// <para>
+/// A visitor is on one page: the one their most recent report named. It is the page printed beside
+/// their row and the page they are counted under in the list of pages being read, and it is written
+/// once, as <see cref="CurrentPage"/>, so the two cannot disagree.
 /// </para>
 /// <para>
 /// The two halves of the measurement are folded onto one key first, by every statement that uses
@@ -59,6 +65,17 @@ internal static class LiveActivity
     /// single impossibly busy visitor at the top of the list.
     /// </remarks>
     public const string EveryVisitor = VisitGrouping.EveryVisitor;
+
+    /// <summary>
+    /// The page a visitor is on: the one their most recent report named.
+    /// </summary>
+    /// <remarks>
+    /// Written once because two statements place a visitor — the row that lists them, and the list
+    /// of pages being read, which counts visitors by it. A visitor printed beside one page and
+    /// counted under another would be the disagreement this file exists to prevent. Over a
+    /// selection carrying <c>server_ts</c>, <c>event_id</c> and <c>path</c>, grouped by visitor.
+    /// </remarks>
+    public const string CurrentPage = "argMax(path, (server_ts, event_id))";
 
     /// <summary>
     /// How long a reading about the present moment may run before it is abandoned.
@@ -102,6 +119,13 @@ internal static class LiveActivity
     /// Reads the window with each arrival reduced to the site that sent it, and marks one report per
     /// page the visitor was on. Ends in a <c>present</c> selection.
     /// </summary>
+    /// <remarks>
+    /// The report that opens a page is chosen as <see cref="VisitGrouping"/> chooses it for a
+    /// finished visit: the request path's sighting ahead of the browser's, then a page view ahead of
+    /// anything else, then the earliest. A page both halves saw therefore carries the status the
+    /// site answered with in the live reading exactly as it does once the visit is over, and a rule
+    /// that reads that status reaches the same conclusion in both places.
+    /// </remarks>
     /// <param name="visitors">
     /// Which visitors take part, as a condition over <c>identified</c>. Written by a compiler in
     /// this assembly and never by a caller: where it narrows to a single visitor, that visitor's key
@@ -125,7 +149,7 @@ internal static class LiveActivity
                     max(engaged_ms) OVER (PARTITION BY visitor_key, path) AS page_engaged_ms,
                     row_number() OVER (
                         PARTITION BY visitor_key, path
-                        ORDER BY server_ts, kind != 'PageView', event_id) = 1 AS opens_page
+                        ORDER BY {{ReconciledEvents.FromVisitorBrowser}}, kind != 'PageView', server_ts, event_id) = 1 AS opens_page
                 FROM identified
                 WHERE {{visitors}}
             )

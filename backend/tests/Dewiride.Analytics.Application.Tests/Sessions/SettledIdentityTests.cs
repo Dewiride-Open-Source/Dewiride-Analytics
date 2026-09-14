@@ -36,6 +36,19 @@ public sealed class SettledIdentityTests
         named.Category.Should().Be(TrafficCategory.SuspectedAiCrawler);
     }
 
+    /// <summary>
+    /// The words a visitor introduces itself with travel on every request it makes, so what they
+    /// settle is settled from the first one.
+    /// </summary>
+    [Fact]
+    public void A_Crawler_That_Called_Itself_One_Without_A_Name_Is_Named_At_Once()
+    {
+        var named = Read(Watching.ANamelessCrawler());
+
+        named.Should().NotBeNull();
+        named.Category.Should().Be(TrafficCategory.GenericWebCrawler);
+    }
+
     [Fact]
     public void A_Browser_Saying_It_Is_Being_Driven_Is_Named_At_Once()
     {
@@ -94,6 +107,26 @@ public sealed class SettledIdentityTests
     }
 
     /// <summary>
+    /// A site's owner opening their own administration pages asks for exactly the pages an intruder
+    /// asks for, and is told apart from one by the site having answered. Given that answer, the
+    /// engine names no scanner at any point of the visit and none once it is over; that the live
+    /// reading hands it the same answer a finished visit does is proved against the store, in
+    /// <c>LiveTrafficTests.A_Page_Both_Halves_Saw_Carries_The_Status_The_Site_Answered_With</c>.
+    /// </summary>
+    [Fact]
+    public void An_Owner_Signing_In_Is_Never_Named_A_Scanner_Live_Or_Afterwards()
+    {
+        var owner = Watching.AnOwnerSigningIn();
+
+        for (var requests = 1; requests <= owner.Requests.Length; requests++)
+        {
+            Read(Watching.AsTheyWere(owner, requests)).Should().BeNull();
+        }
+
+        Engine.Classify(owner).Category.Should().NotBe(TrafficCategory.SecurityScanner);
+    }
+
+    /// <summary>
     /// The property everything else here is in service of, replayed request by request over every
     /// kind of visitor these tests know about: once something has been named, it is still named when
     /// the visit goes on, and it is never afterwards called a person.
@@ -135,9 +168,11 @@ public sealed class SettledIdentityTests
         Watching.AReader(),
         Watching.AReaderWhoseBrowserHasNotSpokenYet(),
         Watching.ACrawlerThatNamedItself(),
+        Watching.ANamelessCrawler(),
         Watching.ACrawlerWhoseOwnerVouchesForIt(),
         Watching.ADrivenBrowser(),
         Watching.AScanner(),
+        Watching.AnOwnerSigningIn(),
         Watching.AVisitorWhoseFirstPagesWereMissing(),
     ];
 

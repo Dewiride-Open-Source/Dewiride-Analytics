@@ -9,6 +9,9 @@
   once it is over and removed the column that would have expressed a verdict reached before then.
 - **Follows**: [0034](0034-a-visit-begins-where-somebody-arrived.md), whose consequence — that visits
   by one visitor may overlap — is the reason nothing here is counted per visit.
+- **Revised by**: [0039](0039-what-is-being-read-is-where-the-visitors-are.md), which counts the
+  pages being read as visitors by the page each is on, so they add up to the headline, and reads a
+  trail under the reading its row came from rather than under a fresh present moment.
 
 ## Context
 

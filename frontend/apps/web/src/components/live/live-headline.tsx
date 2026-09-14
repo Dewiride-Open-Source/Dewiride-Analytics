@@ -26,7 +26,10 @@ interface LiveHeadlineProps {
 export function LiveHeadline({ answer }: LiveHeadlineProps) {
   const t = useTranslations('live');
   const format = useFormatter();
-  const named = useMemo(() => namedNow(answer.visitors), [answer.visitors]);
+  const named = useMemo(
+    () => namedNow(answer.visitors, answer.visitorsSeen),
+    [answer.visitors, answer.visitorsSeen],
+  );
   const busy = anybodyActive(answer.visitors, answer.at);
 
   return (
@@ -59,7 +62,7 @@ export function LiveHeadline({ answer }: LiveHeadlineProps) {
           </p>
         </div>
 
-        {answer.visitors.length === 0 ? null : (
+        {answer.visitorsSeen === 0 ? null : (
           <div className="flex min-w-0 flex-1 flex-col gap-3 border-t border-border pt-5 @2xl:border-t-0 @2xl:border-l @2xl:pt-0 @2xl:pl-8">
             {/*
               The heading belongs to the badges and appears with them. On the great majority of half

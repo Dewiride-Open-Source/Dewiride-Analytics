@@ -392,32 +392,46 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
             // Settled over the whole visit and repeated on every row, so it is read once and the
             // rows after the first say the same thing. A visit with no steps says nothing, which
             // is what an identity naming no visit here answers with.
-            context = Established(reader);
+            context = Established(reader, JourneyContextColumn);
         }
 
         return new VisitJourney(context, steps.DrainToImmutable());
     }
 
     /// <summary>
+    /// Where the account of what the visit was begins on a row of a single opened visit.
+    /// </summary>
+    private const int JourneyContextColumn = 10;
+
+    /// <summary>
     /// Reads what could be established about the visitor behind a visit.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// Read by the list and by the opened visit from the same eight columns in the same order, so
+    /// the two cannot describe one visit two ways; only where the eight begin differs between the
+    /// two rows.
+    /// </para>
+    /// <para>
     /// The kind of source and the kind of device both arrive as text, so anything the vocabulary
     /// does not hold reads as unrecognised rather than as a failure — on the same terms as the
-    /// control a press was on.
+    /// control a press was on. A visit the rebuild could not describe carries eight empty texts,
+    /// which read as nothing established.
+    /// </para>
     /// </remarks>
     /// <param name="reader">The open row.</param>
+    /// <param name="first">Where the eight columns begin on it.</param>
     /// <returns>The account.</returns>
-    private static VisitContext Established(ClickHouseDataReader reader) =>
+    private static VisitContext Established(ClickHouseDataReader reader, int first) =>
         new(
-            reader.GetString(10),
-            AsSourceKind(reader.GetString(11)),
-            reader.GetString(12),
-            reader.GetString(13),
-            reader.GetString(14),
-            AsDevice(reader.GetString(15)),
-            reader.GetString(16),
-            reader.GetString(17));
+            reader.GetString(first),
+            AsSourceKind(reader.GetString(first + 1)),
+            reader.GetString(first + 2),
+            reader.GetString(first + 3),
+            reader.GetString(first + 4),
+            AsDevice(reader.GetString(first + 5)),
+            reader.GetString(first + 6),
+            reader.GetString(first + 7));
 
     /// <summary>
     /// Turns the statement's "not observed" back into nothing.
@@ -586,10 +600,16 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     /// Where the whole-window count sits on a judged-visit row.
     /// </summary>
     /// <remarks>
-    /// Last, after the fourteen columns a visit is built from, so adding it left every index the
-    /// visit itself is read from where it was.
+    /// After the fourteen columns a verdict is built from and before the eight the visit's account
+    /// is built from.
     /// </remarks>
     private const int TotalVisitsColumn = 14;
+
+    /// <summary>
+    /// Where the account of what the visit was begins on a judged-visit row: the eight columns
+    /// after the count.
+    /// </summary>
+    private const int JudgedContextColumn = 15;
 
     private static JudgedSession ToJudgedSession(ClickHouseDataReader reader)
     {
@@ -616,6 +636,7 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
                 Supporting = [.. evidence.Where(entry => entry.Supporting).Select(entry => entry.Signal)],
                 Contradicting = [.. evidence.Where(entry => !entry.Supporting).Select(entry => entry.Signal)],
             },
+            Context = Established(reader, JudgedContextColumn),
         };
     }
 
@@ -825,7 +846,7 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            pages.Add(new LivePage(reader.GetString(0), reader.GetInt64(1), reader.GetInt64(2)));
+            pages.Add(new LivePage(reader.GetString(0), reader.GetInt64(1)));
         }
 
         return pages;

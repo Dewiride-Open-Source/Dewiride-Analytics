@@ -17,17 +17,20 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// Every expression here is deliberately one already used elsewhere, because a value picked off a
 /// card has to be the value that narrows a list. Where a visit came from and what it was read with
 /// are the account a single visit gives of itself; the network is named the way the list of
-/// networks names one; and the page a visit began on is the one the arrivals list counts.
+/// networks names one; and the page a visit began on is the one the arrivals list counts. The
+/// account every row of the list carries is this same rebuild, so a row and the panel opened from
+/// it cannot disagree.
 /// </para>
 /// <para>
 /// A visit is named by the identity the detection engine derives, which is the visitor's key and
 /// the instant the visit began. Reproducing it exactly is what makes the join to a verdict work at
-/// all, and it needs four things together: activity read a full idle timeout on either side of the
-/// period, the reconciliation of the two halves of the measurement — which rewrites the visitor key
-/// and so writes half the identity — the same grouping into visits everything else uses, and the
-/// earliest report of the whole visit rather than the earliest that announced a page. Get any of
-/// them wrong and nothing errors: the identities simply fail to match and the list comes back
-/// empty.
+/// all, and it needs four things together: activity read a full day on either side of the stretch
+/// being described, which is the period where a list is narrowed by these facts and the span of
+/// the page where a list is showing them; the reconciliation of the two halves of the measurement,
+/// which rewrites the visitor key and so writes half the identity; the same grouping into visits
+/// everything else uses; and the earliest report of the whole visit rather than the earliest that
+/// announced a page. Get any of them wrong and nothing errors: the identities simply fail to match
+/// and the list comes back empty.
 /// </para>
 /// <para>
 /// A visit belongs to the period it began in, on the same terms as the verdicts it is joined to, so
@@ -94,15 +97,41 @@ internal static class JudgedVisitDetails
     }
 
     /// <summary>
-    /// The reconstruction, ending in a <c>described</c> selection of one row per visit.
+    /// The reconstruction over the whole period, ending in a <c>described</c> selection of one row
+    /// per visit.
     /// </summary>
     /// <remarks>
-    /// Laid out to follow a <c>WITH</c> keyword, on the same terms as the fragments it is built
-    /// from. It carries <c>session_key</c> and the nine columns named above.
+    /// Reads a day either side of the period, because a list narrowed by these facts has to describe
+    /// every visit the period holds before it can keep or drop one. Laid out to follow a
+    /// <c>WITH</c> keyword, on the same terms as the fragments it is built from. It carries
+    /// <c>session_key</c> and the nine columns named above.
     /// </remarks>
-    public static string Fragment { get; } = $$"""
+    public static string Fragment { get; } = Rebuilt(SendingSites.ThePeriodAndTheVisitsAcrossIt);
+
+    /// <summary>
+    /// The same reconstruction over the visits on one page of a list, ending in <c>described</c>.
+    /// </summary>
+    /// <remarks>
+    /// Reads a day either side of the page's own span rather than the period's, because the list
+    /// has already chosen which visits it is showing and only those need describing. Expects the
+    /// <c>span</c> selection <see cref="SendingSites.ThePageAndTheVisitsAcrossIt"/> names, written
+    /// by the calling statement beside the page.
+    /// </remarks>
+    public static string OfThePage { get; } = Rebuilt(SendingSites.ThePageAndTheVisitsAcrossIt);
+
+    /// <summary>
+    /// Writes the reconstruction over one window of activity.
+    /// </summary>
+    /// <remarks>
+    /// One body with the window as its only hole, so the two readings above cannot describe a visit
+    /// two ways. The visits are still held to the period they began in whichever window was read:
+    /// every visit on a page began inside the period, so the bound is right for both.
+    /// </remarks>
+    /// <param name="activity">Which activity takes part, as <see cref="SendingSites"/> writes one.</param>
+    /// <returns>The expressions, ending in <c>described</c>.</returns>
+    private static string Rebuilt(string activity) => $$"""
         {{SendingSites.Of(
-            SendingSites.ThePeriodAndTheVisitsAcrossIt,
+            activity,
             "event_id",
             "surface",
             "visitor_key",

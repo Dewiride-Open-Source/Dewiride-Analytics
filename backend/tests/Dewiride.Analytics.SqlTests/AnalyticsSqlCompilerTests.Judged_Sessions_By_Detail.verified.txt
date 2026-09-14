@@ -242,7 +242,16 @@ WITH
     ),
     narrowed AS
     (
-        SELECT session_key
+        SELECT
+            session_key,
+            from_site,
+            from_kind,
+            country,
+            town,
+            network,
+            device,
+            browser,
+            system_name
         FROM described
         WHERE (empty({devices:Array(String)}) OR device IN {devices:Array(String)})
           AND (empty({source_kinds:Array(String)}) OR from_kind IN {source_kinds:Array(String)})
@@ -269,7 +278,15 @@ SELECT
     signal_weights,
     signal_supporting,
     signal_parameters,
-    toInt64(count() OVER ()) AS total_visits
+    toInt64(count() OVER ()) AS total_visits,
+    from_site,
+    from_kind,
+    country,
+    town,
+    network,
+    device,
+    browser,
+    system_name
 FROM
 (
     SELECT *
@@ -279,11 +296,11 @@ FROM
       AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
     ORDER BY ruleset_major DESC, ruleset_minor DESC, classified_at DESC
     LIMIT 1 BY session_key
-)
+) AS judged
+INNER JOIN narrowed USING (session_key)
 WHERE (empty({categories:Array(String)}) OR toString(category) IN {categories:Array(String)})
   AND (empty({strengths:Array(String)}) OR toString(strength) IN {strengths:Array(String)})
   AND page_count >= {least_pages:UInt32}
-  AND session_key IN (SELECT session_key FROM narrowed)
 ORDER BY started_at DESC, session_key
 LIMIT {limit:UInt32} OFFSET {offset:UInt32}
 
@@ -301,8 +318,8 @@ second_levels = ['ac', 'co', 'com', 'edu', 'go', 'gob', 'gouv', 'gov', 'govt', '
 source_keys = ['mail.google.com', 'news.google.com', 'translate.google.com', 'gemini.google.com', 'chat.openai.com', 'copilot.microsoft.com', 'com.google.android.gm', 'google', 'bing', 'yahoo', 'duckduckgo', 'ecosia', 'qwant', 'startpage', 'brave', 'kagi', 'mojeek', 'marginalia', 'searx', 'yandex', 'baidu', 'naver', 'daum', 'seznam', 'sogou', 'ask', 'aol', 'lycos', 'chatgpt', 'openai', 'perplexity', 'claude', 'copilot', 'phind', 'poe', 'facebook', 'instagram', 'threads', 'twitter', 'x', 't', 'linkedin', 'lnkd', 'reddit', 'youtube', 'youtu', 'pinterest', 'tiktok', 'bsky', 'mastodon', 'tumblr', 'vk', 'weibo', 'quora']
 source_names = ['Gmail', 'Google News', 'Google Translate', 'Gemini', 'ChatGPT', 'Copilot', 'Gmail', 'Google', 'Bing', 'Yahoo', 'DuckDuckGo', 'Ecosia', 'Qwant', 'Startpage', 'Brave Search', 'Kagi', 'Mojeek', 'Marginalia', 'SearXNG', 'Yandex', 'Baidu', 'Naver', 'Daum', 'Seznam', 'Sogou', 'Ask', 'AOL', 'Lycos', 'ChatGPT', 'ChatGPT', 'Perplexity', 'Claude', 'Copilot', 'Phind', 'Poe', 'Facebook', 'Instagram', 'Threads', 'X', 'X', 'X', 'LinkedIn', 'LinkedIn', 'Reddit', 'YouTube', 'YouTube', 'Pinterest', 'TikTok', 'Bluesky', 'Mastodon', 'Tumblr', 'VK', 'Weibo', 'Quora']
 source_channels = ['link', 'link', 'link', 'assistant', 'assistant', 'assistant', 'link', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social']
-hosting_numbers = [16509, 14618, 15169, 19527, 396982, 8075, 45102, 37963, 134963, 203513, 45090, 132203, 133478, 137876, 55990, 136907, 131444, 141180, 151610, 14061, 63949, 20473, 24940, 212317, 213230, 215859, 16276, 51167, 40021, 141995, 12876, 31898, 36351, 60781, 19148, 30633, 133752, 134351, 136988, 8560, 197540, 49505, 62240, 42708, 396356, 32475, 20860, 20773, 26496, 12200, 19994, 15395]
-hosting_names = ['Amazon Web Services', 'Amazon Web Services', 'Google', 'Google', 'Google Cloud', 'Microsoft', 'Alibaba Cloud', 'Alibaba Cloud', 'Alibaba Cloud', 'Alibaba Cloud', 'Tencent Cloud', 'Tencent Cloud', 'Tencent Cloud', 'Tencent Cloud', 'Huawei Cloud', 'Huawei Cloud', 'Huawei Cloud', 'Huawei Cloud', 'Huawei Cloud', 'DigitalOcean', 'Linode', 'Vultr', 'Hetzner', 'Hetzner', 'Hetzner', 'Hetzner', 'OVHcloud', 'Contabo', 'Contabo', 'Contabo', 'Scaleway', 'Oracle Cloud', 'IBM Cloud', 'Leaseweb', 'Leaseweb', 'Leaseweb', 'Leaseweb', 'Leaseweb', 'Leaseweb', 'IONOS', 'netcup', 'Selectel', 'Clouvider', 'GleSYS', 'Latitude.sh', 'SingleHop', 'iomart', 'GoDaddy', 'GoDaddy', 'Rackspace', 'Rackspace', 'Rackspace']
+hosting_numbers = [16509, 14618, 15169, 19527, 396982, 8075, 45102, 37963, 134963, 203513, 45090, 132203, 133478, 137876, 55990, 136907, 131444, 141180, 151610, 137718, 55960, 134756, 146966, 134543, 14061, 63949, 20473, 203020, 24940, 212317, 213230, 215859, 16276, 51167, 40021, 141995, 12876, 31898, 36351, 60781, 19148, 30633, 133752, 134351, 136988, 8560, 197540, 49505, 62240, 42708, 396356, 32475, 20860, 20773, 26496, 12200, 19994, 15395]
+hosting_names = ['Amazon Web Services', 'Amazon Web Services', 'Google', 'Google', 'Google Cloud', 'Microsoft', 'Alibaba Cloud', 'Alibaba Cloud', 'Alibaba Cloud', 'Alibaba Cloud', 'Tencent Cloud', 'Tencent Cloud', 'Tencent Cloud', 'Tencent Cloud', 'Huawei Cloud', 'Huawei Cloud', 'Huawei Cloud', 'Huawei Cloud', 'Huawei Cloud', 'Volcano Engine', 'Sinnet', 'China Telecom', 'China Telecom', 'China Unicom', 'DigitalOcean', 'Linode', 'Vultr', 'HostRoyale', 'Hetzner', 'Hetzner', 'Hetzner', 'Hetzner', 'OVHcloud', 'Contabo', 'Contabo', 'Contabo', 'Scaleway', 'Oracle Cloud', 'IBM Cloud', 'Leaseweb', 'Leaseweb', 'Leaseweb', 'Leaseweb', 'Leaseweb', 'Leaseweb', 'IONOS', 'netcup', 'Selectel', 'Clouvider', 'GleSYS', 'Latitude.sh', 'SingleHop', 'iomart', 'GoDaddy', 'GoDaddy', 'Rackspace', 'Rackspace', 'Rackspace']
 idle_seconds = 1800
 longest_visit_seconds = 86400
 devices = ['Phone']

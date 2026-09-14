@@ -131,6 +131,63 @@ public sealed class DeclaredIdentityDetectorTests
     }
 
     /// <summary>
+    /// A crawler that introduces itself under a name nobody has catalogued is reported as having
+    /// called itself a crawler and nothing more. The name is text the visitor wrote, and it does
+    /// not travel with the report.
+    /// </summary>
+    [Fact]
+    public void A_Crawler_Naming_Itself_Only_As_A_Crawler_Is_Reported_As_One_Without_A_Name()
+    {
+        var found = detector.Examine(Visits.ANamelessCrawler()).Should().ContainSingle().Subject;
+
+        found.Code.Should().Be(SignalCodes.DeclaredGenericCrawler);
+        found.Direction.Should().Be(SignalDirection.TowardAutomation);
+        found.Weight.Should().Be(60);
+        found.Parameters.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_Catalogued_Name_Is_Reported_As_The_Name_Rather_Than_As_A_Crawler_Word()
+    {
+        var found = detector.Examine(Visits.ANamedCrawler("Mozilla/5.0 (compatible; Googlebot/2.1)"));
+
+        found.Select(signal => signal.Code).Should()
+            .BeEquivalentTo(SignalCodes.DeclaredCrawler, SignalCodes.UnverifiedClaim);
+    }
+
+    [Fact]
+    public void A_Named_Tool_Is_Reported_As_The_Tool_Rather_Than_As_A_Crawler_Word()
+    {
+        var found = detector.Examine(Visits.ANamedCrawler("MyCrawler/1.0 python-requests/2.32.3"))
+            .Should().ContainSingle().Subject;
+
+        found.Code.Should().Be(SignalCodes.DeclaredTool);
+        found.Parameters["kind"].Should().Be("script");
+    }
+
+    [Fact]
+    public void A_Crawler_Word_Is_Not_Reported_Where_The_Address_Settled_Who_It_Was()
+    {
+        detector.Examine(Visits.AConfirmedCrawler("Microsoft", Visits.NamelessCrawler))
+            .Should().ContainSingle().Which.Code.Should().Be(SignalCodes.ConfirmedCrawler);
+    }
+
+    /// <summary>
+    /// Both say what kind of thing was fetching and neither says whose, so neither is worth more
+    /// than the other — and both are worth more than saying nothing at all.
+    /// </summary>
+    [Fact]
+    public void A_Crawler_Word_Weighs_The_Same_As_A_Named_Tool()
+    {
+        var described = detector.Examine(Visits.ANamelessCrawler()).Single();
+        var named = detector.Examine(Visits.ANamedCrawler("curl/8.19.0")).Single();
+        var silent = detector.Examine(Visits.ANamedCrawler(string.Empty)).Single();
+
+        described.Weight.Should().Be(named.Weight);
+        described.Weight.Should().BeGreaterThan(silent.Weight);
+    }
+
+    /// <summary>
     /// Nothing a visitor says about itself can be evidence that a person was there. It is text the
     /// visitor chose, and a crawler that wanted to be taken for a reader would choose differently.
     /// </summary>
@@ -138,6 +195,7 @@ public sealed class DeclaredIdentityDetectorTests
     [InlineData("Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)")]
     [InlineData("meta-externalagent/1.1")]
     [InlineData("curl/8.19.0")]
+    [InlineData(Visits.NamelessCrawler)]
     [InlineData("")]
     public void Nothing_A_Visitor_Says_About_Itself_Points_Toward_A_Person(string userAgent)
     {

@@ -13,9 +13,10 @@ namespace Dewiride.Analytics.Integration.Tests.Telemetry;
 /// </summary>
 /// <remarks>
 /// These readings answer a screen that renews itself every few seconds, so what they get wrong is
-/// wrong in front of somebody watching. Three properties matter more than the rest and each has a
+/// wrong in front of somebody watching. Four properties matter more than the rest and each has a
 /// test here: one visitor is one row however many surfaces saw them, somebody who has gone is gone,
-/// and how busy a site is does not shrink to the length of the list an answer had room for.
+/// how busy a site is does not shrink to the length of the list an answer had room for, and every
+/// visitor counted stands on exactly one of the pages listed.
 /// </remarks>
 /// <param name="stack">The running stack.</param>
 [Collection(SharedStackDefinition.Name)]
@@ -260,11 +261,12 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// A page one visitor reloaded and a page several visitors opened are the same number of
-    /// deliveries and not the same news, so both figures are reported.
+    /// A page one visitor reloaded twenty times holds one visitor. How often a page was delivered
+    /// is the minute-by-minute drawing's question, and a list of pages that answered it too would
+    /// put a page one person kept reloading above a page ten people are reading.
     /// </summary>
     [Fact]
-    public async Task A_Page_Reports_How_Many_Visitors_Were_On_It_As_Well_As_How_Often_It_Was_Read()
+    public async Task A_Page_One_Visitor_Reloaded_Holds_One_Visitor()
     {
         var siteId = Guid.NewGuid();
 
@@ -276,8 +278,130 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
         var pages = await WhatIsBeingRead(siteId);
 
         pages.Should().ContainSingle();
-        pages[0].PageViews.Should().Be(3);
         pages[0].Visitors.Should().Be(1);
+    }
+
+    /// <summary>
+    /// The property the pages list exists to hold: every visitor the reading of who is here counts
+    /// stands on exactly one page, so the pages add up to the headline rather than to something
+    /// near it, and the page beside every row is one of the pages listed.
+    /// </summary>
+    [Fact]
+    public async Task Every_Visitor_Seen_Stands_On_Exactly_One_Page_Being_Read()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            FromServer(siteId, Now.AddMinutes(-9), "visitor-a", "/a"),
+            FromServer(siteId, Now.AddMinutes(-8), "visitor-b", "/a"),
+            FromServer(siteId, Now.AddMinutes(-7), "visitor-c", "/b"),
+            FromServer(siteId, Now.AddMinutes(-6), "visitor-d", "/a"),
+            FromServer(siteId, Now.AddMinutes(-2), "visitor-d", "/c"));
+
+        var here = await WhoIsHere(siteId);
+        var pages = await WhatIsBeingRead(siteId);
+
+        pages.Sum(page => page.Visitors).Should().Be(here.VisitorsSeen);
+        here.Visitors.Select(visitor => visitor.CurrentPath).Should().BeSubsetOf(pages.Select(page => page.Path));
+        pages.Select(page => page.Path).Should().OnlyHaveUniqueItems();
+    }
+
+    /// <summary>
+    /// Somebody who arrived before the window opened and is still reading has sent nothing but
+    /// progress reports inside it. They are counted by the reading of who is here, so they stand on
+    /// a page in the list of pages too, or the two would disagree by one for every long read.
+    /// </summary>
+    [Fact]
+    public async Task Somebody_Only_Reading_A_Page_Is_On_It_In_Both_Lists()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(Engaged(siteId, Now.AddMinutes(-5), "reader", "/long-read"));
+
+        var here = await WhoIsHere(siteId);
+        var pages = await WhatIsBeingRead(siteId);
+
+        here.VisitorsSeen.Should().Be(1);
+        here.Visitors[0].CurrentPath.Should().Be("/long-read");
+        pages.Should().ContainSingle();
+        pages[0].Path.Should().Be("/long-read");
+        pages[0].Visitors.Should().Be(1);
+    }
+
+    /// <summary>
+    /// A report carrying no visitor key names nobody, and nobody cannot be placed on a page. The
+    /// reading of who is here leaves such reports out for the same reason, so leaving them in here
+    /// would put more visitors on the pages than the headline says there are.
+    /// </summary>
+    [Fact]
+    public async Task A_Report_That_Named_Nobody_Puts_Nobody_On_A_Page()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            FromServer(siteId, Now.AddMinutes(-3), null, "/anonymous"),
+            FromServer(siteId, Now.AddMinutes(-2), "reader", "/"));
+
+        var here = await WhoIsHere(siteId);
+        var pages = await WhatIsBeingRead(siteId);
+
+        pages.Select(page => page.Path).Should().Equal("/");
+        pages.Sum(page => page.Visitors).Should().Be(here.VisitorsSeen);
+        here.VisitorsSeen.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_Visitor_Who_Moved_On_Is_Counted_Where_They_Are_Now()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            FromServer(siteId, Now.AddMinutes(-6), "reader", "/"),
+            FromServer(siteId, Now.AddMinutes(-1), "reader", "/pricing"));
+
+        var pages = await WhatIsBeingRead(siteId);
+
+        pages.Select(page => page.Path).Should().Equal("/pricing");
+    }
+
+    [Fact]
+    public async Task A_Visitor_Both_Halves_Saw_Stands_On_One_Page()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            FromServer(siteId, Now.AddMinutes(-5), "as-the-server-saw-them", "/posts/hello", "delivery-1"),
+            FromBrowser(siteId, Now.AddMinutes(-5), "as-the-browser-saw-them", "/posts/hello", "delivery-1"));
+
+        var here = await WhoIsHere(siteId);
+        var pages = await WhatIsBeingRead(siteId);
+
+        here.VisitorsSeen.Should().Be(1);
+        pages.Should().ContainSingle();
+        pages[0].Visitors.Should().Be(1);
+    }
+
+    /// <summary>
+    /// What the site answered with is only ever seen by the reporter on its own server, and the
+    /// browser's sighting of the same page carries nothing. The live reading reads the status from
+    /// the server's sighting, as the finished visit does, so a rule that turns on whether a page was
+    /// served reaches the same conclusion about a visitor while they are here as it will once they
+    /// have gone.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_Both_Halves_Saw_Carries_The_Status_The_Site_Answered_With()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            FromBrowser(siteId, Now.AddMinutes(-5), "as-the-browser-saw-them", "/wp-admin/", "delivery-1"),
+            Answered(FromServer(siteId, Now.AddMinutes(-5).AddSeconds(1), "as-the-server-saw-them", "/wp-admin/", "delivery-1"), 302));
+
+        var here = await WhoIsHere(siteId);
+
+        here.Visitors.Should().ContainSingle();
+        here.Visitors[0].Evidence.Requests.Should().ContainSingle();
+        here.Visitors[0].Evidence.Requests[0].StatusCode.Should().Be(302);
     }
 
     /// <summary>

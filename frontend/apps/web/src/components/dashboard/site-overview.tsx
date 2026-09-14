@@ -33,6 +33,7 @@ import {
 } from '@/lib/analytics/period';
 import { useChartView } from '@/lib/analytics/use-chart-view';
 import { useComparison } from '@/lib/analytics/use-comparison';
+import { usePeopleOnly } from '@/lib/analytics/use-people-only';
 import { usePeriod } from '@/lib/analytics/use-period';
 import type { Site } from '@/lib/api/schemas';
 import { useOverview, useSeries, useTrafficSeries } from '@/lib/queries/sites';
@@ -50,9 +51,10 @@ export function SiteOverview({ site }: SiteOverviewProps) {
   const serverKeys = useTranslations('serverKeys');
   const settings = useTranslations('siteSettings');
   const format = useFormatter();
-  const { period, choose } = usePeriod();
+  const { period, choose } = usePeriod({ seeding: true });
   const { view, show } = useChartView();
   const { against, compare } = useComparison();
+  const { peopleOnly, showOnlyPeople } = usePeopleOnly();
   const [showingCode, setShowingCode] = useState(false);
   const [showingKeys, setShowingKeys] = useState(false);
   const [showingSettings, setShowingSettings] = useState(false);
@@ -80,12 +82,13 @@ export function SiteOverview({ site }: SiteOverviewProps) {
   const overview = useOverview(site.id, window);
   const earlierOverview = useOverview(site.id, earlierWindow);
 
-  // Only whichever view is being read is asked for. The two answer different questions of
-  // different stores, and a screen opened on one has no reason to pay for the other.
-  const drawn = view === 'activity';
-  const views = useSeries(site.id, 'pageviews', window, granularity, drawn);
-  const visitors = useSeries(site.id, 'visitors', window, granularity, drawn);
-  const who = useTrafficSeries(site.id, window, granularity, !drawn);
+  // Only whichever picture is being drawn is asked for. How much was read comes from everything the
+  // website recorded; who came, and how much of it was people, come from visits that have finished
+  // and been judged. Two stores, and a screen drawing one has no reason to pay for the other.
+  const everyone = view === 'activity' && !peopleOnly;
+  const views = useSeries(site.id, 'pageviews', window, granularity, everyone);
+  const visitors = useSeries(site.id, 'visitors', window, granularity, everyone);
+  const who = useTrafficSeries(site.id, window, granularity, !everyone);
 
   // The earlier period is cut into the same buckets as this one, so that the two can be read off
   // the same place on the axis. Asked for only once somebody puts it behind the drawing.
@@ -94,16 +97,16 @@ export function SiteOverview({ site }: SiteOverviewProps) {
     'pageviews',
     earlierWindow,
     granularity,
-    drawn && against,
+    everyone && against,
   );
   const earlierVisitors = useSeries(
     site.id,
     'visitors',
     earlierWindow,
     granularity,
-    drawn && against,
+    everyone && against,
   );
-  const earlierWho = useTrafficSeries(site.id, earlierWindow, granularity, !drawn && against);
+  const earlierWho = useTrafficSeries(site.id, earlierWindow, granularity, !everyone && against);
 
   const points = useMemo(
     () => align(views.data?.points, visitors.data?.points),
@@ -131,7 +134,7 @@ export function SiteOverview({ site }: SiteOverviewProps) {
     });
   }, [period, site.timeZoneId, format]);
 
-  const problem = (drawn ? (views.error ?? visitors.error) : who.error) ?? null;
+  const problem = (everyone ? (views.error ?? visitors.error) : who.error) ?? null;
   const totals = overview.data;
   const before = earlierOverview.data;
   const comparedWith =
@@ -230,6 +233,8 @@ export function SiteOverview({ site }: SiteOverviewProps) {
           <TrafficChart
             view={view}
             onView={show}
+            peopleOnly={peopleOnly}
+            onPeopleOnly={showOnlyPeople}
             activity={views.data && visitors.data ? points : undefined}
             who={who.data}
             problem={problem}

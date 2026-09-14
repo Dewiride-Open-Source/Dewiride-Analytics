@@ -8,7 +8,6 @@ WITH
             visitor_key,
             correlation_id,
             server_ts,
-            kind,
             path
         FROM events
         WHERE site_id = {site_id:UUID}
@@ -42,26 +41,22 @@ WITH
             if(linked.browser_key != '' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'), linked.browser_key, windowed.visitor_key) AS visitor_key
         FROM windowed
         LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
+    ),
+    gathered AS
+    (
+        SELECT
+            visitor_key,
+            argMax(path, (server_ts, event_id)) AS current_path
+        FROM identified
+        WHERE visitor_key != ''
+        GROUP BY visitor_key
     )
 SELECT
-    path,
-    toInt64(sum(page_views)) AS page_views,
-    toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS visitors
-FROM
-(
-    SELECT
-        path,
-        visitor_key,
-        greatest(
-            countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),
-            countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) AS delivered,
-        if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
-    FROM identified
-    GROUP BY path, visitor_key
-)
+    current_path AS path,
+    toInt64(count()) AS visitors
+FROM gathered
 GROUP BY path
-HAVING page_views > 0
-ORDER BY page_views DESC, path
+ORDER BY visitors DESC, path
 LIMIT {limit:UInt32}
 SETTINGS max_execution_time = 10
 

@@ -484,12 +484,17 @@ export function readLive(siteId: string): Promise<Live> {
 /**
  * What one visitor who is here has been doing, in order.
  *
- * Asked about the same stretch of minutes the row was drawn from, so the pages counted on the row
- * and the pages listed under it are counted over one window rather than two.
+ * Asked over the minutes of the reading it sits under, named by that reading's instant, so the
+ * pages counted on the row and the pages listed under it are one reading of one window even when
+ * a beat has passed between them.
+ *
+ * @param at When the reading the row was drawn from was taken.
  */
-export function readLiveTrail(siteId: string, visitor: string): Promise<LiveTrail> {
+export function readLiveTrail(siteId: string, visitor: string, at: string): Promise<LiveTrail> {
+  const asked = new URLSearchParams({ at });
+
   return readResource(
-    `${siteAddress(siteId)}/live/${encodeURIComponent(visitor)}/trail`,
+    `${siteAddress(siteId)}/live/${encodeURIComponent(visitor)}/trail?${asked}`,
     liveTrailSchema,
   );
 }

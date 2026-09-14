@@ -63,6 +63,16 @@ public static class SignalCodes
     /// <summary>The visitor named itself as a general-purpose automation tool rather than a crawler.</summary>
     public const string DeclaredTool = "identity.declared_tool";
 
+    /// <summary>
+    /// The visitor described itself as a crawler, in a name this product has no catalogue entry for.
+    /// </summary>
+    /// <remarks>
+    /// Carries no parameters, deliberately. The name is text the visitor wrote and has no business
+    /// reaching a screen; what is known is only that the visitor called itself a crawler, and the
+    /// sentence a reader is shown says exactly that and nothing more.
+    /// </remarks>
+    public const string DeclaredGenericCrawler = "identity.declared_generic_crawler";
+
     /// <summary>The visitor sent no user agent at all, which an ordinary browser never does.</summary>
     public const string NoUserAgent = "identity.no_user_agent";
 

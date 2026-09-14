@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bandsIn, stillJudgingFrom, totalsIn } from '@/lib/analytics/traffic-series';
+import { bandsIn, peopleIn, stillJudgingFrom, totalsIn } from '@/lib/analytics/traffic-series';
 import type { TrafficSeries } from '@/lib/api/schemas';
 
 const BUCKETS = [
@@ -82,6 +82,35 @@ describe('what a bucket held altogether', () => {
   /** A period nothing has been judged in still has its days, and each of them held nothing. */
   it('is nought in every bucket of a period nothing has been judged in', () => {
     expect(totalsIn(judged([]))).toStrictEqual([0, 0, 0]);
+  });
+});
+
+describe('what the people a website is for did', () => {
+  it('counts only the visits judged to be people, and the pages those visits read', () => {
+    const series = judged([
+      { category: 'likely-human', sessions: [3, 1, 2], pageViews: [9, 1, 4] },
+      { category: 'known-ai-crawler', sessions: [1, 4, 0], pageViews: [1, 6, 0] },
+    ]);
+
+    expect(peopleIn(series)).toStrictEqual({ visits: [3, 1, 2], pageViews: [9, 1, 4] });
+  });
+
+  /**
+   * A run of noughts rather than nothing at all. Set behind a period as the one before, a run
+   * that is missing draws as a line that never started, and a period nobody came to is a fact
+   * about that period rather than a gap in the record.
+   */
+  it('is nought in every bucket where nobody was judged to be a person', () => {
+    const series = judged([
+      { category: 'known-search-crawler', sessions: [2, 1, 3], pageViews: [2, 1, 3] },
+      { category: 'content-scraper', sessions: [0, 1, 0], pageViews: [0, 4, 0] },
+    ]);
+
+    expect(peopleIn(series)).toStrictEqual({ visits: [0, 0, 0], pageViews: [0, 0, 0] });
+  });
+
+  it('is nought across a period nothing has been judged in', () => {
+    expect(peopleIn(judged([]))).toStrictEqual({ visits: [0, 0, 0], pageViews: [0, 0, 0] });
   });
 });
 

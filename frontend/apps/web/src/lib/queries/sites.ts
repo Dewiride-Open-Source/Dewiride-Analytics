@@ -500,20 +500,25 @@ export function useLiveTraffic(siteId: string, watching: boolean) {
  * Only an opened row asks anything, so the cost of this screen is what the reader is actually
  * looking at rather than one question per visitor on it.
  *
- * Renewed on the same beat as the reading it was opened from, for as long as that visitor is still
- * reporting. Once they have gone their trail is finished and is kept exactly as it stands — a row
- * somebody is part-way through reading must not empty itself underneath them.
+ * Asked on no beat of its own: the beat is the live reading's, and each reading's instant renames
+ * the question. A row still here is asked about under every new reading, and a row whose visitor
+ * has gone keeps the instant it was last seen in, so it is never asked again and its trail stays
+ * exactly as it stood — a row somebody is part-way through reading must not empty itself
+ * underneath them. The answer to the last instant stays on screen until the answer to the next one
+ * lands, and an answer over a fixed instant cannot change, so one is never asked for twice while
+ * its row is on screen. Answers to instants no row asks about any more are let go on the cache's
+ * ordinary terms, since every beat would otherwise leave one more behind.
  *
+ * @param at When the reading the row was drawn from was taken.
  * @param opened Whether the row has been opened. Nothing is asked for until it has.
- * @param stillHere Whether the newest reading still carries the visitor.
  */
-export function useLiveTrail(siteId: string, visitor: string, opened: boolean, stillHere: boolean) {
+export function useLiveTrail(siteId: string, visitor: string, at: string, opened: boolean) {
   return useQuery({
-    queryKey: liveTrailKey(siteId, visitor),
-    queryFn: () => readLiveTrail(siteId, visitor),
+    queryKey: liveTrailKey(siteId, visitor, at),
+    queryFn: () => readLiveTrail(siteId, visitor, at),
     enabled: opened,
     retry: false,
-    staleTime: stillHere ? 0 : Infinity,
-    refetchInterval: opened && stillHere ? LIVE_EVERY : false,
+    placeholderData: keepPreviousData,
+    staleTime: Infinity,
   });
 }

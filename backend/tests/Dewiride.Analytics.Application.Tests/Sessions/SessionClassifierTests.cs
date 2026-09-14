@@ -229,6 +229,24 @@ public sealed class SessionClassifierTests
     }
 
     /// <summary>
+    /// A visit nothing could be concluded about is not thereby machinery. Where anything observed
+    /// points toward a person, the address is treated as a person's — which is the only safe way to
+    /// treat an address the product is not sure about.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Nothing_Could_Be_Concluded_About_Whose_Browser_Spoke_Is_Not_Asked_About()
+    {
+        var harness = new JudgingHarness();
+        harness.AnswerOnce(JudgingHarness.Glance(JudgingHarness.AddedAt.AddHours(1), "203.0.113.9"));
+
+        await harness.RunAsync();
+
+        harness.Asked.Should().BeEmpty();
+        harness.Stored.Should().ContainSingle();
+        harness.Stored[0].Verdict.Category.Should().Be(TrafficCategory.Unknown);
+    }
+
+    /// <summary>
     /// Already settled when the activity was collected, against a list the company publishes.
     /// There is nothing left to establish and no reason to ask anybody.
     /// </summary>

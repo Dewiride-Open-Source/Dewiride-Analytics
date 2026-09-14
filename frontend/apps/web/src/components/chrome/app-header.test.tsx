@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from 'next-themes';
+import type { OnUrlUpdateFunction } from 'nuqs/adapters/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppHeader } from '@/components/chrome/app-header';
 import type * as Navigation from '@/i18n/navigation';
@@ -20,6 +21,7 @@ vi.mock('@/i18n/navigation', async (original) => ({
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  window.localStorage.clear();
 });
 
 const OWNER = {
@@ -63,10 +65,25 @@ function engineWith(sites: readonly Site[]) {
   });
 }
 
-function withTheme(ui: React.ReactElement, at?: string) {
+interface Arriving {
+  /** What the address is asking for. */
+  readonly at?: string;
+  /** Told whenever the bar writes to the address. */
+  readonly watching?: OnUrlUpdateFunction;
+  /**
+   * Whether the bar is mounted one step after the address, so that anything it wrote on arrival
+   * would reach whoever is watching rather than being thrown away with the address's own first
+   * re-render. Asked for by the test of whether it writes at all.
+   */
+  readonly afterAddress?: boolean;
+}
+
+function withTheme(ui: React.ReactElement, { at, watching, afterAddress }: Arriving = {}) {
   return renderScreen(<ThemeProvider attribute="class">{ui}</ThemeProvider>, {
     sessionAlreadyRead: false,
     searchParams: at,
+    watchingAddress: watching,
+    arrivingAfterAddress: afterAddress,
   });
 }
 
@@ -148,7 +165,7 @@ describe('the bar across the top', () => {
   it('hands the period between the screens about a stretch of days, and to no other', async () => {
     engineWith([SITE]);
 
-    withTheme(<AppHeader />, '?period=yesterday');
+    withTheme(<AppHeader />, { at: '?period=yesterday' });
 
     const sections = await screen.findByRole('navigation', { name: 'Sections' });
 
@@ -168,6 +185,32 @@ describe('the bar across the top', () => {
       'href',
       '/app/settings',
     );
+  });
+
+  /**
+   * The bar reads the period on every screen, including the ones with no stretch of days to ask
+   * about, so a period it remembers is handed on to the screens that are about one and written
+   * into nobody's address — least of all the address of a screen it means nothing on.
+   */
+  it('hands the remembered period between the screens without writing it into this one', async () => {
+    const watching = vi.fn();
+
+    window.localStorage.setItem('dewiride.period', 'yesterday');
+    engineWith([SITE]);
+
+    withTheme(<AppHeader />, { watching, afterAddress: true });
+
+    const sections = await screen.findByRole('navigation', { name: 'Sections' });
+
+    expect(within(sections).getByRole('link', { name: 'Overview' })).toHaveAttribute(
+      'href',
+      '/app?period=yesterday',
+    );
+    expect(within(sections).getByRole('link', { name: 'Live' })).toHaveAttribute(
+      'href',
+      '/app/live',
+    );
+    expect(watching).not.toHaveBeenCalled();
   });
 
   it('marks the screen being looked at', async () => {

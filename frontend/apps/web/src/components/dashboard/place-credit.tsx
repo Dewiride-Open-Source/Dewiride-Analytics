@@ -43,6 +43,33 @@ export function RoutingCredit() {
   );
 }
 
+interface ListCreditsProps {
+  /** Whether any row on the list was placed somewhere. */
+  readonly placed: boolean;
+  /** Whether any row on the list names the network it came over. */
+  readonly networked: boolean;
+}
+
+/**
+ * The credits a list of visitors ends in, each only where its own results are on the list.
+ *
+ * A list that places some of its rows and names the networks of some of them owes both links;
+ * one that does neither owes nothing and shows nothing, not even the rule it would sit under.
+ * One component rather than a block repeated at the foot of every list, for the reason above.
+ */
+export function ListCredits({ placed, networked }: ListCreditsProps) {
+  if (!placed && !networked) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-col gap-1 border-t border-border pt-3">
+      {placed ? <PlaceCredit /> : null}
+      {networked ? <RoutingCredit /> : null}
+    </div>
+  );
+}
+
 function creditLink(address: string) {
   return (label: ReactNode) => (
     <a

@@ -8,6 +8,8 @@
   as one visit in the grouping this rebuild derives a visit's name from.
 - **Revised by**: [0035](0035-a-visit-is-judged-on-all-of-itself.md), which bounds the rebuild at the
   verdict's own evidence so that it is the same visit the engine judged, as this one intended.
+- **Revised by**: [0038](0038-a-list-says-what-each-visit-was.md), which puts the rebuilt account on
+  every row of the list, so the ordinary list pays for the page it shows rather than nothing.
 
 ## Context
 

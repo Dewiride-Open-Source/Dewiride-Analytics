@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type OnUrlUpdateFunction, withNuqsTestingAdapter } from 'nuqs/adapters/testing';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChartView } from '@/lib/analytics/chart-view';
 import { useChartView } from '@/lib/analytics/use-chart-view';
 
@@ -27,19 +27,32 @@ interface Arriving {
 }
 
 function arrive({ at, picking = 'activity', watching }: Arriving = {}) {
-  return render(<Probe pick={picking} />, {
-    wrapper: withNuqsTestingAdapter({
-      searchParams: at,
-      onUrlUpdate: watching,
-      hasMemory: true,
-    }),
+  const wrapper = withNuqsTestingAdapter({
+    searchParams: at,
+    onUrlUpdate: watching,
+    hasMemory: true,
   });
+
+  // The stand-in address renders once more the moment it is mounted, to take up what it was given,
+  // and throws away whatever is waiting to be written every time it renders. A screen mounted in
+  // that same moment would have what it seeds thrown away with it — which the browser's own
+  // address never does — so the screen arrives one step after the address.
+  const shown = render(<></>, { wrapper });
+
+  shown.rerender(<Probe pick={picking} />);
+
+  return shown;
 }
 
 /** Which view the screen currently believes it is on. */
 function showing() {
   return screen.getByRole('button').textContent;
 }
+
+// The browser's storage outlives a test, so each one starts with nothing remembered.
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
 describe('which view the picture is on', () => {
   it('is who the traffic was when the address says nothing', () => {
@@ -94,5 +107,42 @@ describe('which view the picture is on', () => {
 
     await waitFor(() => expect(watching).toHaveBeenCalled());
     expect(watching.mock.calls[0]?.[0].options.history).toBe('push');
+  });
+
+  /** Somebody who reads how much rather than who should find the picture on it next time. */
+  it('is remembered once chosen', async () => {
+    arrive();
+
+    await userEvent.click(screen.getByRole('button'));
+
+    await waitFor(() => expect(showing()).toBe('activity'));
+    expect(window.localStorage.getItem('dewiride.chart-view')).toBe('activity');
+  });
+
+  /**
+   * The link in the bar should still say what is on the screen, and nothing anybody pressed put
+   * the view there, so it is written in over the entry somebody is already on.
+   */
+  it('opens on the view last read when the address says nothing', async () => {
+    const watching = vi.fn();
+
+    window.localStorage.setItem('dewiride.chart-view', 'activity');
+
+    arrive({ watching });
+
+    expect(showing()).toBe('activity');
+
+    await waitFor(() => expect(watching).toHaveBeenCalled());
+    expect(watching.mock.calls[0]?.[0].queryString).toContain('show=activity');
+    expect(watching.mock.calls[0]?.[0].options.history).toBe('replace');
+  });
+
+  /** A link names what its sender was looking at, and the reader's own habit gives way to it. */
+  it('lets a link name the view over the one remembered', () => {
+    window.localStorage.setItem('dewiride.chart-view', 'activity');
+
+    arrive({ at: '?show=who' });
+
+    expect(showing()).toBe('who');
   });
 });

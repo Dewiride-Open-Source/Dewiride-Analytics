@@ -86,17 +86,21 @@ export interface NamedNow {
  * folded into a category meaning "not sure" — there is no such category, and borrowing one that
  * means something else would be this product asserting a thing it does not know to fill a column.
  *
+ * The rest are everybody the half hour holds who was not named, counted from the whole rather than
+ * from the list. The list is cut short at a hundred, so a count taken from it would say a sweep of
+ * three hundred had ninety-odd unnamed.
+ *
  * Two categories with the same count are ordered by name, so that a reading arriving ten seconds
  * later does not shuffle them past each other for no reason a reader could see.
+ *
+ * @param visitors The visitors the reading carried.
+ * @param visitorsSeen How many visitors the half hour holds altogether.
  */
-export function namedNow(visitors: readonly LiveVisitor[]): NamedNow {
+export function namedNow(visitors: readonly LiveVisitor[], visitorsSeen: number): NamedNow {
   const counted = new Map<TrafficCategory, number>();
-  let unnamed = 0;
 
   for (const visitor of visitors) {
-    if (visitor.category === null) {
-      unnamed += 1;
-    } else {
+    if (visitor.category !== null) {
       counted.set(visitor.category, (counted.get(visitor.category) ?? 0) + 1);
     }
   }
@@ -108,13 +112,22 @@ export function namedNow(visitors: readonly LiveVisitor[]): NamedNow {
         second.visitors - first.visitors || (first.category < second.category ? -1 : 1),
     );
 
-  return { groups, unnamed };
+  const named = groups.reduce((sum, group) => sum + group.visitors, 0);
+
+  return { groups, unnamed: Math.max(visitorsSeen - named, 0) };
 }
 
 /** One row on the list, and whether the visitor behind it is still reporting. */
 export interface LiveRow {
   readonly visitor: LiveVisitor;
   readonly stillHere: boolean;
+  /**
+   * When the reading this row was drawn from was taken.
+   *
+   * A row held after its visitor has gone keeps the one it was last seen in, so what is asked
+   * about it stays the same question.
+   */
+  readonly at: string;
 }
 
 /**
@@ -129,17 +142,23 @@ export interface LiveRow {
  * rearranged itself under somebody's hand every ten seconds would be unreadable however correct
  * each rearrangement was — which is also why the rows that have gone go to the end rather than
  * holding the places they used to have.
+ *
+ * Every row present is stamped with the reading it came from; a row that has gone keeps the one it
+ * was last seen in.
+ *
+ * @param at When the reading that has just arrived was taken.
  */
 export function rowsToShow(
   here: readonly LiveVisitor[],
   shown: readonly LiveRow[],
   opened: ReadonlySet<string>,
+  at: string,
 ): readonly LiveRow[] {
   const present = new Set(here.map((visitor) => visitor.visitor));
 
   const gone = shown
     .filter((row) => opened.has(row.visitor.visitor) && !present.has(row.visitor.visitor))
-    .map((row) => (row.stillHere ? { visitor: row.visitor, stillHere: false } : row));
+    .map((row) => (row.stillHere ? { visitor: row.visitor, stillHere: false, at: row.at } : row));
 
-  return [...here.map((visitor) => ({ visitor, stillHere: true })), ...gone];
+  return [...here.map((visitor) => ({ visitor, stillHere: true, at })), ...gone];
 }

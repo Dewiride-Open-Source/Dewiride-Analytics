@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using Dewiride.Analytics.Api.Contracts;
@@ -27,6 +28,9 @@ public sealed class LiveReadTests(AnalyticsStackFixture stack)
     private const string GptBot = "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; "
         + "GPTBot/1.2; +https://openai.com/gptbot";
 
+    /// <summary>How many arrivals this test has written, which spaces them a second apart.</summary>
+    private int _arrivals;
+
     [Fact]
     public async Task A_Member_Sees_Who_Is_On_Their_Site()
     {
@@ -45,7 +49,8 @@ public sealed class LiveReadTests(AnalyticsStackFixture stack)
             live.Visitors.Should().ContainSingle();
             live.Visitors[0].CurrentPath.Should().Be("/pricing");
             live.Visitors[0].PageCount.Should().Be(2);
-            live.Pages.Select(page => page.Path).Should().BeEquivalentTo("/", "/pricing");
+            live.Pages.Should().ContainSingle().Which.Path.Should().Be("/pricing");
+            live.Pages.Sum(page => page.Visitors).Should().Be(live.VisitorsSeen);
         }
     }
 
@@ -180,8 +185,8 @@ public sealed class LiveReadTests(AnalyticsStackFixture stack)
 
     /// <summary>
     /// The whole of the second half of this screen: open a row and see where that visitor has been.
-    /// It reads the same stretch of minutes the row was drawn from, so the pages it shows and the
-    /// number the row printed are one reading of one window.
+    /// It is asked under the reading the row was drawn from and read over that reading's own
+    /// minutes, so the pages it shows and the number the row printed are one reading of one window.
     /// </summary>
     [Fact]
     public async Task A_Member_Opens_A_Visitor_And_Sees_Where_They_Have_Been()
@@ -196,11 +201,64 @@ public sealed class LiveReadTests(AnalyticsStackFixture stack)
         using (browser)
         {
             var live = await ReadAsync(browser, site.Id);
-            var trail = await TrailAsync(browser, site.Id, live.Visitors[0].Visitor);
+            var trail = await TrailAsync(browser, site.Id, live.Visitors[0].Visitor, live.At);
 
             trail.Visitor.Should().Be(live.Visitors[0].Visitor);
+            trail.At.Should().Be(live.At);
             trail.Steps.Select(step => step.Path).Should().Equal("/", "/pricing");
             trail.Steps.Should().HaveCount(live.Visitors[0].PageCount);
+        }
+    }
+
+    /// <summary>
+    /// The instant arrives from an address somebody typed. One a reading could not have been taken
+    /// at — ahead of the engine's clock by more than one clock may be of another, or further back
+    /// than any visit reaches — is turned away where it arrives, before the site is looked up, and
+    /// nothing of what was written comes back.
+    /// </summary>
+    [Theory]
+    [InlineData("00:10:00")]
+    [InlineData("-1.01:00:00")]
+    [InlineData("yesterday")]
+    public async Task A_Trail_Under_A_Reading_Nobody_Could_Have_Taken_Is_Refused(string offset)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        var at = TimeSpan.TryParse(offset, CultureInfo.InvariantCulture, out var away)
+            ? Stamp(stack.Services.GetRequiredService<TimeProvider>().GetUtcNow() + away)
+            : offset;
+
+        using (browser)
+        {
+            var response = await browser.GetAsync(
+                $"/api/sites/{site.Id}/live/2f8a1c0b4d6e7f905a1b2c3d4e5f6071/trail?at={Uri.EscapeDataString(at)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+            var body = await response.Content.ReadAsStringAsync(Cancellation.Token);
+
+            body.Should().NotContain(at);
+        }
+    }
+
+    /// <summary>
+    /// A trail asked for without a reading is read about the present moment, which is what a
+    /// caller with no row to sit it under means.
+    /// </summary>
+    [Fact]
+    public async Task A_Trail_Asked_Without_A_Reading_Is_Read_About_Now()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var trail = await TrailAsync(browser, site.Id, "2f8a1c0b4d6e7f905a1b2c3d4e5f6071");
+
+            trail.At.Should().BeCloseTo(
+                stack.Services.GetRequiredService<TimeProvider>().GetUtcNow(),
+                TimeSpan.FromMinutes(1));
         }
     }
 
@@ -298,9 +356,17 @@ public sealed class LiveReadTests(AnalyticsStackFixture stack)
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    private static async Task<LiveTrailResponse> TrailAsync(Browser browser, Guid siteId, string visitor)
+    /// <summary>
+    /// Asks for a trail under a reading, or about the present moment where none is given.
+    /// </summary>
+    private static async Task<LiveTrailResponse> TrailAsync(
+        Browser browser,
+        Guid siteId,
+        string visitor,
+        DateTimeOffset? at = null)
     {
-        var response = await browser.GetAsync($"/api/sites/{siteId}/live/{visitor}/trail");
+        var under = at is null ? string.Empty : $"?at={Uri.EscapeDataString(Stamp(at.Value))}";
+        var response = await browser.GetAsync($"/api/sites/{siteId}/live/{visitor}/trail{under}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -331,9 +397,16 @@ public sealed class LiveReadTests(AnalyticsStackFixture stack)
     /// A page asked for a moment ago, so it falls inside whatever stretch the engine reads when the
     /// question is put to it.
     /// </summary>
+    /// <remarks>
+    /// Each arrival is stamped a second after the one before it. Two written in the same
+    /// millisecond have no order the store could settle — the page a visitor is on is the one
+    /// their latest report named, and latest between two identical instants is a coin toss — so
+    /// the order the tests write them in is the order they happened in.
+    /// </remarks>
     private RawEvent Arrived(Guid siteId, string visitorKey, string path)
     {
-        var at = stack.Services.GetRequiredService<TimeProvider>().GetUtcNow().AddSeconds(-30);
+        var at = stack.Services.GetRequiredService<TimeProvider>().GetUtcNow()
+            .AddSeconds(-30 + ++_arrivals);
 
         return new RawEvent
         {
@@ -350,6 +423,10 @@ public sealed class LiveReadTests(AnalyticsStackFixture stack)
 
     private static RawEvent Vouched(RawEvent observed, string operatorName, string userAgent) =>
         observed with { ConfirmedOperator = operatorName, UserAgent = userAgent };
+
+    /// <summary>An instant as a reading reports it, and as a screen hands it back.</summary>
+    private static string Stamp(DateTimeOffset at) =>
+        at.UtcDateTime.ToString("o", CultureInfo.InvariantCulture);
 
     private async Task<Browser> SignedInAsync(Guid siteId, SiteRole role)
     {

@@ -415,6 +415,11 @@ public sealed record VisitsResponse(
 /// <param name="Contradicting">
 /// The evidence that pointed the other way, kept and shown rather than discarded.
 /// </param>
+/// <param name="Context">
+/// What could be established about the visitor, on the same terms as the account the opened visit
+/// gives — the same eight fields, spelled the same way, so a row and the panel beneath it never
+/// disagree. Every field empty where nothing established it.
+/// </param>
 public sealed record VisitSummary(
     string Id,
     DateTimeOffset StartedAt,
@@ -425,7 +430,8 @@ public sealed record VisitSummary(
     string Strength,
     string Ruleset,
     IReadOnlyList<VisitReason> Supporting,
-    IReadOnlyList<VisitReason> Contradicting);
+    IReadOnlyList<VisitReason> Contradicting,
+    VisitContextResponse Context);
 
 /// <summary>
 /// One observation behind a verdict.
@@ -764,7 +770,11 @@ public sealed record VisitPressed(string Name, string Control, string? Target, s
 /// <param name="VisitorsSeen">How many visitors reported in that stretch, counted over all of them.</param>
 /// <param name="Visitors">Those this answer carried, the one most recently active first.</param>
 /// <param name="Minutes">Every minute the stretch covers, oldest first, including the empty ones.</param>
-/// <param name="Pages">The pages being read, busiest first.</param>
+/// <param name="Pages">
+/// The pages visitors are on, the one holding most first. Every visitor seen stands on exactly one
+/// of them; a list cut short at its cap falls short of the visitors seen by exactly the visitors on
+/// the pages it left out.
+/// </param>
 public sealed record LiveResponse(
     DateTimeOffset At,
     DateTimeOffset From,
@@ -829,15 +839,17 @@ public sealed record LiveVisitorSummary(
 public sealed record LiveMinuteRow(DateTimeOffset Start, long PageViews);
 
 /// <summary>
-/// One page being read.
+/// One page visitors are on.
 /// </summary>
 /// <param name="Path">
 /// The address, as it was asked for. Written by whoever is visiting the site, so it reaches a screen
 /// as text and is never followed.
 /// </param>
-/// <param name="PageViews">How many times it was delivered during the stretch.</param>
-/// <param name="Visitors">How many separate visitors were on it.</param>
-public sealed record LivePageRow(string Path, long PageViews, long Visitors);
+/// <param name="Visitors">
+/// How many visitors are on it — each visitor counted once, on the one page they are on, so across
+/// every page the figures add up to how many visitors there are.
+/// </param>
+public sealed record LivePageRow(string Path, long Visitors);
 
 /// <summary>
 /// What one visitor who is on the site now has been doing, in the order they did it.
@@ -850,12 +862,13 @@ public sealed record LivePageRow(string Path, long PageViews, long Visitors);
 /// </remarks>
 /// <param name="Visitor">The visitor this describes, as the reading of who is here named them.</param>
 /// <param name="At">
-/// The moment the reading was taken, by the engine's clock, so how long ago each step happened is
-/// measured against the same clock the steps were measured against.
+/// The instant of the reading this trail sits under — the one its row was drawn from — which names
+/// the stretch of minutes the steps were read over, so the pages listed are the pages the row
+/// counted.
 /// </param>
 /// <param name="Steps">
-/// The steps, oldest first. Empty where the key names nobody the last stretch of minutes holds —
-/// which is what a visitor who has gone looks like, rather than a failure.
+/// The steps, oldest first. Empty where the key names nobody that stretch of minutes holds — which
+/// is what a visitor who has gone looks like, rather than a failure.
 /// </param>
 public sealed record LiveTrailResponse(
     string Visitor,

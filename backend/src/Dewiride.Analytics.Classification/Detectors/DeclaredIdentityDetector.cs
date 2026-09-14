@@ -23,6 +23,11 @@ namespace Dewiride.Analytics.Classification.Detectors;
 /// names itself GPTBot really is a crawler of some sort — the open question is whose, not whether —
 /// so the claim is strong evidence of automation while being no evidence at all of identity.
 /// </para>
+/// <para>
+/// A visitor that only describes itself as a crawler, in words this product recognises as the way
+/// crawlers introduce themselves but under no name it has an entry for, is reported as having done
+/// so and nothing else — never by the name it used, which is text the visitor wrote.
+/// </para>
 /// </remarks>
 public sealed class DeclaredIdentityDetector : IDetector
 {
@@ -52,6 +57,15 @@ public sealed class DeclaredIdentityDetector : IDetector
 
     /// <summary>Weight of a recognised fetching tool.</summary>
     private const int ToolWeight = 60;
+
+    /// <summary>
+    /// Weight of describing itself as a crawler without a name this product knows.
+    /// </summary>
+    /// <remarks>
+    /// The same as a named tool. Both say what kind of thing was fetching and neither says whose,
+    /// and a program that calls itself a crawler is almost always one — what is open is only which.
+    /// </remarks>
+    private const int GenericCrawlerWeight = 60;
 
     /// <summary>
     /// Weight of sending nothing at all.
@@ -97,9 +111,17 @@ public sealed class DeclaredIdentityDetector : IDetector
 
         var tool = ToolCatalogue.Match(session.UserAgent);
 
-        return tool is null
-            ? []
-            : [Observed.Signal(SignalCodes.DeclaredTool, SignalDirection.TowardAutomation, ToolWeight, ("kind", tool))];
+        if (tool is not null)
+        {
+            return [Observed.Signal(SignalCodes.DeclaredTool, SignalDirection.TowardAutomation, ToolWeight, ("kind", tool))];
+        }
+
+        // Described itself as a crawler, in a name this product has no entry for. Nothing it said
+        // travels with the report: the name is text the visitor wrote, and all that is known is
+        // that it called itself a crawler.
+        return CrawlerWords.AppearIn(session.UserAgent)
+            ? [Observed.Signal(SignalCodes.DeclaredGenericCrawler, SignalDirection.TowardAutomation, GenericCrawlerWeight)]
+            : [];
     }
 
     /// <summary>

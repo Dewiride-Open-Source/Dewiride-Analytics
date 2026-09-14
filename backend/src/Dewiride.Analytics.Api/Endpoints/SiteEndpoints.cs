@@ -386,7 +386,7 @@ internal static class SiteEndpoints
 
         routes.MapGet("/api/sites/{siteId:guid}/live/{visitorKey}/trail", LiveTrailAsync)
             .WithName("SiteLiveTrail")
-            .WithSummary("Returns the pages one visitor has been on in the last half hour, in order.")
+            .WithSummary("Returns the pages one visitor has been on in the last half hour, in order, under the reading their row came from.")
             .RequireRateLimiting(RateLimitPolicies.Live);
     }
 
@@ -1045,8 +1045,10 @@ internal static class SiteEndpoints
     /// Reports what could be established about the visitor behind a visit.
     /// </summary>
     /// <remarks>
-    /// The kind of source is spelled by the same vocabulary the source lists use, so one visit and
-    /// the list it appears on describe the same arrival with the same word.
+    /// Used by the visit list, the opened visit and the live row alike, so one visit is described
+    /// in one vocabulary wherever it appears. The kind of source is spelled by the same vocabulary
+    /// the source lists use, so one visit and the list it appears on describe the same arrival with
+    /// the same word.
     /// </remarks>
     /// <param name="context">What was established.</param>
     /// <returns>The account, as the wire carries it.</returns>
@@ -1267,9 +1269,9 @@ internal static class SiteEndpoints
     /// answer however a list is being read.
     /// </para>
     /// <para>
-    /// Answering rebuilds the period's visits from the activity behind them, which listing them
-    /// does not, so this is a question to ask while somebody is choosing what to narrow to and not
-    /// before.
+    /// Answering rebuilds the whole period's visits from the activity behind them, which an
+    /// unnarrowed list does only for the page it shows, so this is a question to ask while somebody
+    /// is choosing what to narrow to and not before.
     /// </para>
     /// </remarks>
     private static async Task<Results<Ok<VisitFacetsResponse>, NotFound, ProblemHttpResult>> VisitFacetsAsync(
@@ -1540,7 +1542,8 @@ internal static class SiteEndpoints
         ReportedNames.Strengths[visit.Verdict.Strength],
         visit.Verdict.RulesetVersion.ToString(),
         [.. visit.Verdict.Supporting.Select(Explain)],
-        [.. visit.Verdict.Contradicting.Select(Explain)]);
+        [.. visit.Verdict.Contradicting.Select(Explain)],
+        Established(visit.Context));
 
     private static VisitReason Explain(Signal signal) => new(
         signal.Code,
@@ -1602,7 +1605,7 @@ internal static class SiteEndpoints
             reading.VisitorsSeen,
             [.. reading.Visitors.Select(Here)],
             [.. reading.Minutes.Select(minute => new LiveMinuteRow(minute.Start, minute.PageViews))],
-            [.. reading.Pages.Select(page => new LivePageRow(page.Path, page.PageViews, page.Visitors))]));
+            [.. reading.Pages.Select(page => new LivePageRow(page.Path, page.Visitors))]));
     }
 
     /// <summary>
@@ -1632,13 +1635,15 @@ internal static class SiteEndpoints
         Established(reading.Visitor.Context));
 
     /// <summary>
-    /// Answers what one visitor who is here has been doing.
+    /// Answers what one visitor who is here has been doing, over the minutes of the reading their
+    /// row was drawn from.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The key is read before the site is resolved, so a value that could name nobody is refused
-    /// identically whether or not the site exists. What comes back names the visitor in the
-    /// spelling the reading of who is here used, so nothing a caller wrote is echoed.
+    /// The key and the instant are read before the site is resolved, so a value that could name
+    /// nobody, or a reading nobody could have taken, is refused identically whether or not the site
+    /// exists. What comes back names the visitor in the spelling the reading of who is here used and
+    /// the instant as the engine holds it, so nothing a caller wrote is echoed.
     /// </para>
     /// <para>
     /// A key naming somebody who has since left the stretch of minutes is answered with an empty
@@ -1650,12 +1655,20 @@ internal static class SiteEndpoints
         [AsParameters] LiveTrailParameters parameters,
         ITenantScopeProvider scopes,
         LiveTrafficReader live,
+        TimeProvider clock,
         HttpContext context,
         CancellationToken cancellationToken)
     {
         if (!VisitorKeys.IsWellFormed(parameters.VisitorKey))
         {
             return Unusable("Ask about a visitor by the identifier the live reading gives them.");
+        }
+
+        var at = parameters.At ?? clock.GetUtcNow();
+
+        if (!live.IsAboutNow(at))
+        {
+            return Unusable("Ask for a trail under a reading taken recently.");
         }
 
         var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
@@ -1665,13 +1678,13 @@ internal static class SiteEndpoints
             return TypedResults.NotFound();
         }
 
-        // Renewed on every beat for as long as somebody is watching, on the same terms as the
-        // reading it was opened from.
+        // Asked again under every reading for as long as somebody has the row open, on the same
+        // terms as the reading it was opened from.
         context.Response.Headers.CacheControl = "no-store";
         context.Response.Headers.Vary = "Cookie";
 
         var trail = await live
-            .ReadTrailAsync(scope, parameters.VisitorKey!, cancellationToken)
+            .ReadTrailAsync(scope, parameters.VisitorKey!, at, cancellationToken)
             .ConfigureAwait(false);
 
         return TypedResults.Ok(new LiveTrailResponse(
@@ -2279,13 +2292,17 @@ internal readonly record struct VisitJourneyParameters(Guid SiteId, string? Visi
 internal readonly record struct LiveParameters(Guid SiteId);
 
 /// <summary>
-/// What the live trail endpoint reads from the path.
+/// What the live trail endpoint reads from the path and the query string.
 /// </summary>
 /// <remarks>
-/// No window, for the same reason the reading it belongs to has none: how far back a trail reaches
-/// is what counts as still being here, and it is settled by the engine rather than named by a
-/// caller.
+/// No window of its own: the stretch a trail covers is the stretch of the reading its row was drawn
+/// from, so what travels is that reading's instant, and the engine reaches back from it exactly as
+/// it did for the row. Left out, the trail is read about the present moment.
 /// </remarks>
 /// <param name="SiteId">The website.</param>
 /// <param name="VisitorKey">The visitor, as the live reading names them.</param>
-internal readonly record struct LiveTrailParameters(Guid SiteId, string? VisitorKey);
+/// <param name="At">The instant of the reading the row was drawn from, as that reading reported it.</param>
+internal readonly record struct LiveTrailParameters(
+    Guid SiteId,
+    string? VisitorKey,
+    [FromQuery] DateTimeOffset? At);

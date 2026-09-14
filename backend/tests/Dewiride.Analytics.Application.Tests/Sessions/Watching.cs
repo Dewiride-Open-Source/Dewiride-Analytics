@@ -69,6 +69,14 @@ internal static class Watching
         UserAgent = "Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)",
     };
 
+    /// <summary>A crawler describing itself as one, in a name this product has no entry for.</summary>
+    public static SessionEvidence ANamelessCrawler() =>
+        ACrawlerThatNamedItself() with
+        {
+            SessionKey = "nameless",
+            UserAgent = "Mozilla/5.0 (compatible; NobodysBot/1.0; +https://example.com/bot)",
+        };
+
     /// <summary>A visit whose address was inside the ranges a company publishes for its crawlers.</summary>
     /// <param name="operatorName">The company whose published addresses it arrived from.</param>
     public static SessionEvidence ACrawlerWhoseOwnerVouchesForIt(string operatorName = "Google") =>
@@ -98,6 +106,38 @@ internal static class Watching
         ],
         Surfaces = [IngestSurface.CloudflareWorker],
         UserAgent = "python-requests/2.32.3",
+    };
+
+    /// <summary>
+    /// The site's owner signing in to their own administration pages, seen by both the reporter on
+    /// the server and the tracker in the browser.
+    /// </summary>
+    /// <remarks>
+    /// Every page is one only an intruder is supposed to ask for, and every one of them was served.
+    /// Seen by both halves of the measurement because that is the arrangement on which a live
+    /// reading and a finished visit could most easily choose a different sighting to read the
+    /// status from.
+    /// </remarks>
+    public static SessionEvidence AnOwnerSigningIn() => new()
+    {
+        SessionKey = "owner",
+        StartedAt = Noon,
+        EndedAt = Noon.AddMinutes(3),
+        Requests =
+        [
+            new ObservedRequest(Noon, "/wp-login.php", 200),
+            new ObservedRequest(Noon.AddSeconds(20), "/wp-login.php", 302),
+            new ObservedRequest(Noon.AddSeconds(21), "/wp-admin/", 200),
+            new ObservedRequest(Noon.AddMinutes(3), "/wp-admin/post.php", 200),
+        ],
+        Surfaces = [IngestSurface.WordPressPlugin, IngestSurface.BrowserTracker],
+        UserAgent = ChromeOnWindows,
+        Language = "en-GB",
+        ViewportWidth = 1440,
+        EngagedMs = 120_000,
+        HadPointerInteraction = true,
+        HadKeyboardInteraction = true,
+        DeclaredWebDriver = false,
     };
 
     /// <summary>

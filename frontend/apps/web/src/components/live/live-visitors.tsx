@@ -3,16 +3,17 @@
 import { ChevronRight } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo } from 'react';
-import { PlaceCredit, RoutingCredit } from '@/components/dashboard/place-credit';
+import { ListCredits } from '@/components/dashboard/place-credit';
 import { QUIET_PILL, VerdictBadge } from '@/components/dashboard/verdict-badge';
 import { VisitEvidence } from '@/components/dashboard/visit-evidence';
-import { readWords, VisitTrail } from '@/components/dashboard/visit-trail';
+import { VisitTrail } from '@/components/dashboard/visit-trail';
+import { Whereabouts } from '@/components/dashboard/whereabouts';
 import { Card } from '@/components/ui/card';
 import { activeNow, type LiveRow, minutesSince } from '@/lib/analytics/live';
 import { readablePath } from '@/lib/analytics/pages';
 import { countryNames } from '@/lib/analytics/places';
-import { placeOf, readOn } from '@/lib/analytics/visit-context';
-import type { LiveVisitor, VisitContext } from '@/lib/api/schemas';
+import { namedAs } from '@/lib/analytics/verdicts';
+import type { LiveVisitor } from '@/lib/api/schemas';
 import { useLiveTrail } from '@/lib/queries/sites';
 import { cn } from '@/lib/styling';
 
@@ -93,16 +94,7 @@ export function LiveVisitors({
         </p>
       ) : null}
 
-      {/*
-        The licences behind a town and behind a network each ask for a link back wherever their
-        results appear, and each goes only where its own results are.
-      */}
-      {placed || networked ? (
-        <div className="flex flex-col gap-1 border-t border-border pt-3">
-          {placed ? <PlaceCredit /> : null}
-          {networked ? <RoutingCredit /> : null}
-        </div>
-      ) : null}
+      <ListCredits placed={placed} networked={networked} />
     </Card>
   );
 }
@@ -128,13 +120,14 @@ function VisitorRow({ siteId, row, at, countryName, timeZoneId, open, onOpen }: 
   const t = useTranslations('live.list');
   const strengths = useTranslations('verdicts.strength');
   const evidence = useTranslations('verdicts.evidence');
-  const trail = useLiveTrail(siteId, row.visitor.visitor, open, row.stillHere);
+  const trail = useLiveTrail(siteId, row.visitor.visitor, row.at, open);
 
   // Written by whoever asked for the page, so it is shown as text and never followed. Whether it
   // is described in the present depends on how long ago they were last heard from: a visitor still
   // counted by the half hour may have closed the tab twenty minutes ago.
   const address = readablePath(row.visitor.currentPath);
   const present = row.stillHere && activeNow(at, row.visitor.lastSeen);
+  const name = namedAs(row.visitor.supporting);
 
   return (
     <details
@@ -160,6 +153,9 @@ function VisitorRow({ siteId, row, at, countryName, timeZoneId, open, onOpen }: 
               <span className="text-xs text-foreground-muted">
                 {strengths(row.visitor.strength)}
               </span>
+            )}
+            {name === null ? null : (
+              <bdi className="text-xs font-medium text-foreground">{name}</bdi>
             )}
             {row.stillHere ? null : (
               <span className="text-xs text-foreground-subtle">{t('gone')}</span>
@@ -216,52 +212,6 @@ function VisitorRow({ siteId, row, at, countryName, timeZoneId, open, onOpen }: 
         )}
       </div>
     </details>
-  );
-}
-
-/**
- * Roughly where a visitor is and what they are reading on, on the row itself.
- *
- * Two rows saying "Still watching" are the same row to a reader until one of them says Leeds and a
- * phone and the other says a hosting company in Amsterdam. That is the difference somebody scans a
- * live list for, and asking them to open every row to find it is asking them to open every row.
- *
- * Left out entirely where nothing established either, rather than written as two absences. The
- * whole set of facts, including who sent them and whose network they arrived over, is under the
- * row when it is opened.
- */
-function Whereabouts({
-  context,
-  countryName,
-}: {
-  readonly context: VisitContext;
-  readonly countryName: (code: string) => string | null;
-}) {
-  const t = useTranslations('dashboard.journey.about');
-
-  const place = placeOf(context, countryName(context.countryCode));
-  const read = readOn(context);
-
-  if (place === null && read === null) {
-    return null;
-  }
-
-  return (
-    <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-foreground-subtle">
-      {place === null ? null : <bdi>{place}</bdi>}
-
-      {/*
-        The separator travels with the words it introduces rather than standing between them as a
-        piece of its own, so that a narrow screen wrapping the two facts apart does not leave a
-        stray middot hanging off the end of the first line.
-      */}
-      {read === null ? null : (
-        <span className="flex items-center gap-x-1.5">
-          {place === null ? null : <span aria-hidden>·</span>}
-          <bdi>{readWords(read, t)}</bdi>
-        </span>
-      )}
-    </span>
   );
 }
 

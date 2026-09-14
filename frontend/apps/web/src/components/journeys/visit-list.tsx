@@ -1,16 +1,27 @@
 'use client';
 
 import { ChevronRight } from 'lucide-react';
-import { useFormatter, useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useFormatter, useLocale, useTranslations } from 'next-intl';
+import { useMemo, useState } from 'react';
+import { ListCredits } from '@/components/dashboard/place-credit';
 import { VerdictBadge } from '@/components/dashboard/verdict-badge';
 import { VisitEvidence } from '@/components/dashboard/visit-evidence';
 import { VisitJourney } from '@/components/dashboard/visit-journey';
+import { Whereabouts, type WhereaboutsFact } from '@/components/dashboard/whereabouts';
 import { Card } from '@/components/ui/card';
 import { Pagination } from '@/components/ui/pagination';
 import { PAGE_SIZES } from '@/lib/analytics/journeys';
+import { countryNames } from '@/lib/analytics/places';
+import { namedAs } from '@/lib/analytics/verdicts';
 import type { Visit } from '@/lib/api/schemas';
 import { cn } from '@/lib/styling';
+
+/**
+ * Everything a row can say about its visitor. The panel a row opens onto lays the same four facts
+ * out in full under "Who this was", so the row saying every one of them is what lets a reader scan
+ * the list without opening anything.
+ */
+const EVERYTHING: readonly WhereaboutsFact[] = ['source', 'place', 'network', 'readOn'];
 
 interface VisitListProps {
   readonly siteId: string;
@@ -52,12 +63,25 @@ export function VisitList({
   onResize,
 }: VisitListProps) {
   const t = useTranslations('journeys.list');
+  const locale = useLocale();
+  const placed = visits.some((visit) => visit.context.countryCode !== '');
+  const networked = visits.some((visit) => visit.context.network !== '');
+
+  // Built once for the whole list rather than once per row. Building one of these costs enough to
+  // notice down a list, which is precisely what this is.
+  const countryName = useMemo(() => countryNames(locale), [locale]);
 
   return (
     <Card className="flex flex-col gap-3 p-5 sm:p-6">
       <div className="flex flex-col">
         {visits.map((visit) => (
-          <VisitRow key={visit.id} siteId={siteId} visit={visit} timeZoneId={timeZoneId} />
+          <VisitRow
+            key={visit.id}
+            siteId={siteId}
+            visit={visit}
+            countryName={countryName}
+            timeZoneId={timeZoneId}
+          />
         ))}
       </div>
 
@@ -72,6 +96,8 @@ export function VisitList({
         onMove={onMove}
         onResize={onResize}
       />
+
+      <ListCredits placed={placed} networked={networked} />
     </Card>
   );
 }
@@ -79,10 +105,12 @@ export function VisitList({
 interface VisitRowProps {
   readonly siteId: string;
   readonly visit: Visit;
+  /** Writes a country code out in the reader's language, built once for the whole list. */
+  readonly countryName: (code: string) => string | null;
   readonly timeZoneId: string;
 }
 
-function VisitRow({ siteId, visit, timeZoneId }: VisitRowProps) {
+function VisitRow({ siteId, visit, countryName, timeZoneId }: VisitRowProps) {
   const t = useTranslations('journeys.list');
   const [opened, setOpened] = useState(false);
   const strengths = useTranslations('verdicts.strength');
@@ -93,6 +121,7 @@ function VisitRow({ siteId, visit, timeZoneId }: VisitRowProps) {
   // Two reporters can watch the same visit and be worth naming as one thing to the person who
   // owns the website — their own server is their own server, whichever framework it runs.
   const seenBy = [...new Set(visit.surfaces.map((surface) => surfaceNames(surface)))];
+  const name = namedAs(visit.supporting);
 
   return (
     <details
@@ -109,9 +138,22 @@ function VisitRow({ siteId, visit, timeZoneId }: VisitRowProps) {
           aria-hidden
           className="size-4 shrink-0 text-foreground-subtle transition-transform group-open:rotate-90"
         />
-        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
-          <VerdictBadge category={visit.category} />
-          <span className="text-xs text-foreground-muted">{strengths(visit.strength)}</span>
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <VerdictBadge category={visit.category} />
+            <span className="text-xs text-foreground-muted">{strengths(visit.strength)}</span>
+            {name === null ? null : (
+              <bdi className="text-xs font-medium text-foreground">{name}</bdi>
+            )}
+          </span>
+
+          {/*
+            Only while the row is shut. Opening it lays the same facts out in full an inch below,
+            and a screen that says "Jaipur, India" twice in two lines reads as a mistake.
+          */}
+          {opened ? null : (
+            <Whereabouts context={visit.context} countryName={countryName} facts={EVERYTHING} />
+          )}
         </span>
         {/*
           Stacked on a phone and side by side from a tablet up. Neither figure is dropped at the

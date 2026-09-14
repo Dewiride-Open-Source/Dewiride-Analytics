@@ -1,5 +1,6 @@
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Sessions;
+using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Classification.Sessions;
@@ -15,9 +16,9 @@ namespace Dewiride.Analytics.Application.Tests.Sessions;
 /// Covers the reading that answers who is on a site at this moment.
 /// </summary>
 /// <remarks>
-/// Two things are being proven, and they are the two a live screen could get wrong without anybody
-/// noticing: which stretch of minutes it asks about, and how little it is willing to say about the
-/// people in it.
+/// Three things are being proven, and they are the three a live screen could get wrong without
+/// anybody noticing: which stretch of minutes it asks about, that a trail is read over the very
+/// stretch its row was drawn from, and how little it is willing to say about the people in it.
 /// </remarks>
 public sealed class LiveTrafficReaderTests
 {
@@ -148,16 +149,22 @@ public sealed class LiveTrafficReaderTests
 
     /// <summary>
     /// A trail is opened from a row, and the pages it shows have to be the pages that row counted.
-    /// That holds only while both cover the same minutes — so what "now" is, is settled once here
-    /// rather than wherever a trail happens to be asked for.
+    /// That holds only while both cover the same minutes — so a trail is read under the reading's
+    /// own instant, and the clock having moved on since, even across a minute boundary, changes
+    /// nothing about which minutes it covers.
     /// </summary>
     [Fact]
     public async Task Asks_For_A_Trail_Over_The_Stretch_The_List_Was_Drawn_From()
     {
         Answering();
 
-        await Read();
-        await ReadTrail();
+        var reading = await Read();
+
+        // Past the minute the reading was taken in, so a trail read about a fresh present moment
+        // would begin a minute later than the row did.
+        _clock.Advance(TimeSpan.FromSeconds(40));
+
+        await ReadTrail(reading.At);
 
         var windows = _telemetry.ReceivedCalls()
             .Select(call => call.GetArguments()[1])
@@ -170,11 +177,99 @@ public sealed class LiveTrafficReaderTests
     }
 
     [Fact]
+    public async Task Stamps_A_Trail_With_The_Reading_It_Sits_Under()
+    {
+        Answering();
+        _clock.Advance(TimeSpan.FromSeconds(40));
+
+        var trail = await ReadTrail(Now);
+
+        trail.At.Should().Be(Now);
+    }
+
+    /// <summary>
+    /// A reading is stamped by the engine's own clock, so an instant ahead of it is another instance
+    /// of the engine a few seconds off, or a request somebody wrote by hand. The first is allowed
+    /// and the second is not.
+    /// </summary>
+    [Fact]
+    public async Task Refuses_A_Trail_Under_A_Reading_From_The_Future()
+    {
+        Answering();
+
+        var act = () => ReadTrail(Now + LiveTrafficReader.Skew + TimeSpan.FromSeconds(1));
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public async Task Allows_A_Reading_A_Little_Ahead_Of_This_Clock()
+    {
+        Answering();
+
+        var trail = await ReadTrail(Now.AddSeconds(30));
+
+        trail.At.Should().Be(Now.AddSeconds(30));
+    }
+
+    /// <summary>
+    /// A screen somebody has held still may be an hour old and its rows must still open. A day back
+    /// is as far as any visit runs, and is what the list of finished visits already answers about.
+    /// The reader allows a minute past that: the endpoint has already asked the same question
+    /// against its own reading of the clock, and an instant it admitted must not be refused here
+    /// because the clock moved on in between.
+    /// </summary>
+    [Fact]
+    public async Task Refuses_A_Trail_Under_A_Reading_Older_Than_A_Day()
+    {
+        Answering();
+
+        var act = () => ReadTrail(Now - VisitorKeys.LongestVisit - LiveTrafficReader.Skew - TimeSpan.FromSeconds(1));
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public async Task Allows_A_Reading_A_Day_Old()
+    {
+        Answering();
+
+        var trail = await ReadTrail(Now - VisitorKeys.LongestVisit);
+
+        trail.At.Should().Be(Now - VisitorKeys.LongestVisit);
+    }
+
+    [Fact]
+    public async Task Allows_A_Reading_Admitted_A_Moment_Before_It_Turned_A_Day_Old()
+    {
+        Answering();
+        var admitted = Now - VisitorKeys.LongestVisit;
+
+        _clock.Advance(TimeSpan.FromSeconds(5));
+
+        var trail = await ReadTrail(admitted);
+
+        trail.At.Should().Be(admitted);
+    }
+
+    [Fact]
+    public void Says_Whether_An_Instant_Is_One_A_Reading_Could_Have_Been_Taken_At()
+    {
+        var reader = Reader();
+
+        reader.IsAboutNow(Now).Should().BeTrue();
+        reader.IsAboutNow(Now + LiveTrafficReader.Skew).Should().BeTrue();
+        reader.IsAboutNow(Now + LiveTrafficReader.Skew + TimeSpan.FromTicks(1)).Should().BeFalse();
+        reader.IsAboutNow(Now - VisitorKeys.LongestVisit).Should().BeTrue();
+        reader.IsAboutNow(Now - VisitorKeys.LongestVisit - TimeSpan.FromTicks(1)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Asks_For_A_Trail_By_The_Visitor_It_Was_Given()
     {
         Answering();
 
-        await ReadTrail();
+        await ReadTrail(Now);
 
         var asked = _telemetry.ReceivedCalls()
             .Select(call => call.GetArguments()[1])
@@ -195,7 +290,7 @@ public sealed class LiveTrafficReaderTests
     {
         Answering();
 
-        var trail = await ReadTrail();
+        var trail = await ReadTrail(Now);
 
         trail.Steps.Should().BeEmpty();
         trail.At.Should().Be(Now);
@@ -209,7 +304,7 @@ public sealed class LiveTrafficReaderTests
             new VisitStep(Now.AddMinutes(-4), "/", 200, 9_000, 80, null),
             new VisitStep(Now.AddMinutes(-1), "/pricing", 200, null, null, null));
 
-        var trail = await ReadTrail();
+        var trail = await ReadTrail(Now);
 
         trail.Steps.Select(step => step.Path).Should().Equal("/", "/pricing");
     }
@@ -219,7 +314,7 @@ public sealed class LiveTrafficReaderTests
     {
         Answering();
 
-        var act = () => Reader().ReadTrailAsync(Scope(), "  ", TestContext.Current.CancellationToken);
+        var act = () => Reader().ReadTrailAsync(Scope(), "  ", Now, TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ArgumentException>();
     }
@@ -227,8 +322,8 @@ public sealed class LiveTrafficReaderTests
     private Task<LiveTraffic> Read() =>
         Reader().ReadAsync(Scope(), "example.com", TestContext.Current.CancellationToken);
 
-    private Task<LiveTrail> ReadTrail() =>
-        Reader().ReadTrailAsync(Scope(), Somebody, TestContext.Current.CancellationToken);
+    private Task<LiveTrail> ReadTrail(DateTimeOffset at) =>
+        Reader().ReadTrailAsync(Scope(), Somebody, at, TestContext.Current.CancellationToken);
 
     private LiveTrafficReader Reader() =>
         new(

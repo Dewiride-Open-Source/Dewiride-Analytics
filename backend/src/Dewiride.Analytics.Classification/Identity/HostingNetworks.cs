@@ -37,7 +37,7 @@ public readonly record struct HostingNetwork(uint AutonomousSystem, string Opera
 /// datacentre" and can never say "this did not".
 /// </para>
 /// <para>
-/// <b>Three kinds of network are kept out on purpose, and the reason is the same each time: real
+/// <b>Four kinds of network are kept out on purpose, and the reason is the same each time: real
 /// people browse from them.</b>
 /// </para>
 /// <list type="bullet">
@@ -60,6 +60,14 @@ public readonly record struct HostingNetwork(uint AutonomousSystem, string Opera
 /// subscription VPN is a reader who wanted privacy, not a scraper, and this product is the last
 /// one that should punish them for it. Where a network is genuinely both, it is left out — the
 /// cost of missing some automation is far lower than the cost of calling a private reader a robot.
+/// </description>
+/// </item>
+/// <item>
+/// <description>
+/// <b>The household backbones of carriers that also rent racks.</b> A national carrier numbers
+/// its consumer network and its data-centre business separately, and only the second is here.
+/// The backbone most of a country browses from is left out however many rented servers sit
+/// somewhere behind it, for the same reason as the other three.
 /// </description>
 /// </item>
 /// </list>
@@ -99,9 +107,20 @@ public static class HostingNetworks
         new(141180, "Huawei Cloud"),
         new(151610, "Huawei Cloud"),
 
+        new(137718, "Volcano Engine"),
+        new(55960, "Sinnet"),
+
+        // Carrier data-centre networks. The carriers below run the household backbones most of
+        // China browses from, and those carry people and are not here; each also numbers its
+        // rack-space business separately, and those numbers are what is listed.
+        new(134756, "China Telecom"),
+        new(146966, "China Telecom"),
+        new(134543, "China Unicom"),
+
         new(14061, "DigitalOcean"),
         new(63949, "Linode"),
         new(20473, "Vultr"),
+        new(203020, "HostRoyale"),
 
         new(24940, "Hetzner"),
         new(212317, "Hetzner"),

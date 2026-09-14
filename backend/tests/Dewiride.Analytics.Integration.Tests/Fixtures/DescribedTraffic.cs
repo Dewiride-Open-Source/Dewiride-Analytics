@@ -60,6 +60,12 @@ internal static class DescribedTraffic
     /// <summary>The page the visit began on.</summary>
     public const string EntryPage = "/pricing";
 
+    /// <summary>
+    /// Who made the visit, written the way the collector derives a visitor key, so the visit it
+    /// names can be opened by the identity the list gives it.
+    /// </summary>
+    private const string VisitorKey = "9c2e4b7a1d0f3856a7b4c1d2e3f40596";
+
     private const string SearchResults = "https://www.google.co.in/search?q=analytics";
 
     private const string SearchHost = "www.google.co.in";
@@ -157,7 +163,7 @@ internal static class DescribedTraffic
             Kind = kind,
             Surface = IngestSurface.BrowserTracker,
             ServerTimestamp = at,
-            VisitorKey = "reader",
+            VisitorKey = VisitorKey,
             Host = "example.com",
             Path = path,
         };

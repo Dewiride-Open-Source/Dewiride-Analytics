@@ -95,6 +95,8 @@ interface Drawing {
 
 interface Shown {
   readonly view?: ChartView;
+  /** Whether the picture is kept to the visits judged to be people. */
+  readonly peopleOnly?: boolean;
   readonly points?: readonly TrafficPoint[];
   readonly series?: TrafficSeries;
   readonly granularity?: Granularity;
@@ -109,10 +111,12 @@ interface Shown {
 }
 
 const chose = vi.fn();
+const kept = vi.fn();
 const compared = vi.fn();
 
 function show({
   view = 'activity',
+  peopleOnly = false,
   points = DAYS,
   series = JUDGED,
   granularity = 'day',
@@ -128,6 +132,8 @@ function show({
     <TrafficChart
       view={view}
       onView={chose}
+      peopleOnly={peopleOnly}
+      onPeopleOnly={kept}
       activity={points}
       who={series}
       problem={problem}
@@ -158,6 +164,7 @@ beforeEach(() => {
   window.localStorage.clear();
   drawn.option = undefined;
   chose.mockClear();
+  kept.mockClear();
   compared.mockClear();
 });
 
@@ -295,11 +302,25 @@ describe('the buckets that have not finished being judged', () => {
   /** A visit is judged once it ends, so the last bucket of a live period is always still filling. */
   const FILLING: TrafficSeries = { ...JUDGED, completeTo: '2026-08-12T18:30:00+00:00' };
 
+  /**
+   * A shape drawn through points draws everything to the right of the last settled point from a
+   * figure that is still filling, so the wash starts there rather than at the first unsettled
+   * point — where, on the ordinary live period, it would start at the end of the run and have no
+   * width at all.
+   */
   it('washes over them where the period is drawn as one continuous shape', () => {
     const option = show({ view: 'who', series: FILLING });
 
     expect(option.series.at(-1)?.markArea?.data).toStrictEqual([
-      [{ xAxis: 'Aug 13' }, { xAxis: 'Aug 13' }],
+      [{ xAxis: 'Aug 12' }, { xAxis: 'Aug 13' }],
+    ]);
+  });
+
+  it('washes over the whole run where none of it has finished being judged', () => {
+    const option = show({ view: 'who', series: { ...JUDGED, completeTo: JUDGED.from } });
+
+    expect(option.series.at(-1)?.markArea?.data).toStrictEqual([
+      [{ xAxis: 'Aug 11' }, { xAxis: 'Aug 13' }],
     ]);
   });
 
@@ -503,5 +524,190 @@ describe('an earlier period drawn across a period that is still being judged', (
     const earlier = option.series.filter((one) => one.lineStyle?.type === 'dashed');
 
     expect(earlier[0]?.smooth).toBe(option.series[0]?.smooth);
+  });
+});
+
+describe('the picture kept to the people a website is for', () => {
+  /** The same three days, of which the last is still filling. */
+  const FILLING: TrafficSeries = { ...JUDGED, completeTo: '2026-08-12T18:30:00+00:00' };
+
+  /** The same three days, judged to hold machinery and nothing else. */
+  const NOBODY: TrafficSeries = {
+    ...JUDGED,
+    groups: JUDGED.groups.filter((group) => group.category !== 'likely-human'),
+  };
+
+  it('draws only the people where somebody asked for them alone', () => {
+    const option = show({ view: 'who', peopleOnly: true });
+
+    expect(option.series.map((one) => one.name)).toStrictEqual(['People']);
+    expect(option.series[0]?.data).toStrictEqual([6, 9, 4]);
+    expect(screen.queryByText('Unwanted')).not.toBeInTheDocument();
+    expect(screen.queryByText('Machinery')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Show these figures as a table'));
+
+    expect(screen.queryByRole('columnheader', { name: 'All visits' })).not.toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'People' })).toBeInTheDocument();
+  });
+
+  /**
+   * The people are the population of the picture of who came, not of the page-view figures in
+   * the cards above: finished visits judged to be theirs, and the pages those visits read.
+   */
+  it('counts pages read and visits by people across the same buckets', () => {
+    const option = show({ view: 'activity', peopleOnly: true });
+
+    expect(option.series.map((one) => one.name)).toStrictEqual([
+      'Pages read by people',
+      'Visits by people',
+    ]);
+    expect(option.series[0]?.data).toStrictEqual([18, 24, 11]);
+    expect(option.series[1]?.data).toStrictEqual([6, 9, 4]);
+    expect(option.xAxis.data).toHaveLength(3);
+  });
+
+  it('says the figures count finished visits judged to be people', () => {
+    show({ view: 'activity', peopleOnly: true });
+
+    expect(
+      screen.getByText('Finished visits judged to be people, by day in Kolkata.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: /Visits judged to be people on My Blog/ }),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * A visit is judged once it ends, so a picture of judged visits has a tail that is still
+   * filling whichever question it answers — and the tail is quietened the same way in both.
+   */
+  it('quietens the buckets still being judged in that view too', () => {
+    const columns = show({ view: 'activity', peopleOnly: true, series: FILLING, style: 'Columns' });
+
+    expect(columns.series[0]?.data[2]).toStrictEqual({ value: 11, itemStyle: { opacity: 0.35 } });
+    expect(columns.series.some((one) => one.markArea !== undefined)).toBe(false);
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Area' }));
+
+    const area = drawn.option as unknown as Drawing;
+
+    expect(area.series.some((one) => one.markArea !== undefined)).toBe(true);
+    expect(screen.getAllByText('still being judged')).toHaveLength(1);
+    expect(
+      screen.getByText(
+        'Finished visits judged to be people, by day in Kolkata. The newest are still being judged.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("draws the earlier period's people behind this one", () => {
+    const activity = show({ view: 'activity', peopleOnly: true, against: true });
+    const dashed = activity.series.filter((one) => one.lineStyle?.type === 'dashed');
+
+    expect(dashed.map((one) => one.name)).toStrictEqual([
+      'Pages read by people before',
+      'Visits by people before',
+    ]);
+    expect(dashed[0]?.data).toStrictEqual([15, 21, 9]);
+    expect(dashed[1]?.data).toStrictEqual([5, 7, 3]);
+  });
+
+  /**
+   * The earlier period's people rather than the whole of it. A dashed line for everybody behind
+   * a stack kept to people would tower over it and say nothing about whether more of them came.
+   */
+  it('is one dashed line of people behind the stack kept to them', () => {
+    const option = show({ view: 'who', peopleOnly: true, against: true });
+    const earlier = option.series.at(-1);
+
+    expect(earlier?.name).toBe('People before');
+    expect(earlier?.data).toStrictEqual([5, 7, 3]);
+    expect(earlier?.lineStyle?.type).toBe('dashed');
+    expect(screen.getByRole('columnheader', { name: 'People before' })).toBeInTheDocument();
+  });
+
+  it('is asked for by the control beside the rest', async () => {
+    show();
+
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'People only: show just the visits judged to be people',
+      }),
+    );
+
+    expect(kept).toHaveBeenCalledWith(true);
+  });
+
+  it('shows the control as on while the picture is kept to people', () => {
+    show({ peopleOnly: true });
+
+    expect(
+      screen.getByRole('button', {
+        name: 'People only: show just the visits judged to be people',
+      }),
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  /**
+   * A period judged to hold no people is an answer rather than an empty box, and the way out is
+   * the control that kept the picture to people in the first place.
+   */
+  it('has something to say when nobody in the period was judged to be a person, and offers everyone', async () => {
+    show({ view: 'who', peopleOnly: true, series: NOBODY });
+
+    expect(
+      screen.getByText('No visits in this period were judged to be people.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show everyone' }));
+
+    expect(kept).toHaveBeenCalledWith(false);
+  });
+
+  /**
+   * Nothing judged yet and nobody judged a person are different things, and the first must not
+   * be read as the second: a website whose verdicts are still coming has not been found to have
+   * no readers.
+   */
+  it('says nothing has been judged rather than that nobody was a person', async () => {
+    show({ view: 'activity', peopleOnly: true, series: { ...JUDGED, groups: [] } });
+
+    expect(screen.getByText('No visits have been judged in this period yet.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show everyone' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'See how much was read' }));
+
+    expect(kept).toHaveBeenCalledWith(false);
+    expect(chose).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The one way out of a period nothing has been judged in is the picture that waits on no
+   * verdict, and from a stack kept to people that is two steps away. Offered as one, because a
+   * button whose press lands on the same sentence with a different button is not a way out.
+   */
+  it('leads from a stack kept to people, with nothing judged, straight to how much was read', async () => {
+    show({ view: 'who', peopleOnly: true, series: { ...JUDGED, groups: [] } });
+
+    expect(screen.getByText('No visits have been judged in this period yet.')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'See how much was read' }));
+
+    expect(kept).toHaveBeenCalledWith(false);
+    expect(chose).toHaveBeenCalledWith('activity');
+  });
+
+  /**
+   * Kept to people, the one band is the whole, so it takes the whole's place at the front and the
+   * period before follows it — the order every other table on the card reads in.
+   */
+  it('tables the people first and the people before them second', () => {
+    show({ view: 'who', peopleOnly: true, against: true });
+
+    const headers = screen.getAllByRole('columnheader').map((header) => header.textContent);
+
+    expect(headers).toStrictEqual(['Day', 'People', 'People before']);
   });
 });

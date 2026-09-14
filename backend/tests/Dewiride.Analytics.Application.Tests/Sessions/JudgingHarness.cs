@@ -244,4 +244,32 @@ internal sealed class JudgingHarness
             },
             true,
             address);
+
+    /// <summary>
+    /// Builds a visit that opened one page with the tracker running and did nothing anybody watched.
+    /// </summary>
+    /// <remarks>
+    /// The engine can settle nothing about it, and that is the point: whether an unsettled visit
+    /// with something pointing toward a person has its address asked about is what this shape
+    /// decides.
+    /// </remarks>
+    /// <param name="startedAt">When it began.</param>
+    /// <param name="address">The address it arrived from.</param>
+    /// <returns>The visit.</returns>
+    public static ObservedSession Glance(DateTimeOffset startedAt, string address)
+    {
+        var reader = Reader(startedAt, address);
+
+        return reader with
+        {
+            Evidence = reader.Evidence with
+            {
+                SessionKey = $"glance:{startedAt.ToUnixTimeMilliseconds()}",
+                EndedAt = startedAt,
+                EngagedMs = 0,
+                MaxScrollDepthPercent = 0,
+                HadPointerInteraction = false,
+            },
+        };
+    }
 }

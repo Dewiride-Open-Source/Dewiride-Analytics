@@ -1,0 +1,178 @@
+# What is out of date, proposed one pull request at a time and proved by the build.
+#
+# Every proposal goes through exactly what a contributor's change goes through: the compile that
+# is also the analysis, every suite, and the whole frontend gate. Nothing here merges anything.
+# A proposal that turns the build red is the point — that is the release that would otherwise
+# have failed on a machine with real traffic behind it.
+#
+# Nothing is proposed until a week after it was published. A package taken over at the registry
+# is usually withdrawn within days, and this repository already asks its package manager to wait
+# a day before installing anything; a week is that same caution with the proposal held back too.
+#
+# Three things move by hand and are deliberately not watched, because each is chosen together
+# with files no proposal could move:
+#
+#   - The base images. The Node major is chosen with the runner in build.yml and `engines.node`;
+#     the .NET major with global.json and the target framework. A tag like `24-alpine` can only
+#     ever receive a new major, so watching it would propose exactly the moves that are not
+#     taken this way.
+#   - The two stores in compose.yaml. Both are pinned to the versions the product is tested
+#     against, and the integration fixture pins the same two tags in code. A store moves with
+#     its fixture, and on the machine serving traffic only after a backup.
+#   - Stripe.net and the mail client in Directory.Packages.props. The projects that reference
+#     them are in the private repository, so no project in this solution asks for them and they
+#     are never looked at here.
+#
+# One consequence of the two repositories is caught by the build rather than here. The lockfile
+# describes both, and a machine without the private clone rewrites it without the private half —
+# so every JavaScript proposal needs its lockfile regenerated with `ee/` present before it can
+# merge, and `pnpm verify` says so on the proposal itself.
+
+version: 2
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Kolkata"
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    # Four actions, one proposal. They are moved together or not at all.
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # The folder that directly holds the solution file, which is what the updater reads. The
+  # version table it edits is at the root, and every project inherits it.
+  - package-ecosystem: "nuget"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Kolkata"
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    # A dependency joins the first group it matches; everything unmatched is proposed on its own.
+    # The analysers are left out on purpose: a new rule set can turn the build red on code that
+    # was fine yesterday, and that is a proposal to read alone.
+    groups:
+      dotnet:
+        patterns:
+          - "Microsoft.AspNetCore.*"
+          - "Microsoft.EntityFrameworkCore*"
+          - "Microsoft.Extensions.*"
+          - "Npgsql.*"
+          - "EFCore.NamingConventions"
+      opentelemetry:
+        patterns:
+          - "OpenTelemetry.*"
+      openiddict:
+        patterns:
+          - "OpenIddict.*"
+      azure:
+        patterns:
+          - "Azure.*"
+      testing:
+        patterns:
+          - "xunit*"
+          - "AwesomeAssertions"
+          - "NSubstitute"
+          - "Verify.*"
+          - "NetArchTest.*"
+          - "Testcontainers.*"
+
+  # The SDK pinned in global.json. Within one major the pin can move freely: the image the
+  # engine is built in carries the newest SDK of that major, and `rollForward: latestPatch`
+  # accepts a newer patch but not a newer feature band, so a pin left behind is a build that
+  # fails inside the image while passing everywhere else.
+  - package-ecosystem: "dotnet-sdk"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Kolkata"
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    ignore:
+      - dependency-name: "dotnet-sdk"
+        update-types: ["version-update:semver-major"]
+
+  # Every JavaScript version lives in the catalog in pnpm-workspace.yaml, and that is what is
+  # edited. The versions there are exact, and `increase` keeps them exact.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Kolkata"
+    cooldown:
+      default-days: 7
+    versioning-strategy: "increase"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    # A dependency joins the first group it matches. The last group takes every minor and patch
+    # release nothing above has claimed, so a week's small moves arrive as one proposal, while a
+    # new major of anything is proposed on its own. esbuild is kept out of it: it is pre-1.0 and
+    # a minor release may break the beacon, which is worth reading alone. A Biome release also
+    # moves the `$schema` line in biome.json, by hand, on the same proposal.
+    groups:
+      framework:
+        patterns:
+          - "next"
+          - "@next/*"
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      tailwind:
+        patterns:
+          - "tailwindcss"
+          - "@tailwindcss/*"
+      typescript:
+        patterns:
+          - "typescript"
+          - "typescript-eslint"
+      lint:
+        patterns:
+          - "eslint"
+          - "eslint-plugin-*"
+          - "@biomejs/*"
+          - "prettier"
+      testing:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "@vitejs/*"
+          - "jsdom"
+          - "@testing-library/*"
+          - "@playwright/*"
+      minor-and-patch:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "esbuild"
+        update-types:
+          - "minor"
+          - "patch"
+    # TypeScript stays on 6.x: the lint bridge declares a range that stops below the next major,
+    # and `pnpm verify` asserts the resolved version.
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]

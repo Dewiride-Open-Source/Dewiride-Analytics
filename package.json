@@ -17,7 +17,8 @@
     "format": "biome format --write . && prettier --write \"**/*.{md,yaml,yml}\"",
     "format:check": "biome format . && prettier --check \"**/*.{md,yaml,yml}\"",
     "verify:typescript": "node scripts/assert-typescript-version.mjs",
-    "verify": "pnpm verify:typescript && pnpm lint && pnpm format:check && pnpm typecheck && pnpm test"
+    "verify:lockfile": "node scripts/assert-lockfile-members.mjs",
+    "verify": "pnpm verify:typescript && pnpm verify:lockfile && pnpm lint && pnpm format:check && pnpm typecheck && pnpm test"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",

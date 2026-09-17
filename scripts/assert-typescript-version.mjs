@@ -16,7 +16,7 @@ const major = Number.parseInt(version.split('.')[0], 10);
 if (major !== SUPPORTED_MAJOR) {
   console.error(
     `TypeScript ${version} is installed, but this workspace is built and linted against ` +
-      `${SUPPORTED_MAJOR}.x. Check the pinned version in frontend/pnpm-workspace.yaml.`,
+      `${SUPPORTED_MAJOR}.x. Check the pinned version in pnpm-workspace.yaml.`,
   );
   process.exit(1);
 }

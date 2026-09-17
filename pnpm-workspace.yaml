@@ -79,14 +79,14 @@ catalog:
   prettier: 3.9.6
 
   # Tests
-  vitest: 4.1.10
-  "@vitest/coverage-v8": 4.1.10
-  "@vitejs/plugin-react": 6.0.5
+  vitest: 5.0.0
+  "@vitest/coverage-v8": 5.0.0
+  "@vitejs/plugin-react": 6.1.1
   jsdom: 30.0.1
-  "@testing-library/react": 16.3.2
+  "@testing-library/react": 16.3.3
   "@testing-library/jest-dom": 7.0.1
-  "@testing-library/user-event": 14.6.5
-  "@playwright/test": 1.62.1
+  "@testing-library/user-event": 14.6.7
+  "@playwright/test": 1.63.0
 
 # Newly published versions are held back by default, so a package compromised at the registry has
 # to survive a waiting period before it can be installed here. Everything below is a version that

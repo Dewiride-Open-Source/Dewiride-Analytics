@@ -74,7 +74,7 @@ catalog:
   "@next/eslint-plugin-next": 16.3.1
   eslint-plugin-react-hooks: 7.1.1
   eslint-plugin-jsx-a11y: 6.10.2
-  typescript-eslint: 8.67.0
+  typescript-eslint: 8.70.0
   "@biomejs/biome": 2.5.9
   prettier: 3.9.6
 

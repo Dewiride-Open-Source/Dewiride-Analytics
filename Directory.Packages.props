@@ -37,7 +37,7 @@
 
   <ItemGroup Label="Authentication and authorisation">
     <PackageVersion Include="OpenIddict.AspNetCore" Version="7.6.0" />
-    <PackageVersion Include="OpenIddict.EntityFrameworkCore" Version="7.6.0" />
+    <PackageVersion Include="OpenIddict.EntityFrameworkCore" Version="7.7.0" />
     <!--
       Keeps the keys that sign and encrypt sign-in cookies in PostgreSQL. Without it they live
       under the container's own filesystem, so restarting the API signs everybody out and two

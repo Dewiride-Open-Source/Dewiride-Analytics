@@ -54,7 +54,7 @@
       abstraction for an append-mostly columnar store. An architecture test asserts that
       no assembly outside Infrastructure.ClickHouse references this package.
     -->
-    <PackageVersion Include="ClickHouse.Driver" Version="1.3.0" />
+    <PackageVersion Include="ClickHouse.Driver" Version="1.4.0" />
   </ItemGroup>
 
   <ItemGroup Label="Notifications">

@@ -90,9 +90,10 @@ uses the catalogue — the lockfile it writes can disagree with the manifest —
 corrects that too.
 
 **Stripe.net moves by hand, in the private repository's own change**, because nothing in this
-checkout can prove a new version of it compiles. The private repository can carry a Dependabot
-file of its own for its actions and its Dockerfiles; it cannot watch a version table that lives
-here.
+checkout can prove a new version of it compiles. The private repository carries a Dependabot file
+of its own, and it watches the actions its workflows run on and nothing else: its projects compile
+into this repository's project graph and take their versions from the table and the catalogue
+here, so an updater working from that checkout alone has nothing it can restore.
 
 **A proposal that is red stays open until somebody reads it.** The limit of five open proposals
 per ecosystem means a week of ignored red marks stops further proposals for that ecosystem rather

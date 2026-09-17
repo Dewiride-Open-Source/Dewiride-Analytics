@@ -13,6 +13,7 @@ import {
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { readablePath } from '@/lib/analytics/pages';
+import type { Population } from '@/lib/analytics/people-only';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
 import { shareOf } from '@/lib/analytics/share';
 import type { VisitPageRow, VisitPosition } from '@/lib/api/schemas';
@@ -21,6 +22,8 @@ import { useVisitPages, useVisitTotals } from '@/lib/queries/sites';
 interface SiteFlowProps {
   readonly siteId: string;
   readonly window: AnalyticsWindow;
+  /** Whose figures the card counts. */
+  readonly population: Population;
 }
 
 /** How many pages are shown at once, matching the lists around it. */
@@ -37,13 +40,13 @@ const PER_PAGE = 10;
  * The screen above gives this a key that changes with the website and the period, so choosing
  * either starts afresh rather than leaving somebody on a screenful that no longer exists.
  */
-export function SiteFlow({ siteId, window }: SiteFlowProps) {
+export function SiteFlow({ siteId, window, population }: SiteFlowProps) {
   const t = useTranslations('dashboard.flow');
   const format = useFormatter();
   const [position, setPosition] = useState<VisitPosition>('entry');
   const [offset, setOffset] = useState(0);
-  const totals = useVisitTotals(siteId, window);
-  const pages = useVisitPages(siteId, window, position, PER_PAGE, offset);
+  const totals = useVisitTotals(siteId, window, population);
+  const pages = useVisitPages(siteId, window, population, position, PER_PAGE, offset);
 
   function show(next: VisitPosition) {
     setPosition(next);

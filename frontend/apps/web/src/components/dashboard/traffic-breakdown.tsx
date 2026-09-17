@@ -7,7 +7,7 @@ import { SplitList, SplitRow } from '@/components/dashboard/ranked-list';
 import { TONE_FILLS, VerdictBadge } from '@/components/dashboard/verdict-badge';
 import { Card } from '@/components/ui/card';
 import { shareOf } from '@/lib/analytics/share';
-import { tonesIn } from '@/lib/analytics/verdicts';
+import { CATEGORY_TONES, tonesIn, type VerdictTone } from '@/lib/analytics/verdicts';
 import type { TrafficGroup } from '@/lib/api/schemas';
 import type { ChartPalette } from '@/lib/charts/palette';
 
@@ -16,7 +16,27 @@ interface TrafficBreakdownProps {
   readonly groups: readonly TrafficGroup[];
   /** Visits behind the whole breakdown, which every share is taken against. */
   readonly sessions: number;
+  /**
+   * Whether the card answers how much of the judged traffic was people, rather than what it was
+   * made of.
+   */
+  readonly peopleOnly: boolean;
 }
+
+/** One arc of the ring and its line in the key beside it. */
+interface Portion {
+  /** What tells this arc from the others. */
+  readonly key: string;
+  readonly name: string;
+  readonly sessions: number;
+  /** The class the key's dot is drawn in. */
+  readonly fill: string;
+  /** The colour the arc is drawn in, from the palette the chart is drawn with. */
+  readonly colour: (palette: ChartPalette) => string;
+}
+
+/** What names a tone, in the reader's own language. */
+type ToneNames = (tone: VerdictTone) => string;
 
 /**
  * How a period divides up between the people a website is for and everything else.
@@ -26,23 +46,39 @@ interface TrafficBreakdownProps {
  * that is what somebody glances at this card to settle. The list names every category exactly, so
  * a crawler that says it is an AI one is never shown as one that has been confirmed, and two
  * categories that share a colour are told apart by the words beside them.
+ *
+ * On a screen kept to people the card answers a narrower question — how much of the judged
+ * traffic was people, and how sure — so the ring sets the people against everyone else and the
+ * list keeps the people's rows, each still a share of everything judged.
  */
-export function TrafficBreakdown({ groups, sessions }: TrafficBreakdownProps) {
+export function TrafficBreakdown({ groups, sessions, peopleOnly }: TrafficBreakdownProps) {
   const t = useTranslations('dashboard.traffic');
   const strengths = useTranslations('verdicts.strength');
   const tones = useTranslations('verdicts.tone');
   const format = useFormatter();
 
-  const portions = useMemo(() => tonesIn(groups), [groups]);
+  const portions = useMemo(
+    () =>
+      peopleOnly
+        ? peopleAgainstTheRest(groups, sessions, tones, t('others'))
+        : byTone(groups, tones),
+    [groups, sessions, peopleOnly, tones, t],
+  );
+
+  const rows = useMemo(
+    () =>
+      peopleOnly ? groups.filter((group) => CATEGORY_TONES[group.category] === 'people') : groups,
+    [groups, peopleOnly],
+  );
 
   const slices = useCallback(
     (palette: ChartPalette) =>
       portions.map((portion) => ({
-        name: tones(portion.tone),
+        name: portion.name,
         value: portion.sessions,
-        colour: palette.tones[portion.tone],
+        colour: portion.colour(palette),
       })),
-    [portions, tones],
+    [portions],
   );
 
   return (
@@ -57,25 +93,22 @@ export function TrafficBreakdown({ groups, sessions }: TrafficBreakdownProps) {
       <SplitList
         ring={
           <>
-            <Ring slices={slices} label={t('ring')} />
+            <Ring slices={slices} label={t(peopleOnly ? 'peopleRing' : 'ring')} />
 
             {/*
-              What the four arcs stand for, and how much of the period each came to. The list
-              beside it is the same period cut finer, so this is the only place the four are
-              named — without it a colour on the ring would stand for nothing a reader could put
-              into words.
+              What the arcs stand for, and how much of the period each came to. The list beside
+              it is the same period cut finer, so this is the only place the arcs are named —
+              without it a colour on the ring would stand for nothing a reader could put into
+              words.
             */}
             <ul className="flex w-40 flex-col gap-1.5">
               {portions.map((portion) => (
                 <li
-                  key={portion.tone}
+                  key={portion.key}
                   className="flex items-center gap-1.5 text-xs text-foreground-muted"
                 >
-                  <span
-                    aria-hidden
-                    className={`size-2 shrink-0 rounded-full ${TONE_FILLS[portion.tone]}`}
-                  />
-                  {tones(portion.tone)}
+                  <span aria-hidden className={`size-2 shrink-0 rounded-full ${portion.fill}`} />
+                  {portion.name}
                   <span className="ml-auto font-medium text-foreground tabular-nums">
                     {format.number(shareOf(portion.sessions, sessions), {
                       style: 'percent',
@@ -88,7 +121,7 @@ export function TrafficBreakdown({ groups, sessions }: TrafficBreakdownProps) {
           </>
         }
       >
-        {groups.map((group) => (
+        {rows.map((group) => (
           <SplitRow
             key={identify(group)}
             name={
@@ -113,6 +146,56 @@ export function TrafficBreakdown({ groups, sessions }: TrafficBreakdownProps) {
       <p className="text-xs text-foreground-subtle">{t('pending')}</p>
     </Card>
   );
+}
+
+/** The four tones the ring divides the period into. */
+function byTone(groups: readonly TrafficGroup[], tones: ToneNames): readonly Portion[] {
+  return tonesIn(groups).map((portion) => ({
+    key: portion.tone,
+    name: tones(portion.tone),
+    sessions: portion.sessions,
+    fill: TONE_FILLS[portion.tone],
+    colour: (palette) => palette.tones[portion.tone],
+  }));
+}
+
+/**
+ * The people as one arc and everyone else judged as the other.
+ *
+ * Everyone else is machinery, what nobody asked for and what could not be said, folded together,
+ * so it wears none of their tones: the quiet grey a part nothing can be said about is drawn in,
+ * the way a device nobody could name already is. Left out where it came to nothing, so a period
+ * in which every judged visit was a person is one whole arc rather than a ring with a seam.
+ */
+function peopleAgainstTheRest(
+  groups: readonly TrafficGroup[],
+  sessions: number,
+  tones: ToneNames,
+  others: string,
+): readonly Portion[] {
+  const people = tonesIn(groups).find((portion) => portion.tone === 'people')?.sessions ?? 0;
+  const rest = sessions - people;
+
+  return [
+    {
+      key: 'people',
+      name: tones('people'),
+      sessions: people,
+      fill: TONE_FILLS.people,
+      colour: (palette) => palette.tones.people,
+    },
+    ...(rest > 0
+      ? [
+          {
+            key: 'others',
+            name: others,
+            sessions: rest,
+            fill: 'bg-foreground-subtle',
+            colour: (palette: ChartPalette) => palette.subtle,
+          },
+        ]
+      : []),
+  ];
 }
 
 /**

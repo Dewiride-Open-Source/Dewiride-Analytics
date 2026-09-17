@@ -1,4 +1,4 @@
-import type { TrafficCategory, VisitReason } from '@/lib/api/schemas';
+import { type TrafficCategory, trafficCategorySchema, type VisitReason } from '@/lib/api/schemas';
 
 /**
  * How a verdict reaches the screen.
@@ -37,6 +37,16 @@ export const CATEGORY_TONES: Readonly<Record<TrafficCategory, VerdictTone>> = {
   'insufficient-evidence': 'unclear',
   unknown: 'unclear',
 };
+
+/**
+ * The categories drawn as people, which is the population a screen may be kept to.
+ *
+ * Derived from the tones rather than written out again, so what a screen kept to people asks the
+ * engine for and what it draws in green cannot come apart.
+ */
+export const PEOPLE_CATEGORIES: readonly TrafficCategory[] = trafficCategorySchema.options.filter(
+  (category) => CATEGORY_TONES[category] === 'people',
+);
 
 /**
  * The order the tones are read in.

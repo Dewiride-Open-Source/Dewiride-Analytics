@@ -1,11 +1,13 @@
 'use client';
 
-import { Code2, KeyRound, SlidersHorizontal } from 'lucide-react';
+import { Code2, KeyRound, ScanSearch, SlidersHorizontal, UserRound } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { JudgedTraffic } from '@/components/dashboard/judged-traffic';
 import { MetricCard, MetricCardSkeleton } from '@/components/dashboard/metric-card';
 import { PeriodPicker } from '@/components/dashboard/period-picker';
+import { PopulationSwitch } from '@/components/dashboard/population-switch';
+import { ListEmpty, ListWaiting } from '@/components/dashboard/ranked-list';
 import { ServerKeys } from '@/components/dashboard/server-keys';
 import { SiteActions } from '@/components/dashboard/site-actions';
 import { SiteDevices } from '@/components/dashboard/site-devices';
@@ -16,7 +18,7 @@ import { SiteReading } from '@/components/dashboard/site-reading';
 import { SiteSettings } from '@/components/dashboard/site-settings';
 import { SiteSources } from '@/components/dashboard/site-sources';
 import { TrackingCode } from '@/components/dashboard/tracking-code';
-import { TrafficChart, type TrafficPoint } from '@/components/dashboard/traffic-chart';
+import { type Activity, TrafficChart } from '@/components/dashboard/traffic-chart';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
@@ -31,12 +33,13 @@ import {
   spanInstants,
   windowFor,
 } from '@/lib/analytics/period';
+import { stillJudgingFrom } from '@/lib/analytics/traffic-series';
 import { useChartView } from '@/lib/analytics/use-chart-view';
 import { useComparison } from '@/lib/analytics/use-comparison';
 import { usePeopleOnly } from '@/lib/analytics/use-people-only';
 import { usePeriod } from '@/lib/analytics/use-period';
-import type { Site } from '@/lib/api/schemas';
-import { useOverview, useSeries, useTrafficSeries } from '@/lib/queries/sites';
+import type { Overview, Series, Site } from '@/lib/api/schemas';
+import { useOverview, useSeries, useTraffic, useTrafficSeries } from '@/lib/queries/sites';
 import { readableZone } from '@/lib/time-zones';
 
 interface SiteOverviewProps {
@@ -54,10 +57,14 @@ export function SiteOverview({ site }: SiteOverviewProps) {
   const { period, choose } = usePeriod({ seeding: true });
   const { view, show } = useChartView();
   const { against, compare } = useComparison();
-  const { peopleOnly, showOnlyPeople } = usePeopleOnly();
+  const { peopleOnly, population, showOnlyPeople } = usePeopleOnly({ seeding: true });
+  // The cards are labelled with what they count, in the same words the columns under the chart
+  // wear, so the table adds up to the cards in the reader's own terms.
+  const labels = useTranslations(peopleOnly ? 'dashboard.metrics.people' : 'dashboard.metrics');
   const [showingCode, setShowingCode] = useState(false);
   const [showingKeys, setShowingKeys] = useState(false);
   const [showingSettings, setShowingSettings] = useState(false);
+  const periodControl = useRef<HTMLSelectElement>(null);
 
   // Resolved once per period rather than on every render: the window is part of the name each
   // answer is cached under, and one that moved with the clock would never find a cached answer.
@@ -79,16 +86,25 @@ export function SiteOverview({ site }: SiteOverviewProps) {
   );
 
   const granularity = granularityFor(span);
-  const overview = useOverview(site.id, window);
-  const earlierOverview = useOverview(site.id, earlierWindow);
+  const manyDays = daysIn(span) > 1;
+  // Everybody is always asked about as well. It is the check that tells a website nobody has been
+  // to from a period in which nobody was judged a person, and under everybody it is the same
+  // question as the cards ask, filed under the same name, so it costs nothing.
+  const everybody = useOverview(site.id, window, 'everybody');
+  const overview = useOverview(site.id, window, population);
+  const earlierOverview = useOverview(site.id, earlierWindow, population);
+  // Read only while the screen is kept to people, to tell a period in which nobody was judged a
+  // person from one in which nothing has been judged at all.
+  const traffic = useTraffic(site.id, window, peopleOnly);
 
-  // Only whichever picture is being drawn is asked for. How much was read comes from everything the
-  // website recorded; who came, and how much of it was people, come from visits that have finished
-  // and been judged. Two stores, and a screen drawing one has no reason to pay for the other.
-  const everyone = view === 'activity' && !peopleOnly;
-  const views = useSeries(site.id, 'pageviews', window, granularity, everyone);
-  const visitors = useSeries(site.id, 'visitors', window, granularity, everyone);
-  const who = useTrafficSeries(site.id, window, granularity, !everyone);
+  // Only whichever picture is being drawn is asked for. How much was read comes from activity,
+  // asked of the population the screen is kept to; who came comes from visits that have finished
+  // and been judged, which already say who they were. Two stores, and a screen drawing one has no
+  // reason to pay for the other.
+  const drawingActivity = view === 'activity';
+  const views = useSeries(site.id, 'pageviews', window, population, granularity, drawingActivity);
+  const visitors = useSeries(site.id, 'visitors', window, population, granularity, drawingActivity);
+  const who = useTrafficSeries(site.id, window, granularity, !drawingActivity);
 
   // The earlier period is cut into the same buckets as this one, so that the two can be read off
   // the same place on the axis. Asked for only once somebody puts it behind the drawing.
@@ -96,25 +112,29 @@ export function SiteOverview({ site }: SiteOverviewProps) {
     site.id,
     'pageviews',
     earlierWindow,
+    population,
     granularity,
-    everyone && against,
+    drawingActivity && against,
   );
   const earlierVisitors = useSeries(
     site.id,
     'visitors',
     earlierWindow,
+    population,
     granularity,
-    everyone && against,
+    drawingActivity && against,
   );
-  const earlierWho = useTrafficSeries(site.id, earlierWindow, granularity, !everyone && against);
+  const earlierWho = useTrafficSeries(
+    site.id,
+    earlierWindow,
+    granularity,
+    !drawingActivity && against,
+  );
 
-  const points = useMemo(
-    () => align(views.data?.points, visitors.data?.points),
-    [views.data, visitors.data],
-  );
+  const activity = useMemo(() => align(views.data, visitors.data), [views.data, visitors.data]);
 
   const earlierPoints = useMemo(
-    () => align(earlierViews.data?.points, earlierVisitors.data?.points),
+    () => align(earlierViews.data, earlierVisitors.data)?.points,
     [earlierViews.data, earlierVisitors.data],
   );
 
@@ -134,15 +154,43 @@ export function SiteOverview({ site }: SiteOverviewProps) {
     });
   }, [period, site.timeZoneId, format]);
 
-  const problem = (everyone ? (views.error ?? visitors.error) : who.error) ?? null;
+  const problem = (drawingActivity ? (views.error ?? visitors.error) : who.error) ?? null;
   const totals = overview.data;
   const before = earlierOverview.data;
   const comparedWith =
     period.kind === 'preset'
       ? metrics(`against.${period.preset}`)
       : metrics('against.chosen', { days: daysIn(span) });
-  const silent = totals !== undefined && totals.pageViews === 0 && totals.visitors === 0;
-  const listing = `${site.id}:${window.from}:${window.to}`;
+  // Nobody at all, or nobody among the people: two different screens, and the second is only
+  // possible while the screen is kept to people, since under everybody the two answers are one.
+  // Neither is decided until everybody's answer is in, so a screen kept to people does not show
+  // the people absent for the instant before it learns whether anybody at all was there.
+  const silent = nought(everybody.data);
+  const deserted = everybody.data !== undefined && !silent && nought(totals);
+  const listing = `${site.id}:${window.from}:${window.to}:${population}`;
+
+  // A day pressed on the picture becomes the period, which every panel on the screen then re-reads,
+  // since the period is the whole screen's. On a period that is already one day there is nothing
+  // narrower, so the picture is not offered as something to press.
+  //
+  // The picture is redrawn for the day and the row of its table that was pressed goes with the
+  // week, so the reading position is handed to the control that now names the day: it says what
+  // changed, and it is the way to change it again. The page follows only where there was a
+  // position to move — a row the reader had reached — and stays where it is after a press on the
+  // picture, which nothing can hold, so a tap on a phone does not jump the page.
+  const pickDay = useMemo(
+    () =>
+      manyDays
+        ? (day: string) => {
+            const held =
+              document.activeElement !== null && document.activeElement !== document.body;
+
+            choose({ kind: 'chosen', first: day, last: day });
+            periodControl.current?.focus({ preventScroll: !held });
+          }
+        : undefined,
+    [manyDays, choose],
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -183,9 +231,20 @@ export function SiteOverview({ site }: SiteOverviewProps) {
             <SlidersHorizontal aria-hidden className="size-4" />
             {settings('action')}
           </Button>
-          <PeriodPicker value={period} onChange={choose} timeZoneId={site.timeZoneId} />
+          <PopulationSwitch peopleOnly={peopleOnly} onChange={showOnlyPeople} />
+          <PeriodPicker
+            ref={periodControl}
+            value={period}
+            onChange={choose}
+            timeZoneId={site.timeZoneId}
+          />
         </div>
       </header>
+
+      {/* The one clause every figure below is read under. Said once, here, rather than on each card. */}
+      {peopleOnly ? (
+        <p className="-mt-2 text-sm text-foreground-muted">{t('population.caption')}</p>
+      ) : null}
 
       {overview.isError ? <FailureNotice error={overview.error} /> : null}
 
@@ -199,20 +258,20 @@ export function SiteOverview({ site }: SiteOverviewProps) {
         ) : (
           <>
             <MetricCard
-              label={metrics('pageViews.label')}
+              label={labels('pageViews.label')}
               value={format.number(totals.pageViews)}
               change={before && changeBetween(totals.pageViews, before.pageViews)}
               comparedWith={comparedWith}
             />
             <MetricCard
-              label={metrics('visitors.label')}
+              label={labels('visitors.label')}
               value={format.number(totals.visitors)}
               change={before && changeBetween(totals.visitors, before.visitors)}
               comparedWith={comparedWith}
               note={metrics('visitors.note')}
             />
             <MetricCard
-              label={metrics('pagesPerVisitor.label')}
+              label={labels('pagesPerVisitor.label')}
               value={perVisitor(totals.pageViews, totals.visitors, format)}
               change={before && changeBetween(pagesEach(totals), pagesEach(before))}
               comparedWith={comparedWith}
@@ -228,20 +287,28 @@ export function SiteOverview({ site }: SiteOverviewProps) {
           action={t('empty.action')}
           onAction={() => setShowingCode(true)}
         />
-      ) : (
+      ) : null}
+
+      {deserted ? (
+        <PeopleAbsent
+          judged={traffic.data === undefined ? undefined : traffic.data.groups.length > 0}
+          onShowEveryone={() => showOnlyPeople(false)}
+        />
+      ) : null}
+
+      {silent || deserted ? null : (
         <>
           <TrafficChart
             view={view}
             onView={show}
             peopleOnly={peopleOnly}
-            onPeopleOnly={showOnlyPeople}
-            activity={views.data && visitors.data ? points : undefined}
+            activity={activity}
             who={who.data}
             problem={problem}
             comparison={{
               on: against,
               onChange: compare,
-              activity: earlierViews.data && earlierVisitors.data ? earlierPoints : undefined,
+              activity: earlierPoints,
               who: earlierWho.data,
               days: earlierDays,
             }}
@@ -249,8 +316,9 @@ export function SiteOverview({ site }: SiteOverviewProps) {
             timeZoneId={site.timeZoneId}
             zone={readableZone(site.timeZoneId)}
             granularity={granularity}
-            manyDays={daysIn(span) > 1}
+            manyDays={manyDays}
             manyYears={crossesYears(span)}
+            onPickDay={pickDay}
           />
 
           {/*
@@ -263,30 +331,61 @@ export function SiteOverview({ site }: SiteOverviewProps) {
             they then did. It is the first thing somebody looks for after seeing the shape of a
             week — a rise is a question, and this is where its answer usually is.
           */}
-          <SiteSources key={`sources:${listing}`} siteId={site.id} window={window} />
+          <SiteSources
+            key={`sources:${listing}`}
+            siteId={site.id}
+            window={window}
+            population={population}
+          />
 
           {/*
             Where the readers were and what they read on are two halves of the same question and
             sit side by side from a wide screen down, one above the other on anything narrower.
           */}
           <div className="grid gap-6 xl:grid-cols-2 xl:items-start">
-            <SiteLocations key={`places:${listing}`} siteId={site.id} window={window} />
+            <SiteLocations
+              key={`places:${listing}`}
+              siteId={site.id}
+              window={window}
+              population={population}
+            />
 
-            <SiteDevices key={`devices:${listing}`} siteId={site.id} window={window} />
+            <SiteDevices
+              key={`devices:${listing}`}
+              siteId={site.id}
+              window={window}
+              population={population}
+            />
           </div>
 
-          <SitePages key={`pages:${listing}`} siteId={site.id} window={window} />
+          <SitePages
+            key={`pages:${listing}`}
+            siteId={site.id}
+            window={window}
+            population={population}
+          />
 
           <SiteReading
             key={`reading:${listing}`}
             siteId={site.id}
             window={window}
+            population={population}
             onShowCode={() => setShowingCode(true)}
           />
 
-          <SiteFlow key={`flow:${listing}`} siteId={site.id} window={window} />
+          <SiteFlow
+            key={`flow:${listing}`}
+            siteId={site.id}
+            window={window}
+            population={population}
+          />
 
-          <SiteActions key={`presses:${listing}`} siteId={site.id} window={window} />
+          <SiteActions
+            key={`presses:${listing}`}
+            siteId={site.id}
+            window={window}
+            population={population}
+          />
 
           <JudgedTraffic key={`visits:${listing}`} site={site} window={window} />
         </>
@@ -353,6 +452,48 @@ function FirstVisit({ title, body, action, onAction }: FirstVisitProps) {
   );
 }
 
+/** Whether a period's totals came to nothing at all, once they have arrived. */
+function nought(totals: Overview | undefined): boolean {
+  return totals !== undefined && totals.pageViews === 0 && totals.visitors === 0;
+}
+
+interface PeopleAbsentProps {
+  /** Whether anything in the period has been judged, or nothing until that is known. */
+  readonly judged: boolean | undefined;
+  readonly onShowEveryone: () => void;
+}
+
+/**
+ * The screen a period shows when the website had traffic and none of it was counted as people.
+ *
+ * One state in place of the picture and every list, because eight cards each saying nothing is
+ * eight ways of saying one thing. Two bodies, because "nobody was a person" and "nobody has been
+ * looked at yet" are different facts; both offer everyone back, since the screen was kept to
+ * people on purpose and the way out is the choice that kept it.
+ */
+function PeopleAbsent({ judged, onShowEveryone }: PeopleAbsentProps) {
+  const t = useTranslations('dashboard.population.empty');
+
+  if (judged === undefined) {
+    return <ListWaiting />;
+  }
+
+  const reason = judged ? 'nobody' : 'unjudged';
+
+  return (
+    <ListEmpty
+      icon={judged ? UserRound : ScanSearch}
+      title={t(`${reason}.title`)}
+      body={t(`${reason}.body`)}
+      action={
+        <Button tone="secondary" size="sm" onClick={onShowEveryone}>
+          {t('action')}
+        </Button>
+      }
+    />
+  );
+}
+
 /**
  * Pages read per visitor as a bare figure, which is nought over a period nobody came in.
  *
@@ -373,20 +514,29 @@ function perVisitor(
   return visitors > 0 ? format.number(pageViews / visitors, { maximumFractionDigits: 1 }) : null;
 }
 
-/** Two answers about the same buckets, joined into the rows a chart and a table both read. */
-function align(
-  views: readonly { readonly bucketStart: string; readonly value: number }[] | undefined,
-  visitors: readonly { readonly bucketStart: string; readonly value: number }[] | undefined,
-): readonly TrafficPoint[] {
+/**
+ * Two answers about the same buckets, joined into the rows a chart and a table both read, and
+ * where the judging stops — which for everybody is nowhere, since every report counts as it
+ * arrives.
+ */
+function align(views: Series | undefined, visitors: Series | undefined): Activity | undefined {
   if (!views || !visitors) {
-    return [];
+    return undefined;
   }
 
-  const byBucket = new Map(visitors.map((point) => [point.bucketStart, point.value]));
-
-  return views.map((point) => ({
+  const byBucket = new Map(visitors.points.map((point) => [point.bucketStart, point.value]));
+  const points = views.points.map((point) => ({
     start: point.bucketStart,
     pageViews: point.value,
     visitors: byBucket.get(point.bucketStart) ?? 0,
   }));
+
+  return {
+    points,
+    stillJudging: stillJudgingFrom({
+      to: views.to,
+      completeTo: views.completeTo,
+      buckets: points.map((point) => point.start),
+    }),
+  };
 }

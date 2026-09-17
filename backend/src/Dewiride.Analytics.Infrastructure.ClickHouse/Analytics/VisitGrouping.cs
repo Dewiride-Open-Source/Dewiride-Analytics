@@ -51,10 +51,10 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// is the one that stands for it.
 /// </para>
 /// <para>
-/// Expects a preceding <c>identified</c> selection — see
-/// <see cref="ReconciledEvents.Reconciliation"/> — carrying at least <c>event_id</c>,
-/// <c>server_ts</c>, <c>kind</c>, <c>path</c>, <c>surface</c> and <c>visitor_key</c>, and an
-/// <c>idle_seconds</c> value bound by the caller.
+/// Expects a preceding selection with identity settled — the reconciled window itself, see
+/// <see cref="ReconciledEvents.Reconciliation"/>, or the part of it a question is asked about —
+/// carrying at least <c>event_id</c>, <c>server_ts</c>, <c>kind</c>, <c>path</c>, <c>surface</c>
+/// and <c>visitor_key</c>, and an <c>idle_seconds</c> value bound by the caller.
 /// </para>
 /// </remarks>
 internal static class VisitGrouping
@@ -69,15 +69,32 @@ internal static class VisitGrouping
     private const string InOrder = "ORDER BY server_ts, kind != 'PageView', event_id";
 
     /// <summary>
-    /// Writes the grouping, over the visitors the calling statement is asking about.
+    /// Writes the grouping over the reconciled window, for the visitors the calling statement is
+    /// asking about.
     /// </summary>
     /// <param name="visitors">
-    /// Which visitors take part, as a condition over <c>identified</c>. Written by a compiler in
+    /// Which visitors take part, as a condition over the reconciled window. Written by a compiler
+    /// in this assembly and never by a caller: where it narrows to a single visitor, that
+    /// visitor's key travels as a bound value and only the parameter's name appears here.
+    /// </param>
+    /// <returns>The eight expressions, ending in <c>opened</c>.</returns>
+    public static string Of(string visitors) => Of(ReconciledEvents.Identified, visitors);
+
+    /// <summary>
+    /// Writes the grouping, over the visitors the calling statement is asking about.
+    /// </summary>
+    /// <param name="among">
+    /// The selection whose reports are grouped: the reconciled window, or the part of it a
+    /// question is asked about. A fixed identifier written by a compiler in this assembly and
+    /// never by a caller.
+    /// </param>
+    /// <param name="visitors">
+    /// Which visitors take part, as a condition over that selection. Written by a compiler in
     /// this assembly and never by a caller: where it narrows to a single visitor, that visitor's
     /// key travels as a bound value and only the parameter's name appears here.
     /// </param>
     /// <returns>The eight expressions, ending in <c>opened</c>.</returns>
-    public static string Of(string visitors) => $$"""
+    public static string Of(string among, string visitors) => $$"""
         reported AS
             (
                 SELECT
@@ -86,7 +103,7 @@ internal static class VisitGrouping
                         PARTITION BY visitor_key, path
                         {{InOrder}}
                         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS arrival_ms
-                FROM identified
+                FROM {{among}}
                 WHERE {{visitors}}
             ),
             ordered AS

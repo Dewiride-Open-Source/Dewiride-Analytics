@@ -43,12 +43,19 @@ public sealed record OverviewResponse(
 /// <param name="To">Exclusive end of the window.</param>
 /// <param name="Metric">Which metric was counted.</param>
 /// <param name="Granularity">How wide each bucket is.</param>
+/// <param name="CompleteTo">
+/// The instant the answer is complete up to. Counted for everybody it is the end of the window,
+/// because every report counts as it arrives; counted for people it is the instant judging has
+/// finished up to, because a visit is judged once it has been silent long enough to have ended,
+/// and the buckets past it hold fewer people than they eventually will.
+/// </param>
 /// <param name="Points">The buckets, oldest first, with empty ones present and zeroed.</param>
 public sealed record SeriesResponse(
     DateTimeOffset From,
     DateTimeOffset To,
     string Metric,
     string Granularity,
+    DateTimeOffset CompleteTo,
     IReadOnlyList<SeriesPoint> Points);
 
 /// <summary>

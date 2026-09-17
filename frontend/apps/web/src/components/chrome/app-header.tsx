@@ -10,7 +10,8 @@ import { SiteSwitch } from '@/components/dashboard/site-switch';
 import { Button } from '@/components/ui/button';
 import { Link, usePathname } from '@/i18n/navigation';
 import { useChosenSite } from '@/lib/analytics/chosen-site';
-import { withPeriod } from '@/lib/analytics/period';
+import { withChoices } from '@/lib/analytics/period';
+import { usePeopleOnly } from '@/lib/analytics/use-people-only';
 import { usePeriod } from '@/lib/analytics/use-period';
 import { useSession, useSignOut } from '@/lib/queries/session';
 import { useSites } from '@/lib/queries/sites';
@@ -38,6 +39,7 @@ export function AppHeader() {
   const [adding, setAdding] = useState(false);
   const here = usePathname();
   const { period } = usePeriod();
+  const { population } = usePeopleOnly();
 
   function show(siteId: string) {
     choose(siteId);
@@ -111,13 +113,18 @@ export function AppHeader() {
               return (
                 <li key={section.path}>
                   {/*
-                    The screens that answer about a stretch of days hand each other the period, so
-                    that moving between them is moving between two questions about the same days
-                    rather than starting again. The one about the present moment takes none: there
-                    is no stretch of days for it to be asked about.
+                    The screens that answer about a stretch of days hand each other the period and
+                    the population, so that moving between them is moving between two questions
+                    about the same days and the same people rather than starting again. The one
+                    about the present moment takes neither: there is no stretch of days for it to
+                    be asked about, and what is happening now is counted rather than judged.
                   */}
                   <Link
-                    href={section.aboutSite ? withPeriod(section.path, period) : section.path}
+                    href={
+                      section.aboutSite
+                        ? withChoices(section.path, { period, population })
+                        : section.path
+                    }
                     aria-current={current ? 'page' : undefined}
                     className={cn(
                       'relative flex h-11 items-center rounded-sm px-3 text-sm font-medium transition-colors',

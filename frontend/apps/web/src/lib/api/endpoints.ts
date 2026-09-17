@@ -1,4 +1,5 @@
 import { EVERY_JOURNEY, type JourneyFilters, narrowingParams } from '@/lib/analytics/journeys';
+import { type Population, withPopulation } from '@/lib/analytics/people-only';
 import type { AnalyticsWindow, Granularity } from '@/lib/analytics/period';
 import { discardResource, readResource, submitResource } from './client';
 import {
@@ -148,19 +149,30 @@ export function listSites(): Promise<Site[]> {
   return readResource(SITES, sitesSchema);
 }
 
-export function readOverview(siteId: string, window: AnalyticsWindow): Promise<Overview> {
-  return readResource(`${siteAddress(siteId)}/overview?${period(window)}`, overviewSchema);
+export function readOverview(
+  siteId: string,
+  window: AnalyticsWindow,
+  population: Population,
+): Promise<Overview> {
+  return readResource(
+    `${siteAddress(siteId)}/overview?${asking(window, population)}`,
+    overviewSchema,
+  );
 }
 
 export function readSeries(
   siteId: string,
   metric: SeriesMetric,
   window: AnalyticsWindow,
+  population: Population,
   granularity: Granularity,
 ): Promise<Series> {
   const asked = new URLSearchParams({ metric, granularity });
 
-  return readResource(`${siteAddress(siteId)}/series?${asked}&${period(window)}`, seriesSchema);
+  return readResource(
+    `${siteAddress(siteId)}/series?${asked}&${asking(window, population)}`,
+    seriesSchema,
+  );
 }
 
 /**
@@ -173,12 +185,16 @@ export function readSeries(
 export function readPages(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   limit: number,
   offset: number,
 ): Promise<Pages> {
   const asked = new URLSearchParams({ limit: String(limit), offset: String(offset) });
 
-  return readResource(`${siteAddress(siteId)}/pages?${asked}&${period(window)}`, pagesSchema);
+  return readResource(
+    `${siteAddress(siteId)}/pages?${asked}&${asking(window, population)}`,
+    pagesSchema,
+  );
 }
 
 /**
@@ -190,6 +206,7 @@ export function readPages(
 export function readLocations(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   grouping: LocationGrouping,
   limit: number,
   offset: number,
@@ -201,7 +218,7 @@ export function readLocations(
   });
 
   return readResource(
-    `${siteAddress(siteId)}/locations?${asked}&${period(window)}`,
+    `${siteAddress(siteId)}/locations?${asked}&${asking(window, population)}`,
     locationsSchema,
   );
 }
@@ -215,6 +232,7 @@ export function readLocations(
 export function readSources(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   grouping: SourceGrouping,
   limit: number,
   offset: number,
@@ -225,7 +243,10 @@ export function readSources(
     offset: String(offset),
   });
 
-  return readResource(`${siteAddress(siteId)}/sources?${asked}&${period(window)}`, sourcesSchema);
+  return readResource(
+    `${siteAddress(siteId)}/sources?${asked}&${asking(window, population)}`,
+    sourcesSchema,
+  );
 }
 
 /**
@@ -234,8 +255,15 @@ export function readSources(
  * Nothing to page through: the kinds are a closed set of five, so the whole answer arrives at
  * once and the rows add up to the total beside them.
  */
-export function readDevices(siteId: string, window: AnalyticsWindow): Promise<Devices> {
-  return readResource(`${siteAddress(siteId)}/devices?${period(window)}`, devicesSchema);
+export function readDevices(
+  siteId: string,
+  window: AnalyticsWindow,
+  population: Population,
+): Promise<Devices> {
+  return readResource(
+    `${siteAddress(siteId)}/devices?${asking(window, population)}`,
+    devicesSchema,
+  );
 }
 
 /**
@@ -247,6 +275,7 @@ export function readDevices(siteId: string, window: AnalyticsWindow): Promise<De
 export function readSoftware(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   grouping: SoftwareGrouping,
   limit: number,
   offset: number,
@@ -257,7 +286,10 @@ export function readSoftware(
     offset: String(offset),
   });
 
-  return readResource(`${siteAddress(siteId)}/software?${asked}&${period(window)}`, softwareSchema);
+  return readResource(
+    `${siteAddress(siteId)}/software?${asked}&${asking(window, population)}`,
+    softwareSchema,
+  );
 }
 
 /**
@@ -269,6 +301,7 @@ export function readSoftware(
 export function readActions(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   grouping: ActionGrouping,
   limit: number,
   offset: number,
@@ -279,7 +312,10 @@ export function readActions(
     offset: String(offset),
   });
 
-  return readResource(`${siteAddress(siteId)}/actions?${asked}&${period(window)}`, actionsSchema);
+  return readResource(
+    `${siteAddress(siteId)}/actions?${asked}&${asking(window, population)}`,
+    actionsSchema,
+  );
 }
 
 /** What is needed to start measuring another website. */
@@ -333,8 +369,15 @@ export function updateSiteSettings(
  * One answer about one period rather than a list, and it carries how much of the period it could
  * be taken from alongside what it found.
  */
-export function readEngagement(siteId: string, window: AnalyticsWindow): Promise<Engagement> {
-  return readResource(`${siteAddress(siteId)}/engagement?${period(window)}`, engagementSchema);
+export function readEngagement(
+  siteId: string,
+  window: AnalyticsWindow,
+  population: Population,
+): Promise<Engagement> {
+  return readResource(
+    `${siteAddress(siteId)}/engagement?${asking(window, population)}`,
+    engagementSchema,
+  );
 }
 
 /**
@@ -346,6 +389,7 @@ export function readEngagement(siteId: string, window: AnalyticsWindow): Promise
 export function readPageEngagement(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   ranking: EngagementRanking,
   limit: number,
   offset: number,
@@ -357,7 +401,7 @@ export function readPageEngagement(
   });
 
   return readResource(
-    `${siteAddress(siteId)}/engagement/pages?${asked}&${period(window)}`,
+    `${siteAddress(siteId)}/engagement/pages?${asked}&${asking(window, population)}`,
     pageEngagementSchema,
   );
 }
@@ -428,8 +472,15 @@ export function readFacets(siteId: string, window: AnalyticsWindow): Promise<Vis
  * Counted from activity rather than from what the engine has judged, so it keeps step with the
  * headline totals instead of trailing them.
  */
-export function readVisitTotals(siteId: string, window: AnalyticsWindow): Promise<VisitTotals> {
-  return readResource(`${siteAddress(siteId)}/visits/totals?${period(window)}`, visitTotalsSchema);
+export function readVisitTotals(
+  siteId: string,
+  window: AnalyticsWindow,
+  population: Population,
+): Promise<VisitTotals> {
+  return readResource(
+    `${siteAddress(siteId)}/visits/totals?${asking(window, population)}`,
+    visitTotalsSchema,
+  );
 }
 
 /**
@@ -441,6 +492,7 @@ export function readVisitTotals(siteId: string, window: AnalyticsWindow): Promis
 export function readVisitPages(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   position: VisitPosition,
   limit: number,
   offset: number,
@@ -452,7 +504,7 @@ export function readVisitPages(
   });
 
   return readResource(
-    `${siteAddress(siteId)}/visits/pages?${asked}&${period(window)}`,
+    `${siteAddress(siteId)}/visits/pages?${asked}&${asking(window, population)}`,
     visitPagesSchema,
   );
 }
@@ -528,8 +580,19 @@ function siteAddress(siteId: string): string {
   return `${SITES}/${encodeURIComponent(siteId)}`;
 }
 
-function period(window: AnalyticsWindow): string {
-  return new URLSearchParams({ from: window.from, to: window.to }).toString();
+function period(window: AnalyticsWindow): URLSearchParams {
+  return new URLSearchParams({ from: window.from, to: window.to });
+}
+
+/**
+ * The period a question is about and the population it is asked of.
+ *
+ * Every question about activity carries both, so the totals, the graph and every list on a screen
+ * kept to people are answers about the same people. The questions about verdicts carry the period
+ * alone: a verdict already says who a visit was.
+ */
+function asking(window: AnalyticsWindow, population: Population): URLSearchParams {
+  return withPopulation(period(window), population);
 }
 
 /** The account the caller belongs to, everybody in it, and everybody who has been asked to join. */

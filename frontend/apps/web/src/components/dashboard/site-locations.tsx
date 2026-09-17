@@ -13,6 +13,7 @@ import {
 } from '@/components/dashboard/ranked-list';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
+import type { Population } from '@/lib/analytics/people-only';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
 import { countryNames } from '@/lib/analytics/places';
 import type { LocationGrouping, SiteLocation } from '@/lib/api/schemas';
@@ -21,6 +22,8 @@ import { useLocations } from '@/lib/queries/sites';
 interface SiteLocationsProps {
   readonly siteId: string;
   readonly window: AnalyticsWindow;
+  /** Whose figures the card counts. */
+  readonly population: Population;
 }
 
 /** How many places are shown at once, matching the page list beneath it. */
@@ -37,11 +40,11 @@ const PER_PAGE = 10;
  * either starts a fresh list rather than leaving somebody on the fourth screenful of a list that
  * no longer exists.
  */
-export function SiteLocations({ siteId, window }: SiteLocationsProps) {
+export function SiteLocations({ siteId, window, population }: SiteLocationsProps) {
   const t = useTranslations('dashboard.locations');
   const [grouping, setGrouping] = useState<LocationGrouping>('country');
   const [offset, setOffset] = useState(0);
-  const places = useLocations(siteId, window, grouping, PER_PAGE, offset);
+  const places = useLocations(siteId, window, population, grouping, PER_PAGE, offset);
 
   function regroup(next: LocationGrouping) {
     setGrouping(next);

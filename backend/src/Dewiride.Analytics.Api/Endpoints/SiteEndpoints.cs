@@ -134,6 +134,9 @@ internal static class SiteEndpoints
     private const string UnreachedSourceKind =
         "Narrow to the kinds of source this product reports, or leave it out for all of them.";
 
+    /// <summary>What is said when a question is asked about a population this product cannot separate.</summary>
+    private const string UnknownPopulation = "Ask about everybody, or only about people.";
+
     /// <summary>
     /// What each role is called on the wire.
     /// </summary>
@@ -154,6 +157,20 @@ internal static class SiteEndpoints
         {
             ["pageviews"] = TimeSeriesMetric.PageViews,
             ["visitors"] = TimeSeriesMetric.Visitors,
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Who an answer may be about, by the word used on the wire.
+    /// </summary>
+    /// <remarks>
+    /// Written out for the same reason the place groupings are, and refused here before the
+    /// compiler is reached for the same reason. One word: everybody is what a question means when
+    /// nobody is named, and is never spelled.
+    /// </remarks>
+    private static readonly FrozenDictionary<string, Population> Populations =
+        new Dictionary<string, Population>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["people"] = Population.People,
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -407,6 +424,11 @@ internal static class SiteEndpoints
             return Unusable(refusal);
         }
 
+        if (!TryReadPopulation(parameters.Only, out var population))
+        {
+            return Unusable(UnknownPopulation);
+        }
+
         var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
 
         if (scope is null)
@@ -415,7 +437,10 @@ internal static class SiteEndpoints
         }
 
         var pages = await telemetry
-            .GetSitePagesAsync(scope, new SitePagesQuery(slice.Range, slice.Limit, slice.Offset), cancellationToken)
+            .GetSitePagesAsync(
+                scope,
+                new SitePagesQuery(slice.Range, slice.Limit, slice.Offset) { Population = population },
+                cancellationToken)
             .ConfigureAwait(false);
 
         return TypedResults.Ok(
@@ -471,6 +496,11 @@ internal static class SiteEndpoints
             return Unusable(refusal);
         }
 
+        if (!TryReadPopulation(parameters.Only, out var population))
+        {
+            return Unusable(UnknownPopulation);
+        }
+
         var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
 
         if (scope is null)
@@ -481,7 +511,7 @@ internal static class SiteEndpoints
         var actions = await telemetry
             .GetSiteActionsAsync(
                 scope,
-                new SiteActionsQuery(slice.Range, grouping, slice.Limit, slice.Offset),
+                new SiteActionsQuery(slice.Range, grouping, slice.Limit, slice.Offset) { Population = population },
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -533,6 +563,11 @@ internal static class SiteEndpoints
             return Unusable(refusal);
         }
 
+        if (!TryReadPopulation(parameters.Only, out var population))
+        {
+            return Unusable(UnknownPopulation);
+        }
+
         var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
 
         if (scope is null)
@@ -543,7 +578,7 @@ internal static class SiteEndpoints
         var places = await telemetry
             .GetSiteLocationsAsync(
                 scope,
-                new SiteLocationsQuery(slice.Range, grouping, slice.Limit, slice.Offset),
+                new SiteLocationsQuery(slice.Range, grouping, slice.Limit, slice.Offset) { Population = population },
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -610,6 +645,11 @@ internal static class SiteEndpoints
             return Unusable(refusal);
         }
 
+        if (!TryReadPopulation(parameters.Only, out var population))
+        {
+            return Unusable(UnknownPopulation);
+        }
+
         var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
 
         if (scope is null)
@@ -627,7 +667,10 @@ internal static class SiteEndpoints
         var sources = await telemetry
             .GetSiteSourcesAsync(
                 scope,
-                new SiteSourcesQuery(slice.Range, grouping, site.Domain, slice.Limit, slice.Offset),
+                new SiteSourcesQuery(slice.Range, grouping, site.Domain, slice.Limit, slice.Offset)
+                {
+                    Population = population,
+                },
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -674,6 +717,11 @@ internal static class SiteEndpoints
             return Unusable(refusal);
         }
 
+        if (!TryReadPopulation(parameters.Only, out var population))
+        {
+            return Unusable(UnknownPopulation);
+        }
+
         var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
 
         if (scope is null)
@@ -682,7 +730,10 @@ internal static class SiteEndpoints
         }
 
         var devices = await telemetry
-            .GetSiteDeviceKindsAsync(scope, new SiteDeviceKindsQuery(range), cancellationToken)
+            .GetSiteDeviceKindsAsync(
+                scope,
+                new SiteDeviceKindsQuery(range) { Population = population },
+                cancellationToken)
             .ConfigureAwait(false);
 
         return TypedResults.Ok(
@@ -727,6 +778,11 @@ internal static class SiteEndpoints
             return Unusable(refusal);
         }
 
+        if (!TryReadPopulation(parameters.Only, out var population))
+        {
+            return Unusable(UnknownPopulation);
+        }
+
         var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
 
         if (scope is null)
@@ -737,7 +793,7 @@ internal static class SiteEndpoints
         var software = await telemetry
             .GetSiteSoftwareAsync(
                 scope,
-                new SiteSoftwareQuery(slice.Range, grouping, slice.Limit, slice.Offset),
+                new SiteSoftwareQuery(slice.Range, grouping, slice.Limit, slice.Offset) { Population = population },
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -784,6 +840,11 @@ internal static class SiteEndpoints
             return Unusable(refusal);
         }
 
+        if (!TryReadPopulation(parameters.Only, out var population))
+        {
+            return Unusable(UnknownPopulation);
+        }
+
         var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
 
         if (scope is null)
@@ -792,7 +853,10 @@ internal static class SiteEndpoints
         }
 
         var reading = await telemetry
-            .GetSiteEngagementAsync(scope, new SiteEngagementQuery(range), cancellationToken)
+            .GetSiteEngagementAsync(
+                scope,
+                new SiteEngagementQuery(range) { Population = population },
+                cancellationToken)
             .ConfigureAwait(false);
 
         return TypedResults.Ok(
@@ -839,6 +903,11 @@ internal static class SiteEndpoints
             return Unusable(refusal);
         }
 
+        if (!TryReadPopulation(parameters.Only, out var population))
+        {
+            return Unusable(UnknownPopulation);
+        }
+
         var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
 
         if (scope is null)
@@ -849,7 +918,10 @@ internal static class SiteEndpoints
         var pages = await telemetry
             .GetSitePageEngagementAsync(
                 scope,
-                new SitePageEngagementQuery(slice.Range, ranking, slice.Limit, slice.Offset),
+                new SitePageEngagementQuery(slice.Range, ranking, slice.Limit, slice.Offset)
+                {
+                    Population = population,
+                },
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -897,6 +969,11 @@ internal static class SiteEndpoints
             return Unusable(refusal);
         }
 
+        if (!TryReadPopulation(parameters.Only, out var population))
+        {
+            return Unusable(UnknownPopulation);
+        }
+
         var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
 
         if (scope is null)
@@ -907,7 +984,7 @@ internal static class SiteEndpoints
         var shape = await telemetry
             .GetSiteVisitShapeAsync(
                 scope,
-                new SiteVisitShapeQuery(range, Boundaries(classification.Value, clock)),
+                new SiteVisitShapeQuery(range, Boundaries(classification.Value, clock)) { Population = population },
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -950,6 +1027,11 @@ internal static class SiteEndpoints
             return Unusable(refusal);
         }
 
+        if (!TryReadPopulation(parameters.Only, out var population))
+        {
+            return Unusable(UnknownPopulation);
+        }
+
         var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
 
         if (scope is null)
@@ -965,7 +1047,10 @@ internal static class SiteEndpoints
                     Boundaries(classification.Value, clock),
                     position,
                     slice.Limit,
-                    slice.Offset),
+                    slice.Offset)
+                {
+                    Population = population,
+                },
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -1076,7 +1161,7 @@ internal static class SiteEndpoints
         new(settings.IdleTimeout, clock.GetUtcNow() - settings.IdleTimeout);
 
     private static async Task<Results<Ok<TrafficResponse>, NotFound, ProblemHttpResult>> TrafficAsync(
-        [AsParameters] OverviewParameters parameters,
+        [AsParameters] JudgedParameters parameters,
         ITenantScopeProvider scopes,
         ITelemetryQueries telemetry,
         TimeProvider clock,
@@ -1275,7 +1360,7 @@ internal static class SiteEndpoints
     /// </para>
     /// </remarks>
     private static async Task<Results<Ok<VisitFacetsResponse>, NotFound, ProblemHttpResult>> VisitFacetsAsync(
-        [AsParameters] OverviewParameters parameters,
+        [AsParameters] JudgedParameters parameters,
         ITenantScopeProvider scopes,
         ISiteCatalog sites,
         ITelemetryQueries telemetry,
@@ -1910,6 +1995,11 @@ internal static class SiteEndpoints
             return Unusable(refusal);
         }
 
+        if (!TryReadPopulation(parameters.Only, out var population))
+        {
+            return Unusable(UnknownPopulation);
+        }
+
         var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
 
         if (scope is null)
@@ -1918,17 +2008,28 @@ internal static class SiteEndpoints
         }
 
         var totals = await telemetry
-            .GetOverviewAsync(scope, new OverviewQuery(range), cancellationToken)
+            .GetOverviewAsync(scope, new OverviewQuery(range) { Population = population }, cancellationToken)
             .ConfigureAwait(false);
 
         return TypedResults.Ok(
             new OverviewResponse(range.From, range.To, totals.PageViews, totals.Visitors, totals.Events));
     }
 
+    /// <summary>
+    /// Answers one measure in buckets across a period.
+    /// </summary>
+    /// <remarks>
+    /// Counted for everybody, the answer is complete to the end of its own window, because every
+    /// report counts as it arrives. Counted for people, it is complete only to where the judging
+    /// has reached: a visit is judged once it has been silent long enough to have ended, so the
+    /// buckets past that instant hold fewer people than they eventually will, and the answer says
+    /// where that begins.
+    /// </remarks>
     private static async Task<Results<Ok<SeriesResponse>, NotFound, ProblemHttpResult>> SeriesAsync(
         [AsParameters] SeriesParameters parameters,
         ITenantScopeProvider scopes,
         ITelemetryQueries telemetry,
+        IOptions<ClassificationOptions> classification,
         TimeProvider clock,
         CancellationToken cancellationToken)
     {
@@ -1957,6 +2058,11 @@ internal static class SiteEndpoints
             return Unusable(refusal);
         }
 
+        if (!TryReadPopulation(parameters.Only, out var population))
+        {
+            return Unusable(UnknownPopulation);
+        }
+
         var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
 
         if (scope is null)
@@ -1965,8 +2071,18 @@ internal static class SiteEndpoints
         }
 
         var points = await telemetry
-            .GetTimeSeriesAsync(scope, new TimeSeriesQuery(range, granularity, metric), cancellationToken)
+            .GetTimeSeriesAsync(
+                scope,
+                new TimeSeriesQuery(range, granularity, metric) { Population = population },
+                cancellationToken)
             .ConfigureAwait(false);
+
+        // The same instant the visit-shaped answers treat as the end of what has finished, so the
+        // point a series of people stops being complete at and the point those stop counting are
+        // one decision rather than two that happen to agree.
+        var completeTo = population == Population.People
+            ? Boundaries(classification.Value, clock).SettledBefore
+            : range.To;
 
         return TypedResults.Ok(
             new SeriesResponse(
@@ -1974,6 +2090,7 @@ internal static class SiteEndpoints
                 range.To,
                 MetricNames[metric],
                 GranularityNames[granularity],
+                completeTo,
                 [.. points.Select(point => new SeriesPoint(point.BucketStart, point.Value))]));
     }
 
@@ -2063,6 +2180,29 @@ internal static class SiteEndpoints
         return true;
     }
 
+    /// <summary>
+    /// Reads who a question is asked about.
+    /// </summary>
+    /// <remarks>
+    /// Nothing named is everybody, which is what every question means until somebody is named.
+    /// Called before the site is resolved on the same terms as every other check here, so a word
+    /// naming no population is refused identically whether or not the site exists.
+    /// </remarks>
+    /// <param name="asked">What the caller supplied, or nothing.</param>
+    /// <param name="population">Who it names, where it names anyone this product can separate.</param>
+    /// <returns><see langword="true"/> when the request can be answered as asked.</returns>
+    private static bool TryReadPopulation(string? asked, out Population population)
+    {
+        if (string.IsNullOrEmpty(asked))
+        {
+            population = Population.Everybody;
+
+            return true;
+        }
+
+        return Populations.TryGetValue(asked, out population);
+    }
+
     private static ProblemHttpResult Unusable(string? detail) =>
         TypedResults.Problem(
             title: "That request could not be answered as asked.",
@@ -2071,12 +2211,33 @@ internal static class SiteEndpoints
 }
 
 /// <summary>
-/// What the overview endpoint reads from the path and the query string.
+/// What the questions about a period's activity that take nothing but a window read from the
+/// path and the query string.
 /// </summary>
 /// <param name="SiteId">The site to summarise.</param>
 /// <param name="From">Inclusive start of the period. Defaults to a week before the end.</param>
 /// <param name="To">Exclusive end of the period. Defaults to now.</param>
+/// <param name="Only">
+/// Who the answer is about: <c>people</c> for the visits the engine concluded were people alone,
+/// or absent for everybody.
+/// </param>
 internal readonly record struct OverviewParameters(
+    Guid SiteId,
+    [FromQuery] DateTimeOffset? From,
+    [FromQuery] DateTimeOffset? To,
+    [FromQuery] string? Only);
+
+/// <summary>
+/// What the two questions answered from verdicts alone read from the path and the query string.
+/// </summary>
+/// <remarks>
+/// No population: a verdict already says what each visit was, and these answers carry every
+/// conclusion for the caller to read by.
+/// </remarks>
+/// <param name="SiteId">The site to read.</param>
+/// <param name="From">Inclusive start of the period. Defaults to a week before the end.</param>
+/// <param name="To">Exclusive end of the period. Defaults to now.</param>
+internal readonly record struct JudgedParameters(
     Guid SiteId,
     [FromQuery] DateTimeOffset? From,
     [FromQuery] DateTimeOffset? To);
@@ -2089,12 +2250,17 @@ internal readonly record struct OverviewParameters(
 /// <param name="Granularity">Either <c>hour</c> or <c>day</c>.</param>
 /// <param name="From">Inclusive start of the period. Defaults to a week before the end.</param>
 /// <param name="To">Exclusive end of the period. Defaults to now.</param>
+/// <param name="Only">
+/// Who the answer is about: <c>people</c> for the visits the engine concluded were people alone,
+/// or absent for everybody.
+/// </param>
 internal readonly record struct SeriesParameters(
     Guid SiteId,
     [FromQuery] string? Metric,
     [FromQuery] string? Granularity,
     [FromQuery] DateTimeOffset? From,
-    [FromQuery] DateTimeOffset? To);
+    [FromQuery] DateTimeOffset? To,
+    [FromQuery] string? Only);
 
 /// <summary>
 /// What the traffic series endpoint reads from the path and the query string.
@@ -2117,12 +2283,17 @@ internal readonly record struct TrafficSeriesParameters(
 /// <param name="To">Exclusive end of the period. Defaults to now.</param>
 /// <param name="Limit">How many pages to return. Defaults to a list somebody reads in one glance.</param>
 /// <param name="Offset">How many of the busiest pages to pass over first. Defaults to none.</param>
+/// <param name="Only">
+/// Who the answer is about: <c>people</c> for the visits the engine concluded were people alone,
+/// or absent for everybody.
+/// </param>
 internal readonly record struct PagesParameters(
     Guid SiteId,
     [FromQuery] DateTimeOffset? From,
     [FromQuery] DateTimeOffset? To,
     [FromQuery] int? Limit,
-    [FromQuery] int? Offset);
+    [FromQuery] int? Offset,
+    [FromQuery] string? Only);
 
 /// <summary>
 /// What the locations endpoint reads from the path and the query string.
@@ -2133,13 +2304,18 @@ internal readonly record struct PagesParameters(
 /// <param name="To">Exclusive end of the window.</param>
 /// <param name="Limit">How many places to return.</param>
 /// <param name="Offset">How many of the busiest places to pass over first.</param>
+/// <param name="Only">
+/// Who the answer is about: <c>people</c> for the visits the engine concluded were people alone,
+/// or absent for everybody.
+/// </param>
 internal readonly record struct LocationsParameters(
     Guid SiteId,
     [FromQuery] string? Grouping,
     [FromQuery] DateTimeOffset? From,
     [FromQuery] DateTimeOffset? To,
     [FromQuery] int? Limit,
-    [FromQuery] int? Offset);
+    [FromQuery] int? Offset,
+    [FromQuery] string? Only);
 
 /// <summary>
 /// What the sources endpoint reads from the path and the query string.
@@ -2150,13 +2326,18 @@ internal readonly record struct LocationsParameters(
 /// <param name="To">Exclusive end of the window.</param>
 /// <param name="Limit">How many sources to return.</param>
 /// <param name="Offset">How many of the busiest sources to pass over first.</param>
+/// <param name="Only">
+/// Who the answer is about: <c>people</c> for the visits the engine concluded were people alone,
+/// or absent for everybody.
+/// </param>
 internal readonly record struct SourcesParameters(
     Guid SiteId,
     [FromQuery] string? Grouping,
     [FromQuery] DateTimeOffset? From,
     [FromQuery] DateTimeOffset? To,
     [FromQuery] int? Limit,
-    [FromQuery] int? Offset);
+    [FromQuery] int? Offset,
+    [FromQuery] string? Only);
 
 /// <summary>
 /// What the software endpoint reads from the path and the query string.
@@ -2167,13 +2348,18 @@ internal readonly record struct SourcesParameters(
 /// <param name="To">Exclusive end of the window.</param>
 /// <param name="Limit">How many names to return.</param>
 /// <param name="Offset">How many of the commonest names to pass over first.</param>
+/// <param name="Only">
+/// Who the answer is about: <c>people</c> for the visits the engine concluded were people alone,
+/// or absent for everybody.
+/// </param>
 internal readonly record struct SoftwareParameters(
     Guid SiteId,
     [FromQuery] string? Grouping,
     [FromQuery] DateTimeOffset? From,
     [FromQuery] DateTimeOffset? To,
     [FromQuery] int? Limit,
-    [FromQuery] int? Offset);
+    [FromQuery] int? Offset,
+    [FromQuery] string? Only);
 
 /// <summary>
 /// What the operated-controls endpoint reads from the path and the query string.
@@ -2184,13 +2370,18 @@ internal readonly record struct SoftwareParameters(
 /// <param name="To">Exclusive end of the period. Defaults to now.</param>
 /// <param name="Limit">How many rows to return. Defaults to a screenful.</param>
 /// <param name="Offset">How many of the most pressed to pass over first. Defaults to none.</param>
+/// <param name="Only">
+/// Who the answer is about: <c>people</c> for the visits the engine concluded were people alone,
+/// or absent for everybody.
+/// </param>
 internal readonly record struct ActionsParameters(
     Guid SiteId,
     [FromQuery] string? Grouping,
     [FromQuery] DateTimeOffset? From,
     [FromQuery] DateTimeOffset? To,
     [FromQuery] int? Limit,
-    [FromQuery] int? Offset);
+    [FromQuery] int? Offset,
+    [FromQuery] string? Only);
 
 /// <summary>
 /// What the visits endpoint reads from the path and the query string.
@@ -2251,13 +2442,18 @@ internal readonly record struct VisitsParameters(
 /// <param name="To">Exclusive end of the window.</param>
 /// <param name="Limit">How many pages to return.</param>
 /// <param name="Offset">How many of the leading pages to pass over first.</param>
+/// <param name="Only">
+/// Who the answer is about: <c>people</c> for the visits the engine concluded were people alone,
+/// or absent for everybody.
+/// </param>
 internal readonly record struct PageEngagementParameters(
     Guid SiteId,
     [FromQuery] string? Ranking,
     [FromQuery] DateTimeOffset? From,
     [FromQuery] DateTimeOffset? To,
     [FromQuery] int? Limit,
-    [FromQuery] int? Offset);
+    [FromQuery] int? Offset,
+    [FromQuery] string? Only);
 
 /// <summary>
 /// What the arrival and departure list reads from the path and the query string.
@@ -2268,13 +2464,18 @@ internal readonly record struct PageEngagementParameters(
 /// <param name="To">Exclusive end of the window.</param>
 /// <param name="Limit">How many pages to return.</param>
 /// <param name="Offset">How many of the commonest pages to pass over first.</param>
+/// <param name="Only">
+/// Who the answer is about: <c>people</c> for the visits the engine concluded were people alone,
+/// or absent for everybody.
+/// </param>
 internal readonly record struct VisitPagesParameters(
     Guid SiteId,
     [FromQuery] string? Position,
     [FromQuery] DateTimeOffset? From,
     [FromQuery] DateTimeOffset? To,
     [FromQuery] int? Limit,
-    [FromQuery] int? Offset);
+    [FromQuery] int? Offset,
+    [FromQuery] string? Only);
 
 /// <summary>
 /// What the journey endpoint reads from the path.

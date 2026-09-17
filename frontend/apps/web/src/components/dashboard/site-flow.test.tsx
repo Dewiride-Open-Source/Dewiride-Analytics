@@ -2,6 +2,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SiteFlow } from '@/components/dashboard/site-flow';
+import type { Population } from '@/lib/analytics/people-only';
 import { type Engine, engineDoing, engineStopped, respondWith } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
 
@@ -61,11 +62,21 @@ function engineWith(
   });
 }
 
-function show() {
-  renderScreen(<SiteFlow siteId={SITE_ID} window={WINDOW} />);
+function show(population: Population = 'everybody') {
+  renderScreen(<SiteFlow siteId={SITE_ID} window={WINDOW} population={population} />);
 }
 
 describe('how people move through a website', () => {
+  /** Kept to people, every question the card asks is asked of them and of nobody else. */
+  it('asks about the people when the card is kept to them', async () => {
+    const engine = engineWith();
+
+    show('people');
+
+    await screen.findByText('2.6');
+
+    expect(engine.all().every((sent) => sent.path.includes('only=people'))).toBe(true);
+  });
   it('says how many pages a visit takes on average', async () => {
     engineWith();
 

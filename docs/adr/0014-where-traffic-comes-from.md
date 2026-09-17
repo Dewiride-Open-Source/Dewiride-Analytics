@@ -3,6 +3,8 @@
 - **Status**: accepted
 - **Date**: 2026-08-20
 - **Supersedes**: nothing. Adds no column and widens no envelope.
+- **Followed by**: [0041](0041-one-population-for-the-whole-screen.md), whose per-visitor figures
+  are asked here of a population and counted by the arithmetic this record settled.
 
 ## Context
 

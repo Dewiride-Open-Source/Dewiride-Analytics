@@ -1066,3 +1066,139 @@ describe('a narrowed list as a link', () => {
     expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
   });
 });
+
+describe('the list kept to people', () => {
+  /**
+   * Kept to people, the list is asked for by their verdict over whatever else was narrowed to. A
+   * conclusion the address carried in is set aside rather than combined with, because a screen
+   * kept to people has already answered what generated the visits.
+   */
+  it('asks for the people alone while the screen is kept to them, whatever the address says', async () => {
+    const engine = engineWith(GROUPS, [READER, CRAWLER]);
+
+    show('?only=people&category=security-scanner');
+
+    expect(await screen.findByText('3 pages')).toBeInTheDocument();
+
+    const asked = listed(engine.all()).at(-1) ?? '';
+
+    expect(asked).toContain('category=likely-human');
+    expect(asked).not.toContain('security-scanner');
+  });
+
+  it('forgets a conclusion the address named while the screen is kept to people', async () => {
+    engineWith(GROUPS, [READER, CRAWLER]);
+
+    show('?only=people&category=security-scanner');
+
+    await screen.findByText('3 pages');
+
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+    expect(screen.queryByText('No visits like that')).not.toBeInTheDocument();
+  });
+
+  it('offers no conclusions to pick while the screen is kept to people', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show('?only=people');
+
+    await screen.findByText('3 pages');
+
+    expect(screen.queryByRole('button', { name: /A person 6/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Country' })).toBeInTheDocument();
+  });
+
+  it('still narrows the people by something about the visit', async () => {
+    const engine = engineWith(GROUPS, [READER]);
+
+    show('?only=people');
+
+    await screen.findByText('3 pages');
+    await open('Country');
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'India 6' }));
+
+    await waitFor(() => {
+      const asked = listed(engine.all()).at(-1) ?? '';
+
+      expect(asked).toContain('category=likely-human');
+      expect(asked).toContain('country=IN');
+    });
+  });
+
+  /**
+   * The screen was kept to people on purpose, so the way out of a list they are absent from is
+   * the choice that kept it.
+   */
+  it('offers everyone back when none of the people match', async () => {
+    engineWith(GROUPS, [CRAWLER]);
+
+    show('?only=people');
+
+    expect(await screen.findByText('No visits like that')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show every visit' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show everyone' }));
+
+    expect(await screen.findByText('64 pages')).toBeInTheDocument();
+  });
+
+  it('offers both ways out when the people were narrowed to nothing', async () => {
+    engineWith(GROUPS, [CRAWLER]);
+
+    show('?only=people&country=FR');
+
+    expect(await screen.findByText('No visits like that')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show every visit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show everyone' })).toBeInTheDocument();
+  });
+
+  /**
+   * Nothing judged yet and no people matching are different facts, and a website whose verdicts
+   * are still coming has not been found to have no readers.
+   */
+  it('says nothing has been judged rather than that no people match', async () => {
+    engineWith([], []);
+
+    show('?only=people');
+
+    expect(await screen.findByText('Nothing judged yet')).toBeInTheDocument();
+    expect(screen.queryByText('No visits like that')).not.toBeInTheDocument();
+  });
+
+  it('says whose visits it lists', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show('?only=people');
+
+    expect(
+      await screen.findByText(/The visits to My Blog judged to be people, newest first/),
+    ).toBeInTheDocument();
+  });
+
+  it('starts the list again at the top when the population changes', async () => {
+    const engine = engineWith(GROUPS, manyVisits(80));
+
+    show();
+
+    await screen.findByText('1–25 of 80');
+    await userEvent.click(screen.getByRole('button', { name: 'Page 3' }));
+    await screen.findByText('51–75 of 80');
+
+    await userEvent.click(screen.getByRole('button', { name: /People only/ }));
+
+    expect(await screen.findByText(/^1–25 of/)).toBeInTheDocument();
+    expect(listed(engine.all()).at(-1)).toContain('offset=0');
+  });
+
+  it('carries the people in the link it opened from', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show('?period=yesterday&only=people');
+
+    expect(await screen.findByRole('combobox', { name: 'Period' })).toHaveValue('yesterday');
+    expect(screen.getByRole('button', { name: /People only/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+});

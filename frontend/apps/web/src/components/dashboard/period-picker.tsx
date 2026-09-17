@@ -2,7 +2,7 @@
 
 import { ChevronDown } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { type Ref, useId, useMemo, useState } from 'react';
 import { CustomPeriod } from '@/components/dashboard/custom-period';
 import {
   isPreset,
@@ -17,6 +17,13 @@ interface PeriodPickerProps {
   readonly onChange: (period: Period) => void;
   /** The site's own zone, since a period is a run of days there rather than where the reader is. */
   readonly timeZoneId: string;
+  /**
+   * The control itself, for a screen that has to hand the reader back to it.
+   *
+   * It is the one thing on the screen that always names the period, so it is where the reading
+   * position goes after the period is changed by something that has gone with the change.
+   */
+  readonly ref?: Ref<HTMLSelectElement>;
 }
 
 /** A heading in the list, and the periods filed under it. */
@@ -61,10 +68,11 @@ const CHOSEN = 'chosen';
  * already showing is picked again, so a single entry that was both would be one nobody could
  * reopen to correct a date.
  */
-export function PeriodPicker({ value, onChange, timeZoneId }: PeriodPickerProps) {
+export function PeriodPicker({ value, onChange, timeZoneId, ref }: PeriodPickerProps) {
   const t = useTranslations('dashboard.period');
   const format = useFormatter();
   const [choosing, setChoosing] = useState(false);
+  const coveredId = useId();
 
   const span = useMemo(() => spanFor(value, timeZoneId, new Date()), [value, timeZoneId]);
   const covered = useMemo(() => spanInstants(span, timeZoneId), [span, timeZoneId]);
@@ -81,7 +89,9 @@ export function PeriodPicker({ value, onChange, timeZoneId }: PeriodPickerProps)
     <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto sm:items-end">
       <span className="relative flex items-center">
         <select
+          ref={ref}
           aria-label={t('label')}
+          aria-describedby={coveredId}
           value={value.kind === 'preset' ? value.preset : CHOSEN}
           onChange={(event) => pick(event.target.value)}
           className="select-trigger h-9 w-full cursor-pointer appearance-none truncate rounded-md border border-border bg-surface pr-8 pl-3 text-sm font-medium text-foreground sm:w-auto"
@@ -106,7 +116,8 @@ export function PeriodPicker({ value, onChange, timeZoneId }: PeriodPickerProps)
         />
       </span>
 
-      <p className="truncate text-xs text-foreground-subtle sm:text-right">
+      {/* Read out with the control as well as printed under it: "Last 30 days" and its dates are one answer. */}
+      <p id={coveredId} className="truncate text-xs text-foreground-subtle sm:text-right">
         {format.dateTimeRange(covered.first, covered.last, {
           timeZone: timeZoneId,
           day: 'numeric',

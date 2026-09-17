@@ -31,6 +31,13 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// hostile text by default. Keeping them permanently on the value side of the boundary is what
 /// lets the rest of the system treat them as ordinary data.
 /// </para>
+/// <para>
+/// Twelve of the questions may be asked of people alone. Each then has two shapes chosen by what
+/// was asked, on the terms the visit list's two shapes were chosen: the everybody shape reads no
+/// verdict and binds nothing for one, and the people shape is that statement with the two
+/// expressions <see cref="JudgedPeople"/> writes placed after the settled identity and its first
+/// aggregation reading from them.
+/// </para>
 /// </remarks>
 public static class AnalyticsSqlCompiler
 {
@@ -239,6 +246,41 @@ public static class AnalyticsSqlCompiler
         }.ToFrozenDictionary();
 
     /// <summary>
+    /// How one grouping reads a press: what names the row, what sort of control it was, and which
+    /// presses take part at all.
+    /// </summary>
+    /// <param name="Name">Expression naming the row.</param>
+    /// <param name="Control">Expression giving the kind of control, as text.</param>
+    /// <param name="Presses">Predicate deciding which activity is counted.</param>
+    private readonly record struct ActionShape(string Name, string Control, string Presses);
+
+    /// <summary>
+    /// The selection a window's presses are read into, which the count of presses reads from
+    /// directly — with no identity to settle first — or through the verdicts on people.
+    /// </summary>
+    private const string Pressed = "pressed";
+
+    /// <summary>
+    /// What each way of gathering presses selects and counts.
+    /// </summary>
+    /// <remarks>
+    /// Every fragment is a literal from this file, chosen by a member of a closed set. A caller
+    /// picks the member; it never contributes a character of the statement.
+    /// </remarks>
+    private static readonly FrozenDictionary<ActionGrouping, ActionShape> ActionShapes =
+        new Dictionary<ActionGrouping, ActionShape>
+        {
+            [ActionGrouping.Control] = new(
+                "action_label",
+                "toString(action_control)",
+                "kind = 'Action'"),
+            [ActionGrouping.Destination] = new(
+                "action_target",
+                "'Unknown'",
+                "kind = 'Action' AND action_target_kind = 'External'"),
+        }.ToFrozenDictionary();
+
+    /// <summary>
     /// Everything about a window reduced to one row per reading.
     /// </summary>
     /// <remarks>
@@ -266,67 +308,51 @@ public static class AnalyticsSqlCompiler
     /// that a lost report costs nothing — insisting on the first one would break that for exactly
     /// the readings it was meant to protect.
     /// </para>
+    /// <para>
+    /// Asked of people alone, a reading is folded from the reports the verdicts on people cover,
+    /// kept after identity has been settled. A page a person left open and reported on after the
+    /// engine had judged the visit is measured for everybody and not for people.
+    /// </para>
     /// </remarks>
-    /// <summary>
-    /// How one grouping reads a press: what names the row, what sort of control it was, and which
-    /// presses take part at all.
-    /// </summary>
-    /// <param name="Name">Expression naming the row.</param>
-    /// <param name="Control">Expression giving the kind of control, as text.</param>
-    /// <param name="Presses">Predicate deciding which activity is counted.</param>
-    private readonly record struct ActionShape(string Name, string Control, string Presses);
+    /// <param name="population">Whose readings are reduced.</param>
+    /// <returns>The five expressions, ending in <c>readings</c>.</returns>
+    private static string Readings(Population population)
+    {
+        var kept = JudgedPeople.Among(ReconciledEvents.Identified, population);
 
-    /// <summary>
-    /// What each way of gathering presses selects and counts.
-    /// </summary>
-    /// <remarks>
-    /// Every fragment is a literal from this file, chosen by a member of a closed set. A caller
-    /// picks the member; it never contributes a character of the statement.
-    /// </remarks>
-    private static readonly FrozenDictionary<ActionGrouping, ActionShape> ActionShapes =
-        new Dictionary<ActionGrouping, ActionShape>
-        {
-            [ActionGrouping.Control] = new(
-                "action_label",
-                "toString(action_control)",
-                "kind = 'Action'"),
-            [ActionGrouping.Destination] = new(
-                "action_target",
-                "'Unknown'",
-                "kind = 'Action' AND action_target_kind = 'External'"),
-        }.ToFrozenDictionary();
-
-    private static readonly string ReadingsPrefix = $$"""
-        WITH
-            windowed AS
-            (
-                SELECT
-                    surface,
-                    path,
-                    visitor_key,
-                    correlation_id,
-                    engaged_ms,
-                    scroll_depth_percent,
-                    had_pointer_interaction,
-                    had_keyboard_interaction
-                FROM events
-                WHERE site_id = {site_id:UUID}
-                  AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-                  AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
-            ),
-            {{ReconciledEvents.Reconciliation}},
-            readings AS
-            (
-                SELECT
-                    path,
-                    toInt32(ifNull(max(engaged_ms), -1)) AS engaged_ms,
-                    toInt16(ifNull(max(scroll_depth_percent), -1)) AS depth,
-                    max(had_pointer_interaction = 'Yes' OR had_keyboard_interaction = 'Yes') AS interacted
-                FROM identified
-                WHERE visitor_key != ''
-                GROUP BY visitor_key, path
-            )
-        """;
+        return $$"""
+            WITH
+                windowed AS
+                (
+                    SELECT
+                        surface,
+                        path,
+                        visitor_key,
+                        correlation_id,
+                        server_ts,
+                        engaged_ms,
+                        scroll_depth_percent,
+                        had_pointer_interaction,
+                        had_keyboard_interaction
+                    FROM events
+                    WHERE site_id = {site_id:UUID}
+                      AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                      AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+                ),
+                {{ReconciledEvents.Reconciliation}}{{kept.Following}},
+                readings AS
+                (
+                    SELECT
+                        path,
+                        toInt32(ifNull(max(engaged_ms), -1)) AS engaged_ms,
+                        toInt16(ifNull(max(scroll_depth_percent), -1)) AS depth,
+                        max(had_pointer_interaction = 'Yes' OR had_keyboard_interaction = 'Yes') AS interacted
+                    FROM {{kept.Source}}
+                    WHERE visitor_key != ''
+                    GROUP BY visitor_key, path
+                )
+            """;
+    }
 
     /// <summary>
     /// A window's activity rebuilt into the visits that finished inside it.
@@ -350,41 +376,56 @@ public static class AnalyticsSqlCompiler
     /// visit is recorded as beginning at is the page it arrived at, here and on the visit's own
     /// account of itself alike.
     /// </para>
+    /// <para>
+    /// Asked of people alone, the activity is narrowed to the reports the verdicts on people cover
+    /// before it is grouped. The activity is still read a full idle timeout past the window and
+    /// the verdicts a day before it, so a visit of a person that began inside the window keeps
+    /// every report the verdict covers, its tail past the window included, exactly as everybody's
+    /// rebuild sees it; a visit dropped only lengthens the silence either side of the ones kept, so
+    /// nothing merges and the visit the grouping rebuilds is the one the engine judged.
+    /// </para>
     /// </remarks>
-    private static readonly string ReconstructedVisits = $$"""
-        WITH
-            windowed AS
-            (
-                SELECT
-                    event_id,
-                    surface,
-                    visitor_key,
-                    correlation_id,
-                    server_ts,
-                    kind,
-                    path
-                FROM events
-                WHERE site_id = {site_id:UUID}
-                  AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-                  AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {idle_seconds:Int64} * 1000, 'UTC')
-            ),
-            {{ReconciledEvents.Reconciliation}},
-            {{VisitGrouping.Of(VisitGrouping.EveryVisitor)}},
-            reconstructed AS
-            (
-                SELECT
-                    min(server_ts) AS started_at,
-                    max(server_ts) AS ended_at,
-                    toInt64(countIf(opens_page)) AS page_count,
-                    argMinIf(path, (server_ts, event_id), opens_page) AS entry_path,
-                    argMaxIf(path, (server_ts, event_id), opens_page) AS exit_path
-                FROM opened
-                GROUP BY visitor_key, visit_ordinal
-                HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-                   AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
-                   AND ended_at < fromUnixTimestamp64Milli({settled_ms:Int64}, 'UTC')
-            )
-        """;
+    /// <param name="population">Whose visits are rebuilt.</param>
+    /// <returns>The expressions, ending in <c>reconstructed</c>.</returns>
+    private static string ReconstructedVisits(Population population)
+    {
+        var kept = JudgedPeople.Among(ReconciledEvents.Identified, population);
+
+        return $$"""
+            WITH
+                windowed AS
+                (
+                    SELECT
+                        event_id,
+                        surface,
+                        visitor_key,
+                        correlation_id,
+                        server_ts,
+                        kind,
+                        path
+                    FROM events
+                    WHERE site_id = {site_id:UUID}
+                      AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                      AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {idle_seconds:Int64} * 1000, 'UTC')
+                ),
+                {{ReconciledEvents.Reconciliation}}{{kept.Following}},
+                {{VisitGrouping.Of(kept.Source, VisitGrouping.EveryVisitor)}},
+                reconstructed AS
+                (
+                    SELECT
+                        min(server_ts) AS started_at,
+                        max(server_ts) AS ended_at,
+                        toInt64(countIf(opens_page)) AS page_count,
+                        argMinIf(path, (server_ts, event_id), opens_page) AS entry_path,
+                        argMaxIf(path, (server_ts, event_id), opens_page) AS exit_path
+                    FROM opened
+                    GROUP BY visitor_key, visit_ordinal
+                    HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                       AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+                       AND ended_at < fromUnixTimestamp64Milli({settled_ms:Int64}, 'UTC')
+                )
+            """;
+    }
 
     /// <summary>
     /// The visit list, for a narrowing the stored verdicts answer on their own.
@@ -1312,7 +1353,7 @@ public static class AnalyticsSqlCompiler
     private static CompiledStatement CompileSiteEngagement(TenantScope scope, SiteEngagementQuery query)
     {
         var sql = $$"""
-            {{ReadingsPrefix}}
+            {{Readings(query.Population)}}
             SELECT
                 toInt64(count()) AS total_readings,
                 toInt64(countIf(engaged_ms >= 0)) AS measured_readings,
@@ -1325,7 +1366,9 @@ public static class AnalyticsSqlCompiler
             FROM readings
             """;
 
-        return new CompiledStatement(sql, WindowParameters(scope, query.Range));
+        return new CompiledStatement(
+            sql,
+            [.. WindowParameters(scope, query.Range), .. PopulationParameters(query.Population)]);
     }
 
     /// <summary>
@@ -1353,7 +1396,7 @@ public static class AnalyticsSqlCompiler
         var ranked = RankingExpressions[query.Ranking];
 
         var sql = $$"""
-            {{ReadingsPrefix}}
+            {{Readings(query.Population)}}
             SELECT
                 path,
                 measured,
@@ -1384,6 +1427,7 @@ public static class AnalyticsSqlCompiler
                 .. WindowParameters(scope, query.Range),
                 new QueryParameter(LimitParameter, (uint)query.Limit),
                 new QueryParameter(OffsetParameter, (uint)query.Offset),
+                .. PopulationParameters(query.Population),
             ]);
     }
 
@@ -1407,7 +1451,7 @@ public static class AnalyticsSqlCompiler
     private static CompiledStatement CompileSiteVisitShape(TenantScope scope, SiteVisitShapeQuery query)
     {
         var sql = $$"""
-            {{ReconstructedVisits}}
+            {{ReconstructedVisits(query.Population)}}
             SELECT
                 toInt64(count()) AS visits,
                 toInt64(countIf(page_count = 1)) AS single_page_visits,
@@ -1415,7 +1459,12 @@ public static class AnalyticsSqlCompiler
             FROM reconstructed
             """;
 
-        return new CompiledStatement(sql, VisitParameters(scope, query.Range, query.Boundaries));
+        return new CompiledStatement(
+            sql,
+            [
+                .. VisitParameters(scope, query.Range, query.Boundaries),
+                .. PopulationParameters(query.Population),
+            ]);
     }
 
     /// <summary>
@@ -1438,7 +1487,7 @@ public static class AnalyticsSqlCompiler
         var position = PositionColumns[query.Position];
 
         var sql = $$"""
-            {{ReconstructedVisits}}
+            {{ReconstructedVisits(query.Population)}}
             SELECT
                 path,
                 visits,
@@ -1463,6 +1512,7 @@ public static class AnalyticsSqlCompiler
                 .. VisitParameters(scope, query.Range, query.Boundaries),
                 new QueryParameter(LimitParameter, (uint)query.Limit),
                 new QueryParameter(OffsetParameter, (uint)query.Offset),
+                .. PopulationParameters(query.Population),
             ]);
     }
 
@@ -1990,22 +2040,31 @@ public static class AnalyticsSqlCompiler
     /// Counts the headline totals, reading pages delivered rather than reports received.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Reports are still totalled as they arrive, because that figure answers a different question
     /// — how much the site is being watched — and is not a claim about how much traffic there was.
+    /// </para>
+    /// <para>
+    /// Asked of people alone, the same arithmetic runs over the reports the verdicts on people
+    /// cover, kept after identity has been settled so a report the site's own server sent follows
+    /// the person it was about.
+    /// </para>
     /// </remarks>
     private static CompiledStatement CompileOverview(TenantScope scope, OverviewQuery query)
     {
+        var kept = JudgedPeople.Among(ReconciledEvents.Identified, query.Population);
+
         var sql = $$"""
             WITH
                 windowed AS
                 (
-                    SELECT kind, surface, path, visitor_key, correlation_id
+                    SELECT kind, surface, path, visitor_key, correlation_id, server_ts
                     FROM events
                     WHERE site_id = {site_id:UUID}
                       AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
                       AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
                 ),
-                {{ReconciledEvents.Reconciliation}}
+                {{ReconciledEvents.Reconciliation}}{{kept.Following}}
             SELECT
                 toInt64(sum(page_views)) AS page_views,
                 toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS visitors,
@@ -2016,12 +2075,14 @@ public static class AnalyticsSqlCompiler
                     visitor_key,
                     count() AS reports,
                     {{ReconciledEvents.DeliveredPageViews(8)}}
-                FROM identified
+                FROM {{kept.Source}}
                 GROUP BY visitor_key, path
             )
             """;
 
-        return new CompiledStatement(sql, WindowParameters(scope, query.Range));
+        return new CompiledStatement(
+            sql,
+            [.. WindowParameters(scope, query.Range), .. PopulationParameters(query.Population)]);
     }
 
     /// <summary>
@@ -2053,17 +2114,19 @@ public static class AnalyticsSqlCompiler
     /// </remarks>
     private static CompiledStatement CompileSitePages(TenantScope scope, SitePagesQuery query)
     {
+        var kept = JudgedPeople.Among(ReconciledEvents.Identified, query.Population);
+
         var sql = $$"""
             WITH
                 windowed AS
                 (
-                    SELECT kind, surface, path, visitor_key, correlation_id
+                    SELECT kind, surface, path, visitor_key, correlation_id, server_ts
                     FROM events
                     WHERE site_id = {site_id:UUID}
                       AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
                       AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
                 ),
-                {{ReconciledEvents.Reconciliation}}
+                {{ReconciledEvents.Reconciliation}}{{kept.Following}}
             SELECT
                 path,
                 page_views,
@@ -2083,7 +2146,7 @@ public static class AnalyticsSqlCompiler
                         path,
                         visitor_key,
                         {{ReconciledEvents.DeliveredPageViews(12)}}
-                    FROM identified
+                    FROM {{kept.Source}}
                     GROUP BY path, visitor_key
                 )
                 GROUP BY path
@@ -2099,6 +2162,7 @@ public static class AnalyticsSqlCompiler
                 .. WindowParameters(scope, query.Range),
                 new QueryParameter(LimitParameter, (uint)query.Limit),
                 new QueryParameter(OffsetParameter, (uint)query.Offset),
+                .. PopulationParameters(query.Population),
             ]);
     }
 
@@ -2127,22 +2191,28 @@ public static class AnalyticsSqlCompiler
     /// somebody else put there. It is grouped on and read back, which is the whole of what a
     /// hostile one can do here.
     /// </para>
+    /// <para>
+    /// Asked of people alone, presses are kept by the verdict on the visit they were made in,
+    /// joined on the key the browser reported them under — which is the key the verdict names,
+    /// because only a browser can report a press. Still no reconciliation.
+    /// </para>
     /// </remarks>
     private static CompiledStatement CompileSiteActions(TenantScope scope, SiteActionsQuery query)
     {
         var shape = ActionShapes[query.Grouping];
+        var kept = JudgedPeople.Among(Pressed, query.Population);
 
         var sql = $$"""
             WITH
-                pressed AS
+                {{Pressed}} AS
                 (
-                    SELECT action_label, action_control, action_target, visitor_key
+                    SELECT action_label, action_control, action_target, visitor_key, server_ts
                     FROM events
                     WHERE site_id = {site_id:UUID}
                       AND {{shape.Presses}}
                       AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
                       AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
-                )
+                ){{kept.Following}}
             SELECT
                 name,
                 control,
@@ -2158,7 +2228,7 @@ public static class AnalyticsSqlCompiler
                     {{shape.Control}} AS control,
                     toInt64(count()) AS presses,
                     toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS visitors
-                FROM pressed
+                FROM {{kept.Source}}
                 GROUP BY name, control
             )
             ORDER BY presses DESC, name, control
@@ -2171,6 +2241,7 @@ public static class AnalyticsSqlCompiler
                 .. WindowParameters(scope, query.Range),
                 new QueryParameter(LimitParameter, (uint)query.Limit),
                 new QueryParameter(OffsetParameter, (uint)query.Offset),
+                .. PopulationParameters(query.Population),
             ]);
     }
 
@@ -2205,18 +2276,19 @@ public static class AnalyticsSqlCompiler
     {
         var place = PlaceColumns[query.Grouping];
         var country = PlaceCountryColumns[query.Grouping];
+        var kept = JudgedPeople.Among(ReconciledEvents.Identified, query.Population);
 
         var sql = $$"""
             WITH
                 windowed AS
                 (
-                    SELECT kind, surface, path, visitor_key, correlation_id, country_code, city, network_owner, autonomous_system
+                    SELECT kind, surface, path, visitor_key, correlation_id, country_code, city, network_owner, autonomous_system, server_ts
                     FROM events
                     WHERE site_id = {site_id:UUID}
                       AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
                       AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
                 ),
-                {{ReconciledEvents.Reconciliation}},
+                {{ReconciledEvents.Reconciliation}}{{kept.Following}},
                 located AS
                 (
                     SELECT
@@ -2236,7 +2308,7 @@ public static class AnalyticsSqlCompiler
                             anyIf(network_owner, network_owner != '') AS network_owner,
                             max(autonomous_system) AS autonomous_system,
                             {{ReconciledEvents.DeliveredPageViews(16)}}
-                        FROM identified
+                        FROM {{kept.Source}}
                         WHERE visitor_key != ''
                         GROUP BY visitor_key, path
                     )
@@ -2271,6 +2343,7 @@ public static class AnalyticsSqlCompiler
                 .. CatalogueOfNetworks(query.Grouping),
                 new QueryParameter(LimitParameter, (uint)query.Limit),
                 new QueryParameter(OffsetParameter, (uint)query.Offset),
+                .. PopulationParameters(query.Population),
             ]);
     }
 
@@ -2331,11 +2404,12 @@ public static class AnalyticsSqlCompiler
     {
         var source = SourceExpressions[query.Grouping];
         var sendingSite = SourceSiteExpressions[query.Grouping];
+        var kept = JudgedPeople.Among(ReconciledEvents.Identified, query.Population);
 
         var sql = $$"""
             WITH
-                {{SendingSites.Of(SendingSites.ThePeriod, "kind", "surface", "path", "visitor_key", "correlation_id")}},
-                {{ReconciledEvents.Reconciliation}},
+                {{SendingSites.Of(SendingSites.ThePeriod, "kind", "surface", "path", "visitor_key", "correlation_id", "server_ts")}},
+                {{ReconciledEvents.Reconciliation}}{{kept.Following}},
                 sourced AS
                 (
                     SELECT
@@ -2351,7 +2425,7 @@ public static class AnalyticsSqlCompiler
                             anyIf({{source}}, source_site != '') AS source,
                             anyIf({{sendingSite}}, source_site != '') AS site,
                             {{ReconciledEvents.DeliveredPageViews(16)}}
-                        FROM identified
+                        FROM {{kept.Source}}
                         WHERE visitor_key != ''
                         GROUP BY visitor_key, path
                     )
@@ -2386,6 +2460,7 @@ public static class AnalyticsSqlCompiler
                 .. CatalogueParameters(query.SiteDomain),
                 new QueryParameter(LimitParameter, (uint)query.Limit),
                 new QueryParameter(OffsetParameter, (uint)query.Offset),
+                .. PopulationParameters(query.Population),
             ]);
     }
 
@@ -2411,17 +2486,19 @@ public static class AnalyticsSqlCompiler
     /// </remarks>
     private static CompiledStatement CompileSiteDeviceKinds(TenantScope scope, SiteDeviceKindsQuery query)
     {
+        var kept = JudgedPeople.Among(ReconciledEvents.Identified, query.Population);
+
         var sql = $$"""
             WITH
                 windowed AS
                 (
-                    SELECT kind, surface, path, visitor_key, correlation_id, device_class
+                    SELECT kind, surface, path, visitor_key, correlation_id, device_class, server_ts
                     FROM events
                     WHERE site_id = {site_id:UUID}
                       AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
                       AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
                 ),
-                {{ReconciledEvents.Reconciliation}},
+                {{ReconciledEvents.Reconciliation}}{{kept.Following}},
                 equipped AS
                 (
                     SELECT
@@ -2435,7 +2512,7 @@ public static class AnalyticsSqlCompiler
                             path,
                             anyIf(toString(device_class), device_class != 'Unknown') AS device,
                             {{ReconciledEvents.DeliveredPageViews(16)}}
-                        FROM identified
+                        FROM {{kept.Source}}
                         WHERE visitor_key != ''
                         GROUP BY visitor_key, path
                     )
@@ -2450,7 +2527,9 @@ public static class AnalyticsSqlCompiler
             ORDER BY visitors DESC, device
             """;
 
-        return new CompiledStatement(sql, WindowParameters(scope, query.Range));
+        return new CompiledStatement(
+            sql,
+            [.. WindowParameters(scope, query.Range), .. PopulationParameters(query.Population)]);
     }
 
     /// <summary>
@@ -2472,18 +2551,19 @@ public static class AnalyticsSqlCompiler
     private static CompiledStatement CompileSiteSoftware(TenantScope scope, SiteSoftwareQuery query)
     {
         var column = SoftwareColumns[query.Grouping];
+        var kept = JudgedPeople.Among(ReconciledEvents.Identified, query.Population);
 
         var sql = $$"""
             WITH
                 windowed AS
                 (
-                    SELECT kind, surface, path, visitor_key, correlation_id, {{column}}
+                    SELECT kind, surface, path, visitor_key, correlation_id, {{column}}, server_ts
                     FROM events
                     WHERE site_id = {site_id:UUID}
                       AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
                       AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
                 ),
-                {{ReconciledEvents.Reconciliation}},
+                {{ReconciledEvents.Reconciliation}}{{kept.Following}},
                 equipped AS
                 (
                     SELECT
@@ -2497,7 +2577,7 @@ public static class AnalyticsSqlCompiler
                             path,
                             anyIf({{column}}, {{column}} != '') AS {{column}},
                             {{ReconciledEvents.DeliveredPageViews(16)}}
-                        FROM identified
+                        FROM {{kept.Source}}
                         WHERE visitor_key != ''
                         GROUP BY visitor_key, path
                     )
@@ -2529,14 +2609,23 @@ public static class AnalyticsSqlCompiler
                 .. WindowParameters(scope, query.Range),
                 new QueryParameter(LimitParameter, (uint)query.Limit),
                 new QueryParameter(OffsetParameter, (uint)query.Offset),
+                .. PopulationParameters(query.Population),
             ]);
     }
 
+    /// <summary>
+    /// Counts one metric in buckets across a window, by the arithmetic the headline totals use.
+    /// </summary>
+    /// <remarks>
+    /// Asked of people alone, it is the same buckets over the reports the verdicts on people
+    /// cover, so the buckets add up to the headline asked of the same people.
+    /// </remarks>
     private static CompiledStatement CompileTimeSeries(TenantScope scope, TimeSeriesQuery query)
     {
         var bucket = BucketFunctions[query.Granularity];
         var step = StepIntervals[query.Granularity];
         var metric = MetricExpressions[query.Metric];
+        var kept = JudgedPeople.Among(ReconciledEvents.Identified, query.Population);
 
         // The upper fill bound is derived from one millisecond before the exclusive end of the
         // window, so the series stops at the last bucket that could hold data. Bounding it on the
@@ -2552,7 +2641,7 @@ public static class AnalyticsSqlCompiler
                       AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
                       AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
                 ),
-                {{ReconciledEvents.Reconciliation}}
+                {{ReconciledEvents.Reconciliation}}{{kept.Following}}
             SELECT
                 bucket,
                 {{metric}} AS value
@@ -2562,7 +2651,7 @@ public static class AnalyticsSqlCompiler
                     {{bucket}}(server_ts, {time_zone:String}) AS bucket,
                     visitor_key,
                     {{ReconciledEvents.DeliveredPageViews(8)}}
-                FROM identified
+                FROM {{kept.Source}}
                 GROUP BY bucket, visitor_key, path
             )
             GROUP BY bucket
@@ -2575,7 +2664,11 @@ public static class AnalyticsSqlCompiler
 
         return new CompiledStatement(
             sql,
-            [.. WindowParameters(scope, query.Range), new QueryParameter(TimeZoneParameter, scope.TimeZoneId)]);
+            [
+                .. WindowParameters(scope, query.Range),
+                new QueryParameter(TimeZoneParameter, scope.TimeZoneId),
+                .. PopulationParameters(query.Population),
+            ]);
     }
 
     private static QueryParameter[] WindowParameters(TenantScope scope, TimeRange range) =>
@@ -2670,4 +2763,17 @@ public static class AnalyticsSqlCompiler
     /// <returns>The value.</returns>
     private static QueryParameter LongestVisit() =>
         new(LongestVisitParameter, (long)VisitorKeys.LongestVisit.TotalSeconds);
+
+    /// <summary>
+    /// How far before the window verdicts are read, bound only where a statement reads them.
+    /// </summary>
+    /// <remarks>
+    /// Conditional on the same terms as <see cref="CatalogueOfNetworks"/>: a statement asked about
+    /// everybody names no verdict, and a value bound to a placeholder no statement names is a
+    /// narrowing that silently does nothing.
+    /// </remarks>
+    /// <param name="population">Who the statement is asked about.</param>
+    /// <returns>The value, or nothing.</returns>
+    private static QueryParameter[] PopulationParameters(Population population) =>
+        population == Population.People ? [LongestVisit()] : [];
 }

@@ -1,0 +1,102 @@
+﻿--- statement ---
+WITH
+    windowed AS
+    (
+        SELECT kind, surface, path, visitor_key, correlation_id, device_class, server_ts
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    ),
+    echoed AS
+    (
+        SELECT
+            minIf(visitor_key, surface IN ('BrowserTracker', 'NoScriptPixel')) AS browser_key,
+            minIf(visitor_key, surface NOT IN ('BrowserTracker', 'NoScriptPixel')) AS reported_key
+        FROM windowed
+        WHERE correlation_id != ''
+          AND visitor_key != ''
+        GROUP BY correlation_id
+        HAVING browser_key != ''
+           AND reported_key != ''
+    ),
+    linked AS
+    (
+        SELECT
+            reported_key,
+            min(browser_key) AS browser_key
+        FROM echoed
+        GROUP BY reported_key
+    ),
+    identified AS
+    (
+        SELECT
+            windowed.* EXCEPT (visitor_key),
+            if(linked.browser_key != '' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'), linked.browser_key, windowed.visitor_key) AS visitor_key
+        FROM windowed
+        LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
+    ),
+    people AS
+    (
+        SELECT
+            splitByChar(':', session_key)[1] AS visitor_key,
+            began,
+            ended
+        FROM
+        (
+            SELECT
+                session_key,
+                argMax(category, (ruleset_major, ruleset_minor, classified_at)) AS category,
+                argMax(started_at, (ruleset_major, ruleset_minor, classified_at)) AS began,
+                argMax(ended_at, (ruleset_major, ruleset_minor, classified_at)) AS ended
+            FROM session_classifications
+            WHERE site_id = {site_id:UUID}
+              AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64} - {longest_visit_seconds:Int64} * 1000, 'UTC')
+              AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+            GROUP BY session_key
+        )
+        WHERE category = 'LikelyHuman'
+    ),
+    attributed AS
+    (
+        SELECT identified.*
+        FROM identified
+        INNER JOIN people ON identified.visitor_key = people.visitor_key
+        WHERE identified.server_ts >= people.began
+          AND identified.server_ts <= people.ended
+    ),
+    equipped AS
+    (
+        SELECT
+            visitor_key,
+            anyIf(device, device != '') AS device,
+            toInt64(sum(page_views)) AS page_views
+        FROM
+        (
+            SELECT
+                visitor_key,
+                path,
+                anyIf(toString(device_class), device_class != 'Unknown') AS device,
+                greatest(
+                    countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),
+                    countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) AS delivered,
+                if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
+            FROM attributed
+            WHERE visitor_key != ''
+            GROUP BY visitor_key, path
+        )
+        GROUP BY visitor_key
+    )
+SELECT
+    device,
+    toInt64(count()) AS visitors,
+    toInt64(sum(page_views)) AS page_views
+FROM equipped
+GROUP BY device
+ORDER BY visitors DESC, device
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777593600000
+to_ms = 1778198400000
+longest_visit_seconds = 86400

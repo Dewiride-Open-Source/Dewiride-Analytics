@@ -2,6 +2,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SitePages } from '@/components/dashboard/site-pages';
+import type { Population } from '@/lib/analytics/people-only';
 import { type Engine, engineDoing, engineStopped, respondWith } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
 
@@ -59,8 +60,8 @@ function engineWithAll(all: readonly unknown[]): Engine {
   });
 }
 
-function show() {
-  return renderScreen(<SitePages siteId={SITE_ID} window={WINDOW} />);
+function show(population: Population = 'everybody') {
+  return renderScreen(<SitePages siteId={SITE_ID} window={WINDOW} population={population} />);
 }
 
 describe('the pages a website’s traffic went to', () => {
@@ -72,6 +73,17 @@ describe('the pages a website’s traffic went to', () => {
     expect(await screen.findByText('/')).toBeInTheDocument();
     expect(screen.getByText('/integrations')).toBeInTheDocument();
     expect(screen.getByText('/legal/privacy')).toBeInTheDocument();
+  });
+
+  /** Kept to people, every question the card asks is asked of them and of nobody else. */
+  it('asks about the people when the card is kept to them', async () => {
+    const engine = engineWith(PAGES);
+
+    show('people');
+
+    await screen.findByText('/integrations');
+
+    expect(engine.all().every((sent) => sent.path.includes('only=people'))).toBe(true);
   });
 
   it('says how much each page was read, and by how many', async () => {

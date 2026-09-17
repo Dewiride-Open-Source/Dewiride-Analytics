@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dewiride.Analytics.Integration.Tests.Dashboard;
 
@@ -718,6 +719,114 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// Every question about a period's activity can be asked of the people alone with one word,
+    /// spelled however the caller likes — so the list grows with the questions rather than being
+    /// written once and forgotten.
+    /// </summary>
+    [Theory]
+    [InlineData("overview?only=people")]
+    [InlineData("series?metric=pageviews&granularity=day&only=people")]
+    [InlineData("pages?only=people")]
+    [InlineData("actions?only=people")]
+    [InlineData("locations?only=people")]
+    [InlineData("sources?only=people")]
+    [InlineData("devices?only=people")]
+    [InlineData("software?only=PEOPLE")]
+    [InlineData("engagement?only=people")]
+    [InlineData("engagement/pages?only=people")]
+    [InlineData("visits/totals?only=people")]
+    [InlineData("visits/pages?only=people")]
+    public async Task A_Member_Can_Ask_Any_Question_About_People_Alone(string question)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/{question}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+    }
+
+    /// <summary>
+    /// The one population this product can separate is the people, because a verdict is what
+    /// separates them. Anything else is refused rather than answered about everybody, and the
+    /// word the caller wrote is not echoed back.
+    /// </summary>
+    [Theory]
+    [InlineData("overview?only=machines")]
+    [InlineData("series?metric=pageviews&granularity=day&only=machines")]
+    [InlineData("pages?only=machines")]
+    [InlineData("actions?only=machines")]
+    [InlineData("locations?only=machines")]
+    [InlineData("sources?only=machines")]
+    [InlineData("devices?only=machines")]
+    [InlineData("software?only=machines")]
+    [InlineData("engagement?only=machines")]
+    [InlineData("engagement/pages?only=machines")]
+    [InlineData("visits/totals?only=machines")]
+    [InlineData("visits/pages?only=machines")]
+    public async Task A_Population_This_Product_Cannot_Separate_Is_Refused(string question)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/{question}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+            var body = await response.Content.ReadAsStringAsync(Cancellation.Token);
+
+            body.Should().NotContain("machines");
+        }
+    }
+
+    /// <summary>
+    /// Checked before the site is looked up, so a refused population cannot be used to find out
+    /// whether a site identifier is real.
+    /// </summary>
+    [Fact]
+    public async Task An_Unknown_Population_Is_Refused_Even_For_A_Site_That_Does_Not_Exist()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{Guid.NewGuid()}/overview?only=machines");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    /// <summary>
+    /// A series of people is complete only to where the judging has reached, which is an idle
+    /// timeout behind the present; a series of everybody is complete to its own end, because
+    /// every report counts as it arrives.
+    /// </summary>
+    [Fact]
+    public async Task A_Series_Of_People_Says_How_Far_The_Judging_Has_Reached()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+        var now = stack.Services.GetRequiredService<TimeProvider>().GetUtcNow();
+
+        using (browser)
+        {
+            var people = await SeriesAsync(browser, site.Id, "&only=people");
+            var everybody = await SeriesAsync(browser, site.Id, string.Empty);
+
+            people.Should().NotBeNull();
+            people.CompleteTo.Should().BeCloseTo(now.AddMinutes(-30), TimeSpan.FromMinutes(1));
+            everybody.Should().NotBeNull();
+            everybody.CompleteTo.Should().Be(everybody.To);
+        }
+    }
+
+    /// <summary>
     /// Checked before the site is looked up, so a refused window cannot be used to find out
     /// whether a site identifier is real.
     /// </summary>
@@ -751,6 +860,20 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
         await browser.DescribeAsync();
 
         return browser;
+    }
+
+    private static async Task<SeriesResponse> SeriesAsync(Browser browser, Guid siteId, string population)
+    {
+        var response = await browser.GetAsync(
+            $"/api/sites/{siteId}/series?metric=pageviews&granularity=day{population}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var series = await response.Content.ReadFromJsonAsync<SeriesResponse>(Cancellation.Token);
+
+        series.Should().NotBeNull();
+
+        return series;
     }
 
     private static string Domain() => $"read-{Guid.NewGuid():n}.example";

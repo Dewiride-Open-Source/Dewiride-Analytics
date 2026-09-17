@@ -85,14 +85,14 @@ describe('what a bucket held altogether', () => {
   });
 });
 
-describe('what the people a website is for did', () => {
-  it('counts only the visits judged to be people, and the pages those visits read', () => {
+describe('the visits judged to be people', () => {
+  it('counts only the visits judged to be people', () => {
     const series = judged([
       { category: 'likely-human', sessions: [3, 1, 2], pageViews: [9, 1, 4] },
       { category: 'known-ai-crawler', sessions: [1, 4, 0], pageViews: [1, 6, 0] },
     ]);
 
-    expect(peopleIn(series)).toStrictEqual({ visits: [3, 1, 2], pageViews: [9, 1, 4] });
+    expect(peopleIn(series)).toStrictEqual([3, 1, 2]);
   });
 
   /**
@@ -106,11 +106,11 @@ describe('what the people a website is for did', () => {
       { category: 'content-scraper', sessions: [0, 1, 0], pageViews: [0, 4, 0] },
     ]);
 
-    expect(peopleIn(series)).toStrictEqual({ visits: [0, 0, 0], pageViews: [0, 0, 0] });
+    expect(peopleIn(series)).toStrictEqual([0, 0, 0]);
   });
 
   it('is nought across a period nothing has been judged in', () => {
-    expect(peopleIn(judged([]))).toStrictEqual({ visits: [0, 0, 0], pageViews: [0, 0, 0] });
+    expect(peopleIn(judged([]))).toStrictEqual([0, 0, 0]);
   });
 });
 
@@ -134,5 +134,19 @@ describe('the buckets that have not finished being judged', () => {
 
   it('marks every bucket where judging has not started on any of them', () => {
     expect(stillJudgingFrom(judged(SOME, '2026-08-10T00:00:00+00:00'))).toBe(0);
+  });
+
+  /**
+   * The edge is found on any run of buckets that says how far it is complete, so an answer
+   * counted from activity kept to people is washed on exactly the terms the judged one is.
+   */
+  it('finds where the judging stops on any run of buckets', () => {
+    const bucketed = {
+      to: '2026-08-14T00:00:00+00:00',
+      completeTo: '2026-08-13T09:00:00+00:00',
+      buckets: BUCKETS,
+    };
+
+    expect(stillJudgingFrom(bucketed)).toBe(2);
   });
 });

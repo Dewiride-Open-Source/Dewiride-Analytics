@@ -6,6 +6,8 @@
 - **Revised by**: [0040](0040-what-a-screen-remembers.md), which narrows "the period every screen
   opens on leaves no trace" to the built-in default: a choice the reader made is remembered by the
   browser, and an address that says nothing is given it on first paint.
+- **Extended by**: [0042](0042-a-day-in-the-picture-is-a-period.md), which lets a day pressed on
+  the picture be written as the period, in the spelling this record already gives a chosen stretch.
 
 ## Context
 

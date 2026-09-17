@@ -12,6 +12,7 @@ import {
 } from '@/components/dashboard/ranked-list';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
+import type { Population } from '@/lib/analytics/people-only';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
 import type { ActionGrouping, ControlKind, SiteAction } from '@/lib/api/schemas';
 import { useActions } from '@/lib/queries/sites';
@@ -19,6 +20,8 @@ import { useActions } from '@/lib/queries/sites';
 interface SiteActionsProps {
   readonly siteId: string;
   readonly window: AnalyticsWindow;
+  /** Whose figures the card counts. */
+  readonly population: Population;
 }
 
 /** How many rows are shown at once, matching the lists around it. */
@@ -35,12 +38,12 @@ const PER_PAGE = 10;
  * The screen above gives this a key that changes with the website and the period, so choosing
  * either starts afresh rather than leaving somebody on a screenful that no longer exists.
  */
-export function SiteActions({ siteId, window }: SiteActionsProps) {
+export function SiteActions({ siteId, window, population }: SiteActionsProps) {
   const t = useTranslations('dashboard.presses');
   const [grouping, setGrouping] = useState<ActionGrouping>('control');
   const [offset, setOffset] = useState(0);
-  const controls = useActions(siteId, window, 'control', PER_PAGE, 0, true);
-  const shown = useActions(siteId, window, grouping, PER_PAGE, offset, true);
+  const controls = useActions(siteId, window, population, 'control', PER_PAGE, 0, true);
+  const shown = useActions(siteId, window, population, grouping, PER_PAGE, offset, true);
 
   // What the list on screen is counted against, which is not always every press: the presses
   // that led off the site are their own total, and a share taken against the larger one would

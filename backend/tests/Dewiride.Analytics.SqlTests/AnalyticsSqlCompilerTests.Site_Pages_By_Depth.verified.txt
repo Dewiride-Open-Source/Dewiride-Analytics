@@ -7,6 +7,7 @@ WITH
             path,
             visitor_key,
             correlation_id,
+            server_ts,
             engaged_ms,
             scroll_depth_percent,
             had_pointer_interaction,

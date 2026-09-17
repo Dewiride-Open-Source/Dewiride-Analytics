@@ -6,7 +6,8 @@ import { TrafficBreakdown } from '@/components/dashboard/traffic-breakdown';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { Link } from '@/i18n/navigation';
-import { type AnalyticsWindow, withPeriod } from '@/lib/analytics/period';
+import { type AnalyticsWindow, withChoices } from '@/lib/analytics/period';
+import { usePeopleOnly } from '@/lib/analytics/use-people-only';
 import { usePeriod } from '@/lib/analytics/use-period';
 import type { Site } from '@/lib/api/schemas';
 import { useTraffic } from '@/lib/queries/sites';
@@ -22,12 +23,13 @@ interface JudgedTrafficProps {
  *
  * The summary lives here, on the screen somebody opens first. Every individual visit behind it has
  * a screen of its own, because reading them one at a time is a different activity from looking at
- * the totals — and this is the way through to it.
+ * the totals — and this is the way through to it, carrying the same days and the same people.
  */
 export function JudgedTraffic({ site, window }: JudgedTrafficProps) {
   const t = useTranslations('dashboard.traffic');
   const traffic = useTraffic(site.id, window);
   const { period } = usePeriod();
+  const { peopleOnly, population } = usePeopleOnly();
 
   if (traffic.isError) {
     return <FailureNotice error={traffic.error} />;
@@ -54,11 +56,15 @@ export function JudgedTraffic({ site, window }: JudgedTrafficProps) {
 
   return (
     <>
-      <TrafficBreakdown groups={traffic.data.groups} sessions={traffic.data.sessions} />
+      <TrafficBreakdown
+        groups={traffic.data.groups}
+        sessions={traffic.data.sessions}
+        peopleOnly={peopleOnly}
+      />
 
-      {/* Straight through to the same days, one visit at a time. */}
+      {/* Straight through to the same days and the same people, one visit at a time. */}
       <Link
-        href={withPeriod(JOURNEYS, period)}
+        href={withChoices(JOURNEYS, { period, population })}
         className="inline-flex items-center gap-1.5 self-start rounded-md text-sm font-medium text-accent-strong hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong"
       >
         {t('everyVisit')}

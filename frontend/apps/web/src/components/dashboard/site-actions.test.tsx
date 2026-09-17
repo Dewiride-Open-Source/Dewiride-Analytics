@@ -2,6 +2,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SiteActions } from '@/components/dashboard/site-actions';
+import type { Population } from '@/lib/analytics/people-only';
 import { type Engine, engineDoing, engineStopped, respondWith } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
 
@@ -60,11 +61,21 @@ function engineWith(
   });
 }
 
-function show() {
-  renderScreen(<SiteActions siteId={SITE_ID} window={WINDOW} />);
+function show(population: Population = 'everybody') {
+  renderScreen(<SiteActions siteId={SITE_ID} window={WINDOW} population={population} />);
 }
 
 describe('what people clicked', () => {
+  /** Kept to people, every question the card asks is asked of them and of nobody else. */
+  it('asks about the people when the card is kept to them', async () => {
+    const engine = engineWith();
+
+    show('people');
+
+    await screen.findByText('Button');
+
+    expect(engine.all().every((sent) => sent.path.includes('only=people'))).toBe(true);
+  });
   it('lists what was clicked, most clicked first', async () => {
     engineWith();
 

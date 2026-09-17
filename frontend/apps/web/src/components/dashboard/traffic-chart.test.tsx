@@ -95,9 +95,11 @@ interface Drawing {
 
 interface Shown {
   readonly view?: ChartView;
-  /** Whether the picture is kept to the visits judged to be people. */
+  /** Whether every figure is kept to the visits judged to be people. */
   readonly peopleOnly?: boolean;
   readonly points?: readonly TrafficPoint[];
+  /** The first bucket of activity still being judged, or nothing where every figure is settled. */
+  readonly stillJudging?: number | null;
   readonly series?: TrafficSeries;
   readonly granularity?: Granularity;
   readonly manyDays?: boolean;
@@ -108,16 +110,18 @@ interface Shown {
   readonly against?: boolean;
   readonly earlierPoints?: readonly TrafficPoint[];
   readonly earlierSeries?: TrafficSeries;
+  /** Told the day a bucket was pressed into, where the period can still be narrowed to one. */
+  readonly onPickDay?: (day: string) => void;
 }
 
 const chose = vi.fn();
-const kept = vi.fn();
 const compared = vi.fn();
 
 function show({
   view = 'activity',
   peopleOnly = false,
   points = DAYS,
+  stillJudging = null,
   series = JUDGED,
   granularity = 'day',
   manyDays = true,
@@ -127,14 +131,14 @@ function show({
   against = false,
   earlierPoints = EARLIER_DAYS,
   earlierSeries = EARLIER_JUDGED,
+  onPickDay,
 }: Shown = {}): Drawing {
   renderScreen(
     <TrafficChart
       view={view}
       onView={chose}
       peopleOnly={peopleOnly}
-      onPeopleOnly={kept}
-      activity={points}
+      activity={{ points, stillJudging }}
       who={series}
       problem={problem}
       comparison={{
@@ -150,6 +154,7 @@ function show({
       granularity={granularity}
       manyDays={manyDays}
       manyYears={manyYears}
+      onPickDay={onPickDay}
     />,
   );
 
@@ -163,8 +168,9 @@ function show({
 beforeEach(() => {
   window.localStorage.clear();
   drawn.option = undefined;
+  drawn.pick = undefined;
+  drawn.picks.clear();
   chose.mockClear();
-  kept.mockClear();
   compared.mockClear();
 });
 
@@ -528,9 +534,6 @@ describe('an earlier period drawn across a period that is still being judged', (
 });
 
 describe('the picture kept to the people a website is for', () => {
-  /** The same three days, of which the last is still filling. */
-  const FILLING: TrafficSeries = { ...JUDGED, completeTo: '2026-08-12T18:30:00+00:00' };
-
   /** The same three days, judged to hold machinery and nothing else. */
   const NOBODY: TrafficSeries = {
     ...JUDGED,
@@ -552,65 +555,77 @@ describe('the picture kept to the people a website is for', () => {
   });
 
   /**
-   * The people are the population of the picture of who came, not of the page-view figures in
-   * the cards above: finished visits judged to be theirs, and the pages those visits read.
+   * The figures are the cards' own arithmetic over the people's reports, so they are the same
+   * shape as everybody's and differ only in whose they are — which their names say.
    */
-  it('counts pages read and visits by people across the same buckets', () => {
+  it('names the measures for the people when the figures are theirs', () => {
     const option = show({ view: 'activity', peopleOnly: true });
 
     expect(option.series.map((one) => one.name)).toStrictEqual([
-      'Pages read by people',
-      'Visits by people',
+      'Page views by people',
+      'Daily visitors judged to be people',
     ]);
-    expect(option.series[0]?.data).toStrictEqual([18, 24, 11]);
-    expect(option.series[1]?.data).toStrictEqual([6, 9, 4]);
-    expect(option.xAxis.data).toHaveLength(3);
+    expect(option.series[0]?.data).toStrictEqual([40, 55, 30]);
+    expect(option.series[1]?.data).toStrictEqual([12, 18, 9]);
   });
 
-  it('says the figures count finished visits judged to be people', () => {
+  it('does not call an hour of people a day of them', () => {
+    const option = show({ view: 'activity', peopleOnly: true, points: HOURS, granularity: 'hour' });
+
+    expect(option.series[1]?.name).toBe('Visitors judged to be people');
+  });
+
+  it('says once whose figures they are, and where its days are cut', () => {
     show({ view: 'activity', peopleOnly: true });
 
+    expect(screen.getByText('Days run midnight to midnight in Kolkata.')).toBeInTheDocument();
     expect(
-      screen.getByText('Finished visits judged to be people, by day in Kolkata.'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('img', { name: /Visits judged to be people on My Blog/ }),
+      screen.getByRole('img', { name: /Page views and visitors among people on My Blog/ }),
     ).toBeInTheDocument();
   });
 
   /**
-   * A visit is judged once it ends, so a picture of judged visits has a tail that is still
-   * filling whichever question it answers — and the tail is quietened the same way in both.
+   * A visit is judged once it ends, so the people's figures have a tail that is still filling —
+   * and it is washed exactly as the picture of who came washes its own.
    */
-  it('quietens the buckets still being judged in that view too', () => {
-    const columns = show({ view: 'activity', peopleOnly: true, series: FILLING, style: 'Columns' });
+  it('washes the buckets the engine has not finished judging', () => {
+    const area = show({ view: 'activity', peopleOnly: true, stillJudging: 2, style: 'Area' });
 
-    expect(columns.series[0]?.data[2]).toStrictEqual({ value: 11, itemStyle: { opacity: 0.35 } });
-    expect(columns.series.some((one) => one.markArea !== undefined)).toBe(false);
-
-    fireEvent.click(screen.getByRole('radio', { name: 'Area' }));
-
-    const area = drawn.option as unknown as Drawing;
-
-    expect(area.series.some((one) => one.markArea !== undefined)).toBe(true);
-    expect(screen.getAllByText('still being judged')).toHaveLength(1);
+    expect(area.series.at(-1)?.markArea?.data).toStrictEqual([
+      [{ xAxis: 'Aug 12' }, { xAxis: 'Aug 13' }],
+    ]);
     expect(
       screen.getByText(
-        'Finished visits judged to be people, by day in Kolkata. The newest are still being judged.',
+        'Days run midnight to midnight in Kolkata. The newest are still being judged.',
       ),
     ).toBeInTheDocument();
+    expect(screen.getAllByText('still being judged')).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Columns' }));
+
+    const columns = drawn.option as unknown as Drawing;
+
+    expect(columns.series.some((one) => one.markArea !== undefined)).toBe(false);
+    expect(columns.series[0]?.data[2]).toStrictEqual({ value: 30, itemStyle: { opacity: 0.35 } });
   });
 
-  it("draws the earlier period's people behind this one", () => {
+  it('washes nothing where every figure is settled', () => {
+    const option = show({ view: 'activity', peopleOnly: true, style: 'Area' });
+
+    expect(option.series.some((one) => one.markArea !== undefined)).toBe(false);
+    expect(screen.queryByText(/The newest are still being judged/)).not.toBeInTheDocument();
+  });
+
+  it("names the earlier period's measures for the people too", () => {
     const activity = show({ view: 'activity', peopleOnly: true, against: true });
     const dashed = activity.series.filter((one) => one.lineStyle?.type === 'dashed');
 
     expect(dashed.map((one) => one.name)).toStrictEqual([
-      'Pages read by people before',
-      'Visits by people before',
+      'Page views by people before',
+      'Daily visitors judged to be people before',
     ]);
-    expect(dashed[0]?.data).toStrictEqual([15, 21, 9]);
-    expect(dashed[1]?.data).toStrictEqual([5, 7, 3]);
+    expect(dashed[0]?.data).toStrictEqual(EARLIER_DAYS.map((point) => point.pageViews));
+    expect(dashed[1]?.data).toStrictEqual(EARLIER_DAYS.map((point) => point.visitors));
   });
 
   /**
@@ -627,76 +642,41 @@ describe('the picture kept to the people a website is for', () => {
     expect(screen.getByRole('columnheader', { name: 'People before' })).toBeInTheDocument();
   });
 
-  it('is asked for by the control beside the rest', async () => {
-    show();
-
-    await userEvent.click(
-      screen.getByRole('button', {
-        name: 'People only: show just the visits judged to be people',
-      }),
-    );
-
-    expect(kept).toHaveBeenCalledWith(true);
-  });
-
-  it('shows the control as on while the picture is kept to people', () => {
-    show({ peopleOnly: true });
-
-    expect(
-      screen.getByRole('button', {
-        name: 'People only: show just the visits judged to be people',
-      }),
-    ).toHaveAttribute('aria-pressed', 'true');
-  });
-
   /**
-   * A period judged to hold no people is an answer rather than an empty box, and the way out is
-   * the control that kept the picture to people in the first place.
+   * A period judged to hold no people is an answer rather than an empty box. No way out is
+   * offered on the card, because the control that kept the screen to people sits above it and is
+   * the way out of it.
    */
-  it('has something to say when nobody in the period was judged to be a person, and offers everyone', async () => {
+  it('has something to say when nobody in the period was judged to be a person', () => {
     show({ view: 'who', peopleOnly: true, series: NOBODY });
 
     expect(
       screen.getByText('No visits in this period were judged to be people.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole('button', { name: 'Show everyone' }));
-
-    expect(kept).toHaveBeenCalledWith(false);
-  });
-
-  /**
-   * Nothing judged yet and nobody judged a person are different things, and the first must not
-   * be read as the second: a website whose verdicts are still coming has not been found to have
-   * no readers.
-   */
-  it('says nothing has been judged rather than that nobody was a person', async () => {
-    show({ view: 'activity', peopleOnly: true, series: { ...JUDGED, groups: [] } });
-
-    expect(screen.getByText('No visits have been judged in this period yet.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Show everyone' })).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole('button', { name: 'See how much was read' }));
-
-    expect(kept).toHaveBeenCalledWith(false);
-    expect(chose).not.toHaveBeenCalled();
   });
 
   /**
    * The one way out of a period nothing has been judged in is the picture that waits on no
-   * verdict, and from a stack kept to people that is two steps away. Offered as one, because a
-   * button whose press lands on the same sentence with a different button is not a way out.
+   * verdict, which kept to people is the people's how much — counted from the same reports the
+   * cards above are.
    */
-  it('leads from a stack kept to people, with nothing judged, straight to how much was read', async () => {
+  it('leads from a stack kept to people, with nothing judged, to how much was read', async () => {
     show({ view: 'who', peopleOnly: true, series: { ...JUDGED, groups: [] } });
 
     expect(screen.getByText('No visits have been judged in this period yet.')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'See how much was read' }));
 
-    expect(kept).toHaveBeenCalledWith(false);
     expect(chose).toHaveBeenCalledWith('activity');
+  });
+
+  /** The population is the screen's to choose, above the card, which offers no second control for it. */
+  it('offers no control of its own for keeping the picture to people', () => {
+    show({ peopleOnly: true });
+
+    expect(screen.queryByRole('button', { name: /People only/ })).not.toBeInTheDocument();
   });
 
   /**
@@ -709,5 +689,108 @@ describe('the picture kept to the people a website is for', () => {
     const headers = screen.getAllByRole('columnheader').map((header) => header.textContent);
 
     expect(headers).toStrictEqual(['Day', 'People', 'People before']);
+  });
+});
+
+describe('a day pressed on the picture', () => {
+  /** The same three days, the last of them still being judged. */
+  const FILLING: TrafficSeries = { ...JUDGED, completeTo: '2026-08-12T18:30:00+00:00' };
+
+  /**
+   * A bucket beginning at half past six in the evening, London time, is the next day where the
+   * website is — and that is the day it hands back, whoever is reading.
+   */
+  it("hands the picture the day a bucket falls in, in the website's own zone", () => {
+    const picked = vi.fn();
+
+    show({ onPickDay: picked });
+    drawn.pick?.(1);
+
+    expect(picked).toHaveBeenCalledWith('2026-08-12');
+  });
+
+  /**
+   * Under a comparison the earlier period is drawn behind this one, bucket for bucket, so the
+   * first column is two days at once. The one pressed is this period's.
+   */
+  it("lands on this period's day rather than the earlier one's, with the period before drawn behind it", () => {
+    const picked = vi.fn();
+
+    show({ against: true, onPickDay: picked });
+    drawn.pick?.(0);
+
+    expect(picked).toHaveBeenCalledWith('2026-08-11');
+    expect(picked).not.toHaveBeenCalledWith('2026-08-08');
+  });
+
+  /** A canvas is not a control, so the table the same figures are published in carries the way in. */
+  it('offers the same day from the row of the table, for anybody without a pointer', async () => {
+    const picked = vi.fn();
+
+    show({ onPickDay: picked });
+
+    await userEvent.click(screen.getByText('Show these figures as a table'));
+    await userEvent.click(screen.getByRole('button', { name: 'Aug 12, look at this day' }));
+
+    expect(picked).toHaveBeenCalledWith('2026-08-12');
+  });
+
+  it('names the day an hour falls in, on a period cut by the hour', async () => {
+    const picked = vi.fn();
+
+    show({ points: HOURS, granularity: 'hour', onPickDay: picked });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Aug 18, 12 AM, look at this day' }));
+
+    expect(picked).toHaveBeenCalledWith('2026-08-18');
+  });
+
+  it('takes the picture of who came into a day too', () => {
+    const picked = vi.fn();
+
+    show({ view: 'who', onPickDay: picked });
+    drawn.pick?.(2);
+
+    expect(picked).toHaveBeenCalledWith('2026-08-13');
+    expect(screen.getByRole('button', { name: 'Aug 13, look at this day' })).toBeInTheDocument();
+  });
+
+  /**
+   * A day still being judged is still a day. The row that says so beneath its bucket offers the
+   * same way in as every other row; that the wash on the canvas does not swallow a press is a
+   * fact about the surface, held by looking at it in a browser.
+   */
+  it('offers a bucket still being judged the same way in', () => {
+    const picked = vi.fn();
+
+    show({ view: 'who', series: FILLING, onPickDay: picked });
+    drawn.pick?.(2);
+
+    expect(picked).toHaveBeenCalledWith('2026-08-13');
+    expect(screen.getByRole('button', { name: 'Aug 13, look at this day' })).toBeInTheDocument();
+    expect(screen.getAllByText('still being judged')).toHaveLength(1);
+  });
+
+  /** The far edge of the last column rounds to one more bucket than there are, which is no day. */
+  it('names no day for a press the surface places past the last bucket', () => {
+    const picked = vi.fn();
+
+    show({ onPickDay: picked });
+
+    expect(() => drawn.pick?.(DAYS.length)).not.toThrow();
+    expect(picked).not.toHaveBeenCalled();
+  });
+
+  /** On a period that is already one day there is nothing narrower, and the table reads as it did. */
+  it('offers no way into a day when none is offered, and the table reads as it did', () => {
+    show();
+
+    expect(drawn.pick).toBeUndefined();
+    expect(screen.queryByRole('button', { name: /look at this day/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('rowheader').map((row) => row.textContent)).toStrictEqual([
+      'Aug 11',
+      'Aug 12',
+      'Aug 13',
+    ]);
   });
 });

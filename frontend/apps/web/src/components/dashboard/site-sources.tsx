@@ -15,6 +15,7 @@ import {
 } from '@/components/dashboard/ranked-list';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
+import type { Population } from '@/lib/analytics/people-only';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
 import type { SiteSource, SourceGrouping, SourceKind } from '@/lib/api/schemas';
 import type { ChartPalette } from '@/lib/charts/palette';
@@ -24,6 +25,8 @@ import { useSources } from '@/lib/queries/sites';
 interface SiteSourcesProps {
   readonly siteId: string;
   readonly window: AnalyticsWindow;
+  /** Whose figures the card counts. */
+  readonly population: Population;
 }
 
 /** How many sources are shown at once, matching the lists around it. */
@@ -43,11 +46,11 @@ const PER_PAGE = 10;
  * either starts a fresh list rather than leaving somebody on the fourth screenful of a list that
  * no longer exists.
  */
-export function SiteSources({ siteId, window }: SiteSourcesProps) {
+export function SiteSources({ siteId, window, population }: SiteSourcesProps) {
   const t = useTranslations('dashboard.sources');
   const [grouping, setGrouping] = useState<SourceGrouping>('kind');
   const [offset, setOffset] = useState(0);
-  const sources = useSources(siteId, window, grouping, PER_PAGE, offset);
+  const sources = useSources(siteId, window, population, grouping, PER_PAGE, offset);
 
   function regroup(next: SourceGrouping) {
     setGrouping(next);

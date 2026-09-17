@@ -1,4 +1,5 @@
 import { type JourneyFilters, narrowingParams } from '@/lib/analytics/journeys';
+import type { Population } from '@/lib/analytics/people-only';
 import type { AnalyticsWindow, Granularity } from '@/lib/analytics/period';
 import type {
   ActionGrouping,
@@ -27,8 +28,15 @@ export const sitesKey = ['sites'] as const;
  */
 export const organizationKey = ['organization'] as const;
 
-export function overviewKey(siteId: string, window: AnalyticsWindow) {
-  return ['sites', siteId, 'overview', window.from, window.to] as const;
+/**
+ * Headline totals over a period, for one population.
+ *
+ * The population is part of the name because it is part of the question: the overview kept to
+ * people and the one the screen checks it against are two answers, and under everybody they are
+ * one — which is what lets the check cost nothing.
+ */
+export function overviewKey(siteId: string, window: AnalyticsWindow, population: Population) {
+  return ['sites', siteId, 'overview', window.from, window.to, population] as const;
 }
 
 /**
@@ -42,57 +50,117 @@ export function seriesKey(
   siteId: string,
   metric: SeriesMetric,
   window: AnalyticsWindow,
+  population: Population,
   granularity: Granularity,
 ) {
-  return ['sites', siteId, 'series', metric, window.from, window.to, granularity] as const;
+  return [
+    'sites',
+    siteId,
+    'series',
+    metric,
+    window.from,
+    window.to,
+    population,
+    granularity,
+  ] as const;
 }
 
-export function pagesKey(siteId: string, window: AnalyticsWindow, limit: number, offset: number) {
-  return ['sites', siteId, 'pages', window.from, window.to, limit, offset] as const;
+export function pagesKey(
+  siteId: string,
+  window: AnalyticsWindow,
+  population: Population,
+  limit: number,
+  offset: number,
+) {
+  return ['sites', siteId, 'pages', window.from, window.to, population, limit, offset] as const;
 }
 
 export function locationsKey(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   grouping: LocationGrouping,
   limit: number,
   offset: number,
 ) {
-  return ['sites', siteId, 'locations', window.from, window.to, grouping, limit, offset] as const;
+  return [
+    'sites',
+    siteId,
+    'locations',
+    window.from,
+    window.to,
+    population,
+    grouping,
+    limit,
+    offset,
+  ] as const;
 }
 
 export function sourcesKey(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   grouping: SourceGrouping,
   limit: number,
   offset: number,
 ) {
-  return ['sites', siteId, 'sources', window.from, window.to, grouping, limit, offset] as const;
+  return [
+    'sites',
+    siteId,
+    'sources',
+    window.from,
+    window.to,
+    population,
+    grouping,
+    limit,
+    offset,
+  ] as const;
 }
 
-export function devicesKey(siteId: string, window: AnalyticsWindow) {
-  return ['sites', siteId, 'devices', window.from, window.to] as const;
+export function devicesKey(siteId: string, window: AnalyticsWindow, population: Population) {
+  return ['sites', siteId, 'devices', window.from, window.to, population] as const;
 }
 
 export function softwareKey(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   grouping: SoftwareGrouping,
   limit: number,
   offset: number,
 ) {
-  return ['sites', siteId, 'software', window.from, window.to, grouping, limit, offset] as const;
+  return [
+    'sites',
+    siteId,
+    'software',
+    window.from,
+    window.to,
+    population,
+    grouping,
+    limit,
+    offset,
+  ] as const;
 }
 
 export function actionsKey(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   grouping: ActionGrouping,
   limit: number,
   offset: number,
 ) {
-  return ['sites', siteId, 'actions', window.from, window.to, grouping, limit, offset] as const;
+  return [
+    'sites',
+    siteId,
+    'actions',
+    window.from,
+    window.to,
+    population,
+    grouping,
+    limit,
+    offset,
+  ] as const;
 }
 
 /**
@@ -189,13 +257,14 @@ export function serverKeysKey(siteId: string) {
   return ['sites', siteId, 'server-keys'] as const;
 }
 
-export function engagementKey(siteId: string, window: AnalyticsWindow) {
-  return ['sites', siteId, 'engagement', window.from, window.to] as const;
+export function engagementKey(siteId: string, window: AnalyticsWindow, population: Population) {
+  return ['sites', siteId, 'engagement', window.from, window.to, population] as const;
 }
 
 export function pageEngagementKey(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   ranking: EngagementRanking,
   limit: number,
   offset: number,
@@ -207,19 +276,21 @@ export function pageEngagementKey(
     'pages',
     window.from,
     window.to,
+    population,
     ranking,
     limit,
     offset,
   ] as const;
 }
 
-export function visitTotalsKey(siteId: string, window: AnalyticsWindow) {
-  return ['sites', siteId, 'visits', 'totals', window.from, window.to] as const;
+export function visitTotalsKey(siteId: string, window: AnalyticsWindow, population: Population) {
+  return ['sites', siteId, 'visits', 'totals', window.from, window.to, population] as const;
 }
 
 export function visitPagesKey(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   position: VisitPosition,
   limit: number,
   offset: number,
@@ -231,6 +302,7 @@ export function visitPagesKey(
     'pages',
     window.from,
     window.to,
+    population,
     position,
     limit,
     offset,

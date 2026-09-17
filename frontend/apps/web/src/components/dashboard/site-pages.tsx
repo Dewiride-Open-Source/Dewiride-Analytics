@@ -7,6 +7,7 @@ import { ListEmpty, ListWaiting, RankedNav, RankedRow } from '@/components/dashb
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { readablePath } from '@/lib/analytics/pages';
+import type { Population } from '@/lib/analytics/people-only';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
 import type { SitePage } from '@/lib/api/schemas';
 import { usePages } from '@/lib/queries/sites';
@@ -14,6 +15,8 @@ import { usePages } from '@/lib/queries/sites';
 interface SitePagesProps {
   readonly siteId: string;
   readonly window: AnalyticsWindow;
+  /** Whose figures the card counts. */
+  readonly population: Population;
 }
 
 /**
@@ -32,10 +35,10 @@ const PER_PAGE = 10;
  * that changes with the website and the period — so choosing either starts the new list at its
  * busiest page rather than at whichever screenful was open of the old one.
  */
-export function SitePages({ siteId, window }: SitePagesProps) {
+export function SitePages({ siteId, window, population }: SitePagesProps) {
   const t = useTranslations('dashboard.pages');
   const [offset, setOffset] = useState(0);
-  const pages = usePages(siteId, window, PER_PAGE, offset);
+  const pages = usePages(siteId, window, population, PER_PAGE, offset);
 
   if (pages.isError) {
     return <FailureNotice error={pages.error} />;

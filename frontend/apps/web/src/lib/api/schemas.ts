@@ -98,12 +98,19 @@ export const overviewSchema = z.object({
   events: z.number().int(),
 });
 
-/** One measure counted in buckets across a period. */
+/**
+ * One measure counted in buckets across a period.
+ *
+ * Counting is complete up to `completeTo`. Asked of everybody that is the end of the period; asked
+ * of people it is where the judging has reached, because a visit is only judged once it has
+ * finished and the buckets after it are still filling.
+ */
 export const seriesSchema = z.object({
   from: timestamp,
   to: timestamp,
   metric: z.enum(['pageviews', 'visitors']),
   granularity: z.enum(['hour', 'day']),
+  completeTo: timestamp,
   points: z.array(z.object({ bucketStart: timestamp, value: z.number().int() })),
 });
 

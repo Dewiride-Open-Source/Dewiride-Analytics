@@ -2,6 +2,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SiteReading } from '@/components/dashboard/site-reading';
+import type { Population } from '@/lib/analytics/people-only';
 import { type Engine, engineDoing, engineStopped, respondWith } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
 
@@ -67,13 +68,30 @@ function engineWith(
   });
 }
 
-function show(onShowCode = vi.fn()) {
-  renderScreen(<SiteReading siteId={SITE_ID} window={WINDOW} onShowCode={onShowCode} />);
+function show(onShowCode = vi.fn(), population: Population = 'everybody') {
+  renderScreen(
+    <SiteReading
+      siteId={SITE_ID}
+      window={WINDOW}
+      population={population}
+      onShowCode={onShowCode}
+    />,
+  );
 
   return onShowCode;
 }
 
 describe('how a website’s pages were read', () => {
+  /** Kept to people, every question the card asks is asked of them and of nobody else. */
+  it('asks about the people when the card is kept to them', async () => {
+    const engine = engineWith();
+
+    show(vi.fn(), 'people');
+
+    await screen.findByText('1m 12s');
+
+    expect(engine.all().every((sent) => sent.path.includes('only=people'))).toBe(true);
+  });
   it('says how long a typical reader stayed, in words rather than milliseconds', async () => {
     engineWith();
 

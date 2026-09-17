@@ -17,13 +17,15 @@ const BOX = 'h-56 w-full sm:h-72';
 interface PictureProps {
   readonly option: (palette: ChartPalette) => Record<string, unknown>;
   readonly label: string;
+  /** Told which bucket along the bottom was pressed, where pressing one means something. */
+  readonly onPick?: (index: number) => void;
 }
 
 /** A drawing, at the height every drawing in the product keeps. */
-export function Picture({ option, label }: PictureProps) {
+export function Picture({ option, label, onPick }: PictureProps) {
   return (
     <div className={BOX}>
-      <Chart option={option} label={label} />
+      <Chart option={option} label={label} onPick={onPick} />
     </div>
   );
 }

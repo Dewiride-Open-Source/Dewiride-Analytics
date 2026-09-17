@@ -166,6 +166,22 @@
         }
       }
     },
+    "population": {
+      "action": "People only",
+      "label": "People only: count just the visits judged to be people",
+      "caption": "Every figure counts only the visits judged to be people.",
+      "empty": {
+        "action": "Show everyone",
+        "unjudged": {
+          "title": "Nothing judged yet",
+          "body": "A visit is judged once it has finished, so the first people appear about half an hour after their visit ends."
+        },
+        "nobody": {
+          "title": "No people in this period",
+          "body": "Nothing that visited in this period was judged to be a person."
+        }
+      }
+    },
     "metrics": {
       "pageViews": {
         "label": "Page views"
@@ -176,6 +192,17 @@
       },
       "pagesPerVisitor": {
         "label": "Pages per visitor"
+      },
+      "people": {
+        "pageViews": {
+          "label": "Page views by people"
+        },
+        "visitors": {
+          "label": "Daily visitors judged to be people"
+        },
+        "pagesPerVisitor": {
+          "label": "Pages per person"
+        }
       },
       "change": {
         "up": "<strong>{amount} more</strong> than {period}",
@@ -208,15 +235,20 @@
         "columns": "Columns",
         "area": "Area"
       },
-      "pageViews": "Page views",
-      "visitors": "Daily visitors",
-      "visitorsByHour": "Visitors",
-      "days": "Days run midnight to midnight in {zone}.",
-      "hours": "Times are the clock in {zone}.",
-      "summary": "Page views and visitors for {site} over the chosen period.",
+      "activity": {
+        "pageViews": "Page views",
+        "visitors": "Daily visitors",
+        "visitorsByHour": "Visitors",
+        "summary": "Page views and visitors for {site} over the chosen period.",
+        "days": "Days run midnight to midnight in {zone}.",
+        "hours": "Times are the clock in {zone}."
+      },
       "table": "Show these figures as a table",
       "columnDay": "Day",
       "columnHour": "Time",
+      "drill": {
+        "row": "{bucket}, look at this day"
+      },
       "who": {
         "summary": "Who and what visited {site} over the chosen period.",
         "days": "Visits that have finished, by day in {zone}.",
@@ -235,16 +267,19 @@
         "lines": "The dashed lines are {days}."
       },
       "people": {
-        "action": "People only",
-        "label": "People only: show just the visits judged to be people",
-        "pageViews": "Pages read by people",
-        "visits": "Visits by people",
         "summary": "Visits judged to be people on {site} over the chosen period.",
         "days": "Finished visits judged to be people, by day in {zone}.",
         "hours": "Finished visits judged to be people, by the clock in {zone}.",
         "judging": "The newest are still being judged.",
         "none": "No visits in this period were judged to be people.",
-        "noneAction": "Show everyone"
+        "activity": {
+          "pageViews": "Page views by people",
+          "visitors": "Daily visitors judged to be people",
+          "visitorsByHour": "Visitors judged to be people",
+          "summary": "Page views and visitors among people on {site} over the chosen period.",
+          "days": "Days run midnight to midnight in {zone}.",
+          "hours": "Times are the clock in {zone}."
+        }
       }
     },
     "list": {
@@ -402,6 +437,8 @@
       "sessions": "{count, plural, one {# visit} other {# visits}}",
       "pages": "{count, plural, one {# page} other {# pages}}",
       "ring": "How the judged visits divide between people, machinery and everything else.",
+      "peopleRing": "How the judged visits divide between people and everyone else.",
+      "others": "Everyone else",
       "pending": "Visits still under way aren't counted here yet.",
       "everyVisit": "Look at each visit on its own",
       "empty": {
@@ -583,6 +620,7 @@
   "journeys": {
     "title": "User journey",
     "caption": "Everyone and everything that visited {site}, newest first. Open one to see the pages it went to, what it did there, and what it was judged on.",
+    "captionPeople": "The visits to {site} judged to be people, newest first. Open one to see the pages it went to, what it did there, and what it was judged on.",
     "filters": {
       "title": "Narrow this down",
       "clear": "Clear",
@@ -646,7 +684,8 @@
       "narrowed": {
         "title": "No visits like that",
         "body": "Nothing in this period matches what you picked. Widen it, or look at a longer period.",
-        "action": "Show every visit"
+        "action": "Show every visit",
+        "everyone": "Show everyone"
       }
     }
   },

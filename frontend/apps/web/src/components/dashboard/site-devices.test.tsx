@@ -2,6 +2,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SiteDevices } from '@/components/dashboard/site-devices';
+import type { Population } from '@/lib/analytics/people-only';
 import { type Engine, engineDoing, engineStopped, respondWith } from '@/test/engine';
 import { softened } from '@/lib/charts/ring';
 import { PALETTE, ringParts } from '@/test/drawing';
@@ -79,11 +80,21 @@ function engineWith(
   });
 }
 
-function show() {
-  return renderScreen(<SiteDevices siteId={SITE_ID} window={WINDOW} />);
+function show(population: Population = 'everybody') {
+  return renderScreen(<SiteDevices siteId={SITE_ID} window={WINDOW} population={population} />);
 }
 
 describe('what a website’s readers use', () => {
+  /** Kept to people, every question the card asks is asked of them and of nobody else. */
+  it('asks about the people when the card is kept to them', async () => {
+    const engine = engineWith(DEVICES);
+
+    show('people');
+
+    await screen.findByText('Phones');
+
+    expect(engine.all().every((sent) => sent.path.includes('only=people'))).toBe(true);
+  });
   it('names each kind of device in words a reader would use', async () => {
     engineWith(DEVICES);
 

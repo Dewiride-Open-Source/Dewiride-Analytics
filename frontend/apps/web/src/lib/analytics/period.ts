@@ -1,3 +1,5 @@
+import { type Population, withPopulation } from '@/lib/analytics/people-only';
+
 /**
  * The periods the dashboard can be looked at over, and the exact window each one means.
  *
@@ -298,13 +300,27 @@ export function granularityFor(span: DaySpan): Granularity {
 }
 
 /**
+ * The day a moment falls in where the site is, written the way a period names one.
+ *
+ * A bucket on the chart is named by the instant it begins at, and the day it belongs to is settled
+ * here rather than by the reader's clock: a day counted in Kolkata begins the evening before for
+ * anybody reading in London, and is still that day.
+ *
+ * @param timeZone The site's reporting zone.
+ * @param moment The instant in question.
+ */
+export function dayOf(timeZone: string, moment: Date): string {
+  return writeDay(calendarDayIn(timeZone, moment));
+}
+
+/**
  * What day it is where the site is, which is not always what day it is where the reader is.
  *
  * @param timeZone The site's reporting zone.
  * @param now The moment to measure from.
  */
 export function todayIn(timeZone: string, now: Date): string {
-  return writeDay(calendarDayIn(timeZone, now));
+  return dayOf(timeZone, now);
 }
 
 /**
@@ -427,23 +443,35 @@ export function readPeriod(written: string): Period | null {
     : null;
 }
 
+/** What a screen is looking at, as far as a link between two screens carries it. */
+export interface ScreenChoices {
+  readonly period: Period;
+  readonly population: Population;
+}
+
 /**
- * The address of a screen, carrying the period being looked at.
+ * The address of a screen, carrying what is being looked at.
  *
- * The period travels with the reader rather than being asked for again on arrival, so that moving
- * from a website's totals to the visits behind them stays on the same days. It is the same
- * mechanism that makes a screen worth sending to somebody: what is in the address is what they see.
+ * The period and the population travel with the reader rather than being asked for again on
+ * arrival, so that moving from a website's totals to the visits behind them stays on the same days
+ * and the same people. It is the same mechanism that makes a screen worth sending to somebody:
+ * what is in the address is what they see.
  *
- * A screen on the period everything opens on is left alone. An address that says what it would
- * have said anyway is one more thing in the bar for nothing.
+ * A choice that is what every screen opens on is left out. An address that says what it would have
+ * said anyway is one more thing in the bar for nothing.
  *
  * @param screen One of the product's own addresses, which never asks a question of its own.
- * @param period What is being looked at.
  */
-export function withPeriod(screen: string, period: Period): string {
-  return samePeriod(period, DEFAULT_PERIOD)
-    ? screen
-    : `${screen}?${PERIOD_KEY}=${encodeURIComponent(writePeriod(period))}`;
+export function withChoices(screen: string, { period, population }: ScreenChoices): string {
+  const asked = new URLSearchParams();
+
+  if (!samePeriod(period, DEFAULT_PERIOD)) {
+    asked.set(PERIOD_KEY, writePeriod(period));
+  }
+
+  const written = withPopulation(asked, population).toString();
+
+  return written.length === 0 ? screen : `${screen}?${written}`;
 }
 
 /**

@@ -28,26 +28,40 @@ export const PALETTE: ChartPalette = {
   text: 'rgba(41, 38, 51, 1)',
 };
 
-/** What the last chart to render would have drawn. */
-export const drawn: { option: Record<string, unknown> | undefined } = { option: undefined };
+/** What the last chart to render would have drawn, and the way into each drawing a press was offered. */
+export const drawn: {
+  option: Record<string, unknown> | undefined;
+  /** What the last surface would call with the category pressed, or nothing where no press means anything. */
+  pick: ((index: number) => void) | undefined;
+  /** The same for every drawing on the screen, by what each announces, since a screen draws several. */
+  readonly picks: Map<string, ((index: number) => void) | undefined>;
+} = { option: undefined, pick: undefined, picks: new Map() };
 
 interface StubChartProps {
   readonly option: (palette: ChartPalette) => unknown;
   readonly label: string;
+  readonly onPick?: (index: number) => void;
 }
 
 /**
- * Keeps what a render would have drawn where a test can read it.
+ * Keeps what a render would have drawn, and what a press on it would do, where a test can reach
+ * them.
  *
  * Called from the stand-in rather than written inside it: a component must not change anything
  * outside itself while it renders, and the rule that says so cannot tell a real one from a spy.
  */
-function record(option: (palette: ChartPalette) => unknown): void {
+function record(
+  option: (palette: ChartPalette) => unknown,
+  label: string,
+  onPick: ((index: number) => void) | undefined,
+): void {
   drawn.option = option(PALETTE) as Record<string, unknown>;
+  drawn.pick = onPick;
+  drawn.picks.set(label, onPick);
 }
 
-export function Chart({ option, label }: StubChartProps) {
-  record(option);
+export function Chart({ option, label, onPick }: StubChartProps) {
+  record(option, label, onPick);
 
   return <div role="img" aria-label={label} />;
 }

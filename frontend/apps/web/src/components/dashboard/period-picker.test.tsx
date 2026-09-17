@@ -103,6 +103,15 @@ describe('choosing how far back to look', () => {
 
     expect(screen.getByText('Aug 18, 2026')).toBeInTheDocument();
   });
+
+  /** The dates are the answer to "which days", and a screen reader hears them with the control. */
+  it('reads those days out with the control', () => {
+    show();
+
+    expect(screen.getByRole('combobox', { name: 'Period' })).toHaveAccessibleDescription(
+      /^Aug 12\s–\s18, 2026$/,
+    );
+  });
 });
 
 describe('choosing exact dates', () => {

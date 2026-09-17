@@ -15,6 +15,7 @@ import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { splitDuration } from '@/lib/analytics/duration';
 import { readablePath } from '@/lib/analytics/pages';
+import type { Population } from '@/lib/analytics/people-only';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
 import { shareOf } from '@/lib/analytics/share';
 import type { Engagement, EngagementRanking, PageEngagementRow } from '@/lib/api/schemas';
@@ -23,6 +24,8 @@ import { useEngagement, usePageEngagement } from '@/lib/queries/sites';
 interface SiteReadingProps {
   readonly siteId: string;
   readonly window: AnalyticsWindow;
+  /** Whose figures the card counts. */
+  readonly population: Population;
   /** Opens the tracking code, which is the one thing that would make this card say anything. */
   readonly onShowCode: () => void;
 }
@@ -55,13 +58,21 @@ const ALL_THE_WAY = 100;
  * The screen above gives this a key that changes with the website and the period, so choosing
  * either starts afresh rather than leaving somebody on a screenful that no longer exists.
  */
-export function SiteReading({ siteId, window, onShowCode }: SiteReadingProps) {
+export function SiteReading({ siteId, window, population, onShowCode }: SiteReadingProps) {
   const t = useTranslations('dashboard.reading');
   const [view, setView] = useState<ReadingView>('overall');
   const [offset, setOffset] = useState(0);
   const ranking: EngagementRanking = view === 'depth' ? 'depth' : 'attention';
-  const reading = useEngagement(siteId, window);
-  const pages = usePageEngagement(siteId, window, ranking, PER_PAGE, offset, view !== 'overall');
+  const reading = useEngagement(siteId, window, population);
+  const pages = usePageEngagement(
+    siteId,
+    window,
+    population,
+    ranking,
+    PER_PAGE,
+    offset,
+    view !== 'overall',
+  );
 
   function show(next: ReadingView) {
     setView(next);

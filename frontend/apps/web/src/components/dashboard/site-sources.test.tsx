@@ -2,6 +2,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SiteSources } from '@/components/dashboard/site-sources';
+import type { Population } from '@/lib/analytics/people-only';
 import { type Engine, engineDoing, engineStopped, respondWith } from '@/test/engine';
 import { ringParts } from '@/test/drawing';
 import { renderScreen } from '@/test/harness';
@@ -103,8 +104,8 @@ function engineWithAll(
   });
 }
 
-function show() {
-  return renderScreen(<SiteSources siteId={SITE_ID} window={WINDOW} />);
+function show(population: Population = 'everybody') {
+  return renderScreen(<SiteSources siteId={SITE_ID} window={WINDOW} population={population} />);
 }
 
 /** Renders and switches to a named view, the way somebody reading the card would. */
@@ -116,6 +117,16 @@ async function showing(view: 'Sites' | 'Pages') {
 }
 
 describe('how a website’s visitors found it', () => {
+  /** Kept to people, every question the card asks is asked of them and of nobody else. */
+  it('asks about the people when the card is kept to them', async () => {
+    const engine = engineWith(KINDS, 825);
+
+    show('people');
+
+    await screen.findByText('Search engines');
+
+    expect(engine.all().every((sent) => sent.path.includes('only=people'))).toBe(true);
+  });
   /**
    * The question a list of website addresses cannot answer: how much of an audience search
    * brings, without the reader already knowing which of the names are search engines.

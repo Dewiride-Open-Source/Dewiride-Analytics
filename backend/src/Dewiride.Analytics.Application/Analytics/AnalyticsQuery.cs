@@ -35,17 +35,35 @@ public abstract record AnalyticsQuery
 /// <summary>
 /// Headline totals for a site over a window.
 /// </summary>
+/// <remarks>
+/// Asked of everybody the window holds or of the people alone, by the same arithmetic over
+/// fewer reports — so a total about people is a share of the total about everybody rather than a
+/// second, differently-derived number.
+/// </remarks>
 /// <param name="Range">The window to summarise.</param>
-public sealed record OverviewQuery(TimeRange Range) : AnalyticsQuery(Range);
+public sealed record OverviewQuery(TimeRange Range) : AnalyticsQuery(Range)
+{
+    /// <summary>Who the totals are about.</summary>
+    public Population Population { get; init; } = Population.Everybody;
+}
 
 /// <summary>
 /// A single metric bucketed over time.
 /// </summary>
+/// <remarks>
+/// Asked of people alone it is the same buckets over fewer reports, so the buckets add up to the
+/// headline asked of the same people. The last stretch of a running period holds visits nothing
+/// has judged yet, which the caller says beside the answer rather than in it.
+/// </remarks>
 /// <param name="Range">The window to cover.</param>
 /// <param name="Granularity">Bucket size.</param>
 /// <param name="Metric">Which metric to bucket.</param>
 public sealed record TimeSeriesQuery(TimeRange Range, TimeGranularity Granularity, TimeSeriesMetric Metric)
-    : AnalyticsQuery(Range);
+    : AnalyticsQuery(Range)
+{
+    /// <summary>Who the series counts.</summary>
+    public Population Population { get; init; } = Population.Everybody;
+}
 
 /// <summary>Bucket size for a time series.</summary>
 public enum TimeGranularity
@@ -68,13 +86,44 @@ public enum TimeSeriesMetric
 }
 
 /// <summary>
+/// Who a question about a window is asked about.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A population narrows the reports a question counts and never the arithmetic: the same
+/// statement is asked, over the reports of fewer visits. So every figure asked of people is a
+/// share of the figure asked of everybody, and a screen kept to people adds up.
+/// </para>
+/// <para>
+/// "People" is a verdict. It is the visits the engine concluded were people, under the newest
+/// ruleset to judge each one, and nothing else: a visit nothing has judged yet is not among them,
+/// however like a person it looks, and neither is one the engine could not tell.
+/// </para>
+/// <para>
+/// Only the questions answered from activity carry one. The questions answered from verdicts
+/// already say what each visit was; the account of one visit is about that visit whoever made it;
+/// and what is happening now is counted rather than judged.
+/// </para>
+/// </remarks>
+public enum Population
+{
+    /// <summary>Every visit the window holds, judged or not.</summary>
+    Everybody = 1,
+
+    /// <summary>The visits the engine concluded were people.</summary>
+    People = 2,
+}
+
+/// <summary>
 /// One slice of the pages a site's traffic went to, busiest first.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Counted as pages delivered rather than as reports received, on the same terms as
 /// <see cref="OverviewQuery"/>, so a share taken against the headline total is a share of the
-/// same arithmetic rather than of a second, differently-derived number.
+/// same arithmetic rather than of a second, differently-derived number. Asked of people alone, it
+/// is the same arithmetic over the reports the verdicts on people cover, so a share is still a
+/// share of the headline it sits under.
 /// </para>
 /// <para>
 /// Every address the window holds is reachable by asking for successive slices. The ordering is
@@ -115,6 +164,9 @@ public sealed record SitePagesQuery : AnalyticsQuery
 
     /// <summary>How many of the busiest pages to pass over first.</summary>
     public int Offset { get; }
+
+    /// <summary>Who the pages were delivered to.</summary>
+    public Population Population { get; init; } = Population.Everybody;
 }
 
 /// <summary>
@@ -170,6 +222,14 @@ public sealed record SiteActionsQuery : AnalyticsQuery
 
     /// <summary>How many of the most pressed to pass over first.</summary>
     public int Offset { get; }
+
+    /// <summary>Who the presses are counted for.</summary>
+    /// <remarks>
+    /// A press is reported by the visitor's own browser under the browser's own key, which is the
+    /// key a verdict names — so presses are kept by the verdict on the visit they were made in
+    /// without any of the reconciliation the page counts need.
+    /// </remarks>
+    public Population Population { get; init; } = Population.Everybody;
 }
 
 /// <summary>
@@ -195,7 +255,9 @@ public enum ActionGrouping
 /// Counted per visitor rather than per page, because a place is a fact about people rather than
 /// about pages: one reader in Pune who works through forty pages is one reader in Pune, and
 /// ranking places by pages read would put whoever browses most at the top of a list that claims
-/// to be about where an audience is.
+/// to be about where an audience is. Counted per visitor within whoever the question is asked
+/// about: a person is settled on one place, one source and one device on the same terms as
+/// everybody is.
 /// </para>
 /// <para>
 /// Read a slice at a time on the same terms as <see cref="SitePagesQuery"/>, with the same total
@@ -233,6 +295,9 @@ public sealed record SiteLocationsQuery : AnalyticsQuery
 
     /// <summary>How many of the busiest places to pass over first.</summary>
     public int Offset { get; }
+
+    /// <summary>Whose places are counted.</summary>
+    public Population Population { get; init; } = Population.Everybody;
 }
 
 /// <summary>What one row of a place list stands for.</summary>
@@ -270,7 +335,9 @@ public enum LocationGrouping
 /// <para>
 /// Counted per visitor rather than per page, on the same terms as <see cref="SiteLocationsQuery"/>
 /// and for the same reason: where somebody came from is a fact about their arrival, and counting
-/// it once per page would rank sources by how much the people they sent went on to read.
+/// it once per page would rank sources by how much the people they sent went on to read. Counted
+/// within whoever the question is asked about, so a person is settled on one source on the same
+/// terms as everybody is.
 /// </para>
 /// <para>
 /// One visitor is settled on one source. Only the first page of a visit carries an address from
@@ -333,6 +400,9 @@ public sealed record SiteSourcesQuery : AnalyticsQuery
 
     /// <summary>How many of the busiest sources to pass over first.</summary>
     public int Offset { get; }
+
+    /// <summary>Whose arrivals are counted.</summary>
+    public Population Population { get; init; } = Population.Everybody;
 }
 
 /// <summary>What one row of a source list stands for.</summary>
@@ -373,11 +443,16 @@ public enum SourceGrouping
 /// </para>
 /// <para>
 /// Counted per visitor, on the same terms as <see cref="SiteLocationsQuery"/> and for the same
-/// reason.
+/// reason, and within whoever the question is asked about: a person is settled on one device on
+/// the same terms as everybody is.
 /// </para>
 /// </remarks>
 /// <param name="Range">The window to count over.</param>
-public sealed record SiteDeviceKindsQuery(TimeRange Range) : AnalyticsQuery(Range);
+public sealed record SiteDeviceKindsQuery(TimeRange Range) : AnalyticsQuery(Range)
+{
+    /// <summary>Whose devices are counted.</summary>
+    public Population Population { get; init; } = Population.Everybody;
+}
 
 /// <summary>
 /// One slice of the browsers or the operating systems a site's audience used, commonest first.
@@ -386,7 +461,8 @@ public sealed record SiteDeviceKindsQuery(TimeRange Range) : AnalyticsQuery(Rang
 /// Read a slice at a time on the same terms as <see cref="SitePagesQuery"/>, with the same total
 /// ordering, so successive slices neither repeat a name nor skip one. Open-ended in a way the
 /// device kinds are not: browsers are released, renamed and forked, and the engine's catalogue
-/// grows with them.
+/// grows with them. Counted per visitor within whoever the question is asked about, on the same
+/// terms as the device kinds.
 /// </remarks>
 public sealed record SiteSoftwareQuery : AnalyticsQuery
 {
@@ -419,6 +495,9 @@ public sealed record SiteSoftwareQuery : AnalyticsQuery
 
     /// <summary>How many of the commonest names to pass over first.</summary>
     public int Offset { get; }
+
+    /// <summary>Whose software is counted.</summary>
+    public Population Population { get; init; } = Population.Everybody;
 }
 
 /// <summary>What one row of a software list stands for.</summary>
@@ -450,9 +529,17 @@ public enum SoftwareGrouping
 /// site measured only from its server has nothing to say here, which is a different statement from
 /// a site whose readers did nothing.
 /// </para>
+/// <para>
+/// A reading of people is a reading the verdict on the visit covers; a page a person left open and
+/// reported on after the engine had judged the visit is measured for everybody and not for people.
+/// </para>
 /// </remarks>
 /// <param name="Range">The window to count over.</param>
-public sealed record SiteEngagementQuery(TimeRange Range) : AnalyticsQuery(Range);
+public sealed record SiteEngagementQuery(TimeRange Range) : AnalyticsQuery(Range)
+{
+    /// <summary>Whose readings are counted.</summary>
+    public Population Population { get; init; } = Population.Everybody;
+}
 
 /// <summary>
 /// One slice of a site's pages ranked by how they were read rather than by how often.
@@ -494,6 +581,9 @@ public sealed record SitePageEngagementQuery : AnalyticsQuery
 
     /// <summary>How many of the leading pages to pass over first.</summary>
     public int Offset { get; }
+
+    /// <summary>Whose readings rank the pages.</summary>
+    public Population Population { get; init; } = Population.Everybody;
 }
 
 /// <summary>What a page-engagement list is ordered by.</summary>
@@ -536,11 +626,17 @@ public readonly record struct VisitBoundaries(TimeSpan IdleTimeout, DateTimeOffs
 /// Unpaged: three figures about one window rather than a list. Answered from activity rather than
 /// from stored verdicts, so it keeps step with the headline totals instead of trailing them the
 /// way <see cref="TrafficBreakdownQuery"/> does — what a visit was is a slower question than how
-/// many there were.
+/// many there were. Asked of people alone, the activity is narrowed to the reports the verdicts
+/// on people cover before it is grouped, so each rebuilt visit is the visit the engine judged; a
+/// visit dropped only widens the silence either side of it.
 /// </remarks>
 /// <param name="Range">The window to count over, by when each visit began.</param>
 /// <param name="Boundaries">What counts as one visit, and which ones have finished.</param>
-public sealed record SiteVisitShapeQuery(TimeRange Range, VisitBoundaries Boundaries) : AnalyticsQuery(Range);
+public sealed record SiteVisitShapeQuery(TimeRange Range, VisitBoundaries Boundaries) : AnalyticsQuery(Range)
+{
+    /// <summary>Whose visits are counted.</summary>
+    public Population Population { get; init; } = Population.Everybody;
+}
 
 /// <summary>
 /// One slice of the pages a window's visits began or ended on, commonest first.
@@ -548,7 +644,9 @@ public sealed record SiteVisitShapeQuery(TimeRange Range, VisitBoundaries Bounda
 /// <remarks>
 /// Counted per visit rather than per page view: an arrival is a thing that happens once however
 /// many times the page is read afterwards. Read a slice at a time on the same terms as
-/// <see cref="SitePagesQuery"/>, with the same total ordering.
+/// <see cref="SitePagesQuery"/>, with the same total ordering. Asked of people alone, the activity
+/// is narrowed to the reports the verdicts on people cover before it is grouped, on the same terms
+/// as <see cref="SiteVisitShapeQuery"/>.
 /// </remarks>
 public sealed record SiteVisitFlowQuery : AnalyticsQuery
 {
@@ -591,6 +689,9 @@ public sealed record SiteVisitFlowQuery : AnalyticsQuery
 
     /// <summary>How many of the commonest pages to pass over first.</summary>
     public int Offset { get; }
+
+    /// <summary>Whose visits are counted.</summary>
+    public Population Population { get; init; } = Population.Everybody;
 }
 
 /// <summary>Which end of a visit a page list stands for.</summary>

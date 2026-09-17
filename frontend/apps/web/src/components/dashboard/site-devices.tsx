@@ -15,6 +15,7 @@ import {
 } from '@/components/dashboard/ranked-list';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
+import type { Population } from '@/lib/analytics/people-only';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
 import type { DeviceKind, SiteDevice, SiteSoftware, SoftwareGrouping } from '@/lib/api/schemas';
 import type { ChartPalette } from '@/lib/charts/palette';
@@ -24,6 +25,8 @@ import { useDevices, useSoftware } from '@/lib/queries/sites';
 interface SiteDevicesProps {
   readonly siteId: string;
   readonly window: AnalyticsWindow;
+  /** Whose figures the card counts. */
+  readonly population: Population;
 }
 
 /** How many names are shown at once, matching the lists around it. */
@@ -59,13 +62,21 @@ const DEVICE_PAINTS: Readonly<Record<DeviceKind, SlicePaint>> = {
  * The screen above gives this a key that changes with the website and the period, so choosing
  * either starts afresh rather than leaving somebody on a screenful that no longer exists.
  */
-export function SiteDevices({ siteId, window }: SiteDevicesProps) {
+export function SiteDevices({ siteId, window, population }: SiteDevicesProps) {
   const t = useTranslations('dashboard.devices');
   const [view, setView] = useState<DeviceView>('device');
   const [offset, setOffset] = useState(0);
   const grouping: SoftwareGrouping = view === 'system' ? 'system' : 'browser';
-  const devices = useDevices(siteId, window);
-  const software = useSoftware(siteId, window, grouping, PER_PAGE, offset, view !== 'device');
+  const devices = useDevices(siteId, window, population);
+  const software = useSoftware(
+    siteId,
+    window,
+    population,
+    grouping,
+    PER_PAGE,
+    offset,
+    view !== 'device',
+  );
 
   function show(next: DeviceView) {
     setView(next);

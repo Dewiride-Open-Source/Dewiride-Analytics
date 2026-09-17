@@ -42,6 +42,16 @@ interface ChartProps {
    */
   readonly label: string;
   readonly className?: string;
+  /**
+   * Told which category along the bottom axis was pressed, where pressing one means something.
+   *
+   * Given as an index rather than a label: the label is written for reading, and what a press
+   * means is the caller's to decide. The whole width of a column counts, from the axis to the
+   * top of the plot, so a quiet day is as easy to pick as a busy one; a press on the axis labels
+   * or in the margin is not a press on a category. A canvas is not a control, so a caller
+   * offering this also offers the same action somewhere a keyboard can reach it.
+   */
+  readonly onPick?: (index: number) => void;
 }
 
 /**
@@ -50,7 +60,7 @@ interface ChartProps {
  * Every chart goes through here so that theming, resizing, disposal and the reduced-motion
  * setting are decided once instead of per screen.
  */
-export function Chart({ option, label, className }: ChartProps) {
+export function Chart({ option, label, className, onPick }: ChartProps) {
   const holder = useRef<HTMLDivElement>(null);
   const drawn = useRef<EChartsType | null>(null);
   const { resolvedTheme } = useTheme();
@@ -106,7 +116,76 @@ export function Chart({ option, label, className }: ChartProps) {
     );
   }, [option, resolvedTheme]);
 
+  // Listened for on the surface's own element rather than on the chart, so that a surface rebuilt
+  // for the other theme is still listened to, and a press that lands between the two reads no
+  // chart and does nothing. Attached here rather than written on the element: a picture is not a
+  // control, and the way in a keyboard has is whatever its caller offers beside it.
+  useEffect(() => {
+    const node = holder.current;
+
+    if (!node || !onPick) {
+      return;
+    }
+
+    const pick = (event: MouseEvent) => {
+      const index = pickedIndex(drawn.current, node, event);
+
+      if (index !== null) {
+        onPick(index);
+      }
+    };
+
+    node.addEventListener('click', pick);
+
+    return () => node.removeEventListener('click', pick);
+  }, [onPick]);
+
+  // The cursor is the surface's to decide, and it means one thing: a hand says a press does
+  // something. The charting engine offers a hand of its own over every column, dot and slice,
+  // whether or not anything happens on pressing one, and writes it onto the element it draws in
+  // on every move of the mouse — so the surface's own cursor is set on the canvas itself, where
+  // the engine's cannot overrule it.
   return (
-    <div ref={holder} role="img" aria-label={label} className={cn('h-full w-full', className)} />
+    <div
+      ref={holder}
+      role="img"
+      aria-label={label}
+      className={cn(
+        'h-full w-full',
+        onPick ? '[&_canvas]:cursor-pointer' : '[&_canvas]:cursor-default',
+        className,
+      )}
+    />
   );
+}
+
+/**
+ * The category a press landed in, or nothing where it landed outside the plot.
+ *
+ * Measured from the surface's own corner, which is where the charting engine counts pixels from,
+ * and only inside the grid: the axis labels and the margins belong to no category. The engine
+ * answers with the nearest category to the point, rounded, so the whole width of a column is that
+ * column's whether the buckets sit in bands or at points. A surface with nothing drawn on it
+ * places a press on no category at all.
+ */
+function pickedIndex(
+  chart: EChartsType | null,
+  node: HTMLElement,
+  event: MouseEvent,
+): number | null {
+  if (!chart) {
+    return null;
+  }
+
+  const box = node.getBoundingClientRect();
+  const x = event.clientX - box.left;
+  const y = event.clientY - box.top;
+
+  if (!chart.containPixel('grid', [x, y])) {
+    return null;
+  }
+
+  const index = chart.convertFromPixel({ xAxisIndex: 0 }, x);
+
+  return Number.isInteger(index) && index >= 0 ? index : null;
 }

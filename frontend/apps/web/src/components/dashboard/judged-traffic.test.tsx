@@ -152,33 +152,97 @@ describe('the breakdown of who is visiting', () => {
 
   /**
    * The summary is what somebody glances at; the visits behind it are what they work through. The
-   * way between the two has to be on the screen, or the second one may as well not exist.
+   * way between the two has to be on the screen, or the second one may as well not exist — and
+   * the two are questions about the same days and the same people, so the way between them
+   * carries both. Sent to the usual period, somebody looking at a single Tuesday would arrive at a
+   * fortnight and read it as the wrong answer rather than as the wrong question; sent to everyone,
+   * somebody kept to the people would do the same.
    */
-  it('offers the way through to the visits behind the summary', async () => {
+  it.each([
+    ['', '/app/journeys'],
+    ['?period=2026-08-01..2026-08-14', '/app/journeys?period=2026-08-01..2026-08-14'],
+    ['?only=people', '/app/journeys?only=people'],
+    [
+      '?period=2026-08-01..2026-08-14&only=people',
+      '/app/journeys?period=2026-08-01..2026-08-14&only=people',
+    ],
+  ])(
+    'takes what is being looked at through to the visits behind the summary (%s)',
+    async (at, link) => {
+      engineWith(GROUPS);
+
+      show(at);
+
+      expect(await screen.findByRole('link', { name: /Look at each visit/ })).toHaveAttribute(
+        'href',
+        link,
+      );
+    },
+  );
+
+  /**
+   * Kept to people, the card answers how much of the judged traffic was people and how sure —
+   * so the rows are the people's, each still a share of everything judged.
+   */
+  it('keeps only the people, by how sure, when the screen is kept to them', async () => {
     engineWith(GROUPS);
 
-    show();
+    show('?only=people');
 
-    expect(await screen.findByRole('link', { name: /Look at each visit/ })).toHaveAttribute(
-      'href',
-      '/app/journeys',
-    );
+    expect(await screen.findByText('A person')).toBeInTheDocument();
+    expect(screen.getByText('some signs')).toBeInTheDocument();
+    expect(screen.queryByText("Says it's an AI crawler")).not.toBeInTheDocument();
+    expect(screen.queryByText('Probing for a way in')).not.toBeInTheDocument();
+    expect(screen.getByText('10 visits judged')).toBeInTheDocument();
   });
 
   /**
-   * The summary and the visits behind it are two questions about the same days, so the way between
-   * them carries the days. Sent to the usual period, somebody looking at a single Tuesday would
-   * arrive at a fortnight and read it as the wrong answer rather than as the wrong question.
+   * Everyone else is machinery, what nobody asked for and what could not be said folded together,
+   * drawn in the quiet grey a part nothing can be said about wears — none of their own tones.
    */
-  it('takes the period being looked at through with it', async () => {
+  it('sets the people against everyone else on the ring', async () => {
     engineWith(GROUPS);
 
-    show('?period=2026-08-01..2026-08-14');
+    show('?only=people');
 
-    expect(await screen.findByRole('link', { name: /Look at each visit/ })).toHaveAttribute(
-      'href',
-      '/app/journeys?period=2026-08-01..2026-08-14',
-    );
+    await screen.findByText('A person');
+
+    expect(ringParts()).toStrictEqual([
+      { name: 'People', value: 6, itemStyle: { color: PALETTE.tones.people } },
+      { name: 'Everyone else', value: 4, itemStyle: { color: PALETTE.subtle } },
+    ]);
+    expect(screen.getByText('Everyone else')).toBeInTheDocument();
+    // Once in the key beside the ring and once on the people's own row.
+    expect(screen.getAllByText('60%')).toHaveLength(2);
+    expect(screen.getByText('40%')).toBeInTheDocument();
+  });
+
+  it('announces the narrower drawing', async () => {
+    engineWith(GROUPS);
+
+    show('?only=people');
+
+    expect(
+      await screen.findByRole('img', {
+        name: 'How the judged visits divide between people and everyone else.',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('leaves everyone else off the ring when every judged visit was a person', async () => {
+    engineWith([
+      { category: 'likely-human', strength: 'strong', sessions: 7, pageViews: 20 },
+      { category: 'likely-human', strength: 'moderate', sessions: 3, pageViews: 8 },
+    ]);
+
+    show('?only=people');
+
+    await screen.findAllByText('A person');
+
+    expect(ringParts()).toStrictEqual([
+      { name: 'People', value: 10, itemStyle: { color: PALETTE.tones.people } },
+    ]);
+    expect(screen.queryByText('Everyone else')).not.toBeInTheDocument();
   });
 
   it('explains itself rather than showing an empty box before anything is judged', async () => {

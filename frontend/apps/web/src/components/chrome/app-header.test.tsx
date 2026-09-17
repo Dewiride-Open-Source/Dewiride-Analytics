@@ -158,34 +158,42 @@ describe('the bar across the top', () => {
   });
 
   /**
-   * The overview and the journeys are two questions about the same days, so the way between them
-   * carries the days. The present moment and the account are not about any stretch of days at all,
-   * and a period in either address would be a question nothing on the screen could answer.
+   * The overview and the journeys are two questions about the same days and the same people, so
+   * the way between them carries both. The present moment and the account are not about any
+   * stretch of days at all, and what is happening now is counted rather than judged, so neither
+   * address takes either.
    */
-  it('hands the period between the screens about a stretch of days, and to no other', async () => {
-    engineWith([SITE]);
+  it.each([
+    ['?period=yesterday', '?period=yesterday'],
+    ['?period=yesterday&only=people', '?period=yesterday&only=people'],
+    ['?only=people', '?only=people'],
+  ])(
+    'hands what is being looked at (%s) between the screens about a stretch of days, and to no other',
+    async (at, carried) => {
+      engineWith([SITE]);
 
-    withTheme(<AppHeader />, { at: '?period=yesterday' });
+      withTheme(<AppHeader />, { at });
 
-    const sections = await screen.findByRole('navigation', { name: 'Sections' });
+      const sections = await screen.findByRole('navigation', { name: 'Sections' });
 
-    expect(within(sections).getByRole('link', { name: 'Overview' })).toHaveAttribute(
-      'href',
-      '/app?period=yesterday',
-    );
-    expect(within(sections).getByRole('link', { name: 'User journey' })).toHaveAttribute(
-      'href',
-      '/app/journeys?period=yesterday',
-    );
-    expect(within(sections).getByRole('link', { name: 'Live' })).toHaveAttribute(
-      'href',
-      '/app/live',
-    );
-    expect(within(sections).getByRole('link', { name: 'Settings' })).toHaveAttribute(
-      'href',
-      '/app/settings',
-    );
-  });
+      expect(within(sections).getByRole('link', { name: 'Overview' })).toHaveAttribute(
+        'href',
+        `/app${carried}`,
+      );
+      expect(within(sections).getByRole('link', { name: 'User journey' })).toHaveAttribute(
+        'href',
+        `/app/journeys${carried}`,
+      );
+      expect(within(sections).getByRole('link', { name: 'Live' })).toHaveAttribute(
+        'href',
+        '/app/live',
+      );
+      expect(within(sections).getByRole('link', { name: 'Settings' })).toHaveAttribute(
+        'href',
+        '/app/settings',
+      );
+    },
+  );
 
   /**
    * The bar reads the period on every screen, including the ones with no stretch of days to ask
@@ -205,6 +213,32 @@ describe('the bar across the top', () => {
     expect(within(sections).getByRole('link', { name: 'Overview' })).toHaveAttribute(
       'href',
       '/app?period=yesterday',
+    );
+    expect(within(sections).getByRole('link', { name: 'Live' })).toHaveAttribute(
+      'href',
+      '/app/live',
+    );
+    expect(watching).not.toHaveBeenCalled();
+  });
+
+  /** The same, for the people: read on every screen, written into the address of none of them. */
+  it('hands the remembered population between the screens without writing it into this one', async () => {
+    const watching = vi.fn();
+
+    window.localStorage.setItem('dewiride.population', 'people');
+    engineWith([SITE]);
+
+    withTheme(<AppHeader />, { watching, afterAddress: true });
+
+    const sections = await screen.findByRole('navigation', { name: 'Sections' });
+
+    expect(within(sections).getByRole('link', { name: 'Overview' })).toHaveAttribute(
+      'href',
+      '/app?only=people',
+    );
+    expect(within(sections).getByRole('link', { name: 'User journey' })).toHaveAttribute(
+      'href',
+      '/app/journeys?only=people',
     );
     expect(within(sections).getByRole('link', { name: 'Live' })).toHaveAttribute(
       'href',

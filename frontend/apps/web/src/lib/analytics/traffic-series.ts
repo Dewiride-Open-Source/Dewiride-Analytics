@@ -43,15 +43,26 @@ export function bandsIn(series: TrafficSeries): readonly TrafficBand[] {
   });
 }
 
+/** What any answer cut into buckets says, for the edge of the judging to be found on it. */
+export interface Bucketed {
+  /** The exclusive end of the period. */
+  readonly to: string;
+  /** The instant the answer is complete up to. */
+  readonly completeTo: string;
+  /** The start of each bucket, oldest first. */
+  readonly buckets: readonly string[];
+}
+
 /**
  * The first bucket that has not finished being judged, or nothing when every one of them has.
  *
  * A visit is judged once it has ended, so the buckets at the end of a period are still filling.
  * Drawn as though they were complete they read as a collapse in traffic, which is why they are
  * marked rather than either trusted or cut off — cutting them would give the two views different
- * axes, and switching between them would look like the period had changed.
+ * axes, and switching between them would look like the period had changed. The same edge is found
+ * on an answer counted from activity kept to people, which is complete to the same instant.
  */
-export function stillJudgingFrom(series: TrafficSeries): number | null {
+export function stillJudgingFrom(series: Bucketed): number | null {
   const settled = Date.parse(series.completeTo);
 
   for (let bucket = 0; bucket < series.buckets.length; bucket += 1) {
@@ -77,25 +88,17 @@ export function totalsIn(series: TrafficSeries): readonly number[] {
 }
 
 /**
- * What the people a website is for did across a period: the visits judged to be theirs and the
- * pages those visits read, bucket by bucket.
+ * The visits judged to be people, bucket by bucket.
  *
  * Nought in a bucket nobody was judged a person in, so an earlier period with no people draws as
  * none rather than as missing.
  */
-export interface PeopleSeries {
-  readonly visits: readonly number[];
-  readonly pageViews: readonly number[];
-}
-
-/** The visits judged to be people and the pages those visits read, bucket by bucket. */
-export function peopleIn(series: TrafficSeries): PeopleSeries {
-  const people = series.groups.filter((group) => CATEGORY_TONES[group.category] === 'people');
-
-  return {
-    visits: summed(series.buckets, people, (group) => group.sessions),
-    pageViews: summed(series.buckets, people, (group) => group.pageViews),
-  };
+export function peopleIn(series: TrafficSeries): readonly number[] {
+  return summed(
+    series.buckets,
+    series.groups.filter((group) => CATEGORY_TONES[group.category] === 'people'),
+    (group) => group.sessions,
+  );
 }
 
 /** One of the groups the engine answers with: a category and what it counted, bucket by bucket. */

@@ -8,6 +8,7 @@ WITH
             path,
             visitor_key,
             correlation_id,
+            server_ts,
             referrer AS source_address,
             if(
                 referrer_domain != ''
@@ -48,6 +49,7 @@ WITH
             path,
             visitor_key,
             correlation_id,
+            server_ts,
             source_address,
             sending_host,
             transform(

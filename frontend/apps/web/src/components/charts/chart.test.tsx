@@ -7,7 +7,9 @@ import { renderScreen } from '@/test/harness';
 const setOption = vi.fn();
 const resize = vi.fn();
 const dispose = vi.fn();
-const init = vi.fn(() => ({ setOption, resize, dispose }));
+const containPixel = vi.fn((_finder: unknown, _at: readonly number[]) => true);
+const convertFromPixel = vi.fn((_finder: unknown, _x: number) => 2);
+const init = vi.fn(() => ({ setOption, resize, dispose, containPixel, convertFromPixel }));
 
 /**
  * Registration happens as the module is first read, which is before anything declared here has
@@ -42,6 +44,10 @@ beforeEach(() => {
   setOption.mockClear();
   resize.mockClear();
   dispose.mockClear();
+  containPixel.mockClear();
+  containPixel.mockReturnValue(true);
+  convertFromPixel.mockClear();
+  convertFromPixel.mockReturnValue(2);
 });
 
 /** A chart with nothing in it: this is about the surface around one, not about a drawing. */
@@ -60,6 +66,35 @@ function Moving() {
     </>
   );
 }
+
+interface RepointedProps {
+  readonly first: (index: number) => void;
+  readonly second: (index: number) => void;
+}
+
+/**
+ * The same surface handed a second handler, the way a redrawn view hands it one, and then none
+ * at all, the way a period narrowed to a single day withdraws it.
+ */
+function Repointed({ first, second }: RepointedProps) {
+  const [picker, repoint] = useState<((index: number) => void) | undefined>(() => first);
+
+  return (
+    <>
+      <button type="button" onClick={() => repoint(() => second)}>
+        Repoint
+      </button>
+      <button type="button" onClick={() => repoint(undefined)}>
+        Withdraw
+      </button>
+      <Chart option={EMPTY} label="Anything" onPick={picker} />
+    </>
+  );
+}
+
+/** The cursor over the drawing, as the surface writes it. */
+const POINTER = '[&_canvas]:cursor-pointer';
+const ARROW = '[&_canvas]:cursor-default';
 
 describe('the charting surface', () => {
   it('registers only the pieces the product draws with', () => {
@@ -142,5 +177,115 @@ describe('the charting surface', () => {
     cleanup();
 
     expect(dispose).toHaveBeenCalledOnce();
+  });
+});
+
+describe('a chart that can be pressed', () => {
+  it('tells its caller which category was pressed, by index', () => {
+    const picked = vi.fn();
+    const { getByRole } = renderScreen(<Chart option={EMPTY} label="Anything" onPick={picked} />);
+
+    fireEvent.click(getByRole('img'), { clientX: 120, clientY: 40 });
+
+    expect(containPixel).toHaveBeenCalledWith('grid', [120, 40]);
+    expect(convertFromPixel).toHaveBeenCalledWith({ xAxisIndex: 0 }, 120);
+    expect(picked).toHaveBeenCalledWith(2);
+  });
+
+  /** The axis labels and the margins belong to no category. */
+  it('ignores a press outside the plot', () => {
+    containPixel.mockReturnValue(false);
+    const picked = vi.fn();
+    const { getByRole } = renderScreen(<Chart option={EMPTY} label="Anything" onPick={picked} />);
+
+    fireEvent.click(getByRole('img'), { clientX: 3, clientY: 40 });
+
+    expect(convertFromPixel).not.toHaveBeenCalled();
+    expect(picked).not.toHaveBeenCalled();
+  });
+
+  /** A surface with nothing drawn on it answers with no category at all. */
+  it('ignores a press the engine cannot place on a category', () => {
+    convertFromPixel.mockReturnValue(Number.NaN);
+    const picked = vi.fn();
+    const { getByRole } = renderScreen(<Chart option={EMPTY} label="Anything" onPick={picked} />);
+
+    fireEvent.click(getByRole('img'), { clientX: 120, clientY: 40 });
+
+    expect(picked).not.toHaveBeenCalled();
+  });
+
+  it('listens for nothing when nobody is interested', () => {
+    const { getByRole } = renderScreen(<Chart option={EMPTY} label="Anything" />);
+
+    fireEvent.click(getByRole('img'), { clientX: 120, clientY: 40 });
+
+    expect(containPixel).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The charting engine offers a hand over every column and slice of its own accord. A hand that
+   * leads nowhere is a promise the picture cannot keep, so the surface overrules it.
+   */
+  it('shows a pointer only where a press means something', () => {
+    const { getByRole, unmount } = renderScreen(
+      <Chart option={EMPTY} label="Anything" onPick={vi.fn()} />,
+    );
+
+    expect(getByRole('img')).toHaveClass(POINTER);
+    expect(getByRole('img')).not.toHaveClass(ARROW);
+
+    unmount();
+
+    const idle = renderScreen(<Chart option={EMPTY} label="Anything" />);
+
+    expect(idle.getByRole('img')).toHaveClass(ARROW);
+    expect(idle.getByRole('img')).not.toHaveClass(POINTER);
+  });
+
+  /**
+   * The charting engine counts pixels from the surface's own corner, wherever that corner is on
+   * the page, so a press is measured from there rather than from the page's.
+   */
+  it('measures a press from its own corner rather than the page’s', () => {
+    const picked = vi.fn();
+    const { getByRole } = renderScreen(<Chart option={EMPTY} label="Anything" onPick={picked} />);
+
+    vi.spyOn(getByRole('img'), 'getBoundingClientRect').mockReturnValue({
+      left: 100,
+      top: 30,
+    } as DOMRect);
+    fireEvent.click(getByRole('img'), { clientX: 220, clientY: 70 });
+
+    expect(containPixel).toHaveBeenCalledWith('grid', [120, 40]);
+    expect(convertFromPixel).toHaveBeenCalledWith({ xAxisIndex: 0 }, 120);
+    expect(picked).toHaveBeenCalledWith(2);
+  });
+
+  /** Re-pointing is a listener swapped, not a chart rebuilt from the axis up. */
+  it('keeps the chart it has when the handler changes, and presses the new one', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const { getByRole } = renderScreen(<Repointed first={first} second={second} />);
+
+    fireEvent.click(getByRole('button', { name: 'Repoint' }));
+    fireEvent.click(getByRole('img'), { clientX: 120, clientY: 40 });
+
+    expect(init).toHaveBeenCalledOnce();
+    expect(dispose).not.toHaveBeenCalled();
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledWith(2);
+  });
+
+  it('stops listening once nobody is interested any more', () => {
+    const first = vi.fn();
+    const { getByRole } = renderScreen(<Repointed first={first} second={vi.fn()} />);
+
+    fireEvent.click(getByRole('button', { name: 'Withdraw' }));
+    fireEvent.click(getByRole('img'), { clientX: 120, clientY: 40 });
+
+    expect(containPixel).not.toHaveBeenCalled();
+    expect(first).not.toHaveBeenCalled();
+    expect(getByRole('img')).toHaveClass(ARROW);
   });
 });

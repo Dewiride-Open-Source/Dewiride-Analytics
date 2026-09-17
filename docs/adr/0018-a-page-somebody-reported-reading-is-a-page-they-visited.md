@@ -8,6 +8,8 @@
   the same complaint.
 - **Revised by**: [0034](0034-a-visit-begins-where-somebody-arrived.md), which measured the double
   count this one recorded as a residual risk and withdrew the credit that caused it.
+- **Followed by**: [0041](0041-one-population-for-the-whole-screen.md), whose per-delivery figures
+  are asked here of a population and counted by the arithmetic this record settled.
 
 ## Context
 

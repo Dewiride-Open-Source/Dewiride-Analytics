@@ -2,7 +2,7 @@
 WITH
     pressed AS
     (
-        SELECT action_label, action_control, action_target, visitor_key
+        SELECT action_label, action_control, action_target, visitor_key, server_ts
         FROM events
         WHERE site_id = {site_id:UUID}
           AND kind = 'Action'

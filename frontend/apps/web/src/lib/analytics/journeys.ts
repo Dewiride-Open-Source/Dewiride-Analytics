@@ -1,3 +1,4 @@
+import { PEOPLE_CATEGORIES } from '@/lib/analytics/verdicts';
 import type {
   DeviceKind,
   EvidenceStrength,
@@ -285,6 +286,33 @@ export function withoutChoice<D extends JourneyDimension>(
     dimension,
     chosen.filter((one) => one !== value),
   );
+}
+
+/**
+ * The same narrowing, with any conclusion it named set aside.
+ *
+ * What a screen kept to people shows while it is kept to them. It has already answered what
+ * generated the visits, so a conclusion the address carried in is neither asked nor offered — and
+ * neither is it lost: it stays in the address, and comes back the moment everyone is.
+ *
+ * @param filters What is narrowed to now.
+ * @returns The same, asking nothing about what generated the visits.
+ */
+export function withoutConclusions(filters: JourneyFilters): JourneyFilters {
+  return { ...filters, categories: [] };
+}
+
+/**
+ * The same narrowing, kept to the people.
+ *
+ * Asked by their verdict, over whatever else was narrowed to: a screen kept to people is asked for
+ * the people in a country, or the people a search engine sent, and never for people or crawlers.
+ *
+ * @param filters What is narrowed to now, with no conclusion of its own.
+ * @returns The same, asked of the people alone.
+ */
+export function keptToPeople(filters: JourneyFilters): JourneyFilters {
+  return { ...filters, categories: PEOPLE_CATEGORIES };
 }
 
 /**

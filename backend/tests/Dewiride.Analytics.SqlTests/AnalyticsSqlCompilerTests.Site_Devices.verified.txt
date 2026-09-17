@@ -2,7 +2,7 @@
 WITH
     windowed AS
     (
-        SELECT kind, surface, path, visitor_key, correlation_id, device_class
+        SELECT kind, surface, path, visitor_key, correlation_id, device_class, server_ts
         FROM events
         WHERE site_id = {site_id:UUID}
           AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  dayOf,
   daysIn,
   DEFAULT_PERIOD,
   granularityFor,
@@ -18,7 +19,7 @@ import {
   todayIn,
   windowFor,
   windowForSpan,
-  withPeriod,
+  withChoices,
   writePeriod,
 } from '@/lib/analytics/period';
 
@@ -228,6 +229,29 @@ describe('what day it is where the site is', () => {
   });
 });
 
+describe('the day a moment falls in where the site is', () => {
+  /** Half past six in the evening in London is already the next day in Kolkata. */
+  it('is the next day east of the meridian once the evening there has begun', () => {
+    expect(dayOf('Asia/Kolkata', new Date('2026-08-12T18:30:00Z'))).toBe('2026-08-13');
+  });
+
+  /** The clocks in London stand an hour ahead in August, and the day is cut where they stand. */
+  it('follows the clocks as they stand that day rather than the zone’s winter offset', () => {
+    expect(dayOf('Europe/London', new Date('2026-08-12T23:30:00Z'))).toBe('2026-08-13');
+  });
+
+  it('is that day at midnight where the zone is UTC', () => {
+    expect(dayOf('Etc/UTC', new Date('2026-08-12T00:00:00Z'))).toBe('2026-08-12');
+  });
+
+  /** The instant a day begins at, written back out, is that day — the round trip a drill relies on. */
+  it('gives back the day a bucket was cut at', () => {
+    const { first } = spanInstants({ first: '2026-08-12', last: '2026-08-12' }, 'Asia/Kolkata');
+
+    expect(dayOf('Asia/Kolkata', first)).toBe('2026-08-12');
+  });
+});
+
 describe('the moments a run of days is written between', () => {
   /**
    * The only reason these exist is to be written back out. Taken from any other instant, a day is
@@ -356,20 +380,39 @@ describe('a period read back out of an address', () => {
   });
 });
 
-describe('the address of a screen carrying a period', () => {
+describe('the address of a screen carrying what is being looked at', () => {
   it('names the period being looked at', () => {
-    expect(withPeriod('/app/journeys', TODAY)).toBe('/app/journeys?period=today');
-    expect(withPeriod('/app', { kind: 'chosen', first: '2026-08-01', last: '2026-08-14' })).toBe(
-      '/app?period=2026-08-01..2026-08-14',
+    expect(withChoices('/app/journeys', { period: TODAY, population: 'everybody' })).toBe(
+      '/app/journeys?period=today',
     );
+    expect(
+      withChoices('/app', {
+        period: { kind: 'chosen', first: '2026-08-01', last: '2026-08-14' },
+        population: 'everybody',
+      }),
+    ).toBe('/app?period=2026-08-01..2026-08-14');
   });
 
   /**
    * An address that says what it would have said anyway is one more thing in the bar for nothing,
-   * so the period every screen opens on leaves no trace.
+   * so the period every screen opens on and the people it counts leave no trace.
    */
-  it('says nothing at all about the period every screen opens on', () => {
-    expect(withPeriod('/app/journeys', DEFAULT_PERIOD)).toBe('/app/journeys');
+  it('says nothing at all about what every screen opens on', () => {
+    expect(withChoices('/app/journeys', { period: DEFAULT_PERIOD, population: 'everybody' })).toBe(
+      '/app/journeys',
+    );
+  });
+
+  it('names the people beside the period when the figures are kept to them', () => {
+    expect(withChoices('/app/journeys', { period: TODAY, population: 'people' })).toBe(
+      '/app/journeys?period=today&only=people',
+    );
+  });
+
+  it('names the people alone on the usual period', () => {
+    expect(withChoices('/app/journeys', { period: DEFAULT_PERIOD, population: 'people' })).toBe(
+      '/app/journeys?only=people',
+    );
   });
 });
 

@@ -11,6 +11,8 @@
 - **Revises**: [0028](0028-what-a-link-carries.md), whose decision that "the period every screen
   opens on leaves no trace" is narrowed here to the built-in default: a choice the reader made is
   remembered by the browser, and an address that says nothing is given it.
+- **Revised by**: [0041](0041-one-population-for-the-whole-screen.md), which makes the population
+  the whole screen's rather than the picture's, so the cards and the picture add up.
 
 ## Context
 

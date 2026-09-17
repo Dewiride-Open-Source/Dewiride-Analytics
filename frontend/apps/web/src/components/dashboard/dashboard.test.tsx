@@ -2,21 +2,24 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Dashboard } from '@/components/dashboard/dashboard';
+import { drawn } from '@/test/drawing';
 import { engineDoing, engineStopped, respondWith, type Sent } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
 
 /**
  * The drawing itself needs a canvas, which this document does not have. Everything around it —
  * the legend, the caption, and the table the same figures are published in — is ordinary markup
- * and is exercised for real. The drawing is checked by looking at it in a browser.
+ * and is exercised for real. The drawing is checked by looking at it in a browser; what a press
+ * on it would do is kept where a test can press it.
  */
-vi.mock('@/components/charts/chart', () => ({
-  Chart: ({ label }: { readonly label: string }) => <div role="img" aria-label={label} />,
-}));
+vi.mock('@/components/charts/chart', async () => ({ ...(await import('@/test/drawing')) }));
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   window.localStorage.clear();
+  drawn.pick = undefined;
+  drawn.picks.clear();
 });
 
 const SITE = {
@@ -42,12 +45,13 @@ function totals(pageViews: number, visitors: number, events: number) {
   return { from: FROM, to: TO, pageViews, visitors, events };
 }
 
-function series(metric: string, values: readonly number[]) {
+function series(metric: string, values: readonly number[], completeTo = TO) {
   return {
     from: FROM,
     to: TO,
     metric,
     granularity: 'day',
+    completeTo,
     points: values.map((value, day) => ({
       bucketStart: `2026-08-${String(11 + day).padStart(2, '0')}T00:00:00+00:00`,
       value,
@@ -116,12 +120,72 @@ function current(path: string): boolean {
   return !Number.isNaN(ends) && ends > Date.now() - RECENTLY;
 }
 
-/** Answers every question the screen asks, in whichever order they arrive. */
+/** What a bucketed answer says of the whole period, as the breakdown reports it. */
+interface JudgedWeek {
+  readonly groups: readonly {
+    readonly category: string;
+    readonly sessions: readonly number[];
+    readonly pageViews: readonly number[];
+  }[];
+}
+
+/** The breakdown of a week, derived from the same judged visits the picture is drawn from. */
+function breakdownOf(judged: JudgedWeek) {
+  const groups = judged.groups.map((group) => ({
+    category: group.category,
+    strength: 'moderate',
+    sessions: group.sessions.reduce((total, one) => total + one, 0),
+    pageViews: group.pageViews.reduce((total, one) => total + one, 0),
+  }));
+
+  return {
+    from: FROM,
+    to: TO,
+    sessions: groups.reduce((total, group) => total + group.sessions, 0),
+    pageViews: groups.reduce((total, group) => total + group.pageViews, 0),
+    groups,
+  };
+}
+
+/**
+ * Honest empty answers to every list on the screen, by the address each is asked at, so that a
+ * state which replaces the lists can be told from a screen of failure notices.
+ */
+const NOTHING_LISTED: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
+  '/engagement/pages': {
+    ranking: 'attention',
+    totalPages: 0,
+    longestMedianEngagedMs: 0,
+    pages: [],
+  },
+  '/engagement': {
+    readings: 0,
+    measured: 0,
+    medianEngagedMs: 0,
+    interacted: 0,
+    depths: { top: 0, quarter: 0, half: 0, whole: 0 },
+  },
+  '/pages': { pageViews: 0, totalPaths: 0, mostPageViews: 0, pages: [] },
+  '/locations': { grouping: 'country', visitors: 0, totalPlaces: 0, mostVisitors: 0, places: [] },
+  '/sources': { grouping: 'site', visitors: 0, totalSources: 0, mostVisitors: 0, sources: [] },
+  '/devices': { visitors: 0, devices: [] },
+  '/software': { grouping: 'browser', visitors: 0, totalNames: 0, mostVisitors: 0, names: [] },
+  '/actions': { grouping: 'control', presses: 0, totalControls: 0, mostPresses: 0, controls: [] },
+};
+
+/**
+ * Answers every question the screen asks, in whichever order they arrive.
+ *
+ * The breakdown is derived from the judged picture rather than answered on its own, so "watched"
+ * and "nothing judged" mean one thing for both questions. A question about people is answered
+ * with the people's totals and, for the picture of how much, with a last bucket still filling.
+ */
 function engineWith(
   sites: unknown,
   overview: unknown,
-  judged: unknown = NOTHING_JUDGED,
+  judged: JudgedWeek = NOTHING_JUDGED,
   earlier: unknown = overview,
+  people: unknown = overview,
 ) {
   return engineDoing(async (path) => {
     if (path.includes('/server-keys')) {
@@ -134,7 +198,7 @@ function engineWith(
     }
 
     if (path.includes('/traffic')) {
-      return respondWith(200, { from: FROM, to: TO, sessions: 0, pageViews: 0, groups: [] });
+      return respondWith(200, breakdownOf(judged));
     }
 
     // Named before the visit list, which its address begins with.
@@ -159,16 +223,28 @@ function engineWith(
     }
 
     if (path.includes('/series')) {
+      const completeTo = path.includes('only=people') ? (BUCKETS[6] ?? TO) : TO;
+
       return respondWith(
         200,
         path.includes('metric=visitors')
-          ? series('visitors', VISITORS)
-          : series('pageviews', VIEWS),
+          ? series('visitors', VISITORS, completeTo)
+          : series('pageviews', VIEWS, completeTo),
       );
     }
 
     if (path.includes('/overview')) {
+      if (path.includes('only=people')) {
+        return respondWith(200, people);
+      }
+
       return respondWith(200, current(path) ? overview : earlier);
+    }
+
+    const listed = Object.keys(NOTHING_LISTED).find((address) => path.includes(address));
+
+    if (listed !== undefined) {
+      return respondWith(200, { from: FROM, to: TO, ...NOTHING_LISTED[listed] });
     }
 
     return respondWith(200, sites);
@@ -189,6 +265,14 @@ function asked(sent: readonly Sent[], part: string): string | null {
   const first = sent.find((one) => one.path.includes('?'));
 
   return new URLSearchParams(first?.path.slice(first.path.indexOf('?') + 1)).get(part);
+}
+
+/** Whether a question at an address was asked about exactly this window. */
+function askedFor(sent: readonly Sent[], part: string, from: string, to: string): boolean {
+  return sent
+    .filter(({ path }) => path.includes(part))
+    .map(({ path }) => new URLSearchParams(path.slice(path.indexOf('?') + 1)))
+    .some((asking) => asking.get('from') === from && asking.get('to') === to);
 }
 
 describe('the dashboard', () => {
@@ -564,7 +648,7 @@ describe('what the overview remembers', () => {
   });
 
   it('draws only people when that was what somebody last asked for', async () => {
-    window.localStorage.setItem('dewiride.chart-people', 'people');
+    window.localStorage.setItem('dewiride.population', 'people');
     watched();
 
     renderScreen(<Dashboard />);
@@ -579,19 +663,323 @@ describe('what the overview remembers', () => {
     expect(screen.queryByRole('columnheader', { name: 'All visits' })).not.toBeInTheDocument();
   });
 
-  /**
-   * Pages read by people are counted from visits that have finished and been judged, which is a
-   * different store from the one everything recorded as it happened comes out of. A picture kept
-   * to people reads the judged one and leaves the other alone.
-   */
-  it('asks for judged visits rather than page views when only people are wanted', async () => {
-    const engine = watched();
+  it('remembers the people once chosen', async () => {
+    watched();
 
-    renderScreen(<Dashboard />, { searchParams: '?show=activity&only=people' });
+    renderScreen(<Dashboard />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /People only/ }));
+
+    await waitFor(() => expect(window.localStorage.getItem('dewiride.population')).toBe('people'));
+  });
+});
+
+describe('the whole screen kept to people', () => {
+  /** The people's own totals, a share of everybody's. */
+  const PEOPLE = totals(120, 40, 250);
+
+  /** Every question about a period's activity that the screen asks, by its address. */
+  const ACTIVITY = [
+    '/overview?',
+    '/series?',
+    '/pages?',
+    '/locations?',
+    '/sources?',
+    '/devices?',
+    '/actions?',
+    '/engagement?',
+    '/visits/totals?',
+    '/visits/pages?',
+  ];
+
+  /** The screen, kept to people, with everything it asks for answered. */
+  function keptToPeople(at = '?only=people') {
+    const engine = engineWith([SITE], totals(464, 132, 900), JUDGED, totals(464, 132, 900), PEOPLE);
+
+    renderScreen(<Dashboard />, { searchParams: at });
+
+    return engine;
+  }
+
+  /**
+   * The picture of how much is the cards' own arithmetic over the people's reports, so it is
+   * asked of the same reports rather than read off the judged answer.
+   */
+  it('asks for page views by people rather than judged visits when only people are wanted', async () => {
+    const engine = keptToPeople('?show=activity&only=people');
+
+    await screen.findByRole('img', { name: /Page views and visitors among people on/ });
+
+    expect(
+      engine
+        .all()
+        .some(({ path }) => /\/series\?metric=/.test(path) && path.includes('only=people')),
+    ).toBe(true);
+    expect(engine.all().some(({ path }) => path.includes('/traffic/series'))).toBe(false);
+  });
+
+  it('asks every panel about the same people', async () => {
+    const engine = keptToPeople('?only=people&show=activity');
+
+    await screen.findAllByText('Page views by people');
+    await waitFor(() => {
+      for (const address of ACTIVITY) {
+        expect(engine.all().some(({ path }) => path.includes(address))).toBe(true);
+      }
+    });
+
+    // Everybody's own totals are the one question asked without the people, and once.
+    const check = engine
+      .all()
+      .filter(({ path }) => path.includes('/overview?') && !path.includes('only='));
+
+    expect(check).toHaveLength(1);
+
+    for (const address of ACTIVITY) {
+      const sent = engine
+        .all()
+        .filter(({ path }) => path.includes(address) && !check.some((one) => one.path === path));
+
+      expect(sent.every(({ path }) => path.includes('only=people'))).toBe(true);
+    }
+
+    const verdicts = engine.all().filter(({ path }) => /\/traffic\?/.test(path));
+
+    expect(verdicts.length).toBeGreaterThan(0);
+    expect(verdicts.every(({ path }) => !path.includes('only='))).toBe(true);
+  });
+
+  /**
+   * Everybody is asked about as well, once, for the period on screen: it is what tells a website
+   * nobody has been to from a period in which nobody was judged a person.
+   */
+  it('still checks everybody, quietly', async () => {
+    const engine = keptToPeople();
+
+    await screen.findByText('Page views by people');
+
+    const everybody = engine
+      .all()
+      .filter(({ path }) => path.includes('/overview?') && !path.includes('only='))
+      .filter(({ path }) => current(path));
+
+    expect(everybody).toHaveLength(1);
+  });
+
+  it('labels the cards with what they count', async () => {
+    keptToPeople();
+
+    expect(await screen.findByText('Page views by people')).toBeInTheDocument();
+    expect(screen.getByText('Daily visitors judged to be people')).toBeInTheDocument();
+    expect(screen.getByText('Pages per person')).toBeInTheDocument();
+    expect(screen.getByText('Someone who returns tomorrow counts again.')).toBeInTheDocument();
+  });
+
+  it('says once, above the figures, whose they are', async () => {
+    keptToPeople();
+
+    expect(
+      await screen.findByText('Every figure counts only the visits judged to be people.'),
+    ).toBeInTheDocument();
+  });
+
+  it('says nothing about whose the figures are when they are everybody’s', async () => {
+    watched();
+
+    renderScreen(<Dashboard />);
+
+    await screen.findByText('Page views');
+
+    expect(
+      screen.queryByText('Every figure counts only the visits judged to be people.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('washes the newest figures the engine has not finished judging', async () => {
+    keptToPeople('?show=activity&only=people');
+
+    expect(
+      await screen.findByText(
+        'Days run midnight to midnight in Kolkata. The newest are still being judged.',
+      ),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('Show these figures as a table'));
+
+    expect(screen.getAllByText('still being judged')).toHaveLength(1);
+  });
+
+  /**
+   * One state in place of the picture and every list, because eight cards each saying nothing is
+   * eight ways of saying one thing.
+   */
+  it('replaces the picture and the lists with one state when none of the people were counted', async () => {
+    engineWith([SITE], totals(464, 132, 900), JUDGED, totals(464, 132, 900), totals(0, 0, 0));
+
+    renderScreen(<Dashboard />, { searchParams: '?only=people' });
+
+    expect(await screen.findByText('No people in this period')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show everyone' })).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.queryByText('No pages read yet')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Nothing judged yet and nobody judged a person are different facts, and a website whose
+   * verdicts are still coming has not been found to have no readers.
+   */
+  it('says nothing has been judged rather than that nobody was a person', async () => {
+    engineWith(
+      [SITE],
+      totals(464, 132, 900),
+      NOTHING_JUDGED,
+      totals(464, 132, 900),
+      totals(0, 0, 0),
+    );
+
+    renderScreen(<Dashboard />, { searchParams: '?only=people' });
+
+    expect(await screen.findByText('Nothing judged yet')).toBeInTheDocument();
+    expect(screen.getByText(/the first people appear/)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Look at each visit/ })).not.toBeInTheDocument();
+  });
+
+  it('offers everyone back from that state', async () => {
+    const watching = vi.fn();
+    const engine = engineWith(
+      [SITE],
+      totals(464, 132, 900),
+      JUDGED,
+      totals(464, 132, 900),
+      totals(0, 0, 0),
+    );
+
+    renderScreen(<Dashboard />, { searchParams: '?only=people', watchingAddress: watching });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Show everyone' }));
+
+    await waitFor(() => expect(watching).toHaveBeenCalled());
+    expect(watching.mock.calls.at(-1)?.[0].queryString).not.toContain('only=');
+    expect(watching.mock.calls.at(-1)?.[0].options.history).toBe('push');
+    expect(await screen.findByRole('img', { name: /Who and what visited/ })).toBeInTheDocument();
+    expect(engine.all().some(({ path }) => path.includes('/pages?'))).toBe(true);
+  });
+
+  it('still waits for the first visit when nobody at all has been', async () => {
+    engineWith([SITE], totals(0, 0, 0), NOTHING_JUDGED, totals(0, 0, 0), totals(0, 0, 0));
+
+    renderScreen(<Dashboard />, { searchParams: '?only=people' });
+
+    expect(await screen.findByText('Waiting for your first visit')).toBeInTheDocument();
+    expect(screen.queryByText('No people in this period')).not.toBeInTheDocument();
+  });
+
+  it('starts every list again when the population changes', async () => {
+    const engine = keptToPeople('?only=people');
+
+    await screen.findByText('Page views by people');
+    await userEvent.click(screen.getByRole('button', { name: /People only/ }));
+
+    await screen.findByText('Page views');
+
+    const pages = engine.all().filter(({ path }) => path.includes('/pages?'));
+
+    expect(pages.at(-1)?.path).toContain('offset=0');
+    expect(pages.at(-1)?.path).not.toContain('only=');
+  });
+});
+
+describe('a day pressed on the picture', () => {
+  /** Every question the screen asks about the period, by its address. */
+  const ABOUT_THE_PERIOD = [
+    '/overview?',
+    '/traffic/series?',
+    '/traffic?',
+    '/pages?',
+    '/locations?',
+    '/sources?',
+    '/devices?',
+    '/engagement?',
+    '/actions?',
+    '/visits/totals?',
+    '/visits/pages?',
+  ];
+
+  /**
+   * The drawing is a stand-in here, so the day is pressed from the row of the table — the way in
+   * that every reader has. The day is the twelfth where the website is, which begins the evening
+   * before in the engine's clock.
+   */
+  it('narrows the whole screen to that day, and leaves the way back in the history', async () => {
+    const watching = vi.fn();
+    const engine = watched();
+    const focusing = vi.spyOn(HTMLSelectElement.prototype, 'focus');
+
+    renderScreen(<Dashboard />, { watchingAddress: watching });
+
+    await screen.findByRole('img', { name: /Who and what visited/ });
+    await userEvent.click(screen.getByText('Show these figures as a table'));
+    await userEvent.click(screen.getByRole('button', { name: 'Aug 12, look at this day' }));
 
     await waitFor(() =>
-      expect(engine.all().some(({ path }) => path.includes('/traffic/series'))).toBe(true),
+      expect(watching).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryString: '?period=2026-08-12..2026-08-12',
+          options: expect.objectContaining({ history: 'push' }),
+        }),
+      ),
     );
-    expect(engine.all().some(({ path }) => /\/series\?metric=/.test(path))).toBe(false);
+    expect(screen.getByRole('combobox', { name: 'Period' })).toHaveValue('chosen');
+    // The row that was pressed has gone with the week, so the reader is handed to the control
+    // that names the day, brought into view, and hears what changed.
+    expect(screen.getByRole('combobox', { name: 'Period' })).toHaveFocus();
+    expect(focusing).toHaveBeenCalledWith({ preventScroll: false });
+    expect(await screen.findAllByText(/the day before/)).toHaveLength(3);
+
+    for (const address of ABOUT_THE_PERIOD) {
+      await waitFor(() =>
+        expect(
+          askedFor(engine.all(), address, '2026-08-11T18:30:00.000Z', '2026-08-12T18:30:00.000Z'),
+        ).toBe(true),
+      );
+    }
+
+    expect(engine.all().some(({ path }) => path.includes('granularity=hour'))).toBe(true);
+  });
+
+  /**
+   * Nothing on the picture can hold a reading position, so a press on it hands the control the
+   * focus without moving the page — a tap on a phone stays where the reader was looking.
+   */
+  it('narrows the screen from the picture itself, without moving the page', async () => {
+    const watching = vi.fn();
+    const focusing = vi.spyOn(HTMLSelectElement.prototype, 'focus');
+
+    watched();
+    renderScreen(<Dashboard />, { watchingAddress: watching });
+
+    await screen.findByRole('img', { name: /Who and what visited/ });
+    drawn.picks.get('Who and what visited My Blog over the chosen period.')?.(1);
+
+    await waitFor(() =>
+      expect(watching).toHaveBeenCalledWith(
+        expect.objectContaining({ queryString: '?period=2026-08-12..2026-08-12' }),
+      ),
+    );
+    expect(screen.getByRole('combobox', { name: 'Period' })).toHaveFocus();
+    expect(focusing).toHaveBeenCalledWith({ preventScroll: true });
+  });
+
+  it('offers no day to press on a period that is already one', async () => {
+    busy();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=yesterday' });
+
+    await userEvent.click(await screen.findByRole('radio', { name: 'How much' }));
+    await screen.findByRole('img', { name: /Page views and visitors for/ });
+    await userEvent.click(screen.getByText('Show these figures as a table'));
+
+    expect(screen.getAllByRole('rowheader').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /look at this day/ })).not.toBeInTheDocument();
   });
 });

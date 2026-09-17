@@ -46,6 +46,9 @@ internal static class ReconciledEvents
     /// <summary>Tests whether a report came from somewhere between the visitor and the site.</summary>
     public static string FromRequestPath { get; } = $"surface NOT IN ({StoredNames.BrowserSurfaceList})";
 
+    /// <summary>The selection the reconciliation ends in, with identity settled.</summary>
+    public const string Identified = "identified";
+
     /// <summary>
     /// Settles who each report was about, given a preceding <c>windowed</c> selection carrying at
     /// least <c>surface</c>, <c>visitor_key</c> and <c>correlation_id</c>.
@@ -154,7 +157,7 @@ internal static class ReconciledEvents
                     FROM echoed
                     GROUP BY {{also}}reported_key
                 ),
-                identified AS
+                {{Identified}} AS
                 (
                     SELECT
                         windowed.* EXCEPT (visitor_key),

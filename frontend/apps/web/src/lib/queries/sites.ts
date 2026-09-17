@@ -8,6 +8,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { EVERY_JOURNEY, type JourneyFilters } from '@/lib/analytics/journeys';
+import type { Population } from '@/lib/analytics/people-only';
 import type { AnalyticsWindow, Granularity } from '@/lib/analytics/period';
 import type { NewSite } from '@/lib/api/endpoints';
 import {
@@ -100,11 +101,11 @@ export function useSites(enabled = true) {
   });
 }
 
-/** Headline totals for one website over a period. */
-export function useOverview(siteId: string, window: AnalyticsWindow) {
+/** Headline totals for one website over a period, for one population. */
+export function useOverview(siteId: string, window: AnalyticsWindow, population: Population) {
   return useQuery({
-    queryKey: overviewKey(siteId, window),
-    queryFn: () => readOverview(siteId, window),
+    queryKey: overviewKey(siteId, window, population),
+    queryFn: () => readOverview(siteId, window, population),
     retry: false,
     staleTime: FRESH_FOR,
   });
@@ -122,12 +123,13 @@ export function useSeries(
   siteId: string,
   metric: SeriesMetric,
   window: AnalyticsWindow,
+  population: Population,
   granularity: Granularity,
   enabled = true,
 ) {
   return useQuery({
-    queryKey: seriesKey(siteId, metric, window, granularity),
-    queryFn: () => readSeries(siteId, metric, window, granularity),
+    queryKey: seriesKey(siteId, metric, window, population, granularity),
+    queryFn: () => readSeries(siteId, metric, window, population, granularity),
     enabled,
     retry: false,
     staleTime: FRESH_FOR,
@@ -141,10 +143,16 @@ export function useSeries(
  * the list slides from one set of rows to the next instead of collapsing the list to a blank box
  * and pushing everything below it up the screen.
  */
-export function usePages(siteId: string, window: AnalyticsWindow, limit: number, offset: number) {
+export function usePages(
+  siteId: string,
+  window: AnalyticsWindow,
+  population: Population,
+  limit: number,
+  offset: number,
+) {
   return useQuery({
-    queryKey: pagesKey(siteId, window, limit, offset),
-    queryFn: () => readPages(siteId, window, limit, offset),
+    queryKey: pagesKey(siteId, window, population, limit, offset),
+    queryFn: () => readPages(siteId, window, population, limit, offset),
     placeholderData: keepPreviousData,
     retry: false,
     staleTime: FRESH_FOR,
@@ -160,13 +168,14 @@ export function usePages(siteId: string, window: AnalyticsWindow, limit: number,
 export function useLocations(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   grouping: LocationGrouping,
   limit: number,
   offset: number,
 ) {
   return useQuery({
-    queryKey: locationsKey(siteId, window, grouping, limit, offset),
-    queryFn: () => readLocations(siteId, window, grouping, limit, offset),
+    queryKey: locationsKey(siteId, window, population, grouping, limit, offset),
+    queryFn: () => readLocations(siteId, window, population, grouping, limit, offset),
     placeholderData: keepPreviousData,
     retry: false,
     staleTime: FRESH_FOR,
@@ -183,13 +192,14 @@ export function useLocations(
 export function useSources(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   grouping: SourceGrouping,
   limit: number,
   offset: number,
 ) {
   return useQuery({
-    queryKey: sourcesKey(siteId, window, grouping, limit, offset),
-    queryFn: () => readSources(siteId, window, grouping, limit, offset),
+    queryKey: sourcesKey(siteId, window, population, grouping, limit, offset),
+    queryFn: () => readSources(siteId, window, population, grouping, limit, offset),
     placeholderData: keepPreviousData,
     retry: false,
     staleTime: FRESH_FOR,
@@ -202,10 +212,10 @@ export function useSources(
  * Always asked, whichever way the card is being read: it carries the total the card states, and
  * the two lists beside it are answers about the same audience.
  */
-export function useDevices(siteId: string, window: AnalyticsWindow) {
+export function useDevices(siteId: string, window: AnalyticsWindow, population: Population) {
   return useQuery({
-    queryKey: devicesKey(siteId, window),
-    queryFn: () => readDevices(siteId, window),
+    queryKey: devicesKey(siteId, window, population),
+    queryFn: () => readDevices(siteId, window, population),
     retry: false,
     staleTime: FRESH_FOR,
   });
@@ -220,14 +230,15 @@ export function useDevices(siteId: string, window: AnalyticsWindow) {
 export function useSoftware(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   grouping: SoftwareGrouping,
   limit: number,
   offset: number,
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: softwareKey(siteId, window, grouping, limit, offset),
-    queryFn: () => readSoftware(siteId, window, grouping, limit, offset),
+    queryKey: softwareKey(siteId, window, population, grouping, limit, offset),
+    queryFn: () => readSoftware(siteId, window, population, grouping, limit, offset),
     enabled,
     placeholderData: keepPreviousData,
     retry: false,
@@ -278,14 +289,15 @@ function proofFrom(cache: QueryClient): string {
 export function useActions(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   grouping: ActionGrouping,
   limit: number,
   offset: number,
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: actionsKey(siteId, window, grouping, limit, offset),
-    queryFn: () => readActions(siteId, window, grouping, limit, offset),
+    queryKey: actionsKey(siteId, window, population, grouping, limit, offset),
+    queryFn: () => readActions(siteId, window, population, grouping, limit, offset),
     enabled,
     placeholderData: keepPreviousData,
     retry: false,
@@ -299,11 +311,15 @@ export function useActions(
  * Held current for longer than the headline totals. A visit is not judged until it has finished,
  * so this answer moves at the pace visits end rather than at the pace pages are read, and asking
  * again every half minute would be asking the same question repeatedly.
+ *
+ * @param enabled Whether to ask at all. A screen that only needs the answer while it is kept to
+ * people has no reason to pay for it the rest of the time.
  */
-export function useTraffic(siteId: string, window: AnalyticsWindow) {
+export function useTraffic(siteId: string, window: AnalyticsWindow, enabled = true) {
   return useQuery({
     queryKey: trafficKey(siteId, window),
     queryFn: () => readTraffic(siteId, window),
+    enabled,
     retry: false,
     staleTime: JUDGED_FRESH_FOR,
   });
@@ -383,10 +399,10 @@ export function useFacets(siteId: string, window: AnalyticsWindow, wanted: boole
  * Always asked, whichever way the card is being read: it carries the coverage the card states,
  * and the list beside it is an answer about the same readings.
  */
-export function useEngagement(siteId: string, window: AnalyticsWindow) {
+export function useEngagement(siteId: string, window: AnalyticsWindow, population: Population) {
   return useQuery({
-    queryKey: engagementKey(siteId, window),
-    queryFn: () => readEngagement(siteId, window),
+    queryKey: engagementKey(siteId, window, population),
+    queryFn: () => readEngagement(siteId, window, population),
     retry: false,
     staleTime: FRESH_FOR,
   });
@@ -400,14 +416,15 @@ export function useEngagement(siteId: string, window: AnalyticsWindow) {
 export function usePageEngagement(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   ranking: EngagementRanking,
   limit: number,
   offset: number,
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: pageEngagementKey(siteId, window, ranking, limit, offset),
-    queryFn: () => readPageEngagement(siteId, window, ranking, limit, offset),
+    queryKey: pageEngagementKey(siteId, window, population, ranking, limit, offset),
+    queryFn: () => readPageEngagement(siteId, window, population, ranking, limit, offset),
     enabled,
     placeholderData: keepPreviousData,
     retry: false,
@@ -421,10 +438,10 @@ export function usePageEngagement(
  * Always asked, whichever way the card beside it is being read: it carries the total every share
  * on that card is taken against.
  */
-export function useVisitTotals(siteId: string, window: AnalyticsWindow) {
+export function useVisitTotals(siteId: string, window: AnalyticsWindow, population: Population) {
   return useQuery({
-    queryKey: visitTotalsKey(siteId, window),
-    queryFn: () => readVisitTotals(siteId, window),
+    queryKey: visitTotalsKey(siteId, window, population),
+    queryFn: () => readVisitTotals(siteId, window, population),
     retry: false,
     staleTime: FRESH_FOR,
   });
@@ -439,13 +456,14 @@ export function useVisitTotals(siteId: string, window: AnalyticsWindow) {
 export function useVisitPages(
   siteId: string,
   window: AnalyticsWindow,
+  population: Population,
   position: VisitPosition,
   limit: number,
   offset: number,
 ) {
   return useQuery({
-    queryKey: visitPagesKey(siteId, window, position, limit, offset),
-    queryFn: () => readVisitPages(siteId, window, position, limit, offset),
+    queryKey: visitPagesKey(siteId, window, population, position, limit, offset),
+    queryFn: () => readVisitPages(siteId, window, population, position, limit, offset),
     placeholderData: keepPreviousData,
     retry: false,
     staleTime: FRESH_FOR,

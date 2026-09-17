@@ -2,6 +2,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SiteLocations } from '@/components/dashboard/site-locations';
+import type { Population } from '@/lib/analytics/people-only';
 import { type Engine, engineDoing, engineStopped, respondWith } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
 
@@ -78,11 +79,22 @@ function engineWithBoth(countries: readonly unknown[], towns: readonly unknown[]
   });
 }
 
-function show() {
-  return renderScreen(<SiteLocations siteId={SITE_ID} window={WINDOW} />);
+function show(population: Population = 'everybody') {
+  return renderScreen(<SiteLocations siteId={SITE_ID} window={WINDOW} population={population} />);
 }
 
 describe('where a website’s readers are', () => {
+  /** Kept to people, every question the card asks is asked of them and of nobody else. */
+  it('asks about the people when the card is kept to them', async () => {
+    const engine = engineWith(COUNTRIES);
+
+    show('people');
+
+    await screen.findByText('India');
+
+    expect(engine.all().every((sent) => sent.path.includes('only=people'))).toBe(true);
+  });
+
   it('writes a country code out as a country', async () => {
     engineWith(COUNTRIES);
 
@@ -355,7 +367,7 @@ describe('the networks visits arrived over', () => {
 
   async function showingNetworks() {
     engineWith(NETWORKS, 104);
-    renderScreen(<SiteLocations siteId={SITE_ID} window={WINDOW} />);
+    renderScreen(<SiteLocations siteId={SITE_ID} window={WINDOW} population="everybody" />);
 
     await screen.findByRole('radio', { name: 'Networks' });
     await userEvent.click(screen.getByRole('radio', { name: 'Networks' }));

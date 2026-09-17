@@ -94,17 +94,23 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// <summary>
     /// The two statements that count pages delivered count them the same way. One answers a
     /// dashboard and the other answers an installation's own accounting, and a customer whose
-    /// screen and whose allowance disagreed would have no way to tell which figure was wrong.
+    /// screen and whose allowance disagreed would have no way to tell which figure was wrong. A
+    /// population changes which reports the arithmetic sees and never the arithmetic, so the
+    /// overview of people counts by the same fragment too.
     /// </summary>
     [Fact]
     public void Counting_A_Window_And_Metering_It_Share_Their_Arithmetic()
     {
         var dashboard = AnalyticsSqlCompiler.Compile(Scope(), new OverviewQuery(Window()));
+        var people = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new OverviewQuery(Window()) { Population = Population.People });
         var metered = AnalyticsSqlCompiler.CompileVolume(Volume());
 
         const string delivered = "greatest(\n            countIf(kind = 'PageView' AND surface IN (";
 
         dashboard.Sql.Should().Contain(delivered);
+        people.Sql.Should().Contain(delivered);
         metered.Sql.Should().Contain(delivered);
     }
 
@@ -314,14 +320,18 @@ public sealed partial class AnalyticsSqlCompilerTests
 
     /// <summary>
     /// A press can only be seen by something running in the visitor's own browser, so there is one
-    /// account of each and nothing to fold together. Reconciling could only lose presses.
+    /// account of each and nothing to fold together. Reconciling could only lose presses — and
+    /// keeping the presses of people alone needs none either, because the key a press was reported
+    /// under is the key the verdict names.
     /// </summary>
-    [Fact]
-    public void Counting_Presses_Reconciles_Nothing()
+    [Theory]
+    [InlineData(Population.Everybody)]
+    [InlineData(Population.People)]
+    public void Counting_Presses_Reconciles_Nothing(Population population)
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
-            new SiteActionsQuery(Window(), ActionGrouping.Control, 10));
+            new SiteActionsQuery(Window(), ActionGrouping.Control, 10) { Population = population });
 
         statement.Sql.Should().NotContain("identified");
         statement.Sql.Should().NotContain("correlation_id");
@@ -342,6 +352,23 @@ public sealed partial class AnalyticsSqlCompilerTests
         statement.Parameters.Select(parameter => parameter.Name)
             .Should()
             .BeEquivalentTo("site_id", "from_ms", "to_ms", "limit", "offset");
+    }
+
+    /// <summary>
+    /// The same, asked of people: one more value is bound, and it is how far back the verdicts are
+    /// read rather than anything a page wrote.
+    /// </summary>
+    [Fact]
+    public void A_Controls_Own_Name_Never_Enters_The_Statement_When_Asked_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteActionsQuery(Window(), ActionGrouping.Control, 10, 40) { Population = Population.People });
+
+        statement.Sql.Should().Contain("GROUP BY name, control");
+        statement.Parameters.Select(parameter => parameter.Name)
+            .Should()
+            .BeEquivalentTo("site_id", "from_ms", "to_ms", "limit", "offset", "longest_visit_seconds");
     }
 
     /// <summary>
@@ -460,6 +487,278 @@ public sealed partial class AnalyticsSqlCompilerTests
             new SiteVisitFlowQuery(Window(), Visits(), VisitPosition.Exit, 10));
 
         return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Overview_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new OverviewQuery(Window()) { Population = Population.People });
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Page_Views_By_Day_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new TimeSeriesQuery(Window(), TimeGranularity.Day, TimeSeriesMetric.PageViews)
+            {
+                Population = Population.People,
+            });
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Site_Pages_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SitePagesQuery(Window(), 10) { Population = Population.People });
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Site_Countries_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteLocationsQuery(Window(), LocationGrouping.Country, 10) { Population = Population.People });
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Site_Sending_Sites_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteSourcesQuery(Window(), SourceGrouping.Site, "example.com", 10)
+            {
+                Population = Population.People,
+            });
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Site_Devices_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteDeviceKindsQuery(Window()) { Population = Population.People });
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Site_Browsers_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteSoftwareQuery(Window(), SoftwareGrouping.Browser, 10) { Population = Population.People });
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Site_Controls_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteActionsQuery(Window(), ActionGrouping.Control, 10) { Population = Population.People });
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Site_Engagement_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteEngagementQuery(Window()) { Population = Population.People });
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Site_Pages_By_Attention_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SitePageEngagementQuery(Window(), EngagementRanking.Attention, 10)
+            {
+                Population = Population.People,
+            });
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Site_Visit_Totals_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteVisitShapeQuery(Window(), Visits()) { Population = Population.People });
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public Task Site_Entry_Pages_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteVisitFlowQuery(Window(), Visits(), VisitPosition.Entry, 10)
+            {
+                Population = Population.People,
+            });
+
+        return Verify(CompiledStatementReport.Render(statement));
+    }
+
+    /// <summary>
+    /// A question about everybody has no business reading verdicts: one that did would quietly leave
+    /// out every visit nothing had judged yet, and everybody is counted as it arrives.
+    /// </summary>
+    [Fact]
+    public void A_Question_About_Everybody_Never_Reads_The_Verdicts()
+    {
+        foreach (var statement in EveryStatementAbout(Population.Everybody))
+        {
+            statement.Sql.Should().NotContain("session_classifications");
+            statement.Parameters.Should().NotContain(parameter => parameter.Name == "longest_visit_seconds");
+        }
+    }
+
+    /// <summary>
+    /// "People" is a verdict, and one verdict: the visits the engine concluded were people, never
+    /// a floor on the evidence or a wider set of conclusions, so the figures agree with the panel
+    /// that shows the people as a category.
+    /// </summary>
+    [Fact]
+    public void Every_Question_Of_People_Keeps_Only_The_Visits_Judged_To_Be_People()
+    {
+        foreach (var statement in EveryStatementAbout(Population.People))
+        {
+            Regex.Count(statement.Sql, "WHERE category = 'LikelyHuman'").Should().Be(1);
+            statement.Sql.Should().Contain("FROM attributed");
+        }
+    }
+
+    /// <summary>
+    /// Each visit is reduced to its newest verdict before anything is kept, by the reduction the
+    /// breakdown of who came uses — so a visit judged again is kept by the newer verdict and the
+    /// people counted here are the people that panel counts.
+    /// </summary>
+    [Fact]
+    public void Every_Question_Of_People_Reduces_Each_Visit_To_Its_Newest_Verdict_First()
+    {
+        foreach (var statement in EveryStatementAbout(Population.People))
+        {
+            statement.Sql.Should().Contain("argMax(category, (ruleset_major, ruleset_minor, classified_at))");
+            statement.Sql.Should().Contain("GROUP BY session_key");
+        }
+    }
+
+    /// <summary>
+    /// A report is a person's report exactly when it falls inside a visit judged to be a person:
+    /// between the first and last instants the verdict was reached from, and no further.
+    /// </summary>
+    [Fact]
+    public void Every_Question_Of_People_Keeps_A_Report_Only_Inside_Its_Verdict()
+    {
+        foreach (var statement in EveryStatementAbout(Population.People))
+        {
+            statement.Sql.Should().Contain("server_ts >= people.began");
+            statement.Sql.Should().Contain("server_ts <= people.ended");
+        }
+    }
+
+    /// <summary>
+    /// A visit that began the evening before and ran into the window keeps the reports it made
+    /// inside it, so the verdicts are read from as long before the window as a visit can be.
+    /// </summary>
+    [Fact]
+    public void Every_Question_Of_People_Reads_A_Day_Of_Verdicts_Before_The_Window()
+    {
+        foreach (var statement in EveryStatementAbout(Population.People))
+        {
+            statement.Sql.Should().Contain("{from_ms:Int64} - {longest_visit_seconds:Int64} * 1000");
+            statement.Parameters.Should().Contain(parameter =>
+                parameter.Name == "longest_visit_seconds" && Equals(parameter.Value, 86400L));
+        }
+    }
+
+    /// <summary>
+    /// A verdict names a visit by the key the engine derived once both halves of the measurement
+    /// were folded together, so the people are kept after identity is settled and never before —
+    /// except for presses, which only a browser can report and which carry the browser's key.
+    /// </summary>
+    [Fact]
+    public void Every_Question_Of_People_Narrows_After_Identity_Is_Settled()
+    {
+        foreach (var statement in EveryStatementAbout(Population.People))
+        {
+            if (statement.Sql.Contains("pressed AS", StringComparison.Ordinal))
+            {
+                statement.Sql.Should().Contain("INNER JOIN people ON pressed.visitor_key = people.visitor_key");
+
+                continue;
+            }
+
+            statement.Sql.IndexOf("attributed AS", StringComparison.Ordinal)
+                .Should().BeGreaterThan(statement.Sql.IndexOf("identified AS", StringComparison.Ordinal));
+            statement.Sql.Should().Contain("INNER JOIN people ON identified.visitor_key = people.visitor_key");
+        }
+    }
+
+    /// <summary>
+    /// The verdicts come from their own table, so keeping the people costs no second read of the
+    /// activity: the reach back a day is over verdicts, never over reports.
+    /// </summary>
+    [Fact]
+    public void Every_Question_Of_People_Still_Reads_Activity_Once()
+    {
+        foreach (var statement in EveryStatementAbout(Population.People))
+        {
+            ActivityRead().Matches(statement.Sql).Should().ContainSingle();
+        }
+    }
+
+    /// <summary>
+    /// The rebuilt visits of people are the visits the engine judged: the activity is narrowed to
+    /// the people before it is grouped, so nothing that was dropped can merge two visits that were
+    /// judged apart.
+    /// </summary>
+    [Fact]
+    public void The_Rebuilt_Visits_Of_People_Are_Grouped_From_Their_Reports_Alone()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new SiteVisitShapeQuery(Window(), Visits()) { Population = Population.People });
+
+        statement.Sql.Should().Contain("FROM attributed\n        WHERE visitor_key != ''");
+        statement.Sql.IndexOf("HAVING started_at >=", StringComparison.Ordinal)
+            .Should().BeGreaterThan(statement.Sql.IndexOf("FROM attributed", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A population the compiler was not taught gets no statement at all, on the same terms as a
+    /// question it was not taught: there is no default path that could improvise one.
+    /// </summary>
+    [Fact]
+    public void A_Population_The_Compiler_Was_Not_Taught_Gets_No_Statement()
+    {
+        var act = () => AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new OverviewQuery(Window()) { Population = (Population)7 });
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
     }
 
     [Fact]
@@ -1919,6 +2218,22 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     /// <summary>
+    /// Asked of people, the overview also binds how far back the verdicts are read — and nothing
+    /// else, because who the people are is a fact the store holds rather than a value a caller
+    /// supplies.
+    /// </summary>
+    [Fact]
+    public void An_Overview_Of_People_Binds_How_Long_A_Visit_Can_Be_As_Well()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new OverviewQuery(Window()) { Population = Population.People });
+
+        statement.Parameters.Select(parameter => parameter.Name)
+            .Should().Equal("site_id", "from_ms", "to_ms", "longest_visit_seconds");
+    }
+
+    /// <summary>
     /// The compiler produces statements for the questions it was taught and nothing else. This is
     /// what makes the vocabulary safe rather than merely tidy: a case it does not recognise gets
     /// no statement at all, so there is no default path that could improvise one.
@@ -2442,6 +2757,37 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// <summary>What each detail of the standard window's judged visits held.</summary>
     private static SiteVisitFacetsQuery Facets() => new(Window(), IdleTimeout, "example.com");
 
+    /// <summary>
+    /// One question of each of the twelve shapes that may be asked about a population.
+    /// </summary>
+    /// <remarks>
+    /// Held together so that a property every one of them has to have is asserted over all of
+    /// them, and so that the next question given a population cannot be added without it.
+    /// </remarks>
+    /// <param name="population">Who to ask about.</param>
+    /// <returns>The twelve questions.</returns>
+    private static AnalyticsQuery[] EveryQuestion(Population population) =>
+    [
+        new OverviewQuery(Window()) { Population = population },
+        new TimeSeriesQuery(Window(), TimeGranularity.Day, TimeSeriesMetric.PageViews) { Population = population },
+        new SitePagesQuery(Window(), 10) { Population = population },
+        new SiteActionsQuery(Window(), ActionGrouping.Control, 10) { Population = population },
+        new SiteLocationsQuery(Window(), LocationGrouping.Country, 10) { Population = population },
+        new SiteSourcesQuery(Window(), SourceGrouping.Site, "example.com", 10) { Population = population },
+        new SiteDeviceKindsQuery(Window()) { Population = population },
+        new SiteSoftwareQuery(Window(), SoftwareGrouping.Browser, 10) { Population = population },
+        new SiteEngagementQuery(Window()) { Population = population },
+        new SitePageEngagementQuery(Window(), EngagementRanking.Attention, 10) { Population = population },
+        new SiteVisitShapeQuery(Window(), Visits()) { Population = population },
+        new SiteVisitFlowQuery(Window(), Visits(), VisitPosition.Entry, 10) { Population = population },
+    ];
+
+    /// <summary>The twelve, compiled.</summary>
+    /// <param name="population">Who to ask about.</param>
+    /// <returns>The statements.</returns>
+    private static CompiledStatement[] EveryStatementAbout(Population population) =>
+        [.. EveryQuestion(population).Select(question => AnalyticsSqlCompiler.Compile(Scope(), question))];
+
     /// <summary>What the engine was asked when it judged the standard window.</summary>
     private static SessionWindow Judging() =>
         new()
@@ -2469,6 +2815,7 @@ public sealed partial class AnalyticsSqlCompilerTests
         AnalyticsSqlCompiler.Compile(Scope(), Judged(50, 100)),
         AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail()),
         AnalyticsSqlCompiler.Compile(Scope(), Facets()),
+        .. EveryStatementAbout(Population.People),
     ];
 
     /// <summary>Finds every placeholder a statement names.</summary>

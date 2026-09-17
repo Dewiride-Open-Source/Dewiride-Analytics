@@ -34,13 +34,14 @@ what does not.
   are counted in, or remove it. Removing a website deletes everything ever measured for it and
   nothing brings it back, so it asks you to type the website's address before it will go ahead.
   Anyone who can change a website's settings can rename it; removing one is the owner's alone.
-- A dashboard showing page views, daily visitors, a daily traffic graph and the pages a period's
-  traffic went to, for a website you own. A site running both the tracker and its own server's
-  reports is counted once per page delivered rather than once per report, so running the product
-  properly does not double what it tells you. Traffic arriving through a pool of rented addresses
-  is counted as the one operator it is, rather than as a fresh person on every request. A page
-  counts as read the moment anything at all is reported about it, so a reader whose arrival never
-  reached us still counts for the page they were on — once, however long they stayed.
+- A dashboard showing page views, daily visitors, a daily traffic graph whose days can be pressed
+  to look at one on its own, and the pages a period's traffic went to, for a website you own. A
+  site running both the tracker and its own server's reports is counted once per page delivered
+  rather than once per report, so running the product properly does not double what it tells you.
+  Traffic arriving through a pool of rented addresses is counted as the one operator it is, rather
+  than as a fresh person on every request. A page counts as read the moment anything at all is
+  reported about it, so a reader whose arrival never reached us still counts for the page they
+  were on — once, however long they stayed.
 - Where your readers are, by country, by town, and by the network they arrived over, ranked by how
   many people were in each place rather than by how much browsing they did. Towns are named as an
   estimate, because that is what they are; the network view is there because a hundred rented
@@ -101,6 +102,10 @@ what does not.
   Each observation is a written sentence rather than a code, and the strength of the evidence is a
   band shown beside the category — never a percentage. A judged visit only appears once it has
   finished, so that screen trails the headline totals and says so.
+- Every figure on the overview and the whole User journey list can be kept to the visits judged to
+  be people, with one switch beside the period. It is the same arithmetic over fewer visits, so the
+  cards, the graph and every list add up to each other, and the choice travels in the address with
+  the period so a link opens on exactly what was being looked at.
 
 - Two ways of establishing that a crawler really is whose crawler it says it is, which between
   them are the only basis on which a visit is ever reported as confirmed. Most companies publish a

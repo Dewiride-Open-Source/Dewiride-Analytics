@@ -32,6 +32,8 @@ interface JourneyFilterPanelProps {
   readonly onWantOptions: () => void;
   readonly value: JourneyFilters;
   readonly onChange: (filters: JourneyFilters) => void;
+  /** Whether the screen is kept to people, which has already settled what generated the visits. */
+  readonly peopleOnly: boolean;
 }
 
 /**
@@ -47,6 +49,10 @@ interface JourneyFilterPanelProps {
  *
  * Narrowing is asked of the engine rather than done to what came back, so the figures beside the
  * list keep describing the list.
+ *
+ * On a screen kept to people the conclusions are not offered at all. Which visits were people is
+ * what kept the screen, and offering "people or crawlers" beneath it would be offering a question
+ * the screen has already answered.
  */
 export function JourneyFilterPanel({
   available,
@@ -56,6 +62,7 @@ export function JourneyFilterPanel({
   onWantOptions,
   value,
   onChange,
+  peopleOnly,
 }: JourneyFilterPanelProps) {
   const t = useTranslations('journeys.filters');
   const categories = useTranslations('verdicts.category');
@@ -82,51 +89,56 @@ export function JourneyFilterPanel({
         ) : null}
       </div>
 
-      <fieldset className="flex min-w-0 flex-col gap-2.5">
-        <legend className="text-xs font-medium tracking-wide text-foreground-muted uppercase">
-          {t('categories')}
-        </legend>
+      {peopleOnly ? null : (
+        <fieldset className="flex min-w-0 flex-col gap-2.5">
+          <legend className="text-xs font-medium tracking-wide text-foreground-muted uppercase">
+            {t('categories')}
+          </legend>
 
-        {pending ? (
-          <div aria-hidden className="flex flex-wrap gap-2">
-            {['first', 'second', 'third'].map((chip) => (
-              <span key={chip} className="h-8 w-32 animate-pulse rounded-full bg-surface-muted" />
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {available.map((tally) => (
-              <Chip
-                key={tally.category}
-                pressed={value.categories.includes(tally.category)}
-                onPress={() => onChange(toggleChoice(value, 'categories', tally.category))}
-                leading={
-                  <span
-                    aria-hidden
-                    className={cn(
-                      'size-2 shrink-0 rounded-full',
-                      TONE_FILLS[CATEGORY_TONES[tally.category]],
-                    )}
-                  />
-                }
-              >
-                {/*
-                  A real space between the name and the figure, so what a screen reader reads out
-                  is "A person 6" rather than one word nobody would recognise. The gap between them
-                  on screen is drawn by the layout and says nothing to anybody listening.
-                */}
-                {categories(tally.category)}
-                {counted ? (
-                  <>
-                    {' '}
-                    <span className="tabular-nums opacity-70">{format.number(tally.journeys)}</span>
-                  </>
-                ) : null}
-              </Chip>
-            ))}
-          </div>
-        )}
-      </fieldset>
+          {pending ? (
+            <div aria-hidden className="flex flex-wrap gap-2">
+              {['first', 'second', 'third'].map((chip) => (
+                <span key={chip} className="h-8 w-32 animate-pulse rounded-full bg-surface-muted" />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {available.map((tally) => (
+                <Chip
+                  key={tally.category}
+                  pressed={value.categories.includes(tally.category)}
+                  onPress={() => onChange(toggleChoice(value, 'categories', tally.category))}
+                  leading={
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'size-2 shrink-0 rounded-full',
+                        TONE_FILLS[CATEGORY_TONES[tally.category]],
+                      )}
+                    />
+                  }
+                >
+                  {/*
+                    A real space between the name and the figure, so what a screen reader reads
+                    out is "A person 6" rather than one word nobody would recognise. The gap
+                    between them on screen is drawn by the layout and says nothing to anybody
+                    listening.
+                  */}
+                  {categories(tally.category)}
+                  {counted ? (
+                    <>
+                      {' '}
+                      <span className="tabular-nums opacity-70">
+                        {format.number(tally.journeys)}
+                      </span>
+                    </>
+                  ) : null}
+                </Chip>
+              ))}
+            </div>
+          )}
+        </fieldset>
+      )}
 
       <fieldset className="flex min-w-0 flex-col gap-2.5">
         <legend className="text-xs font-medium tracking-wide text-foreground-muted uppercase">

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type OnUrlUpdateFunction, withNuqsTestingAdapter } from 'nuqs/adapters/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,15 +6,16 @@ import { usePeopleOnly } from '@/lib/analytics/use-people-only';
 
 interface ProbeProps {
   readonly pick: boolean;
+  readonly seeding: boolean;
 }
 
-/** Prints whether only the people are drawn, and asks for the other answer when pressed. */
-function Probe({ pick }: ProbeProps) {
-  const { peopleOnly, showOnlyPeople } = usePeopleOnly();
+/** Prints whether only the people are counted, and asks for the other answer when pressed. */
+function Probe({ pick, seeding }: ProbeProps) {
+  const { peopleOnly, population, showOnlyPeople } = usePeopleOnly({ seeding });
 
   return (
     <button type="button" onClick={() => showOnlyPeople(pick)}>
-      {peopleOnly ? 'on' : 'off'}
+      {peopleOnly ? 'on' : 'off'} {population}
     </button>
   );
 }
@@ -22,10 +23,12 @@ function Probe({ pick }: ProbeProps) {
 interface Arriving {
   readonly at?: string;
   readonly picking?: boolean;
+  /** Whether the screen is one the population is the subject of. */
+  readonly seeding?: boolean;
   readonly watching?: OnUrlUpdateFunction;
 }
 
-function arrive({ at, picking = true, watching }: Arriving = {}) {
+function arrive({ at, picking = true, seeding = false, watching }: Arriving = {}) {
   const wrapper = withNuqsTestingAdapter({
     searchParams: at,
     onUrlUpdate: watching,
@@ -38,14 +41,24 @@ function arrive({ at, picking = true, watching }: Arriving = {}) {
   // address never does — so the screen arrives one step after the address.
   const shown = render(<></>, { wrapper });
 
-  shown.rerender(<Probe pick={picking} />);
+  shown.rerender(<Probe pick={picking} seeding={seeding} />);
 
   return shown;
 }
 
-/** Whether the screen currently believes it is drawing the people alone. */
+/** Lets whatever the screen was going to write into the address go through, if anything was. */
+async function settled() {
+  await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+}
+
+/** Whether the screen currently believes it is counting the people alone. */
 function drawing() {
-  return screen.getByRole('button').textContent;
+  return screen.getByRole('button').textContent?.split(' ')[0];
+}
+
+/** The word every question is asked with. */
+function population() {
+  return screen.getByRole('button').textContent?.split(' ')[1];
 }
 
 // The browser's storage outlives a test, so each one starts with nothing remembered.
@@ -53,21 +66,23 @@ beforeEach(() => {
   window.localStorage.clear();
 });
 
-describe('whether the picture is kept to people', () => {
-  it('draws everybody when the address says nothing', () => {
+describe('whether the screen is kept to people', () => {
+  it('counts everybody when the address says nothing', () => {
     arrive();
 
     expect(drawing()).toBe('off');
+    expect(population()).toBe('everybody');
   });
 
-  it('draws people alone for a link sent that way', () => {
+  it('counts people alone for a link sent that way', () => {
     arrive({ at: '?only=people' });
 
     expect(drawing()).toBe('on');
+    expect(population()).toBe('people');
   });
 
   /** An address is written by whoever sent the link, so nothing in it is taken on trust. */
-  it('draws everybody when a link asks for a population this product has never had', () => {
+  it('counts everybody when a link asks for a population this product has never had', () => {
     arrive({ at: '?only=machines' });
 
     expect(drawing()).toBe('off');
@@ -80,9 +95,9 @@ describe('whether the picture is kept to people', () => {
   it('treats a population this product has never had as an address that says nothing', async () => {
     const watching = vi.fn();
 
-    window.localStorage.setItem('dewiride.chart-people', 'people');
+    window.localStorage.setItem('dewiride.population', 'people');
 
-    arrive({ at: '?only=machines', watching });
+    arrive({ at: '?only=machines', seeding: true, watching });
 
     expect(drawing()).toBe('on');
 
@@ -125,7 +140,7 @@ describe('whether the picture is kept to people', () => {
     await userEvent.click(screen.getByRole('button'));
 
     await waitFor(() => expect(drawing()).toBe('on'));
-    expect(window.localStorage.getItem('dewiride.chart-people')).toBe('people');
+    expect(window.localStorage.getItem('dewiride.population')).toBe('people');
   });
 
   /**
@@ -135,14 +150,31 @@ describe('whether the picture is kept to people', () => {
   it('opens on people alone when that was remembered, and says so in the address quietly', async () => {
     const watching = vi.fn();
 
-    window.localStorage.setItem('dewiride.chart-people', 'people');
+    window.localStorage.setItem('dewiride.population', 'people');
 
-    arrive({ watching });
+    arrive({ seeding: true, watching });
 
     expect(drawing()).toBe('on');
 
     await waitFor(() => expect(watching).toHaveBeenCalled());
     expect(watching.mock.calls[0]?.[0].queryString).toContain('only=people');
     expect(watching.mock.calls[0]?.[0].options.history).toBe('replace');
+  });
+
+  /**
+   * The bar across the top reads the population on every screen so its links can carry it, and
+   * must not write it into the address of a screen it means nothing on.
+   */
+  it('reads the remembered population without writing it anywhere when nobody asked it to', async () => {
+    const watching = vi.fn();
+
+    window.localStorage.setItem('dewiride.population', 'people');
+
+    arrive({ watching });
+
+    expect(drawing()).toBe('on');
+
+    await settled();
+    expect(watching).not.toHaveBeenCalled();
   });
 });

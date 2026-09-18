@@ -21,5 +21,6 @@
 		<Project Path="tests/Dewiride.Analytics.Integration.Tests/Dewiride.Analytics.Integration.Tests.csproj" />
 		<Project Path="tests/Dewiride.Analytics.MailTests/Dewiride.Analytics.MailTests.csproj" />
 		<Project Path="tests/Dewiride.Analytics.SqlTests/Dewiride.Analytics.SqlTests.csproj" />
+		<Project Path="tests/Dewiride.Analytics.Testing/Dewiride.Analytics.Testing.csproj" />
 	</Folder>
 </Solution>

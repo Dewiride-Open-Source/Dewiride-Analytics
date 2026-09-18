@@ -1,4 +1,5 @@
 using Dewiride.Analytics.Infrastructure.Accounts;
+using Dewiride.Analytics.Testing;
 
 namespace Dewiride.Analytics.MailTests;
 
@@ -15,10 +16,9 @@ public sealed class AccountMessageTests
     /// <summary>
     /// Somebody asking for a way back into their account.
     /// </summary>
-    /// <returns>The approval.</returns>
     [Fact]
-    public Task Password_reset() =>
-        Verify(MailReport.Render(PasswordResetMessage.For(
+    public void Password_reset() =>
+        Snapshot.Matches(MailReport.Render(PasswordResetMessage.For(
             "reader@example.com",
             "Jagdish",
             "https://analytics.example.com/app/reset-password?address=reader%40example.com&token=abc",
@@ -27,10 +27,9 @@ public sealed class AccountMessageTests
     /// <summary>
     /// Somebody asked to join an account they have nothing to do with yet.
     /// </summary>
-    /// <returns>The approval.</returns>
     [Fact]
-    public Task Invitation() =>
-        Verify(MailReport.Render(InvitationMessage.For(
+    public void Invitation() =>
+        Snapshot.Matches(MailReport.Render(InvitationMessage.For(
             "stranger@example.com",
             new Guid("01a01b63-5adc-7407-b349-47ffb0922fde"),
             "Acme & Sons",

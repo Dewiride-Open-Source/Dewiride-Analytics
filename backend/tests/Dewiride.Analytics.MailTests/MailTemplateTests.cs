@@ -1,4 +1,5 @@
 using Dewiride.Analytics.Infrastructure.Notifications;
+using Dewiride.Analytics.Testing;
 
 namespace Dewiride.Analytics.MailTests;
 
@@ -12,10 +13,9 @@ public sealed class MailTemplateTests
     /// <summary>
     /// The plainest message there is: a greeting, a paragraph, and one thing to do.
     /// </summary>
-    /// <returns>The approval.</returns>
     [Fact]
-    public Task Plainest_message() =>
-        Verify(MailReport.Render(MailTemplate.Compose(
+    public void Plainest_message() =>
+        Snapshot.Matches(MailReport.Render(MailTemplate.Compose(
             Somebody,
             "example:1",
             new MailContent
@@ -30,10 +30,9 @@ public sealed class MailTemplateTests
     /// <summary>
     /// A message about figures, which is the shape the allowance notices take.
     /// </summary>
-    /// <returns>The approval.</returns>
     [Fact]
-    public Task Message_with_figures_and_small_print() =>
-        Verify(MailReport.Render(MailTemplate.Compose(
+    public void Message_with_figures_and_small_print() =>
+        Snapshot.Matches(MailReport.Render(MailTemplate.Compose(
             Somebody,
             "example:2",
             new MailContent

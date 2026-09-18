@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    What the suites share, and the tests that prove it. Today that is the snapshot comparison: a
+    suite renders a statement or a message as text, and the text a reviewer approved sits beside
+    that suite as a file a difference fails. The comparison is a few dozen lines of this
+    repository's own, so approving generated SQL or an outgoing message depends on nothing outside
+    the tree.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Dewiride.Analytics.Testing</RootNamespace>
+    <AssemblyName>Dewiride.Analytics.Testing</AssemblyName>
+  </PropertyGroup>
+
+</Project>

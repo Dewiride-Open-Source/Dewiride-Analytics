@@ -156,7 +156,7 @@ trim_trailing_whitespace = false
 [backend/tests/**/*.cs]
 dotnet_diagnostic.CA1062.severity = none    # arguments come from the test framework
 dotnet_diagnostic.CA1707.severity = none    # Method_Should_Behaviour naming is intentional
-dotnet_diagnostic.S2699.severity = none     # Verify-based tests assert via snapshot
+dotnet_diagnostic.S2699.severity = none     # a snapshot test asserts by comparing with its approved file
 dotnet_diagnostic.S4144.severity = none     # similar test bodies are not duplication
 
 [ee/tests/**/*.cs]

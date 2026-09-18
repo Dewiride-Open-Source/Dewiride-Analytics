@@ -26,14 +26,21 @@ available at https://www.apache.org/licenses/LICENSE-2.0
   OpenTelemetry .NET              https://github.com/open-telemetry/opentelemetry-dotnet
                                   Copyright The OpenTelemetry Authors
 
-  Vercel AI SDK                   https://github.com/vercel/ai
-                                  Copyright Vercel, Inc.
+  EFCore.NamingConventions        https://github.com/efcore/EFCore.NamingConventions
+                                  Copyright 2023 Shay Rojansky
 
   TypeScript                      https://github.com/microsoft/TypeScript
                                   Copyright Microsoft Corporation
 
+  class-variance-authority        https://github.com/joe-bell/cva
+                                  Copyright 2022 Joe Bell
+
   xUnit.net v3                    https://github.com/xunit/xunit
   AwesomeAssertions               https://github.com/AwesomeAssertions/AwesomeAssertions
+
+  Stripe.net                      https://github.com/stripe/stripe-dotnet
+                                  Copyright 2011 Jayme Davis
+                                  Only in the commercially licensed edition.
 
   MaxMind DB Reader               https://github.com/maxmind/MaxMind-DB-Reader-dotnet
                                   Copyright MaxMind, Inc.
@@ -50,8 +57,17 @@ Components licensed under the MIT License, a copy of which is available at
 https://opensource.org/licenses/MIT
 
   .NET and ASP.NET Core           Copyright Microsoft Corporation and contributors
+  Node.js                         https://github.com/nodejs/node
+                                  Copyright Node.js contributors
+                                  The runtime the dashboard's image runs on.
   Entity Framework Core           Copyright Microsoft Corporation
-  ClickHouse.Driver               Copyright ClickHouse, Inc.
+  Azure SDK for .NET              https://github.com/Azure/azure-sdk-for-net
+                                  Copyright Microsoft Corporation
+                                  Azure Key Vault as a settings source, and the sign-in
+                                  library it needs; only a deployment naming a vault uses it.
+  ClickHouse.Driver               https://github.com/ClickHouse/clickhouse-cs
+                                  Copyright ClickHouse, Inc.
+                                  Copyright Oleg V. Kozlyuk
                                   Compiles the following into one of its own assemblies,
                                   so their notices travel with this product's engine:
                                   K4os.Compression.LZ4 and K4os.Hash.xxHash
@@ -65,15 +81,35 @@ https://opensource.org/licenses/MIT
   Next.js                         Copyright Vercel, Inc.
   React                           Copyright Meta Platforms, Inc. and affiliates
   Tailwind CSS                    Copyright Tailwind Labs, Inc.
-  next-intl, zod, nuqs
-  TanStack Query / Table / Virtual  Copyright Tanner Linsley
-  Radix UI, shadcn/ui
-  echarts-for-react
+  next-intl, zod, nuqs, next-themes
+  clsx, tailwind-merge
+  TanStack Query                  Copyright Tanner Linsley
+  Radix UI
+  Feather                         https://github.com/feathericons/feather
+                                  Copyright (c) 2013-present Cole Bemis
+                                  The origin of some of the icons Lucide draws; Lucide itself
+                                  is named under "ISC License" below.
   MailKit and MimeKit             https://github.com/jstedfast/MailKit
                                   Copyright .NET Foundation and Contributors
-  Testcontainers, NSubstitute, NetArchTest
-  crawler-user-agents             https://github.com/monperrus/crawler-user-agents
-  ai.robots.txt                   https://github.com/ai-robots-txt/ai.robots.txt
+  BouncyCastle.Cryptography       https://github.com/bcgit/bc-csharp
+                                  Copyright Legion of the Bouncy Castle Inc. 2000-2026
+                                  Reaches this product through MimeKit.
+  Testcontainers, NetArchTest
+
+
+================================================================================
+ISC License
+================================================================================
+
+Components licensed under the ISC License, a copy of which is available at
+https://opensource.org/licenses/ISC
+
+  Lucide                          https://github.com/lucide-icons/lucide
+                                  Copyright (c) 2026 Lucide Icons and Contributors
+                                  The icon set, reached as lucide-react. Its icons are
+                                  compiled into the dashboard's scripts, so this is where its
+                                  notice travels. The icons it derives from the Feather
+                                  project are under the MIT License, named above.
 
 
 ================================================================================
@@ -82,11 +118,54 @@ PostgreSQL License
 
   PostgreSQL                      https://www.postgresql.org
   Npgsql                          https://github.com/npgsql/npgsql
+                                  Copyright The Npgsql Development Team
+                                  The driver, and the Entity Framework Core provider from the
+                                  same team (https://github.com/npgsql/efcore.pg).
 
 
 ================================================================================
 BSD 3-Clause License
 ================================================================================
+
+  NSubstitute                     https://github.com/nsubstitute/NSubstitute
+                                  Copyright (c) 2009 Anthony Egerton and David Tchepak
+
+  ZRender                         https://github.com/ecomfe/zrender
+                                  Copyright (c) 2017, Baidu Inc.
+                                  The rendering engine Apache ECharts draws through, compiled
+                                  into the dashboard's scripts, so its own licence file never
+                                  reaches the product. Its terms require the notice below to
+                                  accompany a binary, so it is reproduced in full.
+
+    BSD 3-Clause License
+
+    Copyright (c) 2017, Baidu Inc.
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice, this
+      list of conditions and the following disclaimer.
+
+    * Redistributions in binary form must reproduce the above copyright notice,
+      this list of conditions and the following disclaimer in the documentation
+      and/or other materials provided with the distribution.
+
+    * Neither the name of the copyright holder nor the names of its
+      contributors may be used to endorse or promote products derived from
+      this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+    DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+    FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+    DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+    SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+    CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+    OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
   Zstandard                       https://github.com/facebook/zstd
                                   Reaches this product as the C# port named under the MIT
@@ -128,6 +207,112 @@ BSD 3-Clause License
 
 
 ================================================================================
+SIL Open Font License 1.1
+================================================================================
+
+The following typefaces are compiled into the product's own images at build time and served
+from them; a page fetches nothing from a font service. Each is licensed under the SIL Open
+Font License, Version 1.1, whose terms require every copy to carry the copyright notice and
+the licence itself, so the licence is reproduced in full below the entries.
+
+  Inter                           https://github.com/rsms/inter
+                                  Copyright (c) 2016 The Inter Project Authors
+                                  (https://github.com/rsms/inter)
+                                  The dashboard's typeface, and the public website's.
+
+  IBM Plex Sans, IBM Plex Mono    https://github.com/IBM/plex
+                                  Copyright (c) 2017 IBM Corp. with Reserved Font Name "Plex"
+                                  Typefaces of the public website, which is only in the
+                                  commercially licensed edition.
+
+    SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+    -----------------------------------------------------------
+
+    PREAMBLE
+    The goals of the Open Font License (OFL) are to stimulate worldwide
+    development of collaborative font projects, to support the font creation
+    efforts of academic and linguistic communities, and to provide a free and
+    open framework in which fonts may be shared and improved in partnership
+    with others.
+
+    The OFL allows the licensed fonts to be used, studied, modified and
+    redistributed freely as long as they are not sold by themselves. The
+    fonts, including any derivative works, can be bundled, embedded,
+    redistributed and/or sold with any software provided that any reserved
+    names are not used by derivative works. The fonts and derivatives,
+    however, cannot be released under any other type of license. The
+    requirement for fonts to remain under this license does not apply
+    to any document created using the fonts or their derivatives.
+
+    DEFINITIONS
+    "Font Software" refers to the set of files released by the Copyright
+    Holder(s) under this license and clearly marked as such. This may
+    include source files, build scripts and documentation.
+
+    "Reserved Font Name" refers to any names specified as such after the
+    copyright statement(s).
+
+    "Original Version" refers to the collection of Font Software components as
+    distributed by the Copyright Holder(s).
+
+    "Modified Version" refers to any derivative made by adding to, deleting,
+    or substituting -- in part or in whole -- any of the components of the
+    Original Version, by changing formats or by porting the Font Software to a
+    new environment.
+
+    "Author" refers to any designer, engineer, programmer, technical
+    writer or other person who contributed to the Font Software.
+
+    PERMISSION & CONDITIONS
+    Permission is hereby granted, free of charge, to any person obtaining
+    a copy of the Font Software, to use, study, copy, merge, embed, modify,
+    redistribute, and sell modified and unmodified copies of the Font
+    Software, subject to the following conditions:
+
+    1) Neither the Font Software nor any of its individual components,
+    in Original or Modified Versions, may be sold by itself.
+
+    2) Original or Modified Versions of the Font Software may be bundled,
+    redistributed and/or sold with any software, provided that each copy
+    contains the above copyright notice and this license. These can be
+    included either as stand-alone text files, human-readable headers or
+    in the appropriate machine-readable metadata fields within text or
+    binary files as long as those fields can be easily viewed by the user.
+
+    3) No Modified Version of the Font Software may use the Reserved Font
+    Name(s) unless explicit written permission is granted by the corresponding
+    Copyright Holder. This restriction only applies to the primary font name as
+    presented to the users.
+
+    4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+    Software shall not be used to promote, endorse or advertise any
+    Modified Version, except to acknowledge the contribution(s) of the
+    Copyright Holder(s) and the Author(s) or with their explicit written
+    permission.
+
+    5) The Font Software, modified or unmodified, in part or in whole,
+    must be distributed entirely under this license, and must not be
+    distributed under any other license. The requirement for fonts to
+    remain under this license does not apply to any document created
+    using the Font Software.
+
+    TERMINATION
+    This license becomes null and void if any of the above conditions are
+    not met.
+
+    DISCLAIMER
+    THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+    OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+    COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+    INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+    DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+    OTHER DEALINGS IN THE FONT SOFTWARE.
+
+
+================================================================================
 Data sets — attribution required IN THE USER INTERFACE
 ================================================================================
 
@@ -158,23 +343,24 @@ Data sets — attribution required IN THE USER INTERFACE
 Data sets — published by their operators without licence terms
 ================================================================================
 
-The following IP-range files are published by search-engine and AI-crawler operators to
-let site owners verify their crawlers. They carry no stated licence. This product FETCHES
-them at runtime and does not redistribute or vendor them. If you fork this project, keep
-it that way.
+The following IP-range files are published by crawler operators — search engines, AI
+companies, an archive and marketing tools — to let site owners verify their crawlers. They
+carry no stated licence. This product FETCHES them at runtime and does not redistribute or
+vendor them. If you fork this project, keep it that way.
 
-  Google      https://developers.google.com/static/search/apis/ipranges/common-crawlers.json
-              (and special-crawlers.json, user-triggered-fetchers.json)
-  Bing        https://www.bing.com/toolbox/bingbot.json
-  OpenAI      https://openai.com/gptbot.json, searchbot.json, chatgpt-user.json
-  Anthropic   https://www.anthropic.com/anthropic-bots.json
-  Apple       https://search.developer.apple.com/applebot.json
-  Amazon      https://developer.amazon.com/amazonbot.json
-  Perplexity  https://www.perplexity.com/perplexitybot.json
-
-Cloud-provider public IP ranges (AWS, Google Cloud, Microsoft Azure Service Tags,
-Cloudflare, DigitalOcean, Hetzner, OVH, Linode, Oracle Cloud, Fastly) are likewise fetched
-at runtime from each provider's published endpoint.
+  Google        https://developers.google.com/static/crawling/ipranges/common-crawlers.json
+                (and special-crawlers.json, user-triggered-fetchers-google.json)
+  Bing          https://www.bing.com/toolbox/bingbot.json
+  OpenAI        https://openai.com/gptbot.json
+                (and chatgpt-user.json, searchbot.json, adsbot.json)
+  Anthropic     https://claude.com/crawling/bots.json
+  Perplexity    https://www.perplexity.com/perplexitybot.json (and perplexity-user.json)
+  Apple         https://search.developer.apple.com/applebot.json
+  Common Crawl  https://index.commoncrawl.org/ccbot.json
+  DuckDuckGo    https://duckduckgo.com/duckduckbot.json (and duckassistbot.json)
+  Mistral AI    https://mistral.ai/mistralai-index-ips.json (and mistralai-user-ips.json)
+  Seznam        https://search.seznam.cz/ipranges/seznambot.json
+  Babbar        https://www.babbar.tech/barkrowler-ip-ranges.json
 
 
 ================================================================================

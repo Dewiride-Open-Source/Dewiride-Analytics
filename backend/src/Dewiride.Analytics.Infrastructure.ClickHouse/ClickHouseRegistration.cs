@@ -1,4 +1,3 @@
-using System.Net;
 using ClickHouse.Driver;
 using ClickHouse.Driver.ADO;
 using Dewiride.Analytics.Application.Abstractions;
@@ -48,16 +47,16 @@ public static class ClickHouseRegistration
                 $"Connection string '{TelemetryConnectionName}' is not configured. "
                 + "Set ConnectionStrings__Telemetry in the environment.");
 
-        // The client asks the server to compress result sets, which is worth having on an
-        // analytical store but only works if the handler unpacks them. A handler supplied by the
-        // factory does not do that by default, and the failure appears as unreadable results
-        // rather than as a configuration error.
+        // The client asks the store for compressed result sets, which is worth having on an
+        // analytical store, and unpacks them itself. The handler is left without automatic
+        // decompression on purpose: a handler that unpacks adds its own codecs to every request's
+        // Accept-Encoding, widening the set the client chose, and does for some encodings what the
+        // client already does for all of them.
         // Connection recycling is left to the handler's own pooled-connection lifetime, which
         // picks up a changed address without throwing away a warm connection on a timer.
         builder.Services.AddHttpClient(HttpClientName)
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
             {
-                AutomaticDecompression = DecompressionMethods.All,
                 PooledConnectionLifetime = TimeSpan.FromMinutes(5),
             })
             .SetHandlerLifetime(Timeout.InfiniteTimeSpan);

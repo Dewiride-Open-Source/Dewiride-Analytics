@@ -1,4 +1,4 @@
-import { AlertTriangle, Info } from 'lucide-react';
+import { Info, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/styling';
 
@@ -18,7 +18,7 @@ interface NoticeProps {
  */
 export function Notice({ tone = 'problem', title, children, className }: NoticeProps) {
   const problem = tone === 'problem';
-  const Icon = problem ? AlertTriangle : Info;
+  const Icon = problem ? TriangleAlert : Info;
 
   return (
     <div

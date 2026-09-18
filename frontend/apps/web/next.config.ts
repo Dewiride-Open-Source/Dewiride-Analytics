@@ -68,6 +68,12 @@ const config: NextConfig = {
 
   reactStrictMode: true,
 
+  // Nothing here asks the framework to resize a picture, yet left alone it still answers such
+  // requests from anybody, and loads an image decoder on the first one. That decoder has been the
+  // subject of more than one critical advisory, so the door it is behind stays shut: a request for
+  // a resized picture is answered as a page that does not exist, and the decoder is never loaded.
+  images: { unoptimized: true },
+
   // Names the framework and its version to anything that connects, and buys nothing in return.
   poweredByHeader: false,
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle } from 'lucide-react';
+import { TriangleAlert } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { type FormEvent, type ReactNode, useState } from 'react';
@@ -153,7 +153,7 @@ function Shell({
             aria-hidden
             className="mb-3 grid size-10 place-items-center rounded-full bg-danger-soft text-danger"
           >
-            <AlertTriangle className="size-5" />
+            <TriangleAlert className="size-5" />
           </span>
         ) : null}
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>

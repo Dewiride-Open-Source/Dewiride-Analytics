@@ -1,6 +1,6 @@
 'use client';
 
-import { Filter, ScanSearch } from 'lucide-react';
+import { Funnel, ScanSearch } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { SiteScreen } from '@/components/chrome/site-screen';
@@ -227,7 +227,7 @@ function Listing({
 
     return (
       <ListEmpty
-        icon={Filter}
+        icon={Funnel}
         title={t('narrowed.title')}
         body={t('narrowed.body')}
         action={

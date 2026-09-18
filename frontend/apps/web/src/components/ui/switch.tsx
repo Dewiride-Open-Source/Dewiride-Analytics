@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2 } from 'lucide-react';
+import { LoaderCircle } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useId } from 'react';
 import { cn } from '@/lib/styling';
@@ -74,7 +74,7 @@ export function Switch({
             checked ? 'translate-x-5' : 'translate-x-0',
           )}
         >
-          {busy ? <Loader2 className="size-3 animate-spin text-foreground-muted" /> : null}
+          {busy ? <LoaderCircle className="size-3 animate-spin text-foreground-muted" /> : null}
         </span>
       </span>
     </button>

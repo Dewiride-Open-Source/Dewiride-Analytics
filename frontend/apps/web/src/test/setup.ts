@@ -1,6 +1,10 @@
-import '@testing-library/jest-dom/vitest';
+import * as matchers from '@testing-library/jest-dom/matchers';
 import { cleanup } from '@testing-library/react';
-import { afterEach } from 'vitest';
+import { afterEach, expect } from 'vitest';
+
+// The extra assertions about a document, registered directly. Their types are declared beside this
+// file, against the interface the runner documents for adding assertions.
+expect.extend(matchers);
 
 // Rendered screens are taken down between tests. The automatic version of this only happens when
 // the test globals are injected, and they are not: without it every test after the first searches

@@ -4,8 +4,8 @@ import {
   ChartArea,
   ChartColumn,
   ChartLine,
-  History,
   type LucideIcon,
+  RotateCcwClock,
   ScanSearch,
   UserRound,
 } from 'lucide-react';
@@ -181,7 +181,7 @@ export function TrafficChart({
               comparison.on ? 'border-accent-strong bg-accent-soft text-accent-strong' : undefined
             }
           >
-            <History aria-hidden className="size-4" />
+            <RotateCcwClock aria-hidden className="size-4" />
             {t('against.action')}
           </Button>
         </div>

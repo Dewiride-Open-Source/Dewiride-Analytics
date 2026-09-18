@@ -1,5 +1,6 @@
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
+using Dewiride.Analytics.Testing;
 
 namespace Dewiride.Analytics.SqlTests;
 
@@ -18,11 +19,11 @@ public sealed class SessionSqlCompilerTests
     private static readonly DateTimeOffset To = new(2026, 5, 1, 6, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public Task Reconstructing_Visits()
+    public void Reconstructing_Visits()
     {
         var statement = SessionSqlCompiler.Compile(Window());
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     /// <summary>

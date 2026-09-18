@@ -54,6 +54,7 @@ jobs:
         run: |
           set -euo pipefail
           for suite in \
+            Dewiride.Analytics.Testing \
             Dewiride.Analytics.Domain.Tests \
             Dewiride.Analytics.Application.Tests \
             Dewiride.Analytics.Classification.Tests \

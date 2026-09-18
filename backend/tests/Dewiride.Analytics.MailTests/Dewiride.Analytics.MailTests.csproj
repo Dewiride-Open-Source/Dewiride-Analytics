@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Verify.XunitV3" />
+    <ProjectReference Include="..\Dewiride.Analytics.Testing\Dewiride.Analytics.Testing.csproj" />
   </ItemGroup>
 
 </Project>

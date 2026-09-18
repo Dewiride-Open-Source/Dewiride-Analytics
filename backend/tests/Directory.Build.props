@@ -43,4 +43,15 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      Where a suite's approved snapshots are. A comparison reads the file approved for a test from
+      the directory the test project sits in, and that directory is recorded in the assembly here
+      because nothing at run time says where the project was: on a build agent the compiler maps
+      every source path to a placeholder, and the output directory is wherever the build was told
+      to put it. The key is the one Dewiride.Analytics.Testing reads.
+    -->
+    <AssemblyMetadata Include="Dewiride.Analytics.Testing.ProjectDirectory" Value="$(MSBuildProjectDirectory)" />
+  </ItemGroup>
+
 </Project>

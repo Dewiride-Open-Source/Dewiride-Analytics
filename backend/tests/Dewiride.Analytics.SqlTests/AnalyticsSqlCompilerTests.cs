@@ -7,6 +7,7 @@ using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Domain.Telemetry;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
+using Dewiride.Analytics.Testing;
 
 namespace Dewiride.Analytics.SqlTests;
 
@@ -76,19 +77,19 @@ public sealed partial class AnalyticsSqlCompilerTests
         ["from_site", "from_kind", "country", "town", "network", "device", "browser", "system_name"];
 
     [Fact]
-    public Task Overview()
+    public void Overview()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new OverviewQuery(Window()));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Volume_Across_Sites()
+    public void Volume_Across_Sites()
     {
         var statement = AnalyticsSqlCompiler.CompileVolume(Volume());
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     /// <summary>
@@ -137,53 +138,53 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     [Fact]
-    public Task Page_Views_By_Hour()
+    public void Page_Views_By_Hour()
     {
         var statement = Compile(TimeGranularity.Hour, TimeSeriesMetric.PageViews);
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Page_Views_By_Day()
+    public void Page_Views_By_Day()
     {
         var statement = Compile(TimeGranularity.Day, TimeSeriesMetric.PageViews);
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Visitors_By_Hour()
+    public void Visitors_By_Hour()
     {
         var statement = Compile(TimeGranularity.Hour, TimeSeriesMetric.Visitors);
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Visitors_By_Day()
+    public void Visitors_By_Day()
     {
         var statement = Compile(TimeGranularity.Day, TimeSeriesMetric.Visitors);
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Pages()
+    public void Site_Pages()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new SitePagesQuery(Window(), 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Countries()
+    public void Site_Countries()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteLocationsQuery(Window(), LocationGrouping.Country, 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     /// <summary>
@@ -191,101 +192,101 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// datacentres into a row per country, which is the answer this grouping exists to escape.
     /// </summary>
     [Fact]
-    public Task Site_Networks()
+    public void Site_Networks()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteLocationsQuery(Window(), LocationGrouping.Network, 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Towns()
+    public void Site_Towns()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteLocationsQuery(Window(), LocationGrouping.Town, 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Source_Kinds()
+    public void Site_Source_Kinds()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteSourcesQuery(Window(), SourceGrouping.Kind, "example.com", 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Sending_Sites()
+    public void Site_Sending_Sites()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteSourcesQuery(Window(), SourceGrouping.Site, "example.com", 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Sending_Pages()
+    public void Site_Sending_Pages()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteSourcesQuery(Window(), SourceGrouping.Page, "example.com", 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Devices()
+    public void Site_Devices()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteDeviceKindsQuery(Window()));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Browsers()
+    public void Site_Browsers()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteSoftwareQuery(Window(), SoftwareGrouping.Browser, 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Systems()
+    public void Site_Systems()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteSoftwareQuery(Window(), SoftwareGrouping.OperatingSystem, 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Controls()
+    public void Site_Controls()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteActionsQuery(Window(), ActionGrouping.Control, 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Control_Destinations()
+    public void Site_Control_Destinations()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteActionsQuery(Window(), ActionGrouping.Destination, 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     /// <summary>
@@ -434,73 +435,73 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     [Fact]
-    public Task Site_Engagement()
+    public void Site_Engagement()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteEngagementQuery(Window()));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Pages_By_Attention()
+    public void Site_Pages_By_Attention()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SitePageEngagementQuery(Window(), EngagementRanking.Attention, 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Pages_By_Depth()
+    public void Site_Pages_By_Depth()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SitePageEngagementQuery(Window(), EngagementRanking.Depth, 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Visit_Totals()
+    public void Site_Visit_Totals()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteVisitShapeQuery(Window(), Visits()));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Entry_Pages()
+    public void Site_Entry_Pages()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteVisitFlowQuery(Window(), Visits(), VisitPosition.Entry, 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Exit_Pages()
+    public void Site_Exit_Pages()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteVisitFlowQuery(Window(), Visits(), VisitPosition.Exit, 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Overview_Of_People()
+    public void Overview_Of_People()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new OverviewQuery(Window()) { Population = Population.People });
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Page_Views_By_Day_Of_People()
+    public void Page_Views_By_Day_Of_People()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
@@ -509,31 +510,31 @@ public sealed partial class AnalyticsSqlCompilerTests
                 Population = Population.People,
             });
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Pages_Of_People()
+    public void Site_Pages_Of_People()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SitePagesQuery(Window(), 10) { Population = Population.People });
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Countries_Of_People()
+    public void Site_Countries_Of_People()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteLocationsQuery(Window(), LocationGrouping.Country, 10) { Population = Population.People });
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Sending_Sites_Of_People()
+    public void Site_Sending_Sites_Of_People()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
@@ -542,51 +543,51 @@ public sealed partial class AnalyticsSqlCompilerTests
                 Population = Population.People,
             });
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Devices_Of_People()
+    public void Site_Devices_Of_People()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteDeviceKindsQuery(Window()) { Population = Population.People });
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Browsers_Of_People()
+    public void Site_Browsers_Of_People()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteSoftwareQuery(Window(), SoftwareGrouping.Browser, 10) { Population = Population.People });
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Controls_Of_People()
+    public void Site_Controls_Of_People()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteActionsQuery(Window(), ActionGrouping.Control, 10) { Population = Population.People });
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Engagement_Of_People()
+    public void Site_Engagement_Of_People()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteEngagementQuery(Window()) { Population = Population.People });
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Pages_By_Attention_Of_People()
+    public void Site_Pages_By_Attention_Of_People()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
@@ -595,21 +596,21 @@ public sealed partial class AnalyticsSqlCompilerTests
                 Population = Population.People,
             });
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Visit_Totals_Of_People()
+    public void Site_Visit_Totals_Of_People()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteVisitShapeQuery(Window(), Visits()) { Population = Population.People });
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Entry_Pages_Of_People()
+    public void Site_Entry_Pages_Of_People()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
@@ -618,7 +619,7 @@ public sealed partial class AnalyticsSqlCompilerTests
                 Population = Population.People,
             });
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     /// <summary>
@@ -762,45 +763,45 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     [Fact]
-    public Task Visit_Journey()
+    public void Visit_Journey()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Live_Visitors()
+    public void Live_Visitors()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), LiveVisitors());
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Live_Activity()
+    public void Live_Activity()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteLiveActivityQuery(HalfHour()));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Live_Pages()
+    public void Live_Pages()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteLivePagesQuery(HalfHour(), 10));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Live_Trail()
+    public void Live_Trail()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), LiveTrail());
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     /// <summary>
@@ -1034,55 +1035,55 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     [Fact]
-    public Task Traffic_Breakdown()
+    public void Traffic_Breakdown()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new TrafficBreakdownQuery(Window()));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Traffic_Series_By_Day()
+    public void Traffic_Series_By_Day()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new TrafficSeriesQuery(Window(), TimeGranularity.Day));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Traffic_Series_By_Hour()
+    public void Traffic_Series_By_Hour()
     {
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new TrafficSeriesQuery(Window(), TimeGranularity.Hour));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Judged_Sessions()
+    public void Judged_Sessions()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), Judged(50, 100));
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Judged_Sessions_By_Detail()
+    public void Judged_Sessions_By_Detail()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail());
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     [Fact]
-    public Task Site_Visit_Details()
+    public void Site_Visit_Details()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), Facets());
 
-        return Verify(CompiledStatementReport.Render(statement));
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
     /// <summary>

@@ -47,6 +47,20 @@ const config: NextConfig = {
     '/**': ['../../../node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers/**'],
   },
 
+  // And one package the trace follows further than it should. The framework names an image decoder
+  // as an optional dependency and reaches it from its server entry, so the trace copies the decoder
+  // and the native imaging library beneath it into the image — code this server never loads,
+  // because it never resizes a picture (see `images` below), and a library under a copyleft
+  // licence this product does not ship. Named here so neither travels.
+  //
+  // Two things about the shape. The key is `**` rather than the `/**` above: the server entry's
+  // own trace is matched by its bare name, without a leading slash, and `/**` would leave it
+  // untouched. And the patterns climb to the workspace root first, exactly as the include above
+  // does, because each is resolved from this directory and the packages are installed at the root.
+  outputFileTracingExcludes: {
+    '**': ['../../../**/node_modules/sharp/**/*', '../../../**/node_modules/@img/**/*'],
+  },
+
   // Stated rather than inferred. Turbopack works out where a project begins from the position of
   // the lockfile, which is the repository root — and left to infer it, the development server
   // watches the engine, the migrations and every build output alongside the screens.

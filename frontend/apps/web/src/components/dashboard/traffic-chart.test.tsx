@@ -170,8 +170,6 @@ beforeEach(() => {
   drawn.option = undefined;
   drawn.pick = undefined;
   drawn.picks.clear();
-  chose.mockClear();
-  compared.mockClear();
 });
 
 describe('how much traffic there was', () => {

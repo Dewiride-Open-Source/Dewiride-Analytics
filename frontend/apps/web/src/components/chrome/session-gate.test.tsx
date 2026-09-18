@@ -15,7 +15,6 @@ vi.mock('@/i18n/navigation', () => ({
 
 beforeEach(() => {
   pathname.mockReturnValue('/app');
-  replace.mockClear();
 });
 
 afterEach(() => {

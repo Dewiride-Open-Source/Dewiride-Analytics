@@ -157,6 +157,7 @@ updates:
           - "prettier"
       testing:
         patterns:
+          - "vite"
           - "vitest"
           - "@vitest/*"
           - "@vitejs/*"
@@ -172,7 +173,10 @@ updates:
           - "minor"
           - "patch"
     # TypeScript stays on 6.x: the lint bridge declares a range that stops below the next major,
-    # and `pnpm verify` asserts the resolved version.
+    # and `pnpm verify` asserts the resolved version. The Node type definitions stay on the major
+    # the images and the build run on; they move with the base images, by hand, not by proposal.
     ignore:
       - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]

@@ -1,6 +1,6 @@
 'use client';
 
-import { Code2, KeyRound, ScanSearch, SlidersHorizontal, UserRound } from 'lucide-react';
+import { CodeXml, KeyRound, ScanSearch, SlidersHorizontal, UserRound } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
 import { useMemo, useRef, useState } from 'react';
 import { JudgedTraffic } from '@/components/dashboard/judged-traffic';
@@ -220,7 +220,7 @@ export function SiteOverview({ site }: SiteOverviewProps) {
         */}
         <div className="flex flex-wrap items-start gap-3">
           <Button tone="secondary" size="sm" onClick={() => setShowingCode(true)}>
-            <Code2 aria-hidden className="size-4" />
+            <CodeXml aria-hidden className="size-4" />
             {install('action')}
           </Button>
           <Button tone="secondary" size="sm" onClick={() => setShowingKeys(true)}>

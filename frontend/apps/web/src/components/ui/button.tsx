@@ -1,5 +1,5 @@
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Loader2 } from 'lucide-react';
+import { LoaderCircle } from 'lucide-react';
 import type { ComponentProps, ReactNode } from 'react';
 import { cn } from '@/lib/styling';
 
@@ -65,7 +65,7 @@ export function Button({
       className={cn(buttonStyle({ tone, size, block }), className)}
       {...rest}
     >
-      {busy ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
+      {busy ? <LoaderCircle aria-hidden className="size-4 animate-spin" /> : null}
       {children}
     </button>
   );

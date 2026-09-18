@@ -79,4 +79,20 @@ export default defineConfig([
     files: ['scripts/**/*.mjs', 'tracker/build.mjs'],
     rules: { 'no-console': 'off' },
   },
+
+  {
+    // The extra document assertions reach the compiler by merging into the test runner's own
+    // `Matchers` interface. A merge has to repeat that interface's type parameters by name, so
+    // the second one is declared and never read, and the body is empty because every assertion
+    // arrives through `extends`. Matched by shape rather than by one path: the dashboard and the
+    // public website each carry the declaration.
+    files: ['**/src/test/jest-dom.d.ts'],
+    rules: {
+      '@typescript-eslint/no-empty-object-type': [
+        'error',
+        { allowInterfaces: 'with-single-extends' },
+      ],
+      '@typescript-eslint/no-unused-vars': 'off',
+    },
+  },
 ]);

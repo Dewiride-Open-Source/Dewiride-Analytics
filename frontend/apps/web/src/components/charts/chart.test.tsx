@@ -40,13 +40,7 @@ class StubObserver {
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', StubObserver);
-  init.mockClear();
-  setOption.mockClear();
-  resize.mockClear();
-  dispose.mockClear();
-  containPixel.mockClear();
   containPixel.mockReturnValue(true);
-  convertFromPixel.mockClear();
   convertFromPixel.mockReturnValue(2);
 });
 

@@ -1,4 +1,4 @@
-import { Loader2 } from 'lucide-react';
+import { LoaderCircle } from 'lucide-react';
 
 interface WaitingProps {
   /** Read out to anyone who cannot see the marker turning. */
@@ -15,7 +15,7 @@ export function Waiting({ label }: WaitingProps) {
   return (
     <div className="grid min-h-[60vh] place-items-center px-6" role="status" aria-live="polite">
       <div className="flex flex-col items-center gap-3 text-foreground-subtle">
-        <Loader2 aria-hidden className="size-6 animate-spin text-accent" />
+        <LoaderCircle aria-hidden className="size-6 animate-spin text-accent" />
         <span className="text-sm">{label}</span>
       </div>
     </div>

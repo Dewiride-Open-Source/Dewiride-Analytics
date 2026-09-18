@@ -38,71 +38,62 @@ allowBuilds:
 
 catalog:
   # Framework
-  next: 16.3.1
-  react: 19.2.8
-  react-dom: 19.2.8
+  next: 16.3.5
+  react: 19.3.0
+  react-dom: 19.3.0
 
   # Language. Pinned to 6.x deliberately — see the note in frontend/apps/web/package.json.
   typescript: 6.0.3
-  "@types/node": 26.2.0
-  "@types/react": 19.2.18
-  "@types/react-dom": 19.2.4
+  # The major follows the Node major the images and the build run on, so the compiler describes the
+  # runtime that ships rather than one that does not.
+  "@types/node": 24.13.5
+  "@types/react": 19.3.0
+  "@types/react-dom": 19.3.0
 
   # Presentation
   tailwindcss: 4.3.3
   "@tailwindcss/postcss": 4.3.3
   next-themes: 0.4.6
-  lucide-react: 1.31.0
+  lucide-react: 1.46.0
   "@radix-ui/react-popover": 1.1.23
   clsx: 2.1.1
-  tailwind-merge: 3.6.0
+  tailwind-merge: 3.7.0
   class-variance-authority: 0.7.1
   echarts: 6.1.0
 
   # Behaviour
-  next-intl: 4.13.7
-  nuqs: 2.10.0
-  zod: 4.4.3
-  "@tanstack/react-query": 5.101.4
+  next-intl: 4.14.5
+  nuqs: 2.10.1
+  zod: 4.6.5
+  "@tanstack/react-query": 5.103.1
 
   # Build. Pinned exactly rather than to a range: esbuild is pre-1.0 and treats a minor release as
   # allowed to break, and this one compiles a script that goes on other people's websites.
   esbuild: 0.28.2
 
   # Quality
-  eslint: 10.8.1
-  "@next/eslint-plugin-next": 16.3.1
+  eslint: 10.10.0
+  "@next/eslint-plugin-next": 16.3.5
   eslint-plugin-react-hooks: 7.1.1
   eslint-plugin-jsx-a11y: 6.10.2
-  typescript-eslint: 8.67.0
-  "@biomejs/biome": 2.5.9
-  prettier: 3.9.6
+  typescript-eslint: 8.70.0
+  "@biomejs/biome": 2.5.14
+  prettier: 3.9.7
 
   # Tests
-  vitest: 4.1.10
-  "@vitest/coverage-v8": 4.1.10
-  "@vitejs/plugin-react": 6.0.5
-  jsdom: 30.0.1
-  "@testing-library/react": 16.3.2
+  # The runner asks for its build engine as a peer and does not carry it itself, so its version is
+  # stated here like every other rather than left to whatever a regeneration resolves.
+  vite: 8.3.0
+  vitest: 5.0.1
+  "@vitest/coverage-v8": 5.0.1
+  "@vitejs/plugin-react": 6.1.1
+  jsdom: 30.1.0
+  "@testing-library/react": 16.3.3
   "@testing-library/jest-dom": 7.0.1
-  "@testing-library/user-event": 14.6.5
-  "@playwright/test": 1.62.1
+  "@testing-library/user-event": 14.6.7
+  "@playwright/test": 1.63.0
 
 # Newly published versions are held back by default, so a package compromised at the registry has
-# to survive a waiting period before it can be installed here. Everything below is a version that
-# was deliberately taken before that period had elapsed.
-minimumReleaseAgeExclude:
-  - "@biomejs/biome@2.5.9"
-  - "@biomejs/cli-darwin-arm64@2.5.9"
-  - "@biomejs/cli-darwin-x64@2.5.9"
-  - "@biomejs/cli-linux-arm64-musl@2.5.9"
-  - "@biomejs/cli-linux-arm64@2.5.9"
-  - "@biomejs/cli-linux-x64-musl@2.5.9"
-  - "@biomejs/cli-linux-x64@2.5.9"
-  - "@biomejs/cli-win32-arm64@2.5.9"
-  - "@biomejs/cli-win32-x64@2.5.9"
-  - icu-minify@4.13.7
-  - next-intl-swc-plugin-extractor@4.13.7
-  - next-intl@4.13.7
-  - use-intl@4.13.7
-  - "@testing-library/user-event@14.6.5"
+# to survive a waiting period before it can be installed here. A version deliberately taken before
+# that period has elapsed is listed under `minimumReleaseAgeExclude`, as `name@version`, and the
+# entry is removed again once that version has left the lockfile.

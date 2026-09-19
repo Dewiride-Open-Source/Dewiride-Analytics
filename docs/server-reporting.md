@@ -80,7 +80,9 @@ Content-Type: application/json
 | `events`  | yes      | Up to 100 observations, oldest first. A batch of one is valid and is what a stateless edge function will send.                                                                                                      |
 
 Recognised `surface` values: `cloudflare-worker`, `wordpress-plugin`, `netlify-edge`,
-`vercel-edge`, `aspnetcore-middleware`, `nextjs-middleware`, `log-import`.
+`vercel-edge`, `aspnetcore-middleware`, `nextjs-middleware`, `log-import`. The names are reserved
+for the reporters this product will ship; none of them ships yet, and a reporter you write
+yourself names the surface it runs on.
 
 ### One observation
 
@@ -204,7 +206,8 @@ curl -sS -X POST http://localhost:8080/collect/server \
 
 ## Privacy
 
-The envelope in `docs/adr/0005-privacy-envelope.md` applies exactly as it does to the browser
-tracker, and a reporter must not widen it. The address is kept for 72 hours and then dropped,
-leaving the network attributes derived from it. Do not send anything the tracker would not: no
-form contents, no cookie values, no request bodies, no headers beyond the ones named above.
+The privacy envelope is the same as the browser tracker's, and a reporter must not widen it. The
+address is kept for 72 hours and then dropped, leaving the network attributes derived from it; the
+visitor key is derived under a secret that changes daily, so nothing joins one day's activity to
+the next. Do not send anything the tracker would not: no form contents, no cookie values, no
+request bodies, no headers beyond the ones named above.

@@ -3,8 +3,8 @@
 "Dewiride" and the Dewiride logo are trademarks of Dewiride Technologies.
 
 The **code** in this repository is free software under the licences described in
-`LICENSE` (server core) and `tracker/LICENSE` and `integrations/*/LICENSE` (browser
-tracker and capture integrations). Those licences grant you broad rights over the code.
+`LICENSE` (server core) and `tracker/LICENSE` (browser tracker). Those licences grant you
+broad rights over the code.
 **They do not grant any rights to the name or the logo.** Copyright licences and trademark
 rights are separate, and the AGPL says so explicitly in section 7(e).
 

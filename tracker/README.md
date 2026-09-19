@@ -1,8 +1,9 @@
 # The Dewiride Analytics tracker
 
-The script that goes on the websites being measured, and the image that stands in for it when a
-browser will not run scripts. Both are **MIT** — they are pasted into other people's pages, and a
-copyleft beacon is not a reasonable thing to ask anybody to embed.
+The script that goes on the websites being measured. It is **MIT** — it is pasted into other
+people's pages, and a copyleft beacon is not a reasonable thing to ask anybody to embed. The image
+that stands in for it when a browser will not run scripts is served by the engine, which is where
+its licence lives.
 
 Around **1.9 KB** compressed. A test fails the build above 2 KB.
 

@@ -14,7 +14,10 @@
       "live": "Live",
       "journeys": "User journey",
       "settings": "Settings"
-    }
+    },
+    "closed": "{name} is closed",
+    "closedRestore": "Bring it back",
+    "closedSee": "See details"
   },
   "theme": {
     "label": "Appearance",
@@ -819,7 +822,9 @@
     "StandingNotRecognised": "We couldn't save that choice. Reload the page and try again.",
     "InvitationLinkNotUsable": "That invitation has expired or has already been used. Ask for a new one.",
     "JoinDetailsMissing": "Choose a password to finish setting up your account.",
-    "CurrentPasswordWrong": "That password didn't match. Enter the one you sign in with now."
+    "CurrentPasswordWrong": "That password didn't match. Enter the one you sign in with now.",
+    "AccountAlreadyClosed": "This account is already closed.",
+    "AccountNotClosed": "This account is already open."
   },
   "errors": {
     "unreachableTitle": "Can't reach Dewiride Analytics",
@@ -999,6 +1004,17 @@
         "submit": "Change password",
         "saved": "Password changed"
       }
+    },
+    "close": {
+      "title": "Close this account",
+      "body": "Measurement stops for every website at once, and everyone in the account loses access. For 30 days you can change your mind and bring everything back exactly as it was. After that, everything it measured and everyone in it is deleted.",
+      "action": "Close account",
+      "closing": "Closing…",
+      "confirm": {
+        "label": "Type {name} to confirm",
+        "yes": "Close account",
+        "no": "Cancel"
+      }
     }
   },
   "join": {
@@ -1035,5 +1051,18 @@
       "body": "Invitations stop working after 7 days, and once they have been used. Ask whoever invited you to send another."
     },
     "action": "Go to sign in"
+  },
+  "closed": {
+    "title": "{account} is closed",
+    "bodyYou": "You closed it on {date}.",
+    "body": "{closedBy} closed it on {date}.",
+    "bodyUnattributed": "It was closed on {date}.",
+    "deletion": "Everything it measured is kept in case you want it back, and is deleted on {date}.",
+    "restore": "Bring it back",
+    "restoring": "Bringing it back…",
+    "onlyOwner": "Only an owner can bring it back.",
+    "back": "Back to your dashboard",
+    "signOut": "Sign out",
+    "signingOut": "Signing out…"
   }
 }

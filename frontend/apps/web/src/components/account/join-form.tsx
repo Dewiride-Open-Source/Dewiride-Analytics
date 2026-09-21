@@ -1,13 +1,12 @@
 'use client';
 
-import { TriangleAlert } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { type FormEvent, type ReactNode, useState } from 'react';
+import { type FormEvent, useState } from 'react';
 import { Button, buttonStyle } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { Field, PasswordInput, TextInput } from '@/components/ui/field';
+import { DeadEnd, OutcomeCard } from '@/components/ui/outcome-card';
 import { Waiting } from '@/components/ui/waiting';
 import { Link } from '@/i18n/navigation';
 import { checkPassword, type ValidationKey } from '@/lib/forms/validation';
@@ -31,8 +30,18 @@ export function JoinForm() {
   const invitation = usePreviewInvitation(token, session.isSuccess);
   const accept = useAcceptInvitation();
 
+  // A link that was never one of ours, one that has run out and one somebody has already used are
+  // the same dead end. Telling them apart would say whether it had been used by somebody else, and
+  // what to do about it is the same in every case.
   if (!token) {
-    return <DeadEnd title={t('missing.title')} body={t('missing.body')} action={t('action')} />;
+    return (
+      <DeadEnd
+        title={t('missing.title')}
+        body={t('missing.body')}
+        action={t('action')}
+        href={SIGN_IN}
+      />
+    );
   }
 
   if (session.isPending || invitation.isPending) {
@@ -40,15 +49,33 @@ export function JoinForm() {
   }
 
   if (invitation.isError) {
-    return <DeadEnd title={t('expired.title')} body={t('expired.body')} action={t('action')} />;
+    return (
+      <DeadEnd
+        title={t('expired.title')}
+        body={t('expired.body')}
+        action={t('action')}
+        href={SIGN_IN}
+      />
+    );
   }
 
+  // Somebody signed in on this device is inside the account they just joined only when the
+  // invitation was theirs: the standing goes to the account it was sent to, never to whoever
+  // happened to open the link.
   if (accept.isSuccess) {
-    return <Joined signedIn={accept.data.signedIn} name={invitation.data.organizationName} />;
+    return (
+      <Joined
+        signedIn={
+          accept.data.signedIn ||
+          sameAddress(session.data?.user?.emailAddress, invitation.data.emailAddress)
+        }
+        name={invitation.data.organizationName}
+      />
+    );
   }
 
   return (
-    <Shell
+    <OutcomeCard
       title={t('title', { organization: invitation.data.organizationName })}
       subtitle={t('subtitle', { address: invitation.data.emailAddress })}
     >
@@ -66,8 +93,13 @@ export function JoinForm() {
           {accept.isPending ? t('joining') : t('join')}
         </Button>
       )}
-    </Shell>
+    </OutcomeCard>
   );
+}
+
+/** Whether two addresses name one mailbox, however either was typed. */
+function sameAddress(one: string | undefined, other: string): boolean {
+  return one !== undefined && one.trim().toLowerCase() === other.trim().toLowerCase();
 }
 
 /** Everything somebody with no account here has to choose before they can be signed in. */
@@ -140,15 +172,16 @@ function NewAccount({
 /**
  * What follows joining.
  *
- * Somebody who has just chosen a password is already signed in and goes straight to the numbers.
- * Somebody who already had an account here is not, and is sent to sign in with the password they
- * already have rather than being asked for it a second time on this screen.
+ * Somebody who is signed in — because they have just chosen a password, or because they already
+ * were on this device — goes straight to the numbers. Somebody who already had an account here
+ * and is not signed in is sent to sign in with the password they already have rather than being
+ * asked for it a second time on this screen.
  */
 function Joined({ signedIn, name }: { readonly signedIn: boolean; readonly name: string }) {
   const t = useTranslations('join');
 
   return (
-    <Shell
+    <OutcomeCard
       title={t('done.title', { organization: name })}
       subtitle={signedIn ? t('done.ready') : t('done.signIn')}
     >
@@ -158,61 +191,6 @@ function Joined({ signedIn, name }: { readonly signedIn: boolean; readonly name:
       >
         {signedIn ? t('done.open') : t('done.action')}
       </Link>
-    </Shell>
-  );
-}
-
-/**
- * An invitation that leads nowhere, and the one thing that would put it right.
- *
- * A link that was never one of ours, one that has run out and one somebody has already used are
- * the same screen. Telling them apart would say whether it had been used by somebody else, and
- * what to do about it is the same in every case.
- */
-function DeadEnd({
-  title,
-  body,
-  action,
-}: {
-  readonly title: string;
-  readonly body: string;
-  readonly action: string;
-}) {
-  return (
-    <Shell title={title} subtitle={body} tone="problem">
-      <Link href={SIGN_IN} className={buttonStyle({ size: 'lg', block: true })}>
-        {action}
-      </Link>
-    </Shell>
-  );
-}
-
-function Shell({
-  title,
-  subtitle,
-  tone = 'plain',
-  children,
-}: {
-  readonly title: string;
-  readonly subtitle?: string;
-  readonly tone?: 'plain' | 'problem';
-  readonly children: ReactNode;
-}) {
-  return (
-    <Card focal className="w-full max-w-md p-6 sm:p-8">
-      <header className="mb-6 flex flex-col gap-1">
-        {tone === 'problem' ? (
-          <span
-            aria-hidden
-            className="mb-3 grid size-10 place-items-center rounded-full bg-danger-soft text-danger"
-          >
-            <TriangleAlert className="size-5" />
-          </span>
-        ) : null}
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
-        {subtitle ? <p className="text-sm text-foreground-muted">{subtitle}</p> : null}
-      </header>
-      {children}
-    </Card>
+    </OutcomeCard>
   );
 }

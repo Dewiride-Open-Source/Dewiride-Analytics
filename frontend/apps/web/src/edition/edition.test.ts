@@ -35,6 +35,11 @@ describe('the compiled edition', () => {
     expect(edition.settingsSections).toEqual([]);
   });
 
+  /** Nor beside a closed account: nothing is paid for on a server somebody runs themselves. */
+  it('has nothing to say beside a closed account', () => {
+    expect(edition.closure).toBeNull();
+  });
+
   /**
    * A section pointing at an address the product does not answer would be a link to a redirect.
    * Every screen exists in both editions; which of them has anything to put on one does not.

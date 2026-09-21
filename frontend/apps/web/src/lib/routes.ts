@@ -20,6 +20,7 @@ export const JOIN = '/app/join';
 export const SETTINGS = '/app/settings';
 export const SETTINGS_YOU = '/app/settings/you';
 export const PLAN = '/app/settings/plan';
+export const CLOSED = '/app/closed';
 
 /** The address the product is reached from, which names no screen of its own. */
 const ROOT = '/';
@@ -65,6 +66,7 @@ export const SCREENS: ReadonlySet<string> = new Set([
   SETTINGS,
   SETTINGS_YOU,
   PLAN,
+  CLOSED,
 ]);
 
 /**
@@ -234,6 +236,20 @@ export function destinationFor(session: Session, pathname: string): string | nul
 
   if (!session.user) {
     return DOORS.has(pathname) ? null : SIGN_IN;
+  }
+
+  // Somebody whose only account is closed has one screen: the one that says so. The doors that
+  // are not spent stay open to them for the same reason they stay open to everybody signed in —
+  // a link sent to their mailbox should still work — and an invitation into an open account is
+  // the one way off the screen that is not bringing the closed one back.
+  const walled = session.closure !== null && !session.closure.hasOpenAccount;
+
+  if (walled) {
+    return pathname === CLOSED || (DOORS.has(pathname) && !SPENT.has(pathname)) ? null : CLOSED;
+  }
+
+  if (pathname === CLOSED && session.closure === null) {
+    return DASHBOARD;
   }
 
   return SPENT.has(pathname) ? DASHBOARD : null;

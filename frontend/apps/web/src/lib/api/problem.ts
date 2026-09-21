@@ -32,7 +32,10 @@ export class ApiError extends Error {
     return this.status === 401;
   }
 
-  /** The install has already been claimed, so it cannot be claimed again. */
+  /**
+   * What was asked for has already happened — the install is claimed, the account is already
+   * closed or already open — so asking again cannot change anything.
+   */
   get alreadyDone(): boolean {
     return this.status === 409;
   }

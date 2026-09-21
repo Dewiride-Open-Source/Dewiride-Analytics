@@ -47,6 +47,7 @@ describe('the sign-in screen', () => {
         displayName: 'Nobody',
       },
       token: 'a-fresh-proof',
+      closure: null,
     });
 
     renderScreen(<SignInForm />);

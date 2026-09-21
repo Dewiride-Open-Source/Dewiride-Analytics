@@ -108,6 +108,8 @@ public static class InfrastructureRegistration
         builder.Services.AddScoped<IAccountProfile, AccountProfile>();
         builder.Services.AddScoped<IInvitations, Invitations>();
         builder.Services.AddScoped<IPasswordReset, PasswordReset>();
+        builder.Services.AddScoped<OrganizationOwners>();
+        builder.Services.AddScoped<IAccountClosure, AccountClosure>();
 
         // Registered here rather than by an edition. Which grants exist differs between an
         // installation with one organisation and a service with many; what a grant permits does
@@ -119,6 +121,9 @@ public static class InfrastructureRegistration
         builder.Services.AddSingleton<VisitorKeySaltStore>();
         builder.Services.AddSingleton<IVisitorKeyFactory, RotatingSaltVisitorKeyFactory>();
         builder.Services.AddHostedService<VisitorKeySaltRotationService>();
+
+        builder.Services.AddSingleton<ClosedAccountPurge>();
+        builder.Services.AddHostedService<ClosedAccountPurgeService>();
 
         AddVisitorContext(builder);
         AddNotifications(builder);

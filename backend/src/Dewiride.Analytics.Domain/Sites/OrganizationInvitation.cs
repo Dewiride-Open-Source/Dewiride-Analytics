@@ -71,8 +71,15 @@ public sealed class OrganizationInvitation
     /// <summary>The standing being offered.</summary>
     public OrganizationRole Role { get; private set; }
 
-    /// <summary>Who sent it.</summary>
-    public Guid InvitedByUserId { get; private set; }
+    /// <summary>
+    /// Who sent it, or <see langword="null"/> once that account has been deleted.
+    /// </summary>
+    /// <remarks>
+    /// The invitation outlives its sender. An account is deleted only when a closed organisation
+    /// is purged, and an invitation that person sent into some other, open organisation is that
+    /// organisation's history rather than the sender's, so it stays with the sender's name gone.
+    /// </remarks>
+    public Guid? InvitedByUserId { get; private set; }
 
     /// <summary>Hash of the secret, which is the only form of it that is stored.</summary>
     public string TokenHash { get; private set; }

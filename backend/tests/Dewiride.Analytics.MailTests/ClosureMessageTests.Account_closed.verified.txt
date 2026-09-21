@@ -1,37 +1,36 @@
 ﻿--- To ---
-reader@example.com
+owner@example.com
 
 --- Greeted as ---
-Jagdish
+Priya
 
 --- Subject ---
-You have used most of this month's pages
+Your account has been closed
 
 --- Idempotency key ---
-example:2:2c006cc40e58a2ed3fc45d6c0c90154f
+account-closed:01a01b635adc7407b34947ffb0922fde:20260921T093000Z:95696e6f74de02d6d206587eeaa701bc
 
 --- Plain text ---
-You have used most of this month's pages
-========================================
+Your account has been closed
+============================
 
-Hi Jagdish,
+Hi Priya,
 
-Your websites have been busy. Here is where this month stands.
+Jagdish Kumawat closed the account Acme & Sons on 21 September. Measurement has stopped for every website in it, and nobody can open its screens.
 
-  Pages this month     417,000
-  Included in Growth   500,000
-  Measuring pauses     3 September
+Nothing has been deleted yet. Before 21 October any owner can sign in and bring it back, with everything as it was.
 
-See where you are:
-https://analytics.example.com/app/settings/plan
+  Closed on    21 September
+  Deleted on   21 October
 
-Nothing changes yet.
+Bring it back:
+https://analytics.example.com/app/sign-in
 
-We write once more if you pass it.
+If nobody brings it back before 21 October, everything it measured and everyone in it is deleted.
 
 --
 Dewiride Analytics · analytics.example.com
-Sent to reader@example.com about the account it is used for.
+Sent to owner@example.com about the account it is used for.
 
 --- HTML ---
 <!doctype html>
@@ -42,7 +41,7 @@ Sent to reader@example.com about the account it is used for.
 <meta name="x-apple-disable-message-reformatting">
 <meta name="color-scheme" content="light dark">
 <meta name="supported-color-schemes" content="light dark">
-<title>You have used most of this month&#39;s pages</title>
+<title>Your account has been closed</title>
 <!--[if mso]><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml><![endif]-->
 <style>:root { color-scheme:light dark; supported-color-schemes:light dark; }
 body,table,td,p,a { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
@@ -85,7 +84,7 @@ a { color:#5b3bc4; }
 }</style>
 </head>
 <body class="dw-page" style="margin:0;padding:0;width:100%;background:#f1eff9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">417,000 of 500,000 pages. Nothing stops yet.&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;</div>
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">Everything is kept until 21 October. Any owner can bring it back.&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;</div>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="dw-page" style="background:#f1eff9;">
   <tr><td align="center" style="padding:32px 12px 40px;">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="dw-shell" style="width:600px;max-width:600px;">
@@ -95,46 +94,43 @@ a { color:#5b3bc4; }
       <tr><td class="dw-card" style="background:#ffffff;border:1px solid #e3dff1;border-radius:14px;box-shadow:0 1px 2px rgba(23,22,31,0.05),0 14px 32px -10px rgba(116,86,224,0.22);">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
           <tr><td class="dw-pad" style="padding:36px 40px 40px;">
-            <h1 class="dw-heading" style="margin:0 0 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:25px;line-height:33px;font-weight:600;letter-spacing:-0.02em;color:#17161f;">You have used most of this month&#39;s pages</h1>
-            <p class="dw-text" style="margin:0 0 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:25px;color:#17161f;">Hi Jagdish,</p>
-            <p class="dw-text" style="margin:0 0 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:25px;color:#17161f;">Your websites have been busy. Here is where this month stands.</p>
+            <h1 class="dw-heading" style="margin:0 0 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:25px;line-height:33px;font-weight:600;letter-spacing:-0.02em;color:#17161f;">Your account has been closed</h1>
+            <p class="dw-text" style="margin:0 0 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:25px;color:#17161f;">Hi Priya,</p>
+            <p class="dw-text" style="margin:0 0 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:25px;color:#17161f;">Jagdish Kumawat closed the account Acme &amp; Sons on 21 September. Measurement has stopped for every website in it, and nobody can open its screens.</p><p class="dw-text" style="margin:0 0 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:25px;color:#17161f;">Nothing has been deleted yet. Before 21 October any owner can sign in and bring it back, with everything as it was.</p>
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="dw-panel" style="margin:4px 0 28px;background:#f7f5fd;border:1px solid #e3dff1;border-radius:12px;">
 <tr><td class="dw-panel-pad" style="padding:6px 20px;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
-<td class="dw-muted dw-rule" style="padding:11px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:21px;color:#514f61;">Pages this month</td>
-<td class="dw-figure dw-rule" align="right" style="padding:11px 0;font-family:SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;font-size:14px;line-height:21px;font-weight:600;color:#17161f;white-space:nowrap;">417,000</td>
+<td class="dw-muted dw-rule" style="padding:11px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:21px;color:#514f61;">Closed on</td>
+<td class="dw-figure dw-rule" align="right" style="padding:11px 0;font-family:SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;font-size:14px;line-height:21px;font-weight:600;color:#17161f;white-space:nowrap;">21 September</td>
 </tr><tr>
-<td class="dw-muted dw-rule" style="border-top:1px solid #e3dff1;padding:11px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:21px;color:#514f61;">Included in Growth</td>
-<td class="dw-figure dw-rule" align="right" style="border-top:1px solid #e3dff1;padding:11px 0;font-family:SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;font-size:14px;line-height:21px;font-weight:600;color:#17161f;white-space:nowrap;">500,000</td>
-</tr><tr>
-<td class="dw-muted dw-rule" style="border-top:1px solid #e3dff1;padding:11px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:21px;color:#514f61;">Measuring pauses</td>
-<td class="dw-figure dw-rule" align="right" style="border-top:1px solid #e3dff1;padding:11px 0;font-family:SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;font-size:14px;line-height:21px;font-weight:600;color:#17161f;white-space:nowrap;">3 September</td>
+<td class="dw-muted dw-rule" style="border-top:1px solid #e3dff1;padding:11px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:21px;color:#514f61;">Deleted on</td>
+<td class="dw-figure dw-rule" align="right" style="border-top:1px solid #e3dff1;padding:11px 0;font-family:SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;font-size:14px;line-height:21px;font-weight:600;color:#17161f;white-space:nowrap;">21 October</td>
 </tr></table>
 </td></tr>
 </table>
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 26px;">
 <tr><td>
 <!--[if mso]>
-<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="https://analytics.example.com/app/settings/plan" style="height:46px;v-text-anchor:middle;width:209px;" arcsize="22%" stroke="f" fillcolor="#7456e0">
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="https://analytics.example.com/app/sign-in" style="height:46px;v-text-anchor:middle;width:190px;" arcsize="22%" stroke="f" fillcolor="#7456e0">
 <w:anchorlock/>
-<center style="color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;font-weight:600;">See where you are</center>
+<center style="color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;font-weight:600;">Bring it back</center>
 </v:roundrect>
 <![endif]-->
 <!--[if !mso]><!-->
-<a href="https://analytics.example.com/app/settings/plan" class="dw-button" style="display:inline-block;padding:14px 28px;border-radius:10px;background:#7456e0;color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:18px;font-weight:600;text-decoration:none;">See where you are</a>
+<a href="https://analytics.example.com/app/sign-in" class="dw-button" style="display:inline-block;padding:14px 28px;border-radius:10px;background:#7456e0;color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:18px;font-weight:600;text-decoration:none;">Bring it back</a>
 <!--<![endif]-->
 </td></tr>
 </table>
-            <p class="dw-subtle" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:21px;color:#6b6880;word-break:break-word;overflow-wrap:anywhere;">Or copy this into your browser:<br><a href="https://analytics.example.com/app/settings/plan" class="dw-link" style="color:#5b3bc4;text-decoration:underline;">https://analytics.example.com/app/settings/plan</a></p>
+            <p class="dw-subtle" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:21px;color:#6b6880;word-break:break-word;overflow-wrap:anywhere;">Or copy this into your browser:<br><a href="https://analytics.example.com/app/sign-in" class="dw-link" style="color:#5b3bc4;text-decoration:underline;">https://analytics.example.com/app/sign-in</a></p>
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:26px 0 0;">
-<tr><td class="dw-rule" style="border-top:1px solid #e3dff1;padding:22px 0 0;"><p class="dw-muted" style="margin:0 0 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:#514f61;">Nothing changes yet.</p><p class="dw-muted" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:#514f61;">We write once more if you pass it.</p></td></tr>
+<tr><td class="dw-rule" style="border-top:1px solid #e3dff1;padding:22px 0 0;"><p class="dw-muted" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:#514f61;">If nobody brings it back before 21 October, everything it measured and everyone in it is deleted.</p></td></tr>
 </table>
           </td></tr>
         </table>
       </td></tr>
       <tr><td style="padding:20px 8px 0;">
         <p class="dw-subtle" style="margin:0 0 4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:19px;color:#6b6880;">Dewiride Analytics · analytics.example.com</p>
-        <p class="dw-subtle" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:19px;color:#6b6880;">Sent to reader@example.com about the account it is used for.</p>
+        <p class="dw-subtle" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:19px;color:#6b6880;">Sent to owner@example.com about the account it is used for.</p>
       </td></tr>
     </table>
   </td></tr>

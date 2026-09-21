@@ -15,21 +15,21 @@ public sealed class OrganizationDirectory(ControlPlaneDbContext database) : IOrg
     private const int MaxNameLength = 200;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// One query. The closure instant travels back with the standing rather than being asked for
+    /// again by whoever needs it.
+    /// </remarks>
     public async Task<OrganizationStanding?> StandingForAsync(
         Guid userId,
         CancellationToken cancellationToken)
     {
-        var held = await database.OrganizationMemberships
-            .AsNoTracking()
-            .Where(membership => membership.UserId == userId)
-            .OrderByDescending(membership => membership.Role)
-            .ThenBy(membership => membership.GrantedAt)
-            .ThenBy(membership => membership.OrganizationId)
-            .Select(membership => new { membership.OrganizationId, membership.Role })
+        var held = await HeldStandings.Of(database, userId, closedFirst: false)
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return held is null ? null : new OrganizationStanding(held.OrganizationId, held.Role);
+        return held is null
+            ? null
+            : new OrganizationStanding(held.OrganizationId, held.Role) { ClosedAt = held.ClosedAt };
     }
 
     /// <inheritdoc />

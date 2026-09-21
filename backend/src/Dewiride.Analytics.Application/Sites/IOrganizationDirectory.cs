@@ -24,9 +24,12 @@ public interface IOrganizationDirectory
     /// The organisation somebody belongs to, and what they may do in it.
     /// </summary>
     /// <remarks>
-    /// The one they hold the widest standing in, and the oldest of those where they hold the same
-    /// standing in several. Belonging to more than one arrives with the screens for moving between
-    /// them, and until then this is a rule rather than a choice anybody makes.
+    /// An open organisation before a closed one; among those, the one they hold the widest
+    /// standing in, and the oldest of those where they hold the same standing in several. A closed
+    /// organisation is chosen only when the person has nowhere open to be, and it comes back with
+    /// its <see cref="OrganizationStanding.ClosedAt"/> set so that whoever asked can answer as
+    /// though it were not there. Belonging to more than one arrives with the screens for moving
+    /// between them, and until then this is a rule rather than a choice anybody makes.
     /// </remarks>
     /// <param name="userId">The person asking.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -87,7 +90,21 @@ public interface IOrganizationDirectory
 /// </summary>
 /// <param name="OrganizationId">The organisation.</param>
 /// <param name="Role">Their standing in it.</param>
-public readonly record struct OrganizationStanding(Guid OrganizationId, OrganizationRole Role);
+public readonly record struct OrganizationStanding(Guid OrganizationId, OrganizationRole Role)
+{
+    /// <summary>
+    /// When the organisation was closed, or <see langword="null"/> while it is open.
+    /// </summary>
+    /// <remarks>
+    /// Present so that a caller can tell a standing in a closed account from one in an open
+    /// account without a second lookup. Everything that reads or changes an account treats a
+    /// closed one as absent; what looks at it is the session, which has to explain the closure,
+    /// the acts that close and restore an account, and an edition's money paths, which answer a
+    /// closed account so its owner can still read what they paid for and refuse to sell it
+    /// anything new.
+    /// </remarks>
+    public DateTimeOffset? ClosedAt { get; init; }
+}
 
 /// <summary>
 /// An organisation and everybody in it.

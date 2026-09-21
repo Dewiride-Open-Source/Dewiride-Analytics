@@ -14,7 +14,9 @@ namespace Dewiride.Analytics.Infrastructure.Sites;
 /// control-plane database on the hot path of the highest-volume endpoint in the product. Entries
 /// are held briefly: a site's settings taking up to a minute to take effect is a fair trade, and
 /// a negative result is cached too, because an unknown site identifier is the shape a flood of
-/// junk traffic takes and it must not become a database query per request.
+/// junk traffic takes and it must not become a database query per request. A site whose account
+/// is closed is not found, exactly as one that never existed: a report for it is refused without
+/// a word, and closing or restoring the account throws its entry away so that takes effect at once.
 /// </remarks>
 /// <param name="database">Control-plane database.</param>
 /// <param name="cache">Cache used to hold resolved sites.</param>
@@ -43,7 +45,7 @@ public sealed class CachedSiteCatalog(ControlPlaneDbContext database, HybridCach
         await cache.GetOrCreateAsync(
             CacheKey(siteId),
             (database, siteId),
-            static async (state, token) => await state.database.Sites
+            static async (state, token) => await state.database.OpenSites
                 .AsNoTracking()
                 .Where(site => site.Id == state.siteId)
                 // Projected in the database query rather than after loading the aggregate, so what

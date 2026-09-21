@@ -48,7 +48,9 @@ public static class MailTemplate
     /// What makes this message the same message if it is composed twice. Derived from the thing the
     /// message is about — the token being sent, the invitation being offered, the month being
     /// reported on — so that a pass which fails after sending and runs again does not send a second
-    /// copy.
+    /// copy. The mailbox is folded in here, so that the same thing announced to two people is two
+    /// messages: whatever delivers them treats one key as one message, and would otherwise hand the
+    /// second person the first person's answer, or nothing.
     /// </param>
     /// <param name="content">What it says.</param>
     /// <returns>The message.</returns>
@@ -62,7 +64,7 @@ public static class MailTemplate
             content.Subject,
             PlainText(to, content),
             Page(to, content),
-            idempotencyKey);
+            MailKeys.ForRecipient(idempotencyKey, to.Address));
     }
 
     /// <summary>

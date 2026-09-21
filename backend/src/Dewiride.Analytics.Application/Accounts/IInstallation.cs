@@ -9,7 +9,8 @@ namespace Dewiride.Analytics.Application.Accounts;
 /// reachable from the internet, so the dashboard beside it is too. The window between the
 /// process first starting and somebody claiming ownership of it is the only moment at which an
 /// unauthenticated caller may create an account, and it closes permanently the instant one
-/// exists.
+/// exists — and stays closed if every account is later deleted with a closed organisation, because
+/// an install that has been emptied is finished rather than new.
 /// </para>
 /// <para>
 /// Implementations must make claiming an empty install safe against two callers arriving at
@@ -23,7 +24,7 @@ public interface IInstallation
     /// Reports whether the install has already been claimed.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns><see langword="true"/> once at least one account exists.</returns>
+    /// <returns><see langword="true"/> once the install has been claimed, whether or not any account still exists.</returns>
     Task<bool> IsClaimedAsync(CancellationToken cancellationToken);
 
     /// <summary>

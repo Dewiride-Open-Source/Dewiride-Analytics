@@ -1,4 +1,5 @@
 using System.Data.Common;
+using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Infrastructure;
 using Dewiride.Analytics.Infrastructure.ClickHouse;
 using Dewiride.Analytics.Infrastructure.Persistence;
@@ -40,6 +41,26 @@ internal sealed class FreshInstall : WebApplicationFactory<Program>
         _controlPlane = controlPlane;
         _telemetry = telemetry;
     }
+
+    /// <summary>
+    /// What the welcome screen is answered with, for an install being claimed by a test.
+    /// </summary>
+    /// <remarks>
+    /// One request shape for every test that claims an install, because the welcome screen is the
+    /// only place it can be posted to and every field it gains would otherwise have to be added
+    /// wherever a test had spelled its own.
+    /// </remarks>
+    /// <param name="emailAddress">The address the first owner signs in with.</param>
+    /// <returns>A request the welcome screen accepts.</returns>
+    public static SetupRequest Claim(string emailAddress = "owner@example.com") => new()
+    {
+        EmailAddress = emailAddress,
+        Password = Passwords.Acceptable,
+        DisplayName = "The Owner",
+        OrganizationName = "First Organisation",
+        SiteDomain = "first.example",
+        TimeZoneId = "Europe/London",
+    };
 
     /// <summary>
     /// Creates an empty control-plane database and brings a host up against it.

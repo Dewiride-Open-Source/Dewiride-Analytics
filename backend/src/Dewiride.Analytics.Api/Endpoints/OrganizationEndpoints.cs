@@ -23,6 +23,11 @@ namespace Dewiride.Analytics.Api.Endpoints;
 /// looking at them ought to be able to check. Changing anything belongs to an owner, because
 /// adding and removing people decides who can read a whole account's traffic.
 /// </para>
+/// <para>
+/// A closed account is not here. Somebody whose account is closed is answered as though they
+/// belonged to none, because everything about a closed account is said on one screen, from the
+/// session, and nothing about it may be read or changed until it is brought back.
+/// </para>
 /// </remarks>
 internal static class OrganizationEndpoints
 {
@@ -119,7 +124,7 @@ internal static class OrganizationEndpoints
             .StandingForAsync(userId.Value, cancellationToken)
             .ConfigureAwait(false);
 
-        if (standing is null)
+        if (standing is not { ClosedAt: null })
         {
             return TypedResults.NotFound();
         }
@@ -295,7 +300,7 @@ internal static class OrganizationEndpoints
             .StandingForAsync(userId.Value, cancellationToken)
             .ConfigureAwait(false);
 
-        if (standing is null)
+        if (standing is not { ClosedAt: null })
         {
             return new OwnedAccount(Guid.Empty, Guid.Empty, TypedResults.NotFound());
         }

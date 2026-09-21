@@ -24,6 +24,12 @@ namespace Dewiride.Analytics.Infrastructure.Accounts;
 /// rules are the most likely thing to refuse the request and there is no reason to have written
 /// anything by the time that happens.
 /// </para>
+/// <para>
+/// A claim is recorded in a row of its own as well as implied by the accounts it creates, because
+/// accounts can go: purging the last closed organisation on an installation deletes every account
+/// with it, and the record is what keeps the welcome screen shut afterwards. An installation that
+/// has been emptied is finished rather than new.
+/// </para>
 /// </remarks>
 /// <param name="database">Control-plane database.</param>
 /// <param name="accounts">Account store.</param>
@@ -35,15 +41,6 @@ public sealed class Installation(
     TimeProvider clock,
     ILogger<Installation> logger) : IInstallation
 {
-    /// <summary>
-    /// Key the setup transaction locks on.
-    /// </summary>
-    /// <remarks>
-    /// PostgreSQL advisory locks share one namespace across the whole database, so the number is
-    /// arbitrary but must not collide with another use. Nothing else in this product takes one.
-    /// </remarks>
-    private const long SetupLockKey = 0x4445_5749_5249_4445;
-
     /// <summary>Problem code reported when the first site's details are not usable.</summary>
     public const string SiteRejectedCode = "SiteDetailsRejected";
 
@@ -51,8 +48,14 @@ public sealed class Installation(
     public const string OrganizationRejectedCode = "OrganizationNameRejected";
 
     /// <inheritdoc />
-    public Task<bool> IsClaimedAsync(CancellationToken cancellationToken) =>
-        database.Users.AsNoTracking().AnyAsync(cancellationToken);
+    /// <remarks>
+    /// Either answer means claimed. The record is written by the claim below and by the purge that
+    /// empties an installation; the accounts cover the hosted service, whose accounts arrive by
+    /// signing up and never through here, for as long as it has any.
+    /// </remarks>
+    public async Task<bool> IsClaimedAsync(CancellationToken cancellationToken) =>
+        await database.InstallationClaims.AsNoTracking().AnyAsync(cancellationToken).ConfigureAwait(false)
+        || await database.Users.AsNoTracking().AnyAsync(cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc />
     public async Task<InstallationOutcome> ClaimAsync(
@@ -74,9 +77,7 @@ public sealed class Installation(
             .BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        await database.Database
-            .ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({SetupLockKey})", cancellationToken)
-            .ConfigureAwait(false);
+        await AdvisoryLocks.TakeAsync(database, AdvisoryLocks.SetupKey, cancellationToken).ConfigureAwait(false);
 
         // Asked again, this time under the lock. The answer above was read before anybody was
         // holding anything back, so two callers could both have seen an unclaimed install.
@@ -115,6 +116,7 @@ public sealed class Installation(
                 [.. created.Errors.Select(error => new AccountProblem(error.Code, error.Description))]);
         }
 
+        database.InstallationClaims.Add(new InstallationClaim(now));
         database.Organizations.Add(organization);
         database.Sites.Add(site);
         database.OrganizationMemberships.Add(

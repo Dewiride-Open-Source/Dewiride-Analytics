@@ -14,7 +14,7 @@ export default async function JoinPage() {
   const t = await getTranslations('join');
 
   return (
-    <div className="flex min-h-[calc(100dvh-4rem)] items-center justify-center px-4 py-10 sm:py-16">
+    <div className="flex flex-1 items-center justify-center px-4 py-10 sm:py-16">
       <Suspense fallback={<Waiting label={t('loading')} />}>
         <JoinForm />
       </Suspense>

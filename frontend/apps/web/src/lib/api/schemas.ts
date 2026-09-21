@@ -17,10 +17,30 @@ export const signedInUserSchema = z.object({
   displayName: z.string(),
 });
 
+/**
+ * An account the signed-in person belongs to that has been closed, and where they stand with it.
+ *
+ * Everything the closed screen says is here, so that the screen is drawn from one answer rather
+ * than assembled from several that might disagree about which account they are describing.
+ */
+export const closedAccountSchema = z.object({
+  name: z.string(),
+  closedAt: timestamp,
+  deletionDue: timestamp,
+  /** Who closed it, or nothing where that person is no longer on the account. */
+  closedBy: z.string().nullable(),
+  closedByYou: z.boolean(),
+  /** Whether the person reading this may bring it back, which only an owner may. */
+  canRestore: z.boolean(),
+  /** Whether they also belong somewhere that is open, and so still have a dashboard to use. */
+  hasOpenAccount: z.boolean(),
+});
+
 export const sessionSchema = z.object({
   setupCompleted: z.boolean(),
   user: signedInUserSchema.nullable(),
   token: z.string(),
+  closure: closedAccountSchema.nullable(),
 });
 
 export const installationSchema = z.object({
@@ -723,6 +743,7 @@ export const issuedServerKeySchema = z.object({
 
 export type SignedInUser = z.infer<typeof signedInUserSchema>;
 export type Session = z.infer<typeof sessionSchema>;
+export type ClosedAccount = z.infer<typeof closedAccountSchema>;
 export type Installation = z.infer<typeof installationSchema>;
 export type OrganizationRole = z.infer<typeof organizationRoleSchema>;
 export type Person = z.infer<typeof personSchema>;

@@ -8,13 +8,15 @@ import type { EditionModule } from '@/edition/contract';
  * there and everybody else is added by them — a form that let anyone passing create an account on
  * somebody's own server would be a way in, not a feature. There is no plan screen and no notice
  * above the screens because an installation somebody runs themselves measures whatever they point
- * at it: there is no allowance to show them, and nothing that could run out.
+ * at it: there is no allowance to show them, and nothing that could run out. Closing an account
+ * has nothing to say about money here for the same reason: nothing is being paid for.
  */
 export const edition: EditionModule = {
   name: 'community',
   signUp: null,
   plan: null,
   notice: null,
+  closure: null,
   settingsSections: [],
   messages: {},
 };

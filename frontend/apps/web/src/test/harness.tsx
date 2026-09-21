@@ -3,7 +3,7 @@ import { type RenderResult, render } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { NuqsTestingAdapter, type OnUrlUpdateFunction } from 'nuqs/adapters/testing';
 import type { ReactElement, ReactNode } from 'react';
-import type { SignedInUser } from '@/lib/api/schemas';
+import type { ClosedAccount, SignedInUser } from '@/lib/api/schemas';
 import { sessionKey } from '@/lib/queries/session';
 import messages from '../../messages/en.json';
 
@@ -24,6 +24,14 @@ interface Options {
    * looking at it and would only be given somebody to ignore.
    */
   readonly signedInAs?: SignedInUser | null;
+
+  /**
+   * A closed account the signed-in person belongs to.
+   *
+   * None by default, which is every account almost all of the time. Set it to test the screens
+   * that exist for the other case.
+   */
+  readonly closure?: ClosedAccount | null;
 
   /**
    * What the address is asking for.
@@ -65,6 +73,7 @@ export function renderScreen(
   {
     sessionAlreadyRead = true,
     signedInAs = null,
+    closure = null,
     searchParams,
     watchingAddress,
     arrivingAfterAddress = false,
@@ -79,6 +88,7 @@ export function renderScreen(
       setupCompleted: true,
       user: signedInAs,
       token: 'proof-value',
+      closure,
     });
   }
 

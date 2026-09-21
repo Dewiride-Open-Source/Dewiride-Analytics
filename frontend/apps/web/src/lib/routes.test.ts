@@ -2,8 +2,9 @@ import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { routing } from '@/i18n/routing';
-import type { Session } from '@/lib/api/schemas';
+import type { ClosedAccount, Session } from '@/lib/api/schemas';
 import {
+  CLOSED,
   currentSection,
   DASHBOARD,
   destinationFor,
@@ -48,8 +49,18 @@ const somebody = {
   displayName: 'A',
 };
 
+const CLOSED_ACCOUNT: ClosedAccount = {
+  name: 'Acme',
+  closedAt: '2026-09-21T09:30:00+00:00',
+  deletionDue: '2026-10-21T09:30:00+00:00',
+  closedBy: null,
+  closedByYou: true,
+  canRestore: true,
+  hasOpenAccount: false,
+};
+
 function session(overrides: Partial<Session>): Session {
-  return { setupCompleted: true, user: null, token: 'proof', ...overrides };
+  return { setupCompleted: true, user: null, token: 'proof', closure: null, ...overrides };
 }
 
 describe('where somebody belongs', () => {
@@ -105,15 +116,78 @@ describe('where somebody belongs', () => {
   it('keeps a signed-out visitor away from the plan screen', () => {
     expect(destinationFor(session({ user: null }), PLAN)).toBe(SIGN_IN);
   });
+
+  /**
+   * Somebody whose only account is closed has one screen: the one that says so. Every other
+   * screen would be about numbers, websites or settings that no longer belong to anybody.
+   */
+  it.each([DASHBOARD, LIVE, SETTINGS, PLAN, SIGN_IN, SET_UP, '/somewhere-else'])(
+    'sends somebody whose only account is closed from %s to the closed screen',
+    (pathname) => {
+      const walled = session({ user: somebody, closure: CLOSED_ACCOUNT });
+
+      expect(destinationFor(walled, pathname)).toBe(CLOSED);
+    },
+  );
+
+  it('leaves somebody whose only account is closed on the closed screen', () => {
+    const walled = session({ user: somebody, closure: CLOSED_ACCOUNT });
+
+    expect(destinationFor(walled, CLOSED)).toBeNull();
+  });
+
+  /**
+   * A link sent to their mailbox should still work for them as for anybody signed in, and an
+   * invitation into an open account is the one way off the closed screen that is not bringing the
+   * closed one back.
+   */
+  it.each([RESET_PASSWORD, FORGOT_PASSWORD, JOIN])(
+    'lets somebody whose only account is closed use %s',
+    (door) => {
+      const walled = session({ user: somebody, closure: CLOSED_ACCOUNT });
+
+      expect(destinationFor(walled, door)).toBeNull();
+    },
+  );
+
+  it('moves somebody with nothing closed off the closed screen', () => {
+    expect(destinationFor(session({ user: somebody }), CLOSED)).toBe(DASHBOARD);
+  });
+
+  /**
+   * Somebody who also belongs to an open account still has a dashboard to use, so the closed one
+   * is a screen they may visit rather than the only one they may see.
+   */
+  it('treats somebody who still has an open account like anybody signed in', () => {
+    const still = session({
+      user: somebody,
+      closure: { ...CLOSED_ACCOUNT, hasOpenAccount: true },
+    });
+
+    expect(destinationFor(still, DASHBOARD)).toBeNull();
+    expect(destinationFor(still, CLOSED)).toBeNull();
+    expect(destinationFor(still, SIGN_IN)).toBe(DASHBOARD);
+  });
+
+  it('keeps a signed-out visitor away from the closed screen', () => {
+    expect(destinationFor(session({ user: null }), CLOSED)).toBe(SIGN_IN);
+  });
 });
 
 describe('which addresses name a screen', () => {
-  it.each([DASHBOARD, LIVE, SIGN_IN, SIGN_UP, SET_UP, FORGOT_PASSWORD, RESET_PASSWORD, PLAN])(
-    'recognises %s',
-    (screen) => {
-      expect(isScreen(screen, routing.locales)).toBe(true);
-    },
-  );
+  it.each([
+    DASHBOARD,
+    LIVE,
+    SIGN_IN,
+    SIGN_UP,
+    SET_UP,
+    FORGOT_PASSWORD,
+    RESET_PASSWORD,
+    PLAN,
+    CLOSED,
+  ])('recognises %s', (screen) => {
+    expect(isScreen(screen, routing.locales)).toBe(true);
+  });
 
   it.each(['/en/app', '/en/app/sign-in', '/en/app/reset-password'])(
     'recognises %s behind a language',
@@ -184,7 +258,7 @@ describe('which part of the product an address is in', () => {
     expect(currentSection(pathname)).toBe(section);
   });
 
-  it.each([SIGN_IN, JOIN, '/nowhere'])('puts %s in no section at all', (pathname) => {
+  it.each([SIGN_IN, JOIN, CLOSED, '/nowhere'])('puts %s in no section at all', (pathname) => {
     expect(currentSection(pathname)).toBeNull();
   });
 });

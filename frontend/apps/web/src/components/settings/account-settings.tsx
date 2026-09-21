@@ -6,6 +6,7 @@ import { Waiting } from '@/components/ui/waiting';
 import { useSession } from '@/lib/queries/session';
 import { useOrganization } from '@/lib/queries/organization';
 import { AccountName } from './account-name';
+import { CloseAccount } from './close-account';
 import { Invitations } from './invitations';
 import { PeopleList } from './people-list';
 
@@ -50,6 +51,9 @@ export function AccountSettings() {
       />
 
       {owner ? <Invitations invitations={organization.invitations} /> : null}
+
+      {/* Last: it is the one thing on this screen nobody comes here to do often. */}
+      {owner ? <CloseAccount name={organization.name} /> : null}
     </div>
   );
 }

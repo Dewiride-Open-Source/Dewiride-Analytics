@@ -13,7 +13,7 @@ import {
   signOut,
 } from '@/lib/api/endpoints';
 import type { Session } from '@/lib/api/schemas';
-import { sitesKey } from './keys';
+import { organizationKey, sitesKey } from './keys';
 
 export const sessionKey = ['session'] as const;
 
@@ -40,6 +40,7 @@ export function useSignIn() {
     onSuccess: (session) => {
       cache.setQueryData(sessionKey, session);
       void cache.invalidateQueries({ queryKey: sitesKey });
+      void cache.invalidateQueries({ queryKey: organizationKey });
     },
   });
 }
@@ -51,9 +52,11 @@ export function useSignOut() {
     mutationFn: async () => signOut(proofFrom(cache)),
     onSuccess: (session) => {
       cache.setQueryData(sessionKey, session);
-      // Removed rather than marked stale: leaving one person's list of websites in memory while
-      // the next person signs in is how the wrong name appears for a moment on a shared machine.
+      // Removed rather than marked stale: leaving one person's list of websites, or the people in
+      // their account, in memory while the next person signs in is how the wrong name appears for
+      // a moment on a shared machine.
       cache.removeQueries({ queryKey: sitesKey });
+      cache.removeQueries({ queryKey: organizationKey });
     },
   });
 }
@@ -70,6 +73,7 @@ export function useClaimInstall() {
         setupCompleted: true,
         user: installation.user,
         token: installation.token,
+        closure: null,
       });
       void cache.invalidateQueries({ queryKey: sitesKey });
     },

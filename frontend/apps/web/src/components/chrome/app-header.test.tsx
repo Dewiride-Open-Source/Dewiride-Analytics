@@ -2,22 +2,29 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from 'next-themes';
 import type { OnUrlUpdateFunction } from 'nuqs/adapters/testing';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppHeader } from '@/components/chrome/app-header';
 import type * as Navigation from '@/i18n/navigation';
-import type { Site } from '@/lib/api/schemas';
+import type { ClosedAccount, Site } from '@/lib/api/schemas';
+import { organizationKey, sitesKey } from '@/lib/queries/keys';
 import { engineDoing, respondWith } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
+
+const pathname = vi.fn(() => '/app');
 
 /**
  * Which screen the browser is on comes from the framework's own router, and there is no router in
  * a document. The bar is told it is on the overview, which is the state the marker has to be right
- * about.
+ * about, unless a test puts it on the one screen where it says less.
  */
 vi.mock('@/i18n/navigation', async (original) => ({
   ...(await original<typeof Navigation>()),
-  usePathname: () => '/app',
+  usePathname: () => pathname(),
 }));
+
+beforeEach(() => {
+  pathname.mockReturnValue('/app');
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -29,6 +36,19 @@ const OWNER = {
   emailAddress: 'owner@example.com',
   displayName: 'Ada Lovelace',
 };
+
+const CLOSED_ACCOUNT: ClosedAccount = {
+  name: 'Acme Inc.',
+  closedAt: '2026-09-21T09:30:00+00:00',
+  deletionDue: '2026-10-21T09:30:00+00:00',
+  closedBy: 'Ada Lovelace',
+  closedByYou: true,
+  canRestore: true,
+  hasOpenAccount: false,
+};
+
+/** The same closed account, belonged to by somebody who also belongs to an open one. */
+const CLOSED_BESIDE_AN_OPEN_ONE: ClosedAccount = { ...CLOSED_ACCOUNT, hasOpenAccount: true };
 
 const SITE: Site = {
   id: '01a013fa-49d6-77be-b65d-20ec86e9df78',
@@ -46,8 +66,11 @@ const SHOP: Site = {
   role: 'owner',
 };
 
-/** Answers with a signed-in person and their websites, and remembers one that is added. */
-function engineWith(sites: readonly Site[]) {
+/**
+ * Answers with a signed-in person, their websites and whichever account of theirs is closed, and
+ * remembers a website that is added.
+ */
+function engineWith(sites: readonly Site[], closure: ClosedAccount | null = null) {
   const known = [...sites];
 
   return engineDoing(async (path, init) => {
@@ -61,7 +84,7 @@ function engineWith(sites: readonly Site[]) {
       return respondWith(200, known);
     }
 
-    return respondWith(200, { setupCompleted: true, user: OWNER, token: 'p' });
+    return respondWith(200, { setupCompleted: true, user: OWNER, token: 'p', closure });
   });
 }
 
@@ -89,7 +112,9 @@ function withTheme(ui: React.ReactElement, { at, watching, afterAddress }: Arriv
 
 describe('the bar across the top', () => {
   it('names the product whether or not anybody is signed in', async () => {
-    engineDoing(async () => respondWith(200, { setupCompleted: false, user: null, token: 'p' }));
+    engineDoing(async () =>
+      respondWith(200, { setupCompleted: false, user: null, token: 'p', closure: null }),
+    );
 
     withTheme(<AppHeader />);
 
@@ -98,7 +123,9 @@ describe('the bar across the top', () => {
   });
 
   it('shows who is signed in and offers the way out', async () => {
-    engineDoing(async () => respondWith(200, { setupCompleted: true, user: OWNER, token: 'p' }));
+    engineDoing(async () =>
+      respondWith(200, { setupCompleted: true, user: OWNER, token: 'p', closure: null }),
+    );
 
     withTheme(<AppHeader />);
 
@@ -112,17 +139,24 @@ describe('the bar across the top', () => {
       if (init.method === 'DELETE') {
         signedIn = false;
 
-        return respondWith(200, { setupCompleted: true, user: null, token: 'a-fresh-proof' });
+        return respondWith(200, {
+          setupCompleted: true,
+          user: null,
+          token: 'a-fresh-proof',
+          closure: null,
+        });
       }
 
       return respondWith(200, {
         setupCompleted: true,
         user: signedIn ? OWNER : null,
         token: 'p',
+        closure: null,
       });
     });
 
-    withTheme(<AppHeader />);
+    const { cache } = withTheme(<AppHeader />);
+    cache.setQueryData(organizationKey, { id: 'a', name: 'Acme', role: 'owner' });
 
     await userEvent.click(await screen.findByRole('button', { name: /Sign out/ }));
 
@@ -130,6 +164,9 @@ describe('the bar across the top', () => {
       expect(screen.queryByText('Signed in as Ada Lovelace')).not.toBeInTheDocument(),
     );
     expect(engine.count).toBeGreaterThan(1);
+    // Nothing of the last person's is left for the next one to glimpse.
+    expect(cache.getQueryData(sitesKey)).toBeUndefined();
+    expect(cache.getQueryData(organizationKey)).toBeUndefined();
   });
 
   /**
@@ -267,7 +304,9 @@ describe('the bar across the top', () => {
   });
 
   it('offers no way between screens before anybody is signed in', async () => {
-    engineDoing(async () => respondWith(200, { setupCompleted: false, user: null, token: 'p' }));
+    engineDoing(async () =>
+      respondWith(200, { setupCompleted: false, user: null, token: 'p', closure: null }),
+    );
 
     withTheme(<AppHeader />);
 
@@ -277,7 +316,9 @@ describe('the bar across the top', () => {
   });
 
   it('offers no website picker before anybody is signed in', async () => {
-    engineDoing(async () => respondWith(200, { setupCompleted: false, user: null, token: 'p' }));
+    engineDoing(async () =>
+      respondWith(200, { setupCompleted: false, user: null, token: 'p', closure: null }),
+    );
 
     withTheme(<AppHeader />);
 
@@ -432,7 +473,7 @@ describe('the bar across the top', () => {
         return respondWith(200, [SITE]);
       }
 
-      return respondWith(200, { setupCompleted: true, user: OWNER, token: 'p' });
+      return respondWith(200, { setupCompleted: true, user: OWNER, token: 'p', closure: null });
     });
 
     withTheme(<AppHeader />);
@@ -449,7 +490,9 @@ describe('the bar across the top', () => {
   });
 
   it('offers all three ways of choosing how the product looks', async () => {
-    engineDoing(async () => respondWith(200, { setupCompleted: true, user: OWNER, token: 'p' }));
+    engineDoing(async () =>
+      respondWith(200, { setupCompleted: true, user: OWNER, token: 'p', closure: null }),
+    );
 
     withTheme(<AppHeader />);
 
@@ -462,7 +505,9 @@ describe('the bar across the top', () => {
   });
 
   it('marks the chosen appearance as the one in use', async () => {
-    engineDoing(async () => respondWith(200, { setupCompleted: true, user: OWNER, token: 'p' }));
+    engineDoing(async () =>
+      respondWith(200, { setupCompleted: true, user: OWNER, token: 'p', closure: null }),
+    );
 
     withTheme(<AppHeader />);
 
@@ -472,5 +517,123 @@ describe('the bar across the top', () => {
       expect(screen.getByRole('radio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true'),
     );
     expect(screen.getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'false');
+  });
+});
+
+describe('the bar for somebody whose only account is closed', () => {
+  it('keeps who they are and the way out, and drops the way between screens they cannot open', async () => {
+    engineWith([SITE], CLOSED_ACCOUNT);
+
+    withTheme(<AppHeader />);
+
+    expect(await screen.findByText('Signed in as Ada Lovelace')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Sign out/ })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Sections' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Website' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * There is no picker, so the list behind it is not asked for either: a request for websites
+   * somebody cannot open is a refusal waiting to be shown as though something had gone wrong.
+   */
+  it('never asks for websites it has nowhere to show', async () => {
+    const engine = engineWith([SITE], CLOSED_ACCOUNT);
+
+    withTheme(<AppHeader />);
+
+    await screen.findByText('Signed in as Ada Lovelace');
+
+    expect(engine.all().some((sent) => sent.path.endsWith('/api/sites'))).toBe(false);
+  });
+
+  it('still ends the sign-in when asked', async () => {
+    let signedIn = true;
+    const engine = engineDoing(async (_path, init) => {
+      if (init.method === 'DELETE') {
+        signedIn = false;
+
+        return respondWith(200, {
+          setupCompleted: true,
+          user: null,
+          token: 'a-fresh-proof',
+          closure: null,
+        });
+      }
+
+      return respondWith(200, {
+        setupCompleted: true,
+        user: signedIn ? OWNER : null,
+        token: 'p',
+        closure: signedIn ? CLOSED_ACCOUNT : null,
+      });
+    });
+
+    withTheme(<AppHeader />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /Sign out/ }));
+
+    await waitFor(() =>
+      expect(screen.queryByText('Signed in as Ada Lovelace')).not.toBeInTheDocument(),
+    );
+    expect(engine.all().some((sent) => sent.init.method === 'DELETE')).toBe(true);
+  });
+});
+
+describe('the bar for somebody with a closed account beside an open one', () => {
+  it('says which account is closed and offers to bring it back, above the screens they can still use', async () => {
+    engineWith([SITE], CLOSED_BESIDE_AN_OPEN_ONE);
+
+    withTheme(<AppHeader />);
+
+    const line = await screen.findByRole('status');
+
+    expect(line).toHaveTextContent('Acme Inc. is closed');
+    expect(within(line).getByRole('link', { name: 'Bring it back' })).toHaveAttribute(
+      'href',
+      '/app/closed',
+    );
+    expect(screen.getByRole('navigation', { name: 'Sections' })).toBeInTheDocument();
+    expect(await screen.findByRole('combobox', { name: 'Website' })).toBeInTheDocument();
+  });
+
+  it('offers the details instead to somebody who cannot bring it back', async () => {
+    engineWith([SITE], { ...CLOSED_BESIDE_AN_OPEN_ONE, canRestore: false });
+
+    withTheme(<AppHeader />);
+
+    const line = await screen.findByRole('status');
+
+    expect(line).toHaveTextContent('Acme Inc. is closed');
+    expect(within(line).getByRole('link', { name: 'See details' })).toHaveAttribute(
+      'href',
+      '/app/closed',
+    );
+    expect(within(line).queryByRole('link', { name: 'Bring it back' })).not.toBeInTheDocument();
+  });
+
+  /** The screen the line leads to opens with the same words, and once is enough. */
+  it('says nothing extra on the screen the line leads to', async () => {
+    pathname.mockReturnValue('/app/closed');
+    engineWith([SITE], CLOSED_BESIDE_AN_OPEN_ONE);
+
+    withTheme(<AppHeader />);
+
+    await screen.findByText('Signed in as Ada Lovelace');
+    await screen.findByRole('combobox', { name: 'Website' });
+
+    expect(screen.queryByText('Acme Inc. is closed')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('carries no such line for somebody with nothing closed', async () => {
+    engineWith([SITE]);
+
+    withTheme(<AppHeader />);
+
+    await screen.findByText('Signed in as Ada Lovelace');
+    await screen.findByRole('combobox', { name: 'Website' });
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(/is closed/)).not.toBeInTheDocument();
   });
 });

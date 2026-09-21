@@ -84,6 +84,15 @@ describe('the account screen', () => {
     expect(screen.getByText('2 people')).toBeInTheDocument();
   });
 
+  it('offers an owner the way to close the whole account, last of all', async () => {
+    engineHolding();
+
+    show();
+
+    expect(await screen.findByRole('heading', { name: 'Close this account' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close account' })).toBeInTheDocument();
+  });
+
   it('marks the person reading it, so nobody wonders which row is theirs', async () => {
     engineHolding();
 
@@ -236,6 +245,7 @@ describe('the account screen', () => {
     expect(screen.queryByLabelText('What Grace Hopper can do')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Send invitation' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Remove/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Close account' })).not.toBeInTheDocument();
   });
 
   it('explains a refusal in the words the reader knows', async () => {

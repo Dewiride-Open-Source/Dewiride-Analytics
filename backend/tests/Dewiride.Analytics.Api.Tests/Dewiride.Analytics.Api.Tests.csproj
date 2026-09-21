@@ -27,6 +27,14 @@
     <None Include="..\..\..\frontend\apps\web\src\lib\routes.ts"
           Link="routes.ts"
           CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      The dashboard's English catalogue, linked in for the same reason: the sentence on the card
+      that closes an account names how long the engine keeps a closed one, and the test that holds
+      the two together reads the text the dashboard is built from.
+    -->
+    <None Include="..\..\..\frontend\apps\web\messages\en.json"
+          Link="en.json"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

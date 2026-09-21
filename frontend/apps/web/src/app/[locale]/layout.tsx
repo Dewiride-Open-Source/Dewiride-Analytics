@@ -61,7 +61,7 @@ export default async function LocaleLayout({
             <div className="flex min-h-dvh flex-col">
               <AppHeader />
               <EditionNotice />
-              <main className="flex-1">
+              <main className="flex flex-1 flex-col">
                 <SessionGate>{children}</SessionGate>
               </main>
             </div>

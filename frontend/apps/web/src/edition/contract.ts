@@ -43,6 +43,15 @@ export interface EditionModule {
   readonly notice: ComponentType | null;
 
   /**
+   * What this edition has to say about money when an account is closed, or about to be.
+   *
+   * Shown on the card that closes an account and on the screen that says it is closed. Nothing
+   * in the open-source edition: on a server somebody runs themselves there is no arrangement to
+   * stop and nothing being paid for, so there is nothing to say.
+   */
+  readonly closure: ComponentType | null;
+
+  /**
    * Screens this edition adds inside the account.
    *
    * Appended after the product's own, so the ones the whole product has stay first and in the

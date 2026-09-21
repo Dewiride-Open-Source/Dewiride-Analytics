@@ -15,14 +15,32 @@ vi.mock('next/navigation', async (importOriginal) => ({
 const TOKEN = 'dwi_a-secret-from-the-link';
 const PASSPHRASE = 'cardamom lantern rowboat';
 
+const ALAN = {
+  id: '0195f7e0-0000-7000-8000-000000000009',
+  emailAddress: 'alan@example.com',
+  displayName: 'Alan Turing',
+};
+
+/** What the engine answers once somebody has chosen a password and been signed in by it. */
 const JOINED = {
   signedIn: true,
-  user: {
-    id: '0195f7e0-0000-7000-8000-000000000009',
-    emailAddress: 'alan@example.com',
-    displayName: 'Alan Turing',
-  },
+  user: ALAN,
   token: 'a-fresh-proof-value',
+};
+
+/** What the engine answers for somebody who already had an account: added to it, signed in by nothing. */
+const JOINED_WITHOUT_SIGNING_IN = {
+  ...JOINED,
+  signedIn: false,
+  user: null,
+};
+
+/** What the engine says about the session when it is read again after joining. */
+const SESSION = {
+  setupCompleted: true,
+  user: ALAN,
+  token: 'proof-value',
+  closure: null,
 };
 
 beforeEach(() => {
@@ -34,18 +52,23 @@ afterEach(() => {
 });
 
 /**
- * Answers what the engine answers: what the invitation is for, and then what came of taking it up.
+ * Answers what the engine answers: what the invitation is for, what came of taking it up, and who
+ * is signed in when the session is read again afterwards.
  */
 function engineOffering(needsAccount: boolean, joined: unknown = JOINED): Engine {
-  return engineDoing(async (path) =>
-    path.endsWith('/preview')
+  return engineDoing(async (path) => {
+    if (path === '/api/session') {
+      return respondWith(200, SESSION);
+    }
+
+    return path.endsWith('/preview')
       ? respondWith(200, {
           organizationName: 'Acme Inc.',
           emailAddress: 'alan@example.com',
           needsAccount,
         })
-      : respondWith(200, joined),
-  );
+      : respondWith(200, joined);
+  });
 }
 
 /** What the screen sent after reading the invitation back, which is the act being tested. */
@@ -131,7 +154,7 @@ describe('taking up an invitation', () => {
    * the mailbox, and what it buys is a standing in one account rather than a way into their own.
    */
   it('asks somebody who already has an account for nothing at all', async () => {
-    const engine = engineOffering(false, { ...JOINED, signedIn: false, user: null });
+    const engine = engineOffering(false, JOINED_WITHOUT_SIGNING_IN);
 
     renderScreen(<JoinForm />);
 
@@ -147,7 +170,7 @@ describe('taking up an invitation', () => {
   });
 
   it('sends somebody who already has an account to sign in with the password they have', async () => {
-    engineOffering(false, { ...JOINED, signedIn: false, user: null });
+    engineOffering(false, JOINED_WITHOUT_SIGNING_IN);
 
     renderScreen(<JoinForm />);
 
@@ -155,6 +178,43 @@ describe('taking up an invitation', () => {
 
     expect(await screen.findByText('You have joined Acme Inc.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/app/sign-in');
+  });
+
+  /**
+   * The engine signs nobody in by adding them to an account, but somebody already signed in on this
+   * device needs no signing in: what they have just gained is somewhere else to be.
+   */
+  it('opens the numbers for somebody who already has an account and is signed in here', async () => {
+    engineOffering(false, JOINED_WITHOUT_SIGNING_IN);
+
+    renderScreen(<JoinForm />, { signedInAs: ALAN });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Join' }));
+
+    expect(
+      await screen.findByText('Everything this account measures is ready for you.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open my numbers' })).toHaveAttribute('href', '/app');
+  });
+
+  /**
+   * Where they stand has changed — most of all for somebody whose only other account was closed —
+   * so who they are is read again after joining rather than trusted from before it.
+   */
+  it('reads the session again once somebody signed in here has joined', async () => {
+    const engine = engineOffering(false, JOINED_WITHOUT_SIGNING_IN);
+
+    renderScreen(<JoinForm />, { signedInAs: ALAN });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Join' }));
+
+    await waitFor(() => expect(engine.count).toBe(3));
+
+    expect(engine.all().map((sent) => sent.path)).toEqual([
+      '/api/invitations/preview',
+      '/api/invitations/accept',
+      '/api/session',
+    ]);
   });
 
   it('says plainly when the link is missing its secret', () => {

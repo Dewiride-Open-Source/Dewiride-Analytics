@@ -86,6 +86,7 @@ const PASSWORD_RESET = '/api/password-reset';
 const ORGANIZATION = '/api/organization';
 const ACCOUNT = '/api/account';
 const INVITATIONS = '/api/invitations';
+const CLOSURE = `${ORGANIZATION}/closure`;
 
 /** What is known before anybody has done anything: has this install an owner, and who is here. */
 export function describeSession(): Promise<Session> {
@@ -638,6 +639,21 @@ export function invitePerson(invitation: Invitation, proof: string): Promise<voi
 
 export function revokeInvitation(invitationId: string, proof: string): Promise<void> {
   return discardResource(`${ORGANIZATION}/invitations/${invitationId}`, 'DELETE', proof);
+}
+
+/**
+ * Closes the account the caller runs.
+ *
+ * Answered with the session as it now stands, because closing an account changes what the person
+ * who did it is allowed to see, and the screen they land on is decided from that answer.
+ */
+export function closeAccount(proof: string): Promise<Session> {
+  return submitResource(CLOSURE, 'POST', proof, sessionSchema);
+}
+
+/** Brings a closed account back, with everything as it was. Answered the same way. */
+export function restoreAccount(proof: string): Promise<Session> {
+  return submitResource(CLOSURE, 'DELETE', proof, sessionSchema);
 }
 
 /** Changes the name the caller is shown under. */

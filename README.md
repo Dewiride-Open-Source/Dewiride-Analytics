@@ -128,7 +128,7 @@ and the [master plan](#master-plan) below it says what does not yet.
 ## Master plan
 
 Every capability the product is meant to have, phase by phase, in the order the work is picked
-up. Each line is marked with one of four states. Last reviewed 2026-09-19.
+up. Each line is marked with one of four states. Last reviewed 2026-09-21.
 
 - **Done** — shipped and visible on the dashboard, or collected on every capture surface.
 - **Partly done** — a real piece ships; the line says what is still missing.
@@ -155,9 +155,9 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-19.
   cited that does not exist; reserved surface names marked as not yet shipped.
 - **Done** · Private repository README: clustering, the intelligence feed, single sign-on and
   directory sync marked as not built.
-- **Not started** · Terms and privacy promise 30 days' retention after an account is closed, but
-  nothing closes an account — either build closure with that retention, or reword the promise.
-  Owner's call.
+- **Done** · An owner can close the account from Settings; everything is kept 30 days for a
+  restore, then deleted. The terms and privacy policy promise the same 30 days, and a test holds
+  them to the engine.
 - **Not started** · CLA note says signing is checked automatically on every pull request —
   confirm the checker is installed on the repository, or reword. Owner's call.
 
@@ -588,6 +588,11 @@ run the pieces outside containers.
    you are signed in as the owner. That screen is only offered once and can never be used again —
    the first person to arrive becomes the owner, and it takes a database lock so two people
    arriving together cannot both win.
+
+   Closing the account from Settings stops measurement at once and, 30 days later, deletes
+   everything it held — the websites, the traffic and every account on the installation — and
+   leaves the installation finished rather than claimable again. Start over with
+   `docker compose down --volumes`.
 
 6. **Put the tracker on your site.** Choose **Tracking code** on the dashboard and paste the two
    lines it gives you into your website's pages. Traffic appears as soon as somebody visits.

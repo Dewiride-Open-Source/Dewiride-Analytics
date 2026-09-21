@@ -57,7 +57,38 @@ public sealed record SetupRequest
 /// tied to the identity it was issued to, so a fresh one arrives with every answer that changes
 /// who is signed in.
 /// </param>
-public sealed record SessionResponse(bool SetupCompleted, SignedInUser? User, string Token);
+/// <param name="Closure">
+/// The closed account the signed-in person belongs to, or nothing when they belong to none. Present
+/// whether or not they also belong to an open one; <see cref="ClosedAccountSummary.HasOpenAccount"/>
+/// says which.
+/// </param>
+public sealed record SessionResponse(
+    bool SetupCompleted,
+    SignedInUser? User,
+    string Token,
+    ClosedAccountSummary? Closure);
+
+/// <summary>
+/// A closed account, as explained to somebody in it.
+/// </summary>
+/// <param name="Name">What the account is called.</param>
+/// <param name="ClosedAt">When it was closed.</param>
+/// <param name="DeletionDue">When everything about it is deleted unless it is brought back first.</param>
+/// <param name="ClosedBy">The name of whoever closed it, or nothing where that is no longer known.</param>
+/// <param name="ClosedByYou">Whether the person reading this is the one who closed it.</param>
+/// <param name="CanRestore">Whether the person reading this may bring it back.</param>
+/// <param name="HasOpenAccount">
+/// Whether the person reading this has somewhere open to be, so that the closure is a line beside
+/// their dashboard rather than the only thing they can see.
+/// </param>
+public sealed record ClosedAccountSummary(
+    string Name,
+    DateTimeOffset ClosedAt,
+    DateTimeOffset DeletionDue,
+    string? ClosedBy,
+    bool ClosedByYou,
+    bool CanRestore,
+    bool HasOpenAccount);
 
 /// <summary>
 /// The person currently signed in.

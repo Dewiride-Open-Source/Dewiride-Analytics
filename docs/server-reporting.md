@@ -158,8 +158,9 @@ became of the batch. The caller has already proved it holds a key for the site, 
 nothing left for the answer to disclose, and whoever is writing the reporter needs to know whether
 it works.
 
-`rejected` counts observations that were malformed or that named a page on a hostname the site
-does not cover. The rest of the batch is still stored.
+`rejected` counts observations that were malformed, that named a page on a hostname the site does
+not cover, or that arrived while the account the website belongs to was closed. The rest of the
+batch is still stored.
 
 | Status | Meaning                                                                   |
 | ------ | ------------------------------------------------------------------------- |

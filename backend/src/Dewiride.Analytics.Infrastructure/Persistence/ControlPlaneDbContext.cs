@@ -33,6 +33,35 @@ public sealed class ControlPlaneDbContext(DbContextOptions<ControlPlaneDbContext
     /// <summary>Sites whose traffic is observed.</summary>
     public DbSet<Site> Sites => Set<Site>();
 
+    /// <summary>
+    /// Whether this installation has been claimed, recorded once and never removed.
+    /// </summary>
+    public DbSet<InstallationClaim> InstallationClaims => Set<InstallationClaim>();
+
+    /// <summary>
+    /// Organisations that are open.
+    /// </summary>
+    /// <remarks>
+    /// The one spelling of "not closed". A closed organisation is kept whole for a while so it
+    /// can be brought back, and in that time it must be invisible to everything that reads
+    /// accounts, lists sites or accepts a report — so every such reader starts here rather than
+    /// at <see cref="Organizations"/>, and a second spelling of the rule would be a second place
+    /// for a closed account to leak through.
+    /// </remarks>
+    public IQueryable<Organization> OpenOrganizations =>
+        Organizations.Where(organization => organization.ClosedAt == null);
+
+    /// <summary>
+    /// Sites that belong to an open organisation.
+    /// </summary>
+    /// <remarks>
+    /// Telemetry is keyed by site, so a site is the handle every read and every report arrives
+    /// with; this is where a closed account's sites stop answering to it.
+    /// </remarks>
+    public IQueryable<Site> OpenSites =>
+        Sites.Where(site => Organizations.Any(
+            organization => organization.Id == site.OrganizationId && organization.ClosedAt == null));
+
     /// <summary>Standings people hold in an organisation.</summary>
     public DbSet<OrganizationMembership> OrganizationMemberships => Set<OrganizationMembership>();
 

@@ -25,7 +25,6 @@ namespace Dewiride.Analytics.Integration.Tests.Dashboard;
 public sealed class SetupTests(AnalyticsStackFixture stack)
 {
     private const string Setup = "/api/setup";
-    private const string GoodPassword = Passwords.Acceptable;
 
     [Fact]
     public async Task An_Install_Nobody_Has_Claimed_Says_So_And_Hands_Out_A_Token()
@@ -179,15 +178,8 @@ public sealed class SetupTests(AnalyticsStackFixture stack)
         (await browser.DescribeAsync()).SetupCompleted.Should().BeFalse();
     }
 
-    private static SetupRequest Details(string emailAddress = "owner@example.com") => new()
-    {
-        EmailAddress = emailAddress,
-        Password = GoodPassword,
-        DisplayName = "The Owner",
-        OrganizationName = "First Organisation",
-        SiteDomain = "first.example",
-        TimeZoneId = "Europe/London",
-    };
+    private static SetupRequest Details(string emailAddress = "owner@example.com") =>
+        FreshInstall.Claim(emailAddress);
 
     /// <summary>
     /// Reads the reasons a refusal carried, which is what lets the interface explain itself.

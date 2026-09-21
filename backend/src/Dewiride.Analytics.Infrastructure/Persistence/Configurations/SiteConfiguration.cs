@@ -22,6 +22,31 @@ public sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organiz
 
         builder.Property(organization => organization.CreatedAt).IsRequired();
 
+        // The three facts of a closure, all absent while the organisation is open. The state is
+        // derived from them rather than kept in a column of its own, as an invitation's is, so
+        // that bringing an account back is clearing them and nothing else.
+        builder.Property(organization => organization.ClosedAt);
+        builder.Property(organization => organization.ClosedByUserId);
+        builder.Property(organization => organization.DeletionReminderSentAt);
+
+        builder.Ignore(organization => organization.IsClosed);
+        builder.Ignore(organization => organization.DeletionDue);
+
+        // The sweep that deletes closed organisations asks for the ones whose time has run, and
+        // an index on the closure instant answers that without reading every open account.
+        builder.HasIndex(organization => organization.ClosedAt)
+            .HasDatabaseName("ix_organizations_closed_at");
+
+        // Who closed it is kept for as long as the closure is, but must not keep the person: the
+        // only thing that deletes an account is the purge that also deletes the organisation, so
+        // the constraint is never exercised, and on the day it is, the closure outliving its
+        // closer is the right way round.
+        builder.HasOne<ApplicationUser>()
+            .WithMany()
+            .HasForeignKey(organization => organization.ClosedByUserId)
+            .HasConstraintName("fk_organizations_users_closed_by_user_id")
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasMany(organization => organization.Sites)
             .WithOne()
             .HasForeignKey(site => site.OrganizationId)
@@ -227,7 +252,7 @@ public sealed class OrganizationInvitationConfiguration : IEntityTypeConfigurati
         builder.HasKey(invitation => invitation.Id);
 
         builder.Property(invitation => invitation.OrganizationId).IsRequired();
-        builder.Property(invitation => invitation.InvitedByUserId).IsRequired();
+        builder.Property(invitation => invitation.InvitedByUserId).IsRequired(false);
         builder.Property(invitation => invitation.InvitedAt).IsRequired();
         builder.Property(invitation => invitation.ExpiresAt).IsRequired();
 
@@ -271,10 +296,13 @@ public sealed class OrganizationInvitationConfiguration : IEntityTypeConfigurati
             .HasConstraintName("fk_organization_invitations_organizations_organization_id")
             .OnDelete(DeleteBehavior.Cascade);
 
+        // The sender's account may be deleted with a closed organisation while this invitation,
+        // sent into some other one, is still that organisation's history; the row stays and only
+        // the name on it goes.
         builder.HasOne<ApplicationUser>()
             .WithMany()
             .HasForeignKey(invitation => invitation.InvitedByUserId)
             .HasConstraintName("fk_organization_invitations_users_invited_by_user_id")
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

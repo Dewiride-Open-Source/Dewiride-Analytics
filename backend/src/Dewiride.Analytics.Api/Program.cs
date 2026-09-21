@@ -49,6 +49,7 @@ app.MapAccount();
 app.MapProfile();
 app.MapInvitations();
 app.MapOrganization();
+app.MapClosure();
 app.MapSites();
 app.MapServerKeys();
 app.MapSiteSettings();

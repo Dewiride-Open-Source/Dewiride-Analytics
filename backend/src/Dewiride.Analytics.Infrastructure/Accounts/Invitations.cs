@@ -316,9 +316,10 @@ public sealed class Invitations(
     /// Finds the invitation a secret belongs to, where it is still usable.
     /// </summary>
     /// <remarks>
-    /// Spent, withdrawn, expired and never-issued all answer nothing. Whoever is holding a link
-    /// that will not work needs one thing done about it — being asked again — and telling the four
-    /// apart would say whether a link had been used by somebody else.
+    /// Spent, withdrawn, expired, never-issued and sent into an account that has since been closed
+    /// all answer nothing. Whoever is holding a link that will not work needs one thing done about
+    /// it — being asked again — and telling the five apart would say whether a link had been used
+    /// by somebody else, or whether an account still exists.
     /// </remarks>
     private async Task<OrganizationInvitation?> FindUsableAsync(
         string token,
@@ -337,7 +338,10 @@ public sealed class Invitations(
             : database.OrganizationInvitations.AsNoTracking();
 
         var invitation = await source
-            .FirstOrDefaultAsync(candidate => candidate.TokenHash == hash, cancellationToken)
+            .FirstOrDefaultAsync(
+                candidate => candidate.TokenHash == hash
+                    && database.OpenOrganizations.Any(organization => organization.Id == candidate.OrganizationId),
+                cancellationToken)
             .ConfigureAwait(false);
 
         return invitation?.StateAt(clock.GetUtcNow()) == InvitationState.Pending ? invitation : null;

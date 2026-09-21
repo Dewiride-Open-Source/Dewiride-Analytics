@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Domain.Sites;
@@ -29,28 +28,19 @@ public sealed class SiteDirectory(
     ISiteAllowance allowance)
     : ISiteDirectory
 {
-    /// <summary>
-    /// Namespace the removal lock is taken in.
-    /// </summary>
-    /// <remarks>
-    /// PostgreSQL keeps two advisory lock spaces, one addressed by a single 64-bit key and one by a
-    /// pair of 32-bit keys, and they do not overlap. Using the pair puts this lock somewhere the
-    /// single-key lock the first-run claim takes cannot reach, so neither has to know the other's
-    /// number.
-    /// </remarks>
-    private const int RemovalLockNamespace = 0x44_57_53_52;
-
     /// <inheritdoc />
     /// <remarks>
     /// Both claims are read, and the wider applies, exactly as resolving a scope on one site does.
     /// A list built from grants alone would leave somebody invited into an account looking at an
-    /// empty dashboard while every screen below it would have let them in.
+    /// empty dashboard while every screen below it would have let them in. Sites of a closed
+    /// account are not listed: the account is explained on one screen, and a website nobody can
+    /// open has no place in a picker.
     /// </remarks>
     public async Task<IReadOnlyList<SiteMembershipView>> ListForUserAsync(
         Guid userId,
         CancellationToken cancellationToken)
     {
-        var rows = await database.Sites
+        var rows = await database.OpenSites
             .AsNoTracking()
             .Select(site => new
             {
@@ -197,10 +187,8 @@ public sealed class SiteDirectory(
             .BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        await database.Database
-            .ExecuteSqlAsync(
-                $"SELECT pg_advisory_xact_lock({RemovalLockNamespace}, {LockKeyFor(userId)})",
-                cancellationToken)
+        await AdvisoryLocks
+            .TakeAsync(database, AdvisoryLocks.SiteRemovalNamespace, userId, cancellationToken)
             .ConfigureAwait(false);
 
         var site = await OwnedSiteAsync(userId, siteId, cancellationToken).ConfigureAwait(false);
@@ -228,28 +216,6 @@ public sealed class SiteDirectory(
 
 
     /// <summary>
-    /// Folds an account's identity into the 32 bits an advisory lock key is addressed by.
-    /// </summary>
-    /// <remarks>
-    /// Every byte contributes, because these identifiers are time-ordered and their leading bytes
-    /// barely differ between two accounts created in the same week. Two accounts folding onto one
-    /// key would only make one of them wait for the other; it can never let a removal past the
-    /// guard, so the fold does not have to be collision-free.
-    /// </remarks>
-    /// <param name="userId">The person asking.</param>
-    /// <returns>The key to lock on.</returns>
-    private static int LockKeyFor(Guid userId)
-    {
-        Span<byte> bytes = stackalloc byte[16];
-        userId.TryWriteBytes(bytes);
-
-        return BinaryPrimitives.ReadInt32LittleEndian(bytes)
-            ^ BinaryPrimitives.ReadInt32LittleEndian(bytes[4..])
-            ^ BinaryPrimitives.ReadInt32LittleEndian(bytes[8..])
-            ^ BinaryPrimitives.ReadInt32LittleEndian(bytes[12..]);
-    }
-
-    /// <summary>
     /// The site a person may destroy, where the one they named is one of them.
     /// </summary>
     /// <remarks>
@@ -264,7 +230,7 @@ public sealed class SiteDirectory(
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The site, tracked for deletion, or nothing where they do not own it.</returns>
     private async Task<Site?> OwnedSiteAsync(Guid userId, Guid siteId, CancellationToken cancellationToken) =>
-        await database.Sites
+        await database.OpenSites
             .Where(candidate => candidate.Id == siteId
                 && (database.SiteMemberships.Any(membership =>
                         membership.SiteId == candidate.Id
@@ -284,7 +250,9 @@ public sealed class SiteDirectory(
     /// Only ever true of somebody whose sole claim to an organisation is the site they are
     /// removing. Somebody who helps run the account keeps that standing whatever they remove, and
     /// a new site of theirs joins the organisation that standing is in — so the rule that protects
-    /// the first case would only get in the second one's way.
+    /// the first case would only get in the second one's way. Both halves mirror
+    /// <see cref="OrganizationForNewSiteAsync"/> exactly, including that a closed account is not
+    /// somewhere a site can go: a standing there, or a site there, counts for nothing here.
     /// </remarks>
     /// <param name="userId">The person asking.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -296,7 +264,9 @@ public sealed class SiteDirectory(
         var helpsRunAnAccount = await database.OrganizationMemberships
             .AsNoTracking()
             .AnyAsync(
-                membership => membership.UserId == userId && membership.Role >= OrganizationRole.Admin,
+                membership => membership.UserId == userId
+                    && membership.Role >= OrganizationRole.Admin
+                    && database.OpenOrganizations.Any(organization => organization.Id == membership.OrganizationId),
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -308,7 +278,9 @@ public sealed class SiteDirectory(
         var owned = await database.SiteMemberships
             .AsNoTracking()
             .CountAsync(
-                membership => membership.UserId == userId && membership.Role == SiteRole.Owner,
+                membership => membership.UserId == userId
+                    && membership.Role == SiteRole.Owner
+                    && database.OpenSites.Any(site => site.Id == membership.SiteId),
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -322,7 +294,8 @@ public sealed class SiteDirectory(
     /// A standing in an organisation counts as well as owning one of its sites, and is looked at
     /// first. Somebody asked to help run an account is expected to be able to add a website to it,
     /// and until they have added one they own none — so grants alone would make the first thing
-    /// they were invited to do the one thing they could not.
+    /// they were invited to do the one thing they could not. A closed account is not somewhere a
+    /// site can go, whichever claim the person holds on it.
     /// </remarks>
     /// <param name="userId">The person asking.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -331,7 +304,9 @@ public sealed class SiteDirectory(
     {
         var standing = await database.OrganizationMemberships
             .AsNoTracking()
-            .Where(membership => membership.UserId == userId && membership.Role >= OrganizationRole.Admin)
+            .Where(membership => membership.UserId == userId
+                && membership.Role >= OrganizationRole.Admin
+                && database.OpenOrganizations.Any(organization => organization.Id == membership.OrganizationId))
             .OrderByDescending(membership => membership.Role)
             .ThenBy(membership => membership.GrantedAt)
             .ThenBy(membership => membership.OrganizationId)
@@ -348,7 +323,7 @@ public sealed class SiteDirectory(
             .AsNoTracking()
             .Where(membership => membership.UserId == userId && membership.Role == SiteRole.Owner)
             .Join(
-                database.Sites.AsNoTracking(),
+                database.OpenSites.AsNoTracking(),
                 membership => membership.SiteId,
                 existing => existing.Id,
                 (_, existing) => new { existing.OrganizationId, existing.Id })

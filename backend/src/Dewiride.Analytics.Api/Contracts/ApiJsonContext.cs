@@ -28,6 +28,7 @@ namespace Dewiride.Analytics.Api.Contracts;
 [JsonSerializable(typeof(ForgotPasswordRequest))]
 [JsonSerializable(typeof(ResetPasswordRequest))]
 [JsonSerializable(typeof(SessionResponse))]
+[JsonSerializable(typeof(ClosedAccountSummary))]
 [JsonSerializable(typeof(SetupResponse))]
 [JsonSerializable(typeof(OrganizationResponse))]
 [JsonSerializable(typeof(RenameOrganizationRequest))]

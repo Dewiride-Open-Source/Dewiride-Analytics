@@ -2,6 +2,7 @@ using Dewiride.Analytics.Infrastructure.Persistence;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace Dewiride.Analytics.Integration.Tests.ControlPlane;
 
@@ -23,10 +24,30 @@ public sealed class SchemaTests(AnalyticsStackFixture stack)
         WHERE table_schema = 'public'
         """;
 
-    private const string SiteColumnsSql = """
+    private const string ColumnNamesSql = """
         SELECT column_name AS "Value"
         FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'sites'
+        WHERE table_schema = 'public' AND table_name = {0}
+        """;
+
+    private const string OrganizationIndexNamesSql = """
+        SELECT indexname AS "Value"
+        FROM pg_indexes
+        WHERE schemaname = 'public' AND tablename = 'organizations'
+        """;
+
+    private const string InstallationClaimCheckConstraintsSql = """
+        SELECT constraint_name AS "Value"
+        FROM information_schema.table_constraints
+        WHERE table_schema = 'public'
+          AND table_name = 'installation_claims'
+          AND constraint_type = 'CHECK'
+        """;
+
+    private const string DeleteRuleSql = """
+        SELECT delete_rule AS "Value"
+        FROM information_schema.referential_constraints
+        WHERE constraint_schema = 'public' AND constraint_name = {0}
         """;
 
     [Fact]
@@ -68,10 +89,83 @@ public sealed class SchemaTests(AnalyticsStackFixture stack)
     [Fact]
     public async Task Every_Column_Is_Named_The_Way_Somebody_Would_Type_It()
     {
-        var columns = await QueryAsync(SiteColumnsSql);
+        var columns = await ColumnNamesAsync("sites");
 
         columns.Should().Contain(
             ["organization_id", "display_name", "time_zone_id", "retain_query_strings", "allowed_origins"]);
+    }
+
+    [Fact]
+    public async Task An_Organisation_Records_When_It_Was_Closed_By_Whom_And_Whether_It_Was_Warned()
+    {
+        var columns = await ColumnNamesAsync("organizations");
+
+        columns.Should().Contain(["closed_at", "closed_by_user_id", "deletion_reminder_sent_at"]);
+    }
+
+    /// <summary>
+    /// The sweep asks every hour for the closed organisations whose time has run, and the closer
+    /// is joined whenever a closure is explained; neither read should have to scan the table.
+    /// </summary>
+    [Fact]
+    public async Task The_Columns_A_Closure_Is_Found_By_Are_Indexed()
+    {
+        var indexes = await QueryAsync(OrganizationIndexNamesSql);
+
+        indexes.Should().Contain(["ix_organizations_closed_at", "ix_organizations_closed_by_user_id"]);
+    }
+
+    [Fact]
+    public async Task The_Claim_On_An_Install_Is_Recorded_In_A_Table_Of_Its_Own()
+    {
+        var tables = await TableNamesAsync();
+        var columns = await ColumnNamesAsync("installation_claims");
+
+        tables.Should().Contain("installation_claims");
+        columns.Should().BeEquivalentTo("id", "claimed_at");
+    }
+
+    [Fact]
+    public async Task The_Database_Holds_The_Claim_To_A_Single_Row()
+    {
+        var constraints = await QueryAsync(InstallationClaimCheckConstraintsSql);
+
+        constraints.Should().Contain("ck_installation_claims_one_row");
+    }
+
+    /// <summary>
+    /// A second row is refused by the database rather than by whichever code happens to write
+    /// the table — the first-run claim, the purge that empties an install, or a migration — so
+    /// none of them can turn "claimed" into a count that has to be reasoned about.
+    /// </summary>
+    [Fact]
+    public async Task A_Second_Claim_Row_Is_Refused_By_The_Database()
+    {
+        await using var scope = stack.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>();
+        var now = scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow();
+
+        var act = async () => await database.Database.ExecuteSqlAsync(
+            $"INSERT INTO installation_claims (id, claimed_at) VALUES (2, {now})",
+            Cancellation.Token);
+
+        var refused = await act.Should().ThrowAsync<PostgresException>();
+        refused.Which.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
+    }
+
+    /// <summary>
+    /// Deleting a person must not delete what they did. An organisation they closed stays closed
+    /// and an invitation they sent into another organisation stays usable, each with the reference
+    /// to them cleared rather than the row taken with them.
+    /// </summary>
+    [Theory]
+    [InlineData("fk_organizations_users_closed_by_user_id")]
+    [InlineData("fk_organization_invitations_users_invited_by_user_id")]
+    public async Task Deleting_A_Person_Clears_The_Reference_To_Them_Rather_Than_Cascading(string constraint)
+    {
+        var rules = await QueryAsync(DeleteRuleSql, constraint);
+
+        rules.Should().Equal("SET NULL");
     }
 
     /// <summary>
@@ -94,11 +188,13 @@ public sealed class SchemaTests(AnalyticsStackFixture stack)
 
     private Task<List<string>> TableNamesAsync() => QueryAsync(TableNamesSql);
 
-    private async Task<List<string>> QueryAsync(string sql)
+    private Task<List<string>> ColumnNamesAsync(string table) => QueryAsync(ColumnNamesSql, table);
+
+    private async Task<List<string>> QueryAsync(string sql, params object[] parameters)
     {
         await using var scope = stack.Services.CreateAsyncScope();
         var database = scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>();
 
-        return await database.Database.SqlQueryRaw<string>(sql).ToListAsync(Cancellation.Token);
+        return await database.Database.SqlQueryRaw<string>(sql, parameters).ToListAsync(Cancellation.Token);
     }
 }

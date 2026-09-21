@@ -1,7 +1,7 @@
 namespace Dewiride.Analytics.Application.Sites;
 
 /// <summary>
-/// Lists every site on this installation.
+/// Lists every site on this installation whose account is open.
 /// </summary>
 /// <remarks>
 /// For the parts of the product that work on behalf of the system rather than on behalf of a

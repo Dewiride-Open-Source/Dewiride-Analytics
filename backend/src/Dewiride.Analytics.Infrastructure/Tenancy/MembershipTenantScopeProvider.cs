@@ -54,7 +54,7 @@ public sealed class MembershipTenantScopeProvider(
         // One round trip rather than three. The two memberships are correlated sub-queries so that
         // a site with neither still produces a row, which is what lets the absent-role and
         // absent-site cases converge on the same answer below.
-        var found = await database.Sites
+        var found = await database.OpenSites
             .AsNoTracking()
             .Where(site => site.Id == siteId)
             .Select(site => new

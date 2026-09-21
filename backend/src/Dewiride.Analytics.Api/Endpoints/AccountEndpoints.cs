@@ -103,6 +103,7 @@ internal static class AccountEndpoints
         IAntiforgery antiforgery,
         IInstallation installation,
         UserManager<ApplicationUser> accounts,
+        IAccountClosure closure,
         CancellationToken cancellationToken)
     {
         DoNotStore(context);
@@ -114,7 +115,8 @@ internal static class AccountEndpoints
             : null;
 
         return TypedResults.Ok(
-            new SessionResponse(claimed, SignedInUsers.Describe(user), AntiforgeryGuard.IssueToken(antiforgery, context)));
+            await SessionResponses.DescribeAsync(context, antiforgery, claimed, user, closure, cancellationToken)
+                .ConfigureAwait(false));
     }
 
     private static async Task<Results<Ok<SessionResponse>, ProblemHttpResult>> SignInAsync(
@@ -122,7 +124,9 @@ internal static class AccountEndpoints
         HttpContext context,
         SignInManager<ApplicationUser> sessions,
         UserManager<ApplicationUser> accounts,
-        IAntiforgery antiforgery)
+        IAntiforgery antiforgery,
+        IAccountClosure closure,
+        CancellationToken cancellationToken)
     {
         DoNotStore(context);
 
@@ -157,7 +161,8 @@ internal static class AccountEndpoints
         context.User = await sessions.CreateUserPrincipalAsync(user).ConfigureAwait(false);
 
         return TypedResults.Ok(
-            new SessionResponse(true, SignedInUsers.Describe(user), AntiforgeryGuard.IssueToken(antiforgery, context)));
+            await SessionResponses.DescribeAsync(context, antiforgery, true, user, closure, cancellationToken)
+                .ConfigureAwait(false));
     }
 
     /// <summary>
@@ -179,7 +184,7 @@ internal static class AccountEndpoints
         context.User = new ClaimsPrincipal(new ClaimsIdentity());
 
         return TypedResults.Ok(
-            new SessionResponse(true, null, AntiforgeryGuard.IssueToken(antiforgery, context)));
+            new SessionResponse(true, null, AntiforgeryGuard.IssueToken(antiforgery, context), null));
     }
 
     private static async Task<Results<Ok<SetupResponse>, ProblemHttpResult>> ClaimAsync(

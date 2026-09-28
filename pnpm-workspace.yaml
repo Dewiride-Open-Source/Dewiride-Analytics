@@ -46,7 +46,7 @@ catalog:
   typescript: 6.0.3
   # The major follows the Node major the images and the build run on, so the compiler describes the
   # runtime that ships rather than one that does not.
-  "@types/node": 24.13.5
+  "@types/node": 24.13.6
   "@types/react": 19.3.0
   "@types/react-dom": 19.3.0
 
@@ -54,7 +54,7 @@ catalog:
   tailwindcss: 4.3.3
   "@tailwindcss/postcss": 4.3.3
   next-themes: 0.4.6
-  lucide-react: 1.46.0
+  lucide-react: 1.47.0
   "@radix-ui/react-popover": 1.1.23
   clsx: 2.1.1
   tailwind-merge: 3.7.0

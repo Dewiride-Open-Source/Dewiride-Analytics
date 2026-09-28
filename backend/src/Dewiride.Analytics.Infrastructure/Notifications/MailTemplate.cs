@@ -86,6 +86,22 @@ public static class MailTemplate
         instant.UtcDateTime.ToString("d MMMM", CultureInfo.InvariantCulture);
 
     /// <summary>
+    /// A date somebody can act on, on the calendar of the place it is about.
+    /// </summary>
+    /// <remarks>
+    /// For a date the reader's own screens show in a particular zone. An instant a little before
+    /// midnight in one zone is already the next day in another, and a message naming a different
+    /// day from the screen it links to is read as one of the two being wrong.
+    /// </remarks>
+    /// <param name="instant">The moment.</param>
+    /// <param name="timeZoneId">The zone whose calendar it is written on, as the system names it.</param>
+    /// <returns>The day it falls on there.</returns>
+    /// <exception cref="TimeZoneNotFoundException">The system knows no zone by that name.</exception>
+    public static string Day(DateTimeOffset instant, string timeZoneId) =>
+        TimeZoneInfo.ConvertTime(instant, TimeZoneInfo.FindSystemTimeZoneById(timeZoneId))
+            .ToString("d MMMM", CultureInfo.InvariantCulture);
+
+    /// <summary>
     /// The message for a mailbox that shows plain text, or a reader who prefers it.
     /// </summary>
     /// <remarks>

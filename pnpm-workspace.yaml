@@ -21,6 +21,10 @@ packages:
   # copy of React in one bundle produces hooks that fail at run time. The second is the public
   # website, which is an application of its own and shares no bundle with anything here — it is a
   # member so that one lockfile and one version table serve both repositories.
+  #
+  # Their lockfile entries stay behind on a checkout without them, and a frozen install passes over
+  # those only up to pnpm 11.27. That is why the package manager is held there: see
+  # docs/adr/0046-the-package-manager-is-held-where-the-free-product-installs-alone.md.
   - ee/frontend/edition
   - ee/frontend/apps/site
 

@@ -72,13 +72,13 @@ catalog:
   esbuild: 0.28.2
 
   # Quality
-  eslint: 10.10.0
+  eslint: 10.11.0
   "@next/eslint-plugin-next": 16.3.5
   eslint-plugin-react-hooks: 7.1.1
   eslint-plugin-jsx-a11y: 6.10.2
   typescript-eslint: 8.70.0
   "@biomejs/biome": 2.5.14
-  prettier: 3.9.7
+  prettier: 3.9.8
 
   # Tests
   # The runner asks for its build engine as a peer and does not carry it itself, so its version is

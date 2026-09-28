@@ -169,4 +169,17 @@ public sealed class MailTemplateTests
         MailTemplate.Day(new DateTimeOffset(2026, 9, 3, 14, 22, 0, TimeSpan.Zero))
             .Should()
             .Be("3 September");
+
+    /// <summary>
+    /// A moment late in the evening in Greenwich is already tomorrow in India and still this morning
+    /// in Hawaii, and the date a message names is the one the reader's own calendar shows.
+    /// </summary>
+    [Theory]
+    [InlineData("Asia/Kolkata", "20 October")]
+    [InlineData("UTC", "19 October")]
+    [InlineData("Pacific/Honolulu", "19 October")]
+    public void A_day_falls_where_its_zone_says(string timeZoneId, string expected) =>
+        MailTemplate.Day(new DateTimeOffset(2026, 10, 19, 18, 58, 0, TimeSpan.Zero), timeZoneId)
+            .Should()
+            .Be(expected);
 }

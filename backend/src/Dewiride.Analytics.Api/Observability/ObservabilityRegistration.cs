@@ -41,7 +41,7 @@ internal static class ObservabilityRegistration
             logging.IncludeScopes = true;
         });
 
-        var telemetry = builder.Services
+        var telemetry = builder
             .AddOpenTelemetry()
             .ConfigureResource(resource => resource.AddService(ServiceName, serviceVersion: Version()))
             .WithMetrics(metrics => metrics

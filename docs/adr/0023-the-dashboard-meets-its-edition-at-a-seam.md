@@ -3,6 +3,9 @@
 - **Status**: accepted
 - **Date**: 2026-08-20
 - **Supersedes**: nothing. Adds no column and collects nothing new.
+- **Revised by**: [0046](0046-the-package-manager-is-held-where-the-free-product-installs-alone.md),
+  which bounds "an entry with nothing behind it is ignored" to the package manager up to 11.27:
+  from 11.28 and 12.7 an unfiltered frozen install refuses it, so the pin is held below both.
 
 ## Context
 

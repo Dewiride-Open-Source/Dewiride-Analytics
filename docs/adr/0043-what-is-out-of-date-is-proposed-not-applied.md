@@ -6,6 +6,9 @@
 - **Follows**: [0031](0031-a-change-is-checked-before-anybody-reads-it.md), which is what makes a
   proposal from a machine worth reading: it is compiled and put through every suite before
   anybody looks at it, exactly as a contributor's change is.
+- **Revised by**: [0046](0046-the-package-manager-is-held-where-the-free-product-installs-alone.md),
+  which bounds the proof that a frozen install on a checkout without the two members "has nothing
+  to disagree with" to the package manager up to 11.27, and holds the pin there.
 
 ## Context
 

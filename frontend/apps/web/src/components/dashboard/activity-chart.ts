@@ -15,6 +15,8 @@ export interface Measure {
 export interface ActivityChart {
   /** What each bucket is called, in the website's own zone. */
   readonly labels: readonly string[];
+  /** What each bucket is called in full, over the card a hover opens. */
+  readonly titles: readonly string[];
   /** The two measures, in the order they are keyed and tabled. */
   readonly measures: readonly [Measure, Measure];
   readonly drawing: Drawing;
@@ -34,7 +36,7 @@ export function activityOption(chart: ActivityChart, palette: ChartPalette): ECh
   const wash = columns ? undefined : washOver(chart.labels, stillJudging, palette);
 
   return {
-    ...chartFrame(palette, chart.labels, columns),
+    ...chartFrame(palette, chart.labels, columns, chart.titles),
     series: [
       measure(chart.measures[0], palette.series[0], chart.drawing, stillJudging),
       measure(chart.measures[1], palette.series[1], chart.drawing, stillJudging),

@@ -302,6 +302,33 @@ function usePick(
   }, [starts, timeZoneId, onPickDay]);
 }
 
+/** The buckets of a picture, each written out for the two places it is read. */
+interface Written {
+  /** Briefly, under the axis and down the first column of the table. */
+  readonly labels: readonly string[];
+  /** In full, over the card a hover opens. */
+  readonly titles: readonly string[];
+}
+
+/**
+ * Each bucket written twice: briefly where it has to sit beside its neighbours, and in full where
+ * it is read on its own.
+ *
+ * Both are written together from the same instants, so the card over a bucket and the axis beneath
+ * it always name the same one.
+ */
+function useWritten(starts: readonly string[], buckets: Buckets): Written {
+  const format = useFormatter();
+
+  return useMemo(
+    () => ({
+      labels: written(starts, format, labelling(buckets)),
+      titles: written(starts, format, titling(buckets)),
+    }),
+    [starts, format, buckets],
+  );
+}
+
 interface ActivityViewProps extends ViewProps {
   readonly activity: Activity;
   /** Whether the figures are the people's, which is what they are then called. */
@@ -325,7 +352,6 @@ function ActivityView({
   onPickDay,
 }: ActivityViewProps) {
   const t = useTranslations('dashboard.chart');
-  const format = useFormatter();
   const { granularity, zone } = buckets;
   const { points, stillJudging } = activity;
 
@@ -333,11 +359,7 @@ function ActivityView({
   const wording = peopleOnly ? 'people.activity' : 'activity';
 
   const starts = useMemo(() => points.map((point) => point.start), [points]);
-
-  const labels = useMemo(
-    () => starts.map((start) => write(start, format, buckets)),
-    [starts, format, buckets],
-  );
+  const { labels, titles } = useWritten(starts, buckets);
 
   // Counted in an hour, distinct visitors are the people who were there in that hour, which is a
   // different figure from the day's. Naming it the day's would be a claim the numbers do not make.
@@ -375,8 +397,8 @@ function ActivityView({
 
   const option = useCallback(
     (palette: ChartPalette) =>
-      activityOption({ labels, measures, drawing, stillJudging, earlier }, palette),
-    [labels, measures, drawing, stillJudging, earlier],
+      activityOption({ labels, titles, measures, drawing, stillJudging, earlier }, palette),
+    [labels, titles, measures, drawing, stillJudging, earlier],
   );
 
   const pick = usePick(starts, buckets.timeZoneId, onPickDay);
@@ -425,7 +447,6 @@ function WhoView({
 }: WhoViewProps) {
   const t = useTranslations('dashboard.chart');
   const tones = useTranslations('verdicts.tone');
-  const format = useFormatter();
   const { granularity, zone } = buckets;
 
   // Which of the two pictures is being drawn, since its words are found under that name.
@@ -439,11 +460,7 @@ function WhoView({
 
   const totals = useMemo(() => totalsIn(series), [series]);
   const stillJudging = useMemo(() => stillJudgingFrom(series), [series]);
-
-  const labels = useMemo(
-    () => series.buckets.map((bucket) => write(bucket, format, buckets)),
-    [series, format, buckets],
-  );
+  const { labels, titles } = useWritten(series.buckets, buckets);
 
   const names = useMemo(
     () =>
@@ -470,8 +487,8 @@ function WhoView({
 
   const option = useCallback(
     (palette: ChartPalette) =>
-      whoOption({ labels, bands, names, drawing, stillJudging, earlier }, palette),
-    [labels, bands, names, drawing, stillJudging, earlier],
+      whoOption({ labels, titles, bands, names, drawing, stillJudging, earlier }, palette),
+    [labels, titles, bands, names, drawing, stillJudging, earlier],
   );
 
   const pick = usePick(series.buckets, buckets.timeZoneId, onPickDay);
@@ -742,7 +759,8 @@ const PICTURES: Readonly<Record<Drawing, LucideIcon>> = {
 };
 
 /**
- * How a bucket is written, which depends on how wide it is and what it sits among.
+ * How a bucket is written under the axis and down the table, which depends on how wide it is and
+ * what it sits among.
  *
  * An hour on its own needs no date beside it when every other bucket is from the same day, and
  * needs one the moment they are not. A day needs no year until the period runs across one, which
@@ -765,12 +783,36 @@ function labelling(buckets: Buckets): DateTimeFormatOptions {
 }
 
 /**
- * One bucket, written where the website is.
+ * How a bucket is written over the card a hover opens: its weekday and its date in full.
+ *
+ * A rise on a Tuesday is a question about Tuesday, and the axis has no room to say so at phone
+ * width. Written in one piece, so that the reader's language puts the parts in its own order and
+ * joins them with its own words. A year is carried once the period runs across one, and an hour
+ * always carries its day, because the card is read away from the axis that would otherwise say
+ * which day it is.
+ */
+function titling(buckets: Buckets): DateTimeFormatOptions {
+  return {
+    timeZone: buckets.timeZoneId,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: buckets.manyYears ? 'numeric' : undefined,
+    hour: buckets.granularity === 'hour' ? 'numeric' : undefined,
+  };
+}
+
+/**
+ * Every bucket, written where the website is.
  *
  * A bucket is cut where the site is, so it has to be read back there too. Written without a zone
  * it is read in whichever one the person looking happens to be in, and a day counted in Kolkata
  * is labelled as the day before for anybody reading in London.
  */
-function write(bucket: string, format: ReturnType<typeof useFormatter>, buckets: Buckets): string {
-  return format.dateTime(new Date(bucket), labelling(buckets));
+function written(
+  starts: readonly string[],
+  format: ReturnType<typeof useFormatter>,
+  options: DateTimeFormatOptions,
+): readonly string[] {
+  return starts.map((start) => format.dateTime(new Date(start), options));
 }

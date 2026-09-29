@@ -1,0 +1,8 @@
+# Every text file is stored and checked out with LF endings, on every platform.
+#
+# .editorconfig, biome.json and .prettierrc.json all write LF. Left to Git for Windows' default of
+# core.autocrlf=true, a checkout writes CRLF instead: the format check then rejects files nobody
+# has touched, and a file the formatters write back as LF shows as modified with nothing changed in
+# it. An attribute here outranks every contributor's own core.autocrlf and core.eol. Binary files
+# are recognised by their content and never converted.
+* text=auto eol=lf

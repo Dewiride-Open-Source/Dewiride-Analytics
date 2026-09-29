@@ -41,6 +41,15 @@ function fill(box: HTMLElement, day: string) {
   fireEvent.change(box, { target: { value: day } });
 }
 
+/** The control on its usual period, with the chooser opened from it. */
+async function open() {
+  const shown = show();
+
+  await userEvent.selectOptions(shown.list, 'choose');
+
+  return { ...shown, panel: await screen.findByRole('dialog') };
+}
+
 describe('choosing how far back to look', () => {
   /**
    * Also the guard on the groups below it: every named period has to appear exactly once, so one
@@ -115,14 +124,6 @@ describe('choosing how far back to look', () => {
 });
 
 describe('choosing exact dates', () => {
-  async function open() {
-    const shown = show();
-
-    await userEvent.selectOptions(shown.list, 'choose');
-
-    return { ...shown, panel: await screen.findByRole('dialog') };
-  }
-
   it('opens on the days already being looked at rather than empty', async () => {
     const { panel } = await open();
 
@@ -192,6 +193,54 @@ describe('choosing exact dates', () => {
 
     expect(within(panel).getByLabelText('First day')).toHaveAttribute('max', '2026-08-18');
     expect(within(panel).getByLabelText('Last day')).toHaveAttribute('max', '2026-08-18');
+  });
+});
+
+/**
+ * A day typed into both boxes that the list already has a name for is the period of that name, so
+ * the chooser and a day pressed on the picture never call the same day two different things.
+ */
+describe('a single day chosen that already has a name', () => {
+  /** One day typed into both boxes and asked for, as somebody after a single day would. */
+  async function chooseDay(day: string) {
+    const { chose, panel } = await open();
+
+    fill(within(panel).getByLabelText('First day'), day);
+    fill(within(panel).getByLabelText('Last day'), day);
+    await userEvent.click(within(panel).getByRole('button', { name: 'Show this period' }));
+
+    return chose;
+  }
+
+  it('comes back as Today when it is today where the site is', async () => {
+    const chose = await chooseDay('2026-08-18');
+
+    expect(chose).toHaveBeenCalledWith({ kind: 'preset', preset: 'today' });
+  });
+
+  it('comes back as Yesterday when it is the day before', async () => {
+    const chose = await chooseDay('2026-08-17');
+
+    expect(chose).toHaveBeenCalledWith({ kind: 'preset', preset: 'yesterday' });
+  });
+
+  it('stays the dates somebody chose on any other day', async () => {
+    const chose = await chooseDay('2026-08-16');
+
+    expect(chose).toHaveBeenCalledWith({ kind: 'chosen', first: '2026-08-16', last: '2026-08-16' });
+  });
+
+  /**
+   * Half an hour past midnight in Kolkata it is still the evening before where these tests run, so
+   * the eighteenth is yesterday for the website and today for the reader. The website's calendar
+   * is the one that names it.
+   */
+  it('is named by the site’s calendar rather than the reader’s', async () => {
+    vi.setSystemTime(new Date('2026-08-18T19:00:00Z'));
+
+    const chose = await chooseDay('2026-08-18');
+
+    expect(chose).toHaveBeenCalledWith({ kind: 'preset', preset: 'yesterday' });
   });
 });
 

@@ -1,6 +1,6 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Dashboard } from '@/components/dashboard/dashboard';
 import { drawn } from '@/test/drawing';
 import { engineDoing, engineStopped, respondWith, type Sent } from '@/test/engine';
@@ -906,6 +906,26 @@ describe('a day pressed on the picture', () => {
   ];
 
   /**
+   * Mid-afternoon on the seventeenth in Kolkata, the last day of the week the engine answers with,
+   * so the sixteenth is yesterday there and the seventeenth today.
+   */
+  const NOW = new Date('2026-08-17T09:37:12Z');
+
+  /**
+   * Whether a pressed day has a name depends on what day it is where the website is, so the clock
+   * is stood still on the week the engine answers with. Only the clock: the timers beneath it keep
+   * running, since pressing things and waiting for answers need them.
+   */
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
    * The drawing is a stand-in here, so the day is pressed from the row of the table — the way in
    * that every reader has. The day is the twelfth where the website is, which begins the evening
    * before in the engine's clock.
@@ -981,5 +1001,118 @@ describe('a day pressed on the picture', () => {
 
     expect(screen.getAllByRole('rowheader').length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: /look at this day/ })).not.toBeInTheDocument();
+  });
+
+  /**
+   * The list behind the control already has a name for the day before today, and a reader who
+   * pressed it is told that name rather than that they chose a stretch of their own.
+   */
+  it('names a pressed day that is yesterday where the website is as Yesterday', async () => {
+    const watching = vi.fn();
+    const engine = watched();
+
+    renderScreen(<Dashboard />, { watchingAddress: watching });
+
+    await screen.findByRole('img', { name: /Who and what visited/ });
+    await userEvent.click(screen.getByText('Show these figures as a table'));
+    await userEvent.click(screen.getByRole('button', { name: 'Aug 16, look at this day' }));
+
+    await waitFor(() =>
+      expect(watching).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryString: '?period=yesterday',
+          options: expect.objectContaining({ history: 'push' }),
+        }),
+      ),
+    );
+    expect(screen.getByRole('combobox', { name: 'Period' })).toHaveValue('yesterday');
+    expect(screen.getByRole('combobox', { name: 'Period' })).toHaveFocus();
+    expect(await screen.findAllByText(/the day before/)).toHaveLength(3);
+
+    for (const address of ABOUT_THE_PERIOD) {
+      await waitFor(() =>
+        expect(
+          askedFor(engine.all(), address, '2026-08-15T18:30:00.000Z', '2026-08-16T18:30:00.000Z'),
+        ).toBe(true),
+      );
+    }
+  });
+
+  /**
+   * Half an hour past midnight in Kolkata it is still the evening before where these tests run, so
+   * the sixteenth is yesterday for the website and today for the reader. The website's calendar
+   * is the one that names it.
+   */
+  it('names a pressed day by the website’s calendar rather than the reader’s', async () => {
+    vi.setSystemTime(new Date('2026-08-16T19:00:00Z'));
+
+    const watching = vi.fn();
+
+    watched();
+    renderScreen(<Dashboard />, { watchingAddress: watching });
+
+    await screen.findByRole('img', { name: /Who and what visited/ });
+    await userEvent.click(screen.getByText('Show these figures as a table'));
+    await userEvent.click(screen.getByRole('button', { name: 'Aug 16, look at this day' }));
+
+    await waitFor(() =>
+      expect(watching).toHaveBeenCalledWith(
+        expect.objectContaining({ queryString: '?period=yesterday' }),
+      ),
+    );
+    expect(screen.getByRole('combobox', { name: 'Period' })).toHaveValue('yesterday');
+  });
+
+  /**
+   * Today is still running, so it is asked about up to the top of the hour and set beside the same
+   * part of yesterday — which is what the cards then say they were measured against.
+   */
+  it('names a pressed day that is today where the website is as Today, measured against yesterday', async () => {
+    const watching = vi.fn();
+    const engine = watched();
+
+    renderScreen(<Dashboard />, { watchingAddress: watching });
+
+    await screen.findByRole('img', { name: /Who and what visited/ });
+    await userEvent.click(screen.getByText('Show these figures as a table'));
+    await userEvent.click(screen.getByRole('button', { name: 'Aug 17, look at this day' }));
+
+    await waitFor(() =>
+      expect(watching).toHaveBeenCalledWith(
+        expect.objectContaining({ queryString: '?period=today' }),
+      ),
+    );
+    expect(screen.getByRole('combobox', { name: 'Period' })).toHaveValue('today');
+    expect(screen.getByRole('combobox', { name: 'Period' })).toHaveFocus();
+    // The engine answers both windows alike, so every card reads "No change from yesterday".
+    expect(await screen.findAllByText(/from yesterday$/)).toHaveLength(3);
+    expect(screen.queryByText(/the day before/)).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        askedFor(
+          engine.all(),
+          '/overview?',
+          '2026-08-16T18:30:00.000Z',
+          '2026-08-17T10:00:00.000Z',
+        ),
+      ).toBe(true),
+    );
+    expect(
+      askedFor(engine.all(), '/overview?', '2026-08-15T18:30:00.000Z', '2026-08-16T10:00:00.000Z'),
+    ).toBe(true);
+  });
+
+  /**
+   * A day is named when somebody chooses it and never when an address is read. A link names the
+   * days its sender put in it, and today's date sent on is that date, not the reader's today.
+   */
+  it("opens a link to today's date as that date rather than as Today", async () => {
+    busy();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=2026-08-17..2026-08-17' });
+
+    expect(await screen.findByRole('combobox', { name: 'Period' })).toHaveValue('chosen');
+    expect(screen.getByRole('option', { name: 'Your dates' })).toBeInTheDocument();
+    expect(await screen.findAllByText(/the day before/)).toHaveLength(3);
   });
 });

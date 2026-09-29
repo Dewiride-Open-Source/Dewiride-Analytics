@@ -27,6 +27,7 @@ import {
   crossesYears,
   daysIn,
   granularityFor,
+  namedPeriod,
   previousSpan,
   previousWindow,
   spanFor,
@@ -173,6 +174,13 @@ export function SiteOverview({ site }: SiteOverviewProps) {
   // since the period is the whole screen's. On a period that is already one day there is nothing
   // narrower, so the picture is not offered as something to press.
   //
+  // A day that is today or yesterday where the website is becomes the named period the list
+  // already offers for it, so the control calls it what the reader calls it rather than a stretch
+  // of their own choosing, and it is remembered as that name. The moment is taken at the press,
+  // which is when the reader said which day they meant. The chooser behind the control names a
+  // day typed into it the same way, on this screen and on the journeys screen that shares it, so
+  // every way of asking for one day arrives under one name.
+  //
   // The picture is redrawn for the day and the row of its table that was pressed goes with the
   // week, so the reading position is handed to the control that now names the day: it says what
   // changed, and it is the way to change it again. The page follows only where there was a
@@ -185,11 +193,13 @@ export function SiteOverview({ site }: SiteOverviewProps) {
             const held =
               document.activeElement !== null && document.activeElement !== document.body;
 
-            choose({ kind: 'chosen', first: day, last: day });
+            choose(
+              namedPeriod({ kind: 'chosen', first: day, last: day }, site.timeZoneId, new Date()),
+            );
             periodControl.current?.focus({ preventScroll: !held });
           }
         : undefined,
-    [manyDays, choose],
+    [manyDays, choose, site.timeZoneId],
   );
 
   return (

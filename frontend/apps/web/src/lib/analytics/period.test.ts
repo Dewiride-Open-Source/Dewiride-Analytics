@@ -6,6 +6,7 @@ import {
   granularityFor,
   isPreset,
   LONGEST_SPAN_DAYS,
+  namedPeriod,
   type Period,
   type PeriodPreset,
   PRESETS,
@@ -226,6 +227,62 @@ describe('what day it is where the site is', () => {
 
     expect(todayIn('Asia/Kolkata', lateEvening)).toBe('2026-08-19');
     expect(todayIn('America/New_York', lateEvening)).toBe('2026-08-18');
+  });
+});
+
+/**
+ * A day the list already has a name for is that named period, and is called by the name rather
+ * than as a stretch of one day somebody chose.
+ */
+describe('a single day under the name it is offered by', () => {
+  /** One day somebody chose, written the way a screen holds it. */
+  function day(date: string): Period {
+    return { kind: 'chosen', first: date, last: date };
+  }
+
+  it('is Today when the day is today where the site is', () => {
+    expect(namedPeriod(day('2026-08-18'), 'Asia/Kolkata', NOW)).toStrictEqual(TODAY);
+  });
+
+  it('is Yesterday when it is the day before', () => {
+    expect(namedPeriod(day('2026-08-17'), 'Asia/Kolkata', NOW)).toStrictEqual(YESTERDAY);
+  });
+
+  it('is the day itself on any other day', () => {
+    const older = day('2026-08-16');
+
+    expect(namedPeriod(older, 'Asia/Kolkata', NOW)).toBe(older);
+  });
+
+  /** A stretch that ends today is still the stretch somebody chose, and no name covers it. */
+  it('leaves a stretch of more than one day as it was, even one ending today', () => {
+    const stretch: Period = { kind: 'chosen', first: '2026-08-17', last: '2026-08-18' };
+
+    expect(namedPeriod(stretch, 'Asia/Kolkata', NOW)).toBe(stretch);
+  });
+
+  it('leaves a named period as it was', () => {
+    expect(namedPeriod(WEEK, 'Asia/Kolkata', NOW)).toBe(WEEK);
+  });
+
+  /**
+   * At seven in the evening in UTC it is already the small hours of the nineteenth in Kolkata and
+   * still the afternoon of the eighteenth in New York, and each website's today is its own.
+   */
+  it('counts today where the site is once its midnight has passed, whatever the day is in UTC', () => {
+    const lateEvening = new Date('2026-08-18T19:00:00Z');
+
+    expect(namedPeriod(day('2026-08-19'), 'Asia/Kolkata', lateEvening)).toStrictEqual(TODAY);
+    expect(namedPeriod(day('2026-08-18'), 'Asia/Kolkata', lateEvening)).toStrictEqual(YESTERDAY);
+    expect(namedPeriod(day('2026-08-18'), 'America/New_York', lateEvening)).toStrictEqual(TODAY);
+  });
+
+  it('finds yesterday across the end of a month', () => {
+    const firstOfSeptember = new Date('2026-09-01T03:00:00Z');
+
+    expect(namedPeriod(day('2026-08-31'), 'Asia/Kolkata', firstOfSeptember)).toStrictEqual(
+      YESTERDAY,
+    );
   });
 });
 

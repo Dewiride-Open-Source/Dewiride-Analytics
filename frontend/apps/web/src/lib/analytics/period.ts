@@ -150,6 +150,9 @@ const EARLIER: Readonly<Record<PeriodPreset, (span: CivilSpan) => CivilSpan>> = 
   },
 };
 
+/** The named periods that are a single day each. */
+const NAMED_DAYS: readonly PeriodPreset[] = ['today', 'yesterday'];
+
 /**
  * The days a period covers, in the site's own calendar.
  *
@@ -321,6 +324,35 @@ export function dayOf(timeZone: string, moment: Date): string {
  */
 export function todayIn(timeZone: string, now: Date): string {
   return dayOf(timeZone, now);
+}
+
+/**
+ * A period under the name the list offers it by, where it is a single day that has one.
+ *
+ * A day pressed on the picture, or typed into both boxes of the chooser, that is today or
+ * yesterday where the website is comes back as that named period, so the control reads as it
+ * would had the reader picked it from the list. Any other day, a stretch of more than one day and
+ * a named period all come back as they went in.
+ *
+ * The day each name stands for is read from the same table that says which days a named period
+ * covers, so the two can never disagree about when yesterday was.
+ *
+ * Settled at the moment of choosing and never when an address is read: a link names the days its
+ * sender put in it.
+ *
+ * @param period What somebody chose.
+ * @param timeZone The site's reporting zone.
+ * @param now The moment it was chosen.
+ */
+export function namedPeriod(period: Period, timeZone: string, now: Date): Period {
+  if (period.kind === 'preset' || period.first !== period.last) {
+    return period;
+  }
+
+  const today = calendarDayIn(timeZone, now);
+  const named = NAMED_DAYS.find((preset) => writeDay(SPANS[preset](today).first) === period.first);
+
+  return named === undefined ? period : { kind: 'preset', preset: named };
 }
 
 /**

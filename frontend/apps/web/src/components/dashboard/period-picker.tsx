@@ -6,6 +6,7 @@ import { type Ref, useId, useMemo, useState } from 'react';
 import { CustomPeriod } from '@/components/dashboard/custom-period';
 import {
   isPreset,
+  namedPeriod,
   type Period,
   type PeriodPreset,
   spanFor,
@@ -67,6 +68,13 @@ const CHOSEN = 'chosen';
  * rather than as the chooser itself wearing its answer. A list gives nothing back when the entry
  * already showing is picked again, so a single entry that was both would be one nobody could
  * reopen to correct a date.
+ *
+ * A single day chosen in the chooser that is today or yesterday where the website is comes back as
+ * that named period, so a day typed in and the same day pressed on the picture are one period under
+ * one name. It is settled here rather than by each screen because the journeys screen offers the
+ * same control, and a day would otherwise be "Yesterday" on one screen and a stretch of somebody's
+ * own choosing on the other. A period handed in is shown as it is: a link naming a date opens on
+ * that date.
  */
 export function PeriodPicker({ value, onChange, timeZoneId, ref }: PeriodPickerProps) {
   const t = useTranslations('dashboard.period');
@@ -133,7 +141,7 @@ export function PeriodPicker({ value, onChange, timeZoneId, ref }: PeriodPickerP
         start={span}
         onChoose={(chosen) => {
           setChoosing(false);
-          onChange(chosen);
+          onChange(namedPeriod(chosen, timeZoneId, new Date()));
         }}
       />
     </div>

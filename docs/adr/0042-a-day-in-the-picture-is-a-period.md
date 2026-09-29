@@ -10,6 +10,10 @@
 - **Extends**: [0028](0028-what-a-link-carries.md), whose spelling for a chosen stretch is what a
   pressed day is written in, and whose "changing it leaves an entry in the history" is what makes
   the way back from one the button the reader already reaches for.
+- **Revised by**: [0049](0049-a-day-is-called-what-the-reader-calls-it.md), which names a pressed
+  day that is today or yesterday where the website is by the period the list already offers for
+  it rather than as a stretch of one day, remembers it and words its cards by that name, and names
+  a single day chosen in the chooser the same way.
 
 ## Context
 

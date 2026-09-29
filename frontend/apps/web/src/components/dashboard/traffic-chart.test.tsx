@@ -5,7 +5,7 @@ import { TrafficChart, type TrafficPoint } from '@/components/dashboard/traffic-
 import type { ChartView } from '@/lib/analytics/chart-view';
 import type { Granularity } from '@/lib/analytics/period';
 import type { TrafficSeries } from '@/lib/api/schemas';
-import { drawn } from '@/test/drawing';
+import { drawn, PALETTE } from '@/test/drawing';
 import { renderScreen } from '@/test/harness';
 
 /**
@@ -91,6 +91,24 @@ interface Drawing {
     markArea?: { z?: number; data: { xAxis: string }[][] };
   }[];
   xAxis: { data: string[]; boundaryGap: boolean };
+  tooltip: {
+    axisPointer: {
+      label: {
+        formatter: (pointed: { value: string; seriesData: { dataIndex: number }[] }) => string;
+      };
+    };
+  };
+}
+
+/**
+ * What the card a hover opens over a bucket is headed with, asked for as the engine asks for it:
+ * with the name the axis gives the bucket, and a series drawn where it sits.
+ */
+function cardHeading(option: Drawing, at: number): string {
+  return option.tooltip.axisPointer.label.formatter({
+    value: option.xAxis.data[at] ?? '',
+    seriesData: [{ dataIndex: at }],
+  });
 }
 
 interface Shown {
@@ -243,6 +261,50 @@ describe('a period drawn an hour at a time', () => {
   });
 });
 
+describe('the card a hover opens', () => {
+  /**
+   * The second bucket begins at half past six on the evening of the eleventh, a Tuesday where these
+   * tests run and a Wednesday where the website is. The card names the website's weekday, and the
+   * axis and the table keep the short names that fit them on a phone.
+   */
+  it("names the weekday over a day in the website's own zone, and nowhere else", () => {
+    const option = show();
+
+    expect(cardHeading(option, 1)).toBe('Wednesday, August 12');
+    expect(option.xAxis.data).toStrictEqual(['Aug 11', 'Aug 12', 'Aug 13']);
+    expect(screen.getAllByRole('rowheader').map((row) => row.textContent)).toStrictEqual([
+      'Aug 11',
+      'Aug 12',
+      'Aug 13',
+    ]);
+  });
+
+  it('writes the year there too once the period runs across one', () => {
+    const option = show({ manyYears: true });
+
+    expect(cardHeading(option, 0)).toBe('Tuesday, August 11, 2026');
+  });
+
+  /**
+   * The axis of a single day needs no date beside each hour, because every hour on it is from the
+   * same day. The card is read on its own, away from anything that would say which day that is.
+   */
+  it('gives an hour its weekday and its date, even on a period of one day', () => {
+    const option = show({ points: HOURS, granularity: 'hour', manyDays: false });
+
+    expect(cardHeading(option, 0)).toBe('Tuesday, August 18 at 12 AM');
+    expect(cardHeading(option, 2)).toBe('Tuesday, August 18 at 2 AM');
+    expect(option.xAxis.data).toStrictEqual(['12 AM', '1 AM', '2 AM']);
+  });
+
+  it('heads the picture of who came the same way', () => {
+    const option = show({ view: 'who' });
+
+    expect(cardHeading(option, 2)).toBe('Thursday, August 13');
+    expect(screen.getByRole('row', { name: 'Aug 13 8 4 3 1' })).toBeInTheDocument();
+  });
+});
+
 describe('who the traffic was', () => {
   /**
    * Fourteen categories reach the screen and four colours leave it, because the colour answers
@@ -258,6 +320,21 @@ describe('who the traffic was', () => {
       "Can't say",
     ]);
     expect(option.series[1]?.data).toStrictEqual([3, 5, 3]);
+  });
+
+  /**
+   * The card a hover opens marks each figure with its series' own colour, and a band that did not
+   * state one would be marked in a colour of the engine's choosing — a card that disagrees with the
+   * picture beneath it and the legend beside it.
+   */
+  it('marks each band in the card with the colour it is drawn in', () => {
+    const option = show({ view: 'who' });
+
+    expect(option.series.map((one) => one.itemStyle?.color)).toStrictEqual([
+      PALETTE.tones.people,
+      PALETTE.tones.automation,
+      PALETTE.tones.unclear,
+    ]);
   });
 
   it('leaves out a kind of traffic the period never held', () => {

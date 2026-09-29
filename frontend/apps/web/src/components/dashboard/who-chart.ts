@@ -11,6 +11,8 @@ import { quietened, washOver } from '@/lib/charts/wash';
 export interface WhoChart {
   /** What each bucket is called, in the website's own zone. */
   readonly labels: readonly string[];
+  /** What each bucket is called in full, over the card a hover opens. */
+  readonly titles: readonly string[];
   /** One band per tone the period held, in reading order. */
   readonly bands: readonly TrafficBand[];
   /** What each tone is called, in the reader's own language. */
@@ -68,7 +70,7 @@ export function whoOption(chart: WhoChart, palette: ChartPalette): EChartsCoreOp
     );
   }
 
-  return { ...chartFrame(palette, chart.labels, columns), series: drawn };
+  return { ...chartFrame(palette, chart.labels, columns, chart.titles), series: drawn };
 }
 
 /**
@@ -104,6 +106,10 @@ function drawBand(
     smooth: false,
     symbol: 'none',
     lineStyle: { width: 1, color: colour },
+    // The tone's colour for the marker beside its figure in the card a hover opens, which is
+    // taken from here rather than from the line or the area. With no dots drawn it shows nowhere
+    // else.
+    itemStyle: { color: colour },
     areaStyle: { color: color.modifyAlpha(colour, 0.78) },
   };
 }

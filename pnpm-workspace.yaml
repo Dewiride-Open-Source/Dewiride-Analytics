@@ -87,11 +87,11 @@ catalog:
   # Tests
   # The runner asks for its build engine as a peer and does not carry it itself, so its version is
   # stated here like every other rather than left to whatever a regeneration resolves.
-  vite: 8.3.1
-  vitest: 5.0.2
-  "@vitest/coverage-v8": 5.0.2
+  vite: 8.3.2
+  vitest: 5.0.3
+  "@vitest/coverage-v8": 5.0.3
   "@vitejs/plugin-react": 6.1.1
-  jsdom: 30.1.1
+  jsdom: 30.1.2
   "@testing-library/react": 16.3.3
   "@testing-library/jest-dom": 7.0.1
   "@testing-library/user-event": 14.6.7

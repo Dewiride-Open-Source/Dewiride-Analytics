@@ -10,6 +10,10 @@
   [0043](0043-what-is-out-of-date-is-proposed-not-applied.md), whose proof that "a frozen install on
   a checkout without the two members has nothing to disagree with" was made on a release that still
   tolerated it.
+- **Revised by**: [0050](0050-the-package-manager-follows-its-stable-channel.md), which lifts the
+  hold: pnpm 11.28.4 and 12.9.0 pass over an absent member again, so the pin is moved by hand to the
+  newest 11.x release at least a day old, and pnpm 12 stays out for how it is distributed rather
+  than for this.
 
 ## Context
 

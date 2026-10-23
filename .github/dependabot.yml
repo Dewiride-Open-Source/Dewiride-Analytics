@@ -9,9 +9,23 @@
 # is usually withdrawn within days, and this repository already asks its package manager to wait
 # a day before installing anything; a week is that same caution with the proposal held back too.
 #
-# Three things move by hand and are deliberately not watched, because each is chosen together
-# with files no proposal could move:
+# A security fix published inside that week is not proposed sooner, and GitHub's own security
+# updates are left off: their proposals would rewrite the lockfile without `ee/` exactly as these
+# do. A JavaScript advisory still arrives as an alert without anybody pushing, because GitHub reads
+# the lockfile. A NuGet one never does: the dependency graph reads project files, which under
+# central package management name no version and no transitive package, and automatic dependency
+# submission, which would resolve them, is not turned on. What surfaces a NuGet advisory is the
+# weekly scheduled run in build.yml — restore audits every package the free solution uses,
+# transitive ones included, and warnings are errors here, so one that gains an advisory turns that
+# run red within the week. The private repository's Build runs on the same day for the packages
+# only the commercial edition restores. See docs/adr/0051-a-known-flaw-is-seen-within-the-week.md.
 #
+# Four things move by hand and are deliberately not watched, because each is chosen together with
+# files no proposal could move, or because nothing here can propose it:
+#
+#   - The package manager. Dependabot does not edit `packageManager` in package.json, so it moves
+#     in a dependency refresh, beside the lockfile it regenerates with `ee/` present. See
+#     docs/adr/0050-the-package-manager-follows-its-stable-channel.md.
 #   - The base images. The Node major is chosen with the runner in build.yml and `engines.node`;
 #     the .NET major with global.json and the target framework. A tag like `24-alpine` can only
 #     ever receive a new major, so watching it would propose exactly the moves that are not
@@ -19,9 +33,9 @@
 #   - The two stores in compose.yaml. Both are pinned to the versions the product is tested
 #     against, and the integration fixture pins the same two tags in code. A store moves with
 #     its fixture, and on the machine serving traffic only after a backup.
-#   - Stripe.net and the mail client in Directory.Packages.props. The projects that reference
-#     them are in the private repository, so no project in this solution asks for them and they
-#     are never looked at here.
+#   - Stripe.net and Dewiride.EmailServer.Client, the client for the hosted service's own mail
+#     service, in Directory.Packages.props. The projects that reference them are in the private
+#     repository, so no project in this solution asks for them and they are never looked at here.
 #
 # One consequence of the two repositories is caught by the build rather than here. The lockfile
 # describes both, and a machine without the private clone rewrites it without the private half —
@@ -83,6 +97,13 @@ updates:
       azure:
         patterns:
           - "Azure.*"
+      # A MailKit release sets a floor under MimeKit, which the sender also uses directly, so the
+      # two move together: a MailKit proposal alone, raising that floor above the pinned MimeKit,
+      # would fail to restore.
+      mailkit:
+        patterns:
+          - "MailKit"
+          - "MimeKit"
       testing:
         patterns:
           - "xunit*"

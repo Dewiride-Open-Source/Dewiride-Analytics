@@ -49,9 +49,11 @@ proposal.
 
 A red scheduled run is the signal, and it is answered by a dependency refresh, as 10.0.13 was.
 
-A scheduled run in a public repository is switched off by GitHub after 60 days without activity.
-Dependabot's weekly branches count as activity, so the public run lasts as long as Dependabot keeps
-proposing.
+GitHub switches a scheduled run in a public repository off after 60 days in which the repository
+saw no activity, and does not say what counts as activity. Should the free repository's run be
+switched off, nothing goes unseen: the private repository's weekly Build compiles the free solution
+as well as its own, against the free repository's main, and GitHub states that rule for public
+repositories only.
 
 An advisory with no patched release cannot be closed by any refresh. `braces`, reached only through
 a lint plugin, is the one at the time of writing; GitHub dismissed its alert as development-only,

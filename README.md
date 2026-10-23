@@ -681,6 +681,21 @@ need to — a backup nobody has restored is a guess. `DEWIRIDE_COMPOSE_PROJECT` 
 write into a second stack on empty volumes, which is how to prove a copy is worth something without
 touching the installation you are trying to protect.
 
+### Updating
+
+Take a copy first, as above. Then, from the directory you cloned into:
+
+```bash
+git pull
+docker compose build --pull
+docker compose up --wait
+```
+
+`--pull` fetches the current base images rather than reusing the copies Docker already holds. That
+is how fixes to the runtime beneath the product reach your installation, and a build on an older
+copy can stop and ask for a newer SDK. The data stays in its volumes, and the engine brings both
+stores' schemas up to date as it starts.
+
 ## What's inside
 
 | Directory   | What lives there                                                        |

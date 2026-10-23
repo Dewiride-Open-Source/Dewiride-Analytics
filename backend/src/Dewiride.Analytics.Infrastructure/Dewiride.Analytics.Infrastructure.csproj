@@ -29,6 +29,11 @@
     -->
     <PackageReference Include="MailKit" />
     <!--
+      Builds the message MailKit hands over. Written against directly, so referenced directly; see
+      Directory.Packages.props.
+    -->
+    <PackageReference Include="MimeKit" />
+    <!--
       Reads the MaxMind DB binary format, which is what DB-IP publishes its free geolocation data
       in. The reader only: no database ships with this product, and none of MaxMind's own are used.
     -->

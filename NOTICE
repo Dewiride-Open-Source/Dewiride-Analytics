@@ -48,6 +48,15 @@ available at https://www.apache.org/licenses/LICENSE-2.0
                                   data, and none of MaxMind's own databases are used — see
                                   "Not bundled" below.
 
+  Noda Time                       https://github.com/nodatime/nodatime
+                                  Copyright 2009 The Noda Time Authors
+                                  Reaches this product through ClickHouse.Driver. Its own
+                                  NOTICE file reads: "This product includes ports of
+                                  software developed by Joda.org (http://www.joda.org/).
+                                  (Portions of Noda Time were derived from Joda Time 1.6.0;
+                                  Joda Time 1.6.0 is copyright 2001-2009 Stephen
+                                  Colebourne.)"
+
 
 ================================================================================
 MIT License
@@ -78,6 +87,10 @@ https://opensource.org/licenses/MIT
                                     Copyright (c) 2021 Oleg Stepanischev
                                     A C# port of Zstandard; the notice for the work it
                                     derives from is reproduced under "BSD 3-Clause" below.
+                                  CityHash 1.0.2
+                                    https://github.com/google/cityhash
+                                    Copyright (c) 2011 Google, Inc.
+                                    A C# port of the reference implementation.
   Next.js                         Copyright Vercel, Inc.
   React                           Copyright Meta Platforms, Inc. and affiliates
   Tailwind CSS                    Copyright Tailwind Labs, Inc.

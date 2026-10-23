@@ -6,6 +6,8 @@
 - **Revised by**: [0046](0046-the-package-manager-is-held-where-the-free-product-installs-alone.md),
   which bounds "an entry with nothing behind it is ignored" to the package manager up to 11.27:
   from 11.28 and 12.7 an unfiltered frozen install refuses it, so the pin is held below both.
+- **Revised by**: [0050](0050-the-package-manager-follows-its-stable-channel.md), under which the
+  statement holds again from pnpm 11.28.4 and 12.9.0, for an entry whose directory is absent.
 
 ## Context
 

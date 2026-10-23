@@ -23,34 +23,37 @@ packages:
   # member so that one lockfile and one version table serve both repositories.
   #
   # Their lockfile entries stay behind on a checkout without them, and a frozen install passes over
-  # those only up to pnpm 11.27. That is why the package manager is held there: see
-  # docs/adr/0046-the-package-manager-is-held-where-the-free-product-installs-alone.md.
+  # a recorded member whose directory is absent, which is what lets the free product install alone.
+  # The package manager may move only while that stays true: see
+  # docs/adr/0050-the-package-manager-follows-its-stable-channel.md.
   - ee/frontend/edition
   - ee/frontend/apps/site
 
 # Every version lives in the catalog below and packages refer to it as `catalog:`, so an upgrade
 # is a single line and two packages can never drift onto different copies of React.
 
-# A dependency may only run install scripts if it is named here. The list is short on purpose:
-# each entry is a package that unpacks a platform-specific binary and does nothing else.
+# A dependency may only run install scripts if it is named here as `true`. The list is short on
+# purpose: each such entry is a package that unpacks a platform-specific binary and does nothing
+# else. Biome is named as `false`: the package manager asks for a decision about it on every
+# install, and it has nothing to run — its binary arrives as a platform-specific optional
+# dependency.
 allowBuilds:
-  "@biomejs/biome": true
+  "@biomejs/biome": false
   "@parcel/watcher": true
   "@swc/core": true
   esbuild: true
-  unrs-resolver: true
 
 catalog:
   # Framework
-  next: 16.3.6
-  react: 19.3.0
-  react-dom: 19.3.0
+  next: 16.4.2
+  react: 19.3.1
+  react-dom: 19.3.1
 
   # Language. Pinned to 6.x deliberately — see scripts/assert-typescript-version.mjs.
   typescript: 6.0.3
   # The major follows the Node major the images and the build run on, so the compiler describes the
   # runtime that ships rather than one that does not.
-  "@types/node": 24.19.0
+  "@types/node": 24.19.2
   "@types/react": 19.3.0
   "@types/react-dom": 19.3.0
 
@@ -58,44 +61,44 @@ catalog:
   tailwindcss: 4.3.3
   "@tailwindcss/postcss": 4.3.3
   next-themes: 0.4.6
-  lucide-react: 1.48.0
-  "@radix-ui/react-popover": 1.1.23
+  lucide-react: 1.61.0
+  "@radix-ui/react-popover": 1.3.1
   clsx: 2.1.1
   tailwind-merge: 3.7.0
   class-variance-authority: 0.7.1
   echarts: 6.1.0
 
   # Behaviour
-  next-intl: 4.14.7
-  nuqs: 2.10.1
-  zod: 4.6.5
-  "@tanstack/react-query": 5.104.0
+  next-intl: 4.14.9
+  nuqs: 2.10.2
+  zod: 4.6.7
+  "@tanstack/react-query": 5.104.5
 
   # Build. Pinned exactly rather than to a range: esbuild is pre-1.0 and treats a minor release as
   # allowed to break, and this one compiles a script that goes on other people's websites.
   esbuild: 0.28.2
 
   # Quality
-  eslint: 10.11.0
-  "@next/eslint-plugin-next": 16.3.6
+  eslint: 10.13.0
+  "@next/eslint-plugin-next": 16.4.2
   eslint-plugin-react-hooks: 7.1.1
   eslint-plugin-jsx-a11y: 6.10.2
-  typescript-eslint: 8.70.1
-  "@biomejs/biome": 2.5.14
-  prettier: 3.9.9
+  typescript-eslint: 8.72.0
+  "@biomejs/biome": 2.6.2
+  prettier: 3.9.10
 
   # Tests
   # The runner asks for its build engine as a peer and does not carry it itself, so its version is
   # stated here like every other rather than left to whatever a regeneration resolves.
-  vite: 8.3.1
-  vitest: 5.0.2
-  "@vitest/coverage-v8": 5.0.2
-  "@vitejs/plugin-react": 6.1.1
-  jsdom: 30.1.1
+  vite: 8.3.5
+  vitest: 5.0.5
+  "@vitest/coverage-v8": 5.0.5
+  "@vitejs/plugin-react": 6.1.2
+  jsdom: 30.1.3
   "@testing-library/react": 16.3.3
   "@testing-library/jest-dom": 7.0.1
-  "@testing-library/user-event": 14.6.7
-  "@playwright/test": 1.63.0
+  "@testing-library/user-event": 14.6.8
+  "@playwright/test": 1.64.1
 
 # Newly published versions are held back by default, so a package compromised at the registry has
 # to survive a waiting period before it can be installed here. A version deliberately taken before

@@ -9,6 +9,12 @@
 - **Revised by**: [0046](0046-the-package-manager-is-held-where-the-free-product-installs-alone.md),
   which bounds the proof that a frozen install on a checkout without the two members "has nothing
   to disagree with" to the package manager up to 11.27, and holds the pin there.
+- **Revised by**: [0050](0050-the-package-manager-follows-its-stable-channel.md), under which that
+  proof holds again from pnpm 11.28.4, and the pin is moved by hand in a dependency refresh, since
+  no proposal can move it.
+- **Revised by**: [0051](0051-a-known-flaw-is-seen-within-the-week.md), which gives up "a security
+  fix is still proposed the week it ships": a fix is proposed one to two weeks after its release,
+  and a flaw in a .NET package is seen sooner by a weekly build in each repository.
 
 ## Context
 

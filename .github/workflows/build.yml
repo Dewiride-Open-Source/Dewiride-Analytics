@@ -12,6 +12,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Once a week on what main already is. A NuGet package gains an advisory without anybody changing
+  # this repository, restore audits every package the solution uses, and warnings are errors here,
+  # so the first sign of it should not wait for whatever change somebody next happens to push.
+  # Monday 06:00 Asia/Kolkata, beside the dependency proposals.
+  schedule:
+    - cron: "30 0 * * 1"
 
 # A second push while the first is still compiling makes the first answer a question nobody is
 # asking any more. Releases are not cancelled this way; a build is.

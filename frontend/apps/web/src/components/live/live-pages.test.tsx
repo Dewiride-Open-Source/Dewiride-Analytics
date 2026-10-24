@@ -70,6 +70,21 @@ describe('what is being read right now', () => {
     expect(queryByRole('link')).not.toBeInTheDocument();
   });
 
+  /**
+   * An address reads left to right even where a part of it is written right to left. Left to set
+   * its own direction, a page whose first part is in Arabic would be drawn back to front.
+   */
+  it('draws each address left to right, whatever it is written in', () => {
+    const { getByText } = renderScreen(
+      <LivePages
+        pages={[{ path: '/%D9%85%D9%82%D8%A7%D9%84%D8%A9/admin', visitors: 1 }]}
+        visitorsSeen={1}
+      />,
+    );
+
+    expect(getByText('/مقالة/admin')).toHaveAttribute('dir', 'ltr');
+  });
+
   it('says plainly when nothing has been opened at all', () => {
     const { getByText, queryByRole } = renderScreen(<LivePages pages={[]} visitorsSeen={0} />);
 

@@ -489,6 +489,7 @@
         "from": "Came from",
         "direct": "Came straight here",
         "fromNamed": "From {source}",
+        "arrivedEarlier": "Arrived earlier",
         "viaNetwork": "Via {network}",
         "place": "Where",
         "readOn": "Read on",
@@ -674,6 +675,7 @@
     },
     "list": {
       "pages": "{count, plural, one {# page} other {# pages}}",
+      "landedOn": "Landed on {path}",
       "seenBy": "Seen by {surfaces}",
       "nav": {
         "label": "Pages of visits"

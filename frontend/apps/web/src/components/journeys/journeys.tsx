@@ -120,6 +120,14 @@ function SiteJourneys({ site }: { readonly site: Site }) {
   // "Nobody has been looked at yet" is a different fact from "no people match", and is the one
   // the screen gives whichever population it is kept to.
   const nothingJudged = traffic.data !== undefined && traffic.data.groups.length === 0;
+  // Said once however much was refused. The totals and the list are asked for together, and an
+  // engine that cannot answer one usually cannot answer the other: the same sentence twice reads
+  // as two different problems. The list's refusal is the one said, the list being what the screen
+  // is for.
+  const refusal = visits.error ?? traffic.error;
+  // A list on its way stands in as its shape; a refused one is not on its way, and a shape pulsing
+  // under the notice would promise an answer that is not coming.
+  const waiting = visits.data === undefined && !visits.isError;
 
   return (
     <div className="flex flex-col gap-6">
@@ -157,12 +165,11 @@ function SiteJourneys({ site }: { readonly site: Site }) {
         />
       ) : null}
 
-      {traffic.isError ? <FailureNotice error={traffic.error} /> : null}
-      {visits.isError ? <FailureNotice error={visits.error} /> : null}
+      {refusal === null ? null : <FailureNotice error={refusal} />}
 
-      {visits.data === undefined ? (
-        <ListWaiting />
-      ) : (
+      {waiting ? <ListWaiting /> : null}
+
+      {visits.data === undefined ? null : (
         <Listing
           site={site}
           answer={visits.data}

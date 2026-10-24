@@ -476,6 +476,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
 
 - **Done** · Timeline with time on each page, scroll depth, status and controls pressed; who it
   was; reasons for and against; category and band.
+- **Done** · Each User journey row says on its first line which page the visit landed on, while
+  that page is still on record.
 - **Not started** · Duration shown; first seen shown on the live row.
 - **Not started** · The User journey list says that the newest visits are still being judged.
 - **Not started** · Labelled facts: script ran, scrolled, pointer, keyboard, tab visible.
@@ -490,7 +492,9 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
 
 **8.3 Direct traffic**
 
-- **Partly done** · "Came straight here" shown beside each visit's verdict, place and network.
+- **Partly done** · "Came straight here" shown beside each visit's verdict, place and network, and
+  on the first line of each Live row — which says "Arrived earlier" instead where the half hour
+  shows the visitor was already on the site.
 - **Not started** · How much direct traffic was automated, as a figure.
 - **Not started** · Copy that says direct is an attribution category, not a person typing an
   address.
@@ -502,6 +506,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
 - **Done** · Visitors now, pages being read, a trail per visitor. Only confirmed or self-declared
   machinery is named while a visit is under way — by design, so a person is never guessed at
   mid-read.
+- **Done** · Each row says on its first line how the visitor arrived: the site that sent them,
+  "Came straight here", or "Arrived earlier" where the half hour did not see them arrive.
 - **Not started** · Similar visits active — 3.5.
 
 **8.5 Question-led entry points**

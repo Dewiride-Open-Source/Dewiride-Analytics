@@ -88,7 +88,17 @@ export function chartFrame(
     : { type: 'line' as const, z: LAYERS.pointerLine, lineStyle: { color: palette.border } };
 
   return {
-    grid: { top: 16, right: 4, bottom: 4, left: 4, containLabel: true },
+    // Laid out so the axes' labels fall inside the picture: the setting ECharts 6 gives for it,
+    // rather than the older one it only honours through a compatibility module this bundle leaves
+    // out.
+    grid: {
+      top: 16,
+      right: 4,
+      bottom: 4,
+      left: 4,
+      outerBoundsMode: 'same' as const,
+      outerBoundsContain: 'axisLabel' as const,
+    },
     tooltip: {
       trigger: 'axis' as const,
       // Kept inside the picture. Left to itself the card jumps to the far side of the pointer when
@@ -108,7 +118,17 @@ export function chartFrame(
       boundaryGap: columns,
       axisTick: { show: false },
       axisLine: { lineStyle: { color: palette.line } },
-      axisLabel: { color: palette.label, fontSize: 11, hideOverlap: true },
+      // The last bucket is always named, ending at its own position rather than centred on it, and
+      // a name that would collide with it gives way. Which buckets are named is settled after the
+      // picture is fitted to its labels, so on a phone the last name chosen can otherwise sit a
+      // column from the edge and be cut off part-way through — "3:58 PM" drawn as "3:58 P".
+      axisLabel: {
+        color: palette.label,
+        fontSize: 11,
+        hideOverlap: true,
+        showMaxLabel: true,
+        alignMaxLabel: 'right' as const,
+      },
     },
     yAxis: {
       type: 'value' as const,

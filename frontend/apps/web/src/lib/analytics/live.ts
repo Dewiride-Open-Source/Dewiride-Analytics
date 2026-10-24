@@ -1,3 +1,4 @@
+import { type CameFrom, cameFrom } from '@/lib/analytics/visit-context';
 import type { LiveMinute, LiveVisitor, TrafficCategory } from '@/lib/api/schemas';
 
 /**
@@ -39,6 +40,19 @@ export function activeNow(at: string, lastSeen: string): boolean {
 /** Whether anybody has, so the screen can say the moment is over rather than describing it. */
 export function anybodyActive(visitors: readonly LiveVisitor[], at: string): boolean {
   return visitors.some((visitor) => activeNow(at, visitor.lastSeen));
+}
+
+/**
+ * How a visitor reached the site, as far as the half hour can say.
+ *
+ * A site that sent them is named whenever one did. Where none did, the half hour has to have held
+ * the moment they arrived before it may say they came straight here: somebody already reading when
+ * it began carries no sender either, and "Came straight here" said of them would be a guess written
+ * as a fact on the line a row is read by. Their arrival is unseen, and the row says they arrived
+ * earlier, which is all the half hour knows.
+ */
+export function cameHereFrom(visitor: LiveVisitor): CameFrom {
+  return cameFrom(visitor.context, visitor.seenArriving);
 }
 
 /** How long a minute is, since every bucket on the chart is exactly one. */

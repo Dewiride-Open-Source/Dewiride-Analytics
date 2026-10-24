@@ -6,12 +6,20 @@ import { PlaceCredit } from '@/components/dashboard/place-credit';
 import { splitDuration } from '@/lib/analytics/duration';
 import { readablePath } from '@/lib/analytics/pages';
 import { countryNames } from '@/lib/analytics/places';
-import { placeOf, type ReadOn, readOn } from '@/lib/analytics/visit-context';
+import { type CameFrom, placeOf, type ReadOn, readOn } from '@/lib/analytics/visit-context';
 import type { ControlKind, VisitContext, VisitJourneyStep, VisitPress } from '@/lib/api/schemas';
 
 interface VisitTrailProps {
   /** Who the visitor was, where that has been established, and nothing where it has not. */
   readonly context: VisitContext | undefined;
+  /**
+   * How the visitor arrived, as the row the trail was opened from worked it out.
+   *
+   * Asked for rather than read from the account, because only the row knows whether what it was
+   * read from saw the visitor arrive: a half hour may have begun after they did, and a finished
+   * visit's record of its first page may be gone.
+   */
+  readonly from: CameFrom;
   /** What they did, in the order they did it, or nothing while the answer is on its way. */
   readonly steps: readonly VisitJourneyStep[] | undefined;
   /** Whether the answer was refused, so the trail says so instead of waiting for ever. */
@@ -34,12 +42,19 @@ interface VisitTrailProps {
  * the question that produced it, and none of them changes how the answer is drawn — so they belong
  * to whatever asked, and a trail is the same trail however it was come by.
  */
-export function VisitTrail({ context, steps, failed, pageCount, timeZoneId }: VisitTrailProps) {
+export function VisitTrail({
+  context,
+  from,
+  steps,
+  failed,
+  pageCount,
+  timeZoneId,
+}: VisitTrailProps) {
   const t = useTranslations('dashboard.journey');
 
   return (
     <>
-      {context === undefined ? null : <Whose context={context} />}
+      {context === undefined ? null : <Whose context={context} from={from} />}
 
       <section className="flex flex-col gap-2">
         <h3 className="text-xs font-medium tracking-wide text-foreground-muted uppercase">
@@ -62,36 +77,49 @@ export function VisitTrail({ context, steps, failed, pageCount, timeZoneId }: Vi
  *
  * Only what was established is shown. Four facts reading "not known" is what a screen looks like
  * when it is describing its own gaps instead of the visit, so a fact nothing answered is left out
- * and the section says once, quietly, that the rest went unobserved.
+ * and the section says once, quietly, that the rest went unobserved. Where the visitor came from is
+ * one such fact where nothing named a sender and the arrival itself was not seen — a half hour that
+ * began after they arrived, a finished visit whose first page is no longer on record — because
+ * silence from a reading that missed the arrival is no answer to where from. A sender named
+ * anywhere in what was read is said.
  */
-function Whose({ context }: { readonly context: VisitContext }) {
+function Whose({ context, from }: { readonly context: VisitContext; readonly from: CameFrom }) {
   const t = useTranslations('dashboard.journey.about');
   const locale = useLocale();
   const named = useMemo(() => countryNames(locale), [locale]);
 
   const place = placeOf(context, named(context.countryCode));
   const read = readOn(context);
+  const sender = senderOf(from, t);
+
+  // What kind of thing a site is goes under its name, because a name alone leaves the reader to
+  // know which of them are search engines — which is the whole reason the catalogue exists. An
+  // arrival that named nowhere is already written as what it is, and saying it a second time
+  // underneath would spend a line agreeing with itself.
+  const kind = context.kind === 'direct' ? undefined : t(`kind.${context.kind}`);
 
   return (
     // Measured against the panel rather than the window. This block is opened inside a card the
     // width of a screen on one page and inside a column beside another card on the next, and a
     // rule written against the window would put a town and a network name in four narrow columns
-    // exactly where there is least room to write either of them out.
+    // exactly where there is least room to write either of them out. On a phone the panel is too
+    // narrow for even two of them side by side, so each fact there has the whole width.
     <section className="@container flex flex-col gap-2">
       <h3 className="text-xs font-medium tracking-wide text-foreground-muted uppercase">
         {t('title')}
       </h3>
 
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 @2xl:grid-cols-4">
-        {/*
-          What kind of thing a site is goes under its name, because a name alone leaves the reader
-          to know which of them are search engines — which is the whole reason the catalogue
-          exists. An arrival that named nowhere is already written as what it is, and saying it a
-          second time underneath would spend a line agreeing with itself.
-        */}
-        <Fact label={t('from')} value={context.source === '' ? t('direct') : context.source}>
-          {context.kind === 'direct' ? undefined : t(`kind.${context.kind}`)}
-        </Fact>
+      {/*
+        Gone altogether where it holds nothing — a visitor nobody saw arrive, about whom nothing
+        else was established either — so that an empty list neither opens a gap above the line
+        that says so nor is announced as a list of nothing.
+      */}
+      <dl className="grid grid-cols-1 gap-x-4 gap-y-3 empty:hidden @xs:grid-cols-2 @2xl:grid-cols-4">
+        {sender === null ? null : (
+          <Fact label={t('from')} value={sender}>
+            {kind}
+          </Fact>
+        )}
 
         {place === null ? null : <Fact label={t('place')} value={place} />}
         {read === null ? null : <Fact label={t('readOn')} value={readWords(read, t)} />}
@@ -133,6 +161,51 @@ export function readWords(read: ReadOn, t: ReturnType<typeof useTranslations>): 
   }
 }
 
+/**
+ * The words how somebody arrived is written in, which are the catalogue's and never assembled
+ * anywhere else.
+ *
+ * Exported for the same reason as `readWords`: how somebody arrived is said on the rows of both
+ * lists and under a trail, and three spellings of "Came straight here" would eventually be three
+ * different claims.
+ *
+ * An unseen arrival that named no sender is written as "Arrived earlier", which is what it means on
+ * the one list that says it: the list of who is here now, whose half hour began after the visitor
+ * arrived. Everywhere else it is a fact nothing answered, and is left out rather than written.
+ *
+ * @param from How they arrived, as the rule worked it out.
+ * @param t The words under `dashboard.journey.about`.
+ */
+export function fromWords(from: CameFrom, t: ReturnType<typeof useTranslations>): string {
+  switch (from.arrived) {
+    case 'from-site':
+      return t('fromNamed', { source: from.site });
+    case 'directly':
+      return t('direct');
+    case 'unseen':
+      return t('arrivedEarlier');
+  }
+}
+
+/**
+ * What is written under "Came from", or nothing where no sender was named and nobody saw the
+ * visitor arrive.
+ *
+ * The site's name alone, because the label already says "from" and "From Google" beneath it would
+ * say it twice. An unseen arrival that named no sender is a fact nothing answered, and is left out
+ * like any other.
+ */
+function senderOf(from: CameFrom, t: ReturnType<typeof useTranslations>): string | null {
+  switch (from.arrived) {
+    case 'from-site':
+      return from.site;
+    case 'directly':
+      return fromWords(from, t);
+    case 'unseen':
+      return null;
+  }
+}
+
 interface FactProps {
   readonly label: string;
   /** Written by whoever visited, so it reaches the screen as text and never as a link. */
@@ -141,16 +214,24 @@ interface FactProps {
   readonly children?: ReactNode;
 }
 
+/**
+ * One established fact, written out.
+ *
+ * Wrapped rather than cut short, because this is where a row's facts are written out in full:
+ * a town or a network cut off here could only be finished by resting a pointer on it, which
+ * nothing does on a phone. Two lines at most, because the address of a site that sent somebody
+ * is as long as whoever runs it chooses to make it, and may break anywhere for the same reason.
+ */
 function Fact({ label, value, children }: FactProps) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
       <dt className="text-xs text-foreground-subtle">{label}</dt>
       <dd className="flex min-w-0 flex-col">
-        <bdi className="truncate text-sm text-foreground" title={value}>
+        <bdi className="line-clamp-2 text-sm text-foreground wrap-anywhere" title={value}>
           {value}
         </bdi>
         {children === undefined ? null : (
-          <span className="truncate text-xs text-foreground-muted">{children}</span>
+          <span className="text-xs text-foreground-muted">{children}</span>
         )}
       </dd>
     </div>
@@ -237,7 +318,8 @@ function Step({ step, watched, timeZoneId, last }: StepProps) {
 function Arrived({ step, watched, timeZoneId }: Omit<StepProps, 'last'>) {
   const t = useTranslations('dashboard.journey');
 
-  // Written by whoever asked for the page, so it is shown as text and never followed.
+  // Written by whoever asked for the page, so it is shown as text and never followed — and read
+  // left to right, as an address is, even where a part of it is written right to left.
   const address = readablePath(step.path);
   const trouble = step.statusCode === null ? null : troubleWith(step.statusCode);
 
@@ -250,7 +332,7 @@ function Arrived({ step, watched, timeZoneId }: Omit<StepProps, 'last'>) {
 
       <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
         <span className="flex min-w-0 items-center gap-2">
-          <bdi className="truncate text-sm text-foreground" title={address}>
+          <bdi dir="ltr" className="truncate text-sm text-foreground" title={address}>
             {address}
           </bdi>
           {trouble ? (

@@ -4,12 +4,13 @@ import { ChevronRight } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 import { ListCredits } from '@/components/dashboard/place-credit';
+import { RowFact } from '@/components/dashboard/row-fact';
 import { QUIET_PILL, VerdictBadge } from '@/components/dashboard/verdict-badge';
 import { VisitEvidence } from '@/components/dashboard/visit-evidence';
-import { VisitTrail } from '@/components/dashboard/visit-trail';
+import { fromWords, VisitTrail } from '@/components/dashboard/visit-trail';
 import { Whereabouts } from '@/components/dashboard/whereabouts';
 import { Card } from '@/components/ui/card';
-import { activeNow, type LiveRow, minutesSince } from '@/lib/analytics/live';
+import { activeNow, cameHereFrom, type LiveRow, minutesSince } from '@/lib/analytics/live';
 import { readablePath } from '@/lib/analytics/pages';
 import { countryNames } from '@/lib/analytics/places';
 import { namedAs } from '@/lib/analytics/verdicts';
@@ -118,6 +119,7 @@ interface VisitorRowProps {
  */
 function VisitorRow({ siteId, row, at, countryName, timeZoneId, open, onOpen }: VisitorRowProps) {
   const t = useTranslations('live.list');
+  const about = useTranslations('dashboard.journey.about');
   const strengths = useTranslations('verdicts.strength');
   const evidence = useTranslations('verdicts.evidence');
   const trail = useLiveTrail(siteId, row.visitor.visitor, row.at, open);
@@ -128,6 +130,7 @@ function VisitorRow({ siteId, row, at, countryName, timeZoneId, open, onOpen }: 
   const address = readablePath(row.visitor.currentPath);
   const present = row.stillHere && activeNow(at, row.visitor.lastSeen);
   const name = namedAs(row.visitor.supporting);
+  const from = cameHereFrom(row.visitor);
 
   return (
     <details
@@ -160,6 +163,12 @@ function VisitorRow({ siteId, row, at, countryName, timeZoneId, open, onOpen }: 
             {row.stillHere ? null : (
               <span className="text-xs text-foreground-subtle">{t('gone')}</span>
             )}
+            {/*
+              How the visitor arrived goes last and after a middot: placed before "Gone" it would
+              read "From Google Gone", and run on from the band it would read "strong signs From
+              Google".
+            */}
+            <RowFact>{fromWords(from, about)}</RowFact>
           </span>
 
           <bdi className="truncate text-sm text-foreground-muted" title={address}>
@@ -167,11 +176,15 @@ function VisitorRow({ siteId, row, at, countryName, timeZoneId, open, onOpen }: 
           </bdi>
 
           {/*
-            Only while the row is shut. Opening it lays the same two facts out in full, with who
-            sent the visitor and whose network they came over beside them, an inch below — and a
-            screen that says "Leeds, United Kingdom" twice in two lines reads as a mistake.
+            Only while the row is shut. Opening it lays the same two facts out in full an inch
+            below, with whose network the visitor came over beside them, and a screen that says
+            "Leeds, United Kingdom" twice in two lines reads as a mistake. The first line stays,
+            because it is the row's heading — what the panel is opened under — rather than a
+            summary of what the panel goes on to say.
           */}
-          {open ? null : <Whereabouts context={row.visitor.context} countryName={countryName} />}
+          {open ? null : (
+            <Whereabouts context={row.visitor.context} from={from} countryName={countryName} />
+          )}
         </span>
 
         {/*
@@ -192,6 +205,7 @@ function VisitorRow({ siteId, row, at, countryName, timeZoneId, open, onOpen }: 
       <div className="flex flex-col gap-4 pb-4 pl-7">
         <VisitTrail
           context={row.visitor.context}
+          from={from}
           steps={trail.data?.steps}
           failed={trail.isError}
           pageCount={row.visitor.pageCount}

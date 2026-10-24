@@ -4,6 +4,7 @@ import { ChevronRight } from 'lucide-react';
 import { useFormatter, useLocale, useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { ListCredits } from '@/components/dashboard/place-credit';
+import { RowFact } from '@/components/dashboard/row-fact';
 import { VerdictBadge } from '@/components/dashboard/verdict-badge';
 import { VisitEvidence } from '@/components/dashboard/visit-evidence';
 import { VisitJourney } from '@/components/dashboard/visit-journey';
@@ -11,8 +12,10 @@ import { Whereabouts, type WhereaboutsFact } from '@/components/dashboard/wherea
 import { Card } from '@/components/ui/card';
 import { Pagination } from '@/components/ui/pagination';
 import { PAGE_SIZES } from '@/lib/analytics/journeys';
+import { readablePath } from '@/lib/analytics/pages';
 import { countryNames } from '@/lib/analytics/places';
 import { namedAs } from '@/lib/analytics/verdicts';
+import { cameFrom } from '@/lib/analytics/visit-context';
 import type { Visit } from '@/lib/api/schemas';
 import { cn } from '@/lib/styling';
 
@@ -122,6 +125,9 @@ function VisitRow({ siteId, visit, countryName, timeZoneId }: VisitRowProps) {
   // owns the website — their own server is their own server, whichever framework it runs.
   const seenBy = [...new Set(visit.surfaces.map((surface) => surfaceNames(surface)))];
   const name = namedAs(visit.supporting);
+  // A visit's arrival is on record for as long as the page it landed on is. One whose activity has
+  // aged out of the store holds neither, and is not said to have come straight here.
+  const from = cameFrom(visit.context, visit.entryPath !== '');
 
   return (
     <details
@@ -145,14 +151,28 @@ function VisitRow({ siteId, visit, countryName, timeZoneId }: VisitRowProps) {
             {name === null ? null : (
               <bdi className="text-xs font-medium text-foreground">{name}</bdi>
             )}
+            {/*
+              Written the way the "Landed on" narrowing writes it, so the row and the choice that
+              found it name one page. A visit with no page recorded says nothing here rather than
+              naming the front page, which would be a page it never opened.
+            */}
+            {visit.entryPath === '' ? null : (
+              <RowFact>{t('landedOn', { path: readablePath(visit.entryPath) })}</RowFact>
+            )}
           </span>
 
           {/*
             Only while the row is shut. Opening it lays the same facts out in full an inch below,
-            and a screen that says "Jaipur, India" twice in two lines reads as a mistake.
+            and a screen that says "Jaipur, India" twice in two lines reads as a mistake. The first
+            line stays, because it is the row's heading — what the panel is opened under.
           */}
           {opened ? null : (
-            <Whereabouts context={visit.context} countryName={countryName} facts={EVERYTHING} />
+            <Whereabouts
+              context={visit.context}
+              from={from}
+              countryName={countryName}
+              facts={EVERYTHING}
+            />
           )}
         </span>
         {/*
@@ -184,6 +204,7 @@ function VisitRow({ siteId, visit, countryName, timeZoneId }: VisitRowProps) {
         <VisitJourney
           siteId={siteId}
           visit={visit.id}
+          from={from}
           pageCount={visit.pageCount}
           timeZoneId={timeZoneId}
           open={opened}

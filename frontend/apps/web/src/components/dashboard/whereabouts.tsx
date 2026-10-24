@@ -1,8 +1,8 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { readWords } from '@/components/dashboard/visit-trail';
-import { placeOf, readOn } from '@/lib/analytics/visit-context';
+import { fromWords, readWords } from '@/components/dashboard/visit-trail';
+import { type CameFrom, placeOf, readOn } from '@/lib/analytics/visit-context';
 import type { VisitContext } from '@/lib/api/schemas';
 
 /** The facts a row can say about its visitor. */
@@ -13,6 +13,8 @@ const USUAL: readonly WhereaboutsFact[] = ['place', 'readOn'];
 
 interface WhereaboutsProps {
   readonly context: VisitContext;
+  /** How the visitor arrived, as the row worked it out from what it was read from. */
+  readonly from: CameFrom;
   /** Writes a country code out in the reader's language, built once for the whole list. */
   readonly countryName: (code: string) => string | null;
   /** Which facts to say, in this order. */
@@ -27,18 +29,20 @@ interface WhereaboutsProps {
  * phone and the other says a hosting company in Amsterdam. That is the difference somebody scans
  * a list for, and asking them to open every row to find it is asking them to open every row.
  *
- * Says whichever of the four facts the list asks for. Where the visit was, whose network it came
- * over and what it was read on are each left out where nothing established them, rather than
- * written as an absence; where it came from is always said, because a visit that named nowhere
- * came straight here, and that is an answer rather than a gap. So a list asking for the source
- * always gets a line, and one asking only for the other three gets none where none was
- * established.
+ * Says whichever of the four facts the list asks for, each left out where nothing established it
+ * rather than written as an absence. Where the visit came from is said wherever a sender was named
+ * or the arrival was seen, because an arrival seen to name nowhere came straight here, and that is
+ * an answer rather than a gap; an unseen arrival that named no sender — a finished visit whose
+ * first page is no longer on record — says nothing.
+ *
+ * The list of who is here now does not ask for where somebody came from here: it says it on its
+ * own first line, because its half hour may have begun after the visitor arrived.
  */
-export function Whereabouts({ context, countryName, facts = USUAL }: WhereaboutsProps) {
+export function Whereabouts({ context, from, countryName, facts = USUAL }: WhereaboutsProps) {
   const t = useTranslations('dashboard.journey.about');
 
   const said = facts.flatMap((fact) => {
-    const words = wordsFor(fact, context, countryName, t);
+    const words = wordsFor(fact, context, from, countryName, t);
 
     return words === null ? [] : [{ fact, words }];
   });
@@ -79,12 +83,13 @@ export function Whereabouts({ context, countryName, facts = USUAL }: Whereabouts
 function wordsFor(
   fact: WhereaboutsFact,
   context: VisitContext,
+  from: CameFrom,
   countryName: (code: string) => string | null,
   t: ReturnType<typeof useTranslations>,
 ): string | null {
   switch (fact) {
     case 'source':
-      return context.source === '' ? t('direct') : t('fromNamed', { source: context.source });
+      return from.arrived === 'unseen' ? null : fromWords(from, t);
     case 'place':
       return placeOf(context, countryName(context.countryCode));
     case 'network':

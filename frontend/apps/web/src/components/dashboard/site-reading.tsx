@@ -293,6 +293,7 @@ function ReadingList({
               key={page.path}
               name={address}
               hint={address}
+              dir="ltr"
               detail={
                 <>
                   {t('reads', { count: page.readings })}

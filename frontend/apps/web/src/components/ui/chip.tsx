@@ -51,7 +51,12 @@ interface ChoicePillProps {
   /** What about a visit this narrows, shown quietly in front of the value. */
   readonly of: string;
   /** The value itself, written the way a reader sees it everywhere else. */
-  readonly children: ReactNode;
+  readonly value: string;
+  /**
+   * The direction the value runs in, where it runs one way whatever it is written in: a page's
+   * address, which is read left to right even where a part of it is written right to left.
+   */
+  readonly dir?: 'ltr';
   /** What pressing it does, said in full, since the cross alone says nothing out loud. */
   readonly removeLabel: string;
   readonly onRemove: () => void;
@@ -64,7 +69,7 @@ interface ChoicePillProps {
  * thumb. The cross is drawn for the eye and hidden from anyone listening, who is told in words
  * what pressing it will do.
  */
-export function ChoicePill({ of, children, removeLabel, onRemove }: ChoicePillProps) {
+export function ChoicePill({ of, value, dir, removeLabel, onRemove }: ChoicePillProps) {
   return (
     <button
       type="button"
@@ -88,9 +93,12 @@ export function ChoicePill({ of, children, removeLabel, onRemove }: ChoicePillPr
       <span className="shrink-0 whitespace-nowrap text-foreground-muted">{of}</span>{' '}
       {/*
         Isolated so that a value written right to left does not rearrange the label in front of
-        it, and cut short with the whole of it still reachable by resting on the pill.
+        it, and cut short with the whole of it still reachable by resting on it. The title sits on
+        the value rather than on the pill, whose name already says what pressing it does.
       */}
-      <bdi className="min-w-0 truncate font-medium">{children}</bdi>
+      <bdi dir={dir} className="min-w-0 truncate font-medium" title={value}>
+        {value}
+      </bdi>
       <X aria-hidden className="size-3.5 shrink-0 opacity-70" />
     </button>
   );

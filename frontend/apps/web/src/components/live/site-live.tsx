@@ -107,10 +107,16 @@ export function SiteLive({ site }: SiteLiveProps) {
  * width everything stacks in the order somebody asks it in — how many, what they are reading, what
  * the half hour looked like, and then who each of them is.
  *
+ * The one column of the stacked screen is held to the width of the screen. A grid left to size it
+ * sizes it to the widest thing inside, and a page address has no room to break: one long address
+ * would make the screen wider than the phone showing it, and the phone would shrink the whole
+ * screen to fit rather than cut the address short.
+ *
  * Held while the first answer is on its way as well, so that the screen does not rearrange itself
  * around whoever is reading it the moment the answer lands.
  */
-const COLUMNS = 'grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start';
+const COLUMNS =
+  'grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start';
 
 interface ReadingProps {
   readonly site: Site;

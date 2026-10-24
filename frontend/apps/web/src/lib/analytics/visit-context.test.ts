@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { placeOf, readOn } from '@/lib/analytics/visit-context';
+import { cameFrom, placeOf, readOn } from '@/lib/analytics/visit-context';
 import type { VisitContext } from '@/lib/api/schemas';
 
 function context(established: Partial<VisitContext> = {}): VisitContext {
@@ -72,5 +72,49 @@ describe('what a visit was read on', () => {
 
   it('says nothing where nothing named the software or the device', () => {
     expect(readOn(context())).toBeNull();
+  });
+});
+
+describe('where a visit came from', () => {
+  it('names the site that sent it', () => {
+    expect(cameFrom(context({ source: 'Google', kind: 'search' }), true)).toStrictEqual({
+      arrived: 'from-site',
+      site: 'Google',
+    });
+  });
+
+  /**
+   * A sending site nothing has a name for is recorded as its address, and is said as that address
+   * rather than dropped: a forum nobody catalogued still sent the visitor.
+   */
+  it('names a site nothing has a name for by the address it was recorded as', () => {
+    expect(cameFrom(context({ source: 'forum.example.net', kind: 'link' }), true)).toStrictEqual({
+      arrived: 'from-site',
+      site: 'forum.example.net',
+    });
+  });
+
+  /**
+   * A sender named anywhere in what was read is named, whether or not the moment of arriving was
+   * seen: the name was on a report that is there to be read.
+   */
+  it('names the site that sent a visitor even where their arrival was not seen', () => {
+    expect(cameFrom(context({ source: 'Google', kind: 'search' }), false)).toStrictEqual({
+      arrived: 'from-site',
+      site: 'Google',
+    });
+  });
+
+  /** An arrival that was seen and named no sender came straight here, which is an answer. */
+  it('says an arrival that was seen and named no sender came straight here', () => {
+    expect(cameFrom(context(), true)).toStrictEqual({ arrived: 'directly' });
+  });
+
+  /**
+   * An arrival nobody saw named no sender only because nothing of it was there to name one, and
+   * saying it came straight here would be a guess written as a fact.
+   */
+  it('says nothing about where from where the arrival itself was not seen', () => {
+    expect(cameFrom(context(), false)).toStrictEqual({ arrived: 'unseen' });
   });
 });

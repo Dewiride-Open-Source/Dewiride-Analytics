@@ -55,6 +55,7 @@ function visitor(overrides: Partial<LiveVisitor> = {}): LiveVisitor {
       browser: '',
       system: '',
     },
+    seenArriving: true,
     ...overrides,
   };
 }
@@ -146,6 +147,21 @@ function list(): HTMLElement {
 /** The card carrying the figure and what can be named among the visitors behind it. */
 function headline(): HTMLElement {
   return screen.getByRole('heading', { name: 'Visitors' }).closest('section') as HTMLElement;
+}
+
+/** The row of the visitor reading one page: the part of it on the list, open or shut. */
+function rowOf(path: string): HTMLElement {
+  return screen.getByText(`Reading ${path}`).closest('summary') as HTMLElement;
+}
+
+/**
+ * The first line of that row: the marker an unnamed visitor wears, and everything said beside it.
+ *
+ * A row says several things on several lines, and what the first line says is what a reader
+ * scanning the list reads — so a test about the first line looks at that line alone.
+ */
+function firstLineOf(path: string): HTMLElement {
+  return within(rowOf(path)).getByText('Still watching').parentElement as HTMLElement;
 }
 
 /** Lets the screen's next beat fall, and waits for whatever it brings. */
@@ -333,9 +349,9 @@ describe('who is here now', () => {
 
     await screen.findByText('Reading /first');
 
-    const listed = [...list().querySelectorAll('details > summary bdi')].map(
-      (row) => row.textContent,
-    );
+    const listed = within(list())
+      .getAllByText(/^Reading /)
+      .map((row) => row.textContent);
 
     expect(listed).toEqual(['Reading /first', 'Reading /second', 'Reading /third']);
   });
@@ -728,11 +744,143 @@ describe('a visitor somebody has opened', () => {
   });
 
   /**
-   * A live row says roughly where and on what, and no more: who sent the visitor and whose
-   * network they came over are under the row once it is opened, and a row still being watched is
-   * read for the two facts that tell a person from a rented server at a glance.
+   * How somebody arrived is said once, beside what they were judged to be, so nobody has to open a
+   * row to learn it: the site that sent them, that nothing did, or — where nothing did and the half
+   * hour began after they arrived — that they arrived earlier, which is all it knows.
    */
-  it('says where a visitor roughly is and what they are reading on, and nothing more', async () => {
+  it('says on the first line where a visitor came from', async () => {
+    engineReading([
+      reading([
+        visitor({
+          visitor: 'a1',
+          currentPath: '/searched',
+          context: { ...visitor().context, source: 'Google', kind: 'search' },
+        }),
+        visitor({ visitor: 'a2', currentPath: '/typed' }),
+        visitor({
+          visitor: 'a3',
+          currentPath: '/linked',
+          context: { ...visitor().context, source: 'forum.example.net', kind: 'link' },
+        }),
+        visitor({ visitor: 'a4', currentPath: '/already-reading', seenArriving: false }),
+      ]),
+    ]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    expect(firstLineOf('/searched')).toHaveTextContent('From Google');
+    expect(within(rowOf('/searched')).getAllByText(/Google/)).toHaveLength(1);
+    expect(firstLineOf('/typed')).toHaveTextContent('Came straight here');
+    expect(firstLineOf('/linked')).toHaveTextContent('From forum.example.net');
+    expect(firstLineOf('/already-reading')).toHaveTextContent('Arrived earlier');
+  });
+
+  /**
+   * The first line is the row's heading, so it stays when the row is opened. The panel under it
+   * names the site on its own, under a label that already says where from.
+   */
+  it('keeps saying where a visitor came from once their row is open', async () => {
+    engineReading([
+      reading([
+        visitor({
+          context: {
+            ...visitor().context,
+            source: 'Google',
+            kind: 'search',
+            countryCode: 'GB',
+            town: 'Leeds',
+          },
+        }),
+      ]),
+    ]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /writing/how-we-measure');
+
+    await press().click(rowOf('/writing/how-we-measure'));
+
+    // The line under the page is put away once the row is open, and the first line is not.
+    await waitFor(() =>
+      expect(
+        within(rowOf('/writing/how-we-measure')).queryByText('Leeds, United Kingdom'),
+      ).not.toBeInTheDocument(),
+    );
+
+    const opened = rowOf('/writing/how-we-measure').closest('details') as HTMLElement;
+
+    expect(opened).toHaveAttribute('open');
+    expect(firstLineOf('/writing/how-we-measure')).toHaveTextContent('From Google');
+    expect(within(opened).getByText('Came from')).toBeInTheDocument();
+    expect(within(opened).getByText('Google')).toBeInTheDocument();
+  });
+
+  /**
+   * Arriving earlier is no answer to where from, so the panel under such a row leaves "Came from"
+   * out like any other fact nothing answered, and goes on to say what was established.
+   */
+  it('leaves where a visitor came from out of the panel when nobody saw them arrive', async () => {
+    engineReading([
+      reading([
+        visitor({
+          seenArriving: false,
+          context: { ...visitor().context, browser: 'Chrome', system: 'Android' },
+        }),
+      ]),
+    ]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /writing/how-we-measure');
+
+    await press().click(rowOf('/writing/how-we-measure'));
+
+    await waitFor(() =>
+      expect(
+        within(rowOf('/writing/how-we-measure')).queryByText('Chrome on Android'),
+      ).not.toBeInTheDocument(),
+    );
+
+    const opened = rowOf('/writing/how-we-measure').closest('details') as HTMLElement;
+
+    expect(opened).toHaveAttribute('open');
+    expect(firstLineOf('/writing/how-we-measure')).toHaveTextContent('Arrived earlier');
+    expect(within(opened).queryByText('Came from')).not.toBeInTheDocument();
+    expect(within(opened).getByText('Read on')).toBeInTheDocument();
+    expect(within(opened).getByText('Chrome on Android')).toBeInTheDocument();
+  });
+
+  /**
+   * Where nobody saw the visitor arrive and nothing else was established either, the panel says so
+   * in one sentence, with no list of nothing above it.
+   */
+  it('says once that nothing was observed about a visitor nobody saw arrive', async () => {
+    engineReading([reading([visitor({ seenArriving: false })])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /writing/how-we-measure');
+
+    await press().click(rowOf('/writing/how-we-measure'));
+
+    const opened = rowOf('/writing/how-we-measure').closest('details') as HTMLElement;
+
+    expect(
+      await within(opened).findByText(
+        'Nothing in this visit said where it was or what it was read on.',
+      ),
+    ).toBeInTheDocument();
+    expect(opened.querySelector('dl')).toBeEmptyDOMElement();
+  });
+
+  /**
+   * Under the page, a live row says roughly where and on what, and leaves whose network they came
+   * over to the panel under it: a row still being watched is read for the two facts that tell a
+   * person from a rented server at a glance.
+   */
+  it('says where a visitor roughly is and what they are reading on, but not whose network', async () => {
     engineReading([
       reading([
         visitor({
@@ -750,15 +898,14 @@ describe('a visitor somebody has opened', () => {
       ]),
     ]);
 
-    const { container } = renderScreen(<SiteLive site={SITE} />);
+    renderScreen(<SiteLive site={SITE} />);
 
-    await screen.findByRole('heading', { name: "Who's here" });
+    await screen.findByText('Reading /writing/how-we-measure');
 
-    const row = within(container.querySelector('details summary')!);
+    const row = within(rowOf('/writing/how-we-measure'));
 
     expect(row.getByText('Leeds, United Kingdom')).toBeInTheDocument();
     expect(row.getByText('Chrome on Android')).toBeInTheDocument();
-    expect(row.queryByText('From Google')).not.toBeInTheDocument();
     expect(row.queryByText(/Example Networks/)).not.toBeInTheDocument();
   });
 

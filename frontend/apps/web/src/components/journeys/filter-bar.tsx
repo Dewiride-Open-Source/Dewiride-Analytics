@@ -18,6 +18,7 @@ import {
   toggleChoice,
   withoutChoice,
 } from '@/lib/analytics/journeys';
+import { readablePath } from '@/lib/analytics/pages';
 import { countryNames } from '@/lib/analytics/places';
 import { deviceKindSchema, type VisitFacets, visitSourceKindSchema } from '@/lib/api/schemas';
 
@@ -102,6 +103,16 @@ function spell<T extends string>(
   return known === undefined ? null : written(known);
 }
 
+/**
+ * Whether a value is a page's address, which reads left to right whatever it is written in.
+ *
+ * Only a page a visit landed on is one. The visits with no page recorded are named by a sentence
+ * from the catalogue, which runs the way the reader's language does, like every other value here.
+ */
+function addressIn(dimension: DetailDimension, recorded: string): boolean {
+  return dimension === 'entryPages' && recorded !== '';
+}
+
 /** One control in the row, and everything it takes to draw it and to undo what it did. */
 interface Control {
   readonly key: string;
@@ -136,13 +147,22 @@ export function FilterBar({ value, onChange, held, onWantOptions, waiting }: Fil
   // across a list of two hundred countries, which is exactly what this is for.
   const named = useMemo(() => countryNames(locale), [locale]);
 
-  /** Writes one value of one of the seven open sets out for a reader. */
+  /**
+   * Writes one value of one of the seven open sets out for a reader.
+   *
+   * A page is written the way every row and trail writes it, and only written that way: the value
+   * the engine is asked for stays exactly as it was recorded, because that is what it narrows by.
+   */
   function openSet(dimension: OpenDimension, recorded: string): string {
     if (dimension === 'countries') {
       return named(recorded) ?? t(NOTHING_ESTABLISHED.countries);
     }
 
-    return recorded === '' ? t(NOTHING_ESTABLISHED[dimension]) : recorded;
+    if (recorded === '') {
+      return t(NOTHING_ESTABLISHED[dimension]);
+    }
+
+    return dimension === 'entryPages' ? readablePath(recorded) : recorded;
   }
 
   /** How each thing about a visit turns one of its values into something a reader would say. */
@@ -185,7 +205,14 @@ export function FilterBar({ value, onChange, held, onWantOptions, waiting }: Fil
 
       return label === null
         ? []
-        : [{ value: row.value, label, count: counted ? row.visits : undefined }];
+        : [
+            {
+              value: row.value,
+              label,
+              count: counted ? row.visits : undefined,
+              dir: addressIn(dimension, row.value) ? 'ltr' : undefined,
+            },
+          ];
     });
   }
 
@@ -256,8 +283,13 @@ export function FilterBar({ value, onChange, held, onWantOptions, waiting }: Fil
         laid out with flexbox, and an item of one is allowed to grow to whatever it holds unless it
         is told otherwise — so without this the row does not scroll at all: it simply makes the
         whole page wider than the phone it is being read on.
+
+        It is also the box anything positioned inside it is placed against. A button holding
+        choices counts them in a word only a screen reader hears, kept out of sight by positioning,
+        and placed against anything further out that word is not clipped by this row's scrolling:
+        it widens the page to wherever its button sits.
       */}
-      <div className="-mx-5 w-[calc(100%+2.5rem)] overflow-x-auto px-5 sm:mx-0 sm:w-full sm:px-0">
+      <div className="relative -mx-5 w-[calc(100%+2.5rem)] overflow-x-auto px-5 sm:mx-0 sm:w-full sm:px-0">
         <div className="flex w-max gap-2 sm:w-auto sm:flex-wrap">
           {controls.map((control) => (
             <FilterButton
@@ -281,11 +313,11 @@ export function FilterBar({ value, onChange, held, onWantOptions, waiting }: Fil
             <ChoicePill
               key={`${control.key}:${option.value}`}
               of={control.label}
+              value={option.label}
+              dir={option.dir}
               removeLabel={t('remove', { choice: `${control.label} ${option.label}` })}
               onRemove={() => control.remove(option.value)}
-            >
-              {option.label}
-            </ChoicePill>
+            />
           ))}
         </div>
       )}

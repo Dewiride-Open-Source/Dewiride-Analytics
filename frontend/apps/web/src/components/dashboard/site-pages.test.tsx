@@ -75,6 +75,18 @@ describe('the pages a website’s traffic went to', () => {
     expect(screen.getByText('/legal/privacy')).toBeInTheDocument();
   });
 
+  /**
+   * An address reads left to right even where a part of it is written right to left. Left to set
+   * its own direction, a page whose first part is in Arabic would be drawn back to front.
+   */
+  it('draws each address left to right, whatever it is written in', async () => {
+    engineWith(PAGES);
+
+    show();
+
+    expect(await screen.findByText('/integrations')).toHaveAttribute('dir', 'ltr');
+  });
+
   /** Kept to people, every question the card asks is asked of them and of nobody else. */
   it('asks about the people when the card is kept to them', async () => {
     const engine = engineWith(PAGES);

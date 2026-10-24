@@ -25,6 +25,12 @@ interface RankedRowBase {
   readonly name: ReactNode;
   /** The whole name, where it may have been cut short to fit. */
   readonly hint?: string;
+  /**
+   * The direction the name runs in, where it runs one way whatever it is written in: a page's
+   * address, which is read left to right even where a part of it is written right to left.
+   * Left out, the name sets its own direction from the first letter it holds.
+   */
+  readonly dir?: 'ltr';
   /** The counts beside it, already written out in the reader's language. */
   readonly detail: ReactNode;
   /** How many this row had. */
@@ -55,7 +61,7 @@ type RankedRowProps = RankedRowBase & RankedRowEnding;
  * against the leading row in the whole period rather than the leading row on screen, so a row
  * means the same thing wherever in the list it is met.
  */
-export function RankedRow({ name, hint, detail, part, whole, most, figure }: RankedRowProps) {
+export function RankedRow({ name, hint, dir, detail, part, whole, most, figure }: RankedRowProps) {
   const format = useFormatter();
 
   return (
@@ -70,7 +76,7 @@ export function RankedRow({ name, hint, detail, part, whole, most, figure }: Ran
           Isolating the name's direction keeps a right-to-left one from rearranging the figures
           beside it, and a long one that had to be cut short can still be read by resting on it.
         */}
-        <bdi className="min-w-0 truncate text-sm text-foreground sm:flex-1" title={hint}>
+        <bdi dir={dir} className="min-w-0 truncate text-sm text-foreground sm:flex-1" title={hint}>
           {name}
         </bdi>
         <span className="flex items-center justify-between gap-3 sm:justify-end">

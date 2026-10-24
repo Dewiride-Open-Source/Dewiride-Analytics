@@ -939,6 +939,49 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     /// <summary>
+    /// A reading covers a stretch of minutes rather than a visit, so somebody already on the site
+    /// when it opened reaches it with no site having sent them, and a screen saying they came
+    /// straight in would be saying something the window does not know. A visitor is seen arriving
+    /// only where the window holds a page view of them, nothing of theirs comes before the earliest
+    /// of those from any surface, and the page view that decides — the tracker's own ahead of any
+    /// other surface's, since it reports where its page was reached from whenever the browser says,
+    /// and the no-script image's behind every other, since it never says — does not name the site
+    /// itself. A progress report, a departure or a press ahead of any page view is somebody already
+    /// reading.
+    /// </summary>
+    [Fact]
+    public void A_Visitor_Is_Seen_Arriving_Only_Where_The_Window_Holds_Their_Arrival()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), LiveVisitors());
+
+        statement.Sql.Should().Contain("countIf(kind = 'PageView') > 0");
+        statement.Sql.Should().Contain("AND min(server_ts) = minIf(server_ts, kind = 'PageView')");
+        statement.Sql.Should().Contain("AND NOT argMinIf(");
+        statement.Sql.Should().Contain("referrer_domain != '' AND sending_host = '',");
+        statement.Sql.Should().Contain(
+            "(surface != 'BrowserTracker', surface = 'NoScriptPixel', server_ts, event_id),");
+        statement.Sql.Should().Contain("kind = 'PageView')) AS seen_arriving");
+    }
+
+    /// <summary>
+    /// Where a visitor's pages were reached from is read to settle which site sent them and whether
+    /// the window saw them arrive, and those two answers are all that is handed back. The address
+    /// itself carries whatever the page that sent somebody put in it — a search somebody typed, a
+    /// token in a link — and a screen of who is here has no use for any of it. Asserted on the
+    /// selection the reader takes its columns from, because every expression above it has to read
+    /// the referrer to answer anything at all.
+    /// </summary>
+    [Fact]
+    public void A_Reading_Of_Who_Is_Here_Hands_Back_No_Referring_Address()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), LiveVisitors());
+        var tail = statement.Sql[statement.Sql.LastIndexOf("\nSELECT\n", StringComparison.Ordinal)..];
+
+        tail.Should().NotContain("source_address");
+        tail.Should().NotContain("referrer_domain");
+    }
+
+    /// <summary>
     /// A drawing of the last half hour has a column for every minute in it, including the minutes
     /// nothing happened in. The store answers only about minutes that produced a row, and a drawing
     /// built from those alone closes the gaps up and shows a busy half hour where there was a quiet
@@ -1411,6 +1454,31 @@ public sealed partial class AnalyticsSqlCompilerTests
 
             positions.Should().OnlyContain(position => position >= 0);
             positions.Should().BeInAscendingOrder();
+        }
+    }
+
+    /// <summary>
+    /// A listed visit names the page it landed on with the value the list keeps a visit by when a
+    /// reader narrows to the visits that landed on a page: the first page the rebuild settles for
+    /// the visit, read from the one column both use. A row naming one page beneath a filter that
+    /// kept it for another would show somebody a visit under a heading it does not match. The page
+    /// follows the eight facts rather than joining them, so the account the opened visit gives stays
+    /// the eight it is.
+    /// </summary>
+    [Fact]
+    public void A_Listed_Visit_Names_The_Page_It_Landed_On_From_The_Column_The_Landed_On_Narrowing_Reads()
+    {
+        var narrowed = AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail());
+
+        narrowed.Sql.Should().Contain("OR entry_path IN {entry_pages:Array(String)}");
+
+        foreach (var statement in new[] { AnalyticsSqlCompiler.Compile(Scope(), Judged(10)), narrowed })
+        {
+            statement.Sql.Should().Contain("argMinIf(path, (server_ts, event_id), opens_page) AS entry_path");
+
+            var tail = statement.Sql[statement.Sql.LastIndexOf("\nSELECT\n", StringComparison.Ordinal)..];
+
+            tail.Should().Contain("    system_name,\n    entry_path\nFROM");
         }
     }
 

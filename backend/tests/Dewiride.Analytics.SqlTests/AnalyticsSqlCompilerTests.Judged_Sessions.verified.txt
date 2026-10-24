@@ -304,7 +304,8 @@ SELECT
     network,
     device,
     browser,
-    system_name
+    system_name,
+    entry_path
 FROM page
 LEFT JOIN described USING (session_key)
 ORDER BY started_at DESC, session_key

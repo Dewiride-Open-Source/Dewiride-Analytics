@@ -164,7 +164,7 @@ public sealed class VisitDetailsTests(AnalyticsStackFixture stack)
     /// page it is showing, so this is the shape that proves the page-bounded rebuild derives the
     /// identity the engine stored: a rebuild whose window cut off the visit's first report, or
     /// whose reconciliation wrote the key differently, would match nothing and hand back eight
-    /// empties with no error anywhere.
+    /// empties and no page with no error anywhere.
     /// </summary>
     [Fact]
     public async Task A_Listed_Visit_Says_What_It_Was()
@@ -173,12 +173,15 @@ public sealed class VisitDetailsTests(AnalyticsStackFixture stack)
 
         var visits = await VisitsOfAsync(site, VisitNarrowing.Nothing);
 
-        visits.Visits.Should().ContainSingle().Which.Context.Should().Be(Described());
+        var visit = visits.Visits.Should().ContainSingle().Which;
+
+        visit.Context.Should().Be(Described());
+        visit.EntryPath.Should().Be(DescribedTraffic.EntryPage);
     }
 
     /// <summary>
-    /// A narrowed list carries the same eight facts in the same words as an unnarrowed one, taken
-    /// from the rebuild it was narrowed by.
+    /// A narrowed list carries the same eight facts in the same words as an unnarrowed one, and the
+    /// same page landed on, taken from the rebuild it was narrowed by.
     /// </summary>
     [Fact]
     public async Task A_Narrowed_Visit_Says_What_It_Was()
@@ -187,14 +190,46 @@ public sealed class VisitDetailsTests(AnalyticsStackFixture stack)
 
         var visits = await VisitsOfAsync(site, new VisitNarrowing { Devices = [DescribedTraffic.Device] });
 
-        visits.Visits.Should().ContainSingle().Which.Context.Should().Be(Described());
+        var visit = visits.Visits.Should().ContainSingle().Which;
+
+        visit.Context.Should().Be(Described());
+        visit.EntryPath.Should().Be(DescribedTraffic.EntryPage);
     }
 
     /// <summary>
-    /// A page is a slice, and the account each row carries is that row's own — whichever slice it
-    /// falls on, and whether or not the list was narrowed. The rebuild behind a page reads every
-    /// visit around it and the join is what hands each verdict its own account; two visits handed
-    /// each other's would pass every one-visit test above.
+    /// A row names the page its visit landed on, and asking for the visits that landed on that page
+    /// hands back the visit naming it. Landing on a page is where a visit began rather than any page
+    /// it went to, so a visit that reached the same page later is not one of them.
+    /// </summary>
+    [Fact]
+    public async Task Narrowing_To_The_Page_A_Visit_Landed_On_Finds_The_Visit_Naming_It()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var began = Yesterday;
+        const string Reader = "0a1b2c3d4e5f60718293a4b5c6d7e8f9";
+
+        await DescribedTraffic.WriteAsync(
+            stack,
+            DescribedTraffic.Arrived(site.Id, began, "/pricing"),
+            DescribedTraffic.Arrived(site.Id, began.AddHours(1), "/docs") with { VisitorKey = Reader },
+            DescribedTraffic.Arrived(site.Id, began.AddHours(1).AddMinutes(2), "/pricing") with { VisitorKey = Reader });
+
+        await DescribedTraffic.JudgeAsync(stack, site);
+
+        var listed = await VisitsOfAsync(site, VisitNarrowing.Nothing);
+        var landedOnTheDocs = await VisitsOfAsync(site, new VisitNarrowing { EntryPages = ["/docs"] });
+        var landedOnPricing = await VisitsOfAsync(site, new VisitNarrowing { EntryPages = ["/pricing"] });
+
+        listed.Visits.Select(visit => visit.EntryPath).Should().Equal("/docs", "/pricing");
+        landedOnTheDocs.Visits.Should().ContainSingle().Which.EntryPath.Should().Be("/docs");
+        landedOnPricing.Visits.Should().ContainSingle().Which.EntryPath.Should().Be("/pricing");
+    }
+
+    /// <summary>
+    /// A page is a slice, and the account each row carries is that row's own, with the page it
+    /// landed on — whichever slice it falls on, and whether or not the list was narrowed. The
+    /// rebuild behind a page reads every visit around it and the join is what hands each verdict
+    /// its own account; two visits handed each other's would pass every one-visit test above.
     /// </summary>
     [Fact]
     public async Task Each_Visit_On_A_Page_Of_Several_Carries_Its_Own_Account()
@@ -236,13 +271,18 @@ public sealed class VisitDetailsTests(AnalyticsStackFixture stack)
         older.Visits.Should().ContainSingle().Which.Context.Should().Be(fromBing);
         both.Visits.Select(visit => visit.Context).Should().Equal(straightToLyon, fromBing);
         narrowed.Visits.Should().ContainSingle().Which.Context.Should().Be(straightToLyon);
+
+        newest.Visits[0].EntryPath.Should().Be("/docs");
+        older.Visits[0].EntryPath.Should().Be("/pricing");
+        both.Visits.Select(visit => visit.EntryPath).Should().Equal("/docs", "/pricing");
+        narrowed.Visits[0].EntryPath.Should().Be("/docs");
     }
 
     /// <summary>
     /// A verdict outlives the activity it was reached from, and the visit is still listed once
     /// that activity is gone — saying nothing about itself, in the vocabulary's own words for
-    /// nothing established. This is also what proves the store hands back empty texts rather than
-    /// nothing at all for a visit the rebuild could not describe.
+    /// nothing established, and naming no page it landed on. This is also what proves the store
+    /// hands back empty texts rather than nothing at all for a visit the rebuild could not describe.
     /// </summary>
     [Fact]
     public async Task A_Listed_Visit_Whose_Activity_Is_Gone_Says_Nothing_About_Itself()
@@ -270,7 +310,11 @@ public sealed class VisitDetailsTests(AnalyticsStackFixture stack)
         var visits = await VisitsOfAsync(site, VisitNarrowing.Nothing);
 
         visits.TotalVisits.Should().Be(1);
-        visits.Visits.Should().ContainSingle().Which.Context.Should().Be(VisitContext.Nothing);
+
+        var visit = visits.Visits.Should().ContainSingle().Which;
+
+        visit.Context.Should().Be(VisitContext.Nothing);
+        visit.EntryPath.Should().BeEmpty();
     }
 
     /// <summary>

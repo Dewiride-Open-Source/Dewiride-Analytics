@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Telemetry;
@@ -126,6 +127,55 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
             var narrowed = await ReadVisitsAsync(browser, site.Id, "device=phone");
 
             narrowed.Visits.Should().ContainSingle().Which.Context.Should().Be(journey.Context);
+        }
+    }
+
+    /// <summary>
+    /// A row names the page its visit landed on, and it is the page the opened visit's steps begin
+    /// with, the page the filter offers, and a page that written back as an address finds the visit
+    /// again — so the first line of a row, the panel beneath it and the filter beside it name one
+    /// page one way. The name it travels under is read from the text itself, because the dashboard
+    /// reads it by that spelling and by no other.
+    /// </summary>
+    [Fact]
+    public async Task A_Listed_Visit_Names_The_Page_Its_Steps_Begin_On_And_The_Filter_Finds_It_By()
+    {
+        var site = await DescribedTraffic.ADescribedVisitAsync(stack);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var visits = await ReadVisitsAsync(browser, site.Id, "limit=10");
+            var listed = visits.Visits.Should().ContainSingle().Which;
+
+            listed.EntryPath.Should().Be(DescribedTraffic.EntryPage);
+
+            var opened = await browser.GetAsync($"/api/sites/{site.Id}/visits/{listed.Id}/journey");
+
+            opened.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var journey = await opened.Content.ReadFromJsonAsync<VisitJourneyResponse>(Cancellation.Token);
+
+            journey.Should().NotBeNull();
+            journey.Steps[0].Path.Should().Be(listed.EntryPath);
+
+            var offered = await ReadFacetsAsync(browser, site.Id);
+
+            offered.EntryPages.Should().ContainSingle().Which.Value.Should().Be(listed.EntryPath);
+
+            var landedOn = await ReadVisitsAsync(
+                browser,
+                site.Id,
+                $"entryPage={Uri.EscapeDataString(listed.EntryPath)}");
+
+            landedOn.Visits.Should().ContainSingle().Which.Id.Should().Be(listed.Id);
+
+            var wire = await browser.GetAsync($"/api/sites/{site.Id}/visits?limit=10");
+
+            using var written = JsonDocument.Parse(await wire.Content.ReadAsStringAsync(Cancellation.Token));
+
+            written.RootElement.GetProperty("visits")[0].GetProperty("entryPath").GetString()
+                .Should().Be(DescribedTraffic.EntryPage);
         }
     }
 

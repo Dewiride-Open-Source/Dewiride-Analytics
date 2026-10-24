@@ -340,6 +340,15 @@ public sealed record JudgedSession
     /// activity has aged out of the store.
     /// </summary>
     public required VisitContext Context { get; init; }
+
+    /// <summary>
+    /// The page the visit began on, exactly as it was asked for — the value a list narrowed to the
+    /// visits that landed on a page keeps it by, so a row and the filter beside it name one page
+    /// one way. Written by whoever made the request, so it is data everywhere it travels and never
+    /// anything else. Empty where no page was recorded, which is what a visit whose activity has
+    /// aged out of the store holds.
+    /// </summary>
+    public required string EntryPath { get; init; }
 }
 
 /// <summary>
@@ -915,6 +924,12 @@ public sealed record LiveVisitors(int VisitorsSeen, ImmutableArray<LiveVisitor> 
 /// somebody lives.
 /// </para>
 /// <para>
+/// <see cref="SeenArriving"/> belongs to the second account. It decides what a reader may be told
+/// about where the visitor came from, and it never reaches <see cref="SessionEvidence"/>: nothing
+/// the engine concludes about a visitor rests on whether a stretch of minutes happened to hold
+/// their arrival.
+/// </para>
+/// <para>
 /// The evidence is what the window holds rather than what the whole visit will eventually hold, so
 /// a conclusion drawn from it is only safe to show where more evidence could not withdraw it. That
 /// judgement is not made here.
@@ -927,6 +942,13 @@ public sealed record LiveVisitors(int VisitorsSeen, ImmutableArray<LiveVisitor> 
 /// </param>
 /// <param name="Evidence">Everything the engine is allowed to reason about, over this window.</param>
 /// <param name="Context">What can be said about the visitor to a reader, which may be nothing.</param>
+/// <param name="SeenArriving">
+/// Whether the window saw the visitor arrive, rather than only saw them already here. A window is
+/// a stretch of minutes and not a visit, so somebody who arrived before it opened and is still
+/// reading reaches it with no site named as having sent them, which is not the same thing as an
+/// arrival that named none. Where this is false and <see cref="Context"/> names no sending site,
+/// where they came from is unknown rather than nowhere.
+/// </param>
 /// <param name="CurrentPath">
 /// The page the visitor was on most recently. Written by whoever is visiting the site, so it is
 /// shown as text and never followed.
@@ -945,6 +967,7 @@ public readonly record struct LiveVisitor(
     string VisitorKey,
     SessionEvidence Evidence,
     VisitContext Context,
+    bool SeenArriving,
     string CurrentPath,
     string ConfirmedOperator,
     long AutonomousSystem);

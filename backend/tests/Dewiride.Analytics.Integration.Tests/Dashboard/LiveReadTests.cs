@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Domain.Sites;
@@ -105,6 +106,46 @@ public sealed class LiveReadTests(AnalyticsStackFixture stack)
             live.Visitors[0].Ruleset.Should().BeNull();
             live.Visitors[0].Supporting.Should().BeEmpty();
             live.Visitors[0].Contradicting.Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// Whether the reading saw a visitor arrive travels on their row, under the name the dashboard
+    /// reads it by. A visitor whose first page in the reading was reached from another page of the
+    /// site was already here; one a search sent was seen arriving, and is named as sent by it.
+    /// </summary>
+    [Fact]
+    public async Task A_Row_Says_Whether_The_Reading_Saw_The_Visitor_Arrive()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        await WriteAsync(
+            Arrived(site.Id, "already-here", "/pricing") with
+            {
+                Referrer = $"https://{site.Domain}/posts/hello",
+                ReferrerDomain = site.Domain,
+            },
+            Arrived(site.Id, "from-a-search", "/posts/hello") with
+            {
+                Referrer = "https://www.google.com/",
+                ReferrerDomain = "www.google.com",
+            });
+
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/live");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var written = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Cancellation.Token));
+
+            var rows = written.RootElement.GetProperty("visitors").EnumerateArray()
+                .ToDictionary(row => row.GetProperty("visitor").GetString() ?? string.Empty, StringComparer.Ordinal);
+
+            rows["already-here"].GetProperty("seenArriving").GetBoolean().Should().BeFalse();
+            rows["from-a-search"].GetProperty("seenArriving").GetBoolean().Should().BeTrue();
+            rows["from-a-search"].GetProperty("context").GetProperty("source").GetString().Should().Be("Google");
         }
     }
 

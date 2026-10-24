@@ -1628,7 +1628,8 @@ internal static class SiteEndpoints
         visit.Verdict.RulesetVersion.ToString(),
         [.. visit.Verdict.Supporting.Select(Explain)],
         [.. visit.Verdict.Contradicting.Select(Explain)],
-        Established(visit.Context));
+        Established(visit.Context),
+        visit.EntryPath);
 
     private static VisitReason Explain(Signal signal) => new(
         signal.Code,
@@ -1717,7 +1718,8 @@ internal static class SiteEndpoints
         reading.Named is null ? [] : [.. reading.Named.Contradicting.Select(Explain)],
         reading.Visitor.ConfirmedOperator,
         reading.Visitor.AutonomousSystem,
-        Established(reading.Visitor.Context));
+        Established(reading.Visitor.Context),
+        reading.Visitor.SeenArriving);
 
     /// <summary>
     /// Answers what one visitor who is here has been doing, over the minutes of the reading their

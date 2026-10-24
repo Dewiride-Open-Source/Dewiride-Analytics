@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AddSite } from '@/components/dashboard/add-site';
 import { type Engine, engineAnswering, type Sent } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
+import { CURRENT_BROWSER, hydrated, STALE_SERVER } from '@/test/hydration';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -12,9 +13,9 @@ afterEach(() => {
 /**
  * The zones a browser offers, stated rather than taken from the machine the test runs on.
  *
- * Deliberately spelled `Asia/Calcutta`, which is the older of the two names for the same place.
- * Platforms disagree about which they list, and a website counted in the other spelling is the
- * case this panel has to get right rather than the exotic one.
+ * Deliberately listing `Asia/Calcutta`, the earlier of the two names for the same place, as Chrome
+ * does. A browser that calls a place by a name it no longer goes by, beside a website stored under
+ * the current one, is the case this panel has to get right rather than the exotic one.
  */
 const OFFERED = ['Asia/Calcutta', 'Asia/Tokyo', 'Europe/London', 'Africa/Abidjan'];
 
@@ -61,17 +62,61 @@ describe('the zone a new website is counted in', () => {
   });
 
   /**
-   * The same place goes by two names and browsers disagree about which they list. Without widening
-   * the choices the picker cannot offer the zone at all, and quietly opens on somewhere else — so
-   * a second website in the same city as the first would be counted on a different day boundary.
+   * The same place goes by two names, and this browser lists it under the earlier one. It is
+   * offered under the name it goes by now — once — so a second website in the same city as the
+   * first opens on the first one's zone rather than quietly on somewhere else.
    */
-  it('offers the zone even when this browser spells it the other way', async () => {
-    offering();
+  it('opens on that zone where this browser lists it under an earlier name', async () => {
+    offering(OFFERED, 'Europe/London');
     engineAnswering(200, {});
 
     show('Asia/Kolkata');
 
     expect(await zonePicker()).toHaveValue('Asia/Kolkata');
+    expect(screen.getByRole('option', { name: 'Kolkata (GMT+5:30)' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Calcutta (GMT+5:30)' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * A website stored under the earlier name opens on the same place, under its current name. The
+   * device is somewhere else, so only the website on screen can have put the picker there.
+   */
+  it('opens on that zone where the website on screen is stored under an earlier name', async () => {
+    offering(OFFERED, 'Europe/London');
+    engineAnswering(200, {});
+
+    show('Asia/Calcutta');
+
+    expect(await zonePicker()).toHaveValue('Asia/Kolkata');
+  });
+
+  /** A device that reports its zone by an earlier name is placed under the current one. */
+  it('falls back to this machine’s zone under the name it goes by now', async () => {
+    offering(OFFERED, 'Asia/Calcutta');
+    engineAnswering(200, {});
+
+    show(undefined);
+
+    expect(await zonePicker()).toHaveValue('Asia/Kolkata');
+  });
+
+  /** The new website is stored under the current name, which every engine's copy of the rules knows. */
+  it('saves the zone under the name it goes by now', async () => {
+    offering(OFFERED, 'Europe/London');
+    const engine = engineAnswering(200, { id: 'x', domain: 'blog.example.com' });
+
+    show('Asia/Calcutta');
+
+    await userEvent.type(
+      await screen.findByRole('textbox', { name: 'Website address' }),
+      'blog.example.com',
+    );
+    await userEvent.click(await addButton());
+
+    await waitFor(() => expect(additions(engine)).toHaveLength(1));
+    expect(JSON.parse(String(additions(engine)[0]?.init.body))).toMatchObject({
+      timeZoneId: 'Asia/Kolkata',
+    });
   });
 
   /**
@@ -102,5 +147,60 @@ describe('the zone a new website is counted in', () => {
 
     await waitFor(() => expect(additions(engine)).toHaveLength(1));
     expect(additions(engine)[0]?.init.body).toContain('Asia/Tokyo');
+  });
+});
+
+describe('a page drawn by a server whose time zones are not the browser’s', () => {
+  /**
+   * The bar across the top holds this panel on every screen, closed, with its picker inside it. A
+   * picker drawn from the server's copy of the rules disagrees with the browser's wherever the two
+   * copies do, and React answers that by throwing away everything the server drew — on every
+   * screen, whether or not anybody ever adds a website.
+   */
+  it('is taken over while closed without either side giving way', () => {
+    const page = hydrated(<AddSite open={false} onClose={() => {}} onAdded={() => {}} />, {
+      server: STALE_SERVER,
+      browser: CURRENT_BROWSER,
+    });
+
+    expect(page.html).not.toContain('Casablanca');
+    expect(page.recovered).not.toHaveBeenCalled();
+    expect(page.complaints).not.toHaveBeenCalled();
+  });
+
+  it('is taken over while open without either side giving way', () => {
+    const page = hydrated(
+      <AddSite open onClose={() => {}} likelyTimeZoneId="Europe/London" onAdded={() => {}} />,
+      { server: STALE_SERVER, browser: CURRENT_BROWSER },
+    );
+
+    expect(page.html).not.toContain('Casablanca');
+    expect(page.recovered).not.toHaveBeenCalled();
+    expect(page.complaints).not.toHaveBeenCalled();
+  });
+
+  it('offers this browser’s zones once the page is its own', () => {
+    hydrated(<AddSite open={false} onClose={() => {}} onAdded={() => {}} />, {
+      server: STALE_SERVER,
+      browser: CURRENT_BROWSER,
+    });
+
+    const picker = screen.getByRole('combobox', { name: 'Count its days in', hidden: true });
+
+    expect(picker).toBeEnabled();
+    expect(picker).toHaveValue('Africa/Casablanca');
+    expect(
+      screen.getByRole('option', { name: 'Casablanca (GMT)', hidden: true }),
+    ).toBeInTheDocument();
+  });
+
+  it('opens on the zone it borrowed, among this browser’s zones', async () => {
+    hydrated(
+      <AddSite open onClose={() => {}} likelyTimeZoneId="Europe/London" onAdded={() => {}} />,
+      { server: STALE_SERVER, browser: CURRENT_BROWSER },
+    );
+
+    expect(await zonePicker()).toHaveValue('Europe/London');
+    expect(screen.getByRole('option', { name: 'London (GMT)' })).toBeInTheDocument();
   });
 });

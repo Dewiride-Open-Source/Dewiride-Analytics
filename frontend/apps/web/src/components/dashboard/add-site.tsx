@@ -5,9 +5,11 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { FailureNotice } from '@/components/ui/failure-notice';
-import { Field, SelectInput, TextInput } from '@/components/ui/field';
+import { Field, TextInput } from '@/components/ui/field';
+import { TimeZoneSelect } from '@/components/ui/time-zone-select';
 import { useAddSite } from '@/lib/queries/sites';
-import { offeredZone, timeZoneGroups, withZone } from '@/lib/time-zones';
+import { offeredZone, type TimeZoneGroup, withZone } from '@/lib/time-zones';
+import { useTimeZoneGroups } from '@/lib/use-time-zone-groups';
 
 /** The longest an address runs to, so a hostname is stopped here rather than refused there. */
 const LONGEST_ADDRESS = 253;
@@ -35,23 +37,28 @@ interface AddSiteProps {
  * falling back to this machine's where there is none to borrow.
  *
  * The zone the websites are counted in is borrowed the moment it arrives, and the choices are
- * widened to include it. Two things make that necessary rather than tidy. Platforms disagree about
- * zone names — the same place is `Asia/Calcutta` on one and `Asia/Kolkata` on another — so a
- * website's own zone is not always among the ones this browser offers. And this panel belongs to
- * the bar across the top, which is drawn before any website has been read, so whatever it opened on
- * was chosen with nothing to go on. Both end the same way if the picker is left to its own devices:
- * a website measured in a country nobody involved has ever been to, chosen for them, silently.
+ * widened to include it. Two things make that necessary rather than tidy. The engine's copy of the
+ * rules can know a zone this browser's does not, so a website's own zone is not always among the
+ * ones this browser offers. And this panel belongs to the bar across the top, which is drawn before
+ * any website has been read, so whatever it opened on was chosen with nothing to go on. Both end the
+ * same way if the picker is left to its own devices: a website measured in a country nobody
+ * involved has ever been to, chosen for them, silently.
+ *
+ * Being in that bar also puts this panel, closed, in every page the server sends, which is why its
+ * choices are the browser's own and arrive a moment after the page does. The zone is settled when
+ * they do, from whatever has been read by then, and nothing can be added before it is.
  */
 export function AddSite({ open, onClose, likelyTimeZoneId, onAdded }: AddSiteProps) {
   const t = useTranslations('addSite');
-  const [zones, setZones] = useState(() => withZone(timeZoneGroups(), likelyTimeZoneId));
+  const groups = useTimeZoneGroups();
+  const [zones, setZones] = useState<readonly TimeZoneGroup[] | null>(null);
   const [borrowed, setBorrowed] = useState(likelyTimeZoneId);
-  const [zone, setZone] = useState(() => offeredZone(zones, likelyTimeZoneId));
+  const [zone, setZone] = useState('');
   const [domain, setDomain] = useState('');
   const adding = useAddSite();
 
-  if (borrowed !== likelyTimeZoneId) {
-    const widened = withZone(timeZoneGroups(), likelyTimeZoneId);
+  if (groups !== null && (zones === null || borrowed !== likelyTimeZoneId)) {
+    const widened = withZone(groups, likelyTimeZoneId);
 
     setBorrowed(likelyTimeZoneId);
     setZones(widened);
@@ -116,22 +123,13 @@ export function AddSite({ open, onClose, likelyTimeZoneId, onAdded }: AddSitePro
 
         <Field label={t('timeZone.label')}>
           {(attributes) => (
-            <SelectInput
+            <TimeZoneSelect
               {...attributes}
+              zones={zones}
               value={zone}
               onChange={(event) => setZone(event.target.value)}
               required
-            >
-              {zones.map((group) => (
-                <optgroup key={group.area} label={group.area}>
-                  {group.zones.map((zone) => (
-                    <option key={zone.id} value={zone.id}>
-                      {zone.label}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </SelectInput>
+            />
           )}
         </Field>
 
@@ -141,7 +139,7 @@ export function AddSite({ open, onClose, likelyTimeZoneId, onAdded }: AddSitePro
           <Button
             type="submit"
             busy={adding.isPending}
-            disabled={domain.trim().length === 0}
+            disabled={zones === null || domain.trim().length === 0}
             className="w-full sm:w-auto"
           >
             {adding.isPending ? t('adding') : t('add')}

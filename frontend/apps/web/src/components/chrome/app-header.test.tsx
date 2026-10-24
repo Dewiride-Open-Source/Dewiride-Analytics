@@ -385,12 +385,12 @@ describe('the bar across the top', () => {
   });
 
   /**
-   * The same place goes by two names — `Asia/Calcutta` on one platform and `Asia/Kolkata` on
-   * another — so a website's own zone is not always among the ones a particular browser lists.
-   * A picker that cannot offer it settles on whichever zone happens to sort first, which is how a
-   * second website ends up counted in a country nobody involved has ever been to.
+   * The same place goes by two names, and this browser lists it under the earlier one —
+   * `Asia/Calcutta` for a website counted in `Asia/Kolkata`. It is offered under the name it goes
+   * by now, so the picker starts on it rather than on whichever zone happens to sort first, which
+   * is how a second website ends up counted in a country nobody involved has ever been to.
    */
-  it('starts on that zone even where this browser spells it the other way', async () => {
+  it('starts on that zone where this browser lists it under an earlier name', async () => {
     vi.spyOn(Intl, 'supportedValuesOf').mockReturnValue([
       'Africa/Abidjan',
       'Asia/Calcutta',
@@ -405,6 +405,8 @@ describe('the bar across the top', () => {
     expect(await screen.findByRole('combobox', { name: 'Count its days in' })).toHaveValue(
       'Asia/Kolkata',
     );
+    expect(screen.getByRole('option', { name: 'Kolkata (GMT+5:30)' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Calcutta (GMT+5:30)' })).not.toBeInTheDocument();
   });
 
   it('adds a website and moves to it', async () => {

@@ -5,8 +5,9 @@ import { type FormEvent, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
-import { Field, PasswordInput, SelectInput, TextInput } from '@/components/ui/field';
+import { Field, PasswordInput, TextInput } from '@/components/ui/field';
 import { Notice } from '@/components/ui/notice';
+import { TimeZoneSelect } from '@/components/ui/time-zone-select';
 import { Link } from '@/i18n/navigation';
 import { ApiError } from '@/lib/api/problem';
 import {
@@ -19,7 +20,8 @@ import {
 } from '@/lib/forms/validation';
 import { useClaimInstall } from '@/lib/queries/session';
 import { SIGN_IN } from '@/lib/routes';
-import { thisDeviceTimeZone, timeZoneGroups } from '@/lib/time-zones';
+import { thisDeviceTimeZone } from '@/lib/time-zones';
+import { useTimeZoneGroups } from '@/lib/use-time-zone-groups';
 
 interface Refusals {
   readonly emailAddress?: ValidationKey;
@@ -42,8 +44,7 @@ export function SetupForm() {
   const validation = useTranslations('validation');
   const claim = useClaimInstall();
   const [refusals, setRefusals] = useState<Refusals>({});
-  const [zones] = useState(timeZoneGroups);
-  const [defaultZone] = useState(() => thisDeviceTimeZone(zones));
+  const zones = useTimeZoneGroups();
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -185,17 +186,13 @@ export function SetupForm() {
 
           <Field label={t('timeZone.label')} problem={say(refusals.timeZoneId)}>
             {(attributes) => (
-              <SelectInput {...attributes} name="timeZoneId" defaultValue={defaultZone} required>
-                {zones.map((group) => (
-                  <optgroup key={group.area} label={group.area}>
-                    {group.zones.map((zone) => (
-                      <option key={zone.id} value={zone.id}>
-                        {zone.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </SelectInput>
+              <TimeZoneSelect
+                {...attributes}
+                zones={zones}
+                startsOn={thisDeviceTimeZone}
+                name="timeZoneId"
+                required
+              />
             )}
           </Field>
         </Section>

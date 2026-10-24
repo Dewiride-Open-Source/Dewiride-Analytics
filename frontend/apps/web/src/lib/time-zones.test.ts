@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  currentZoneName,
   offeredZone,
   readableZone,
   type TimeZoneGroup,
@@ -7,6 +8,11 @@ import {
   timeZoneGroups,
   withZone,
 } from '@/lib/time-zones';
+
+/** Every identifier a list of groups offers. */
+function idsIn(groups: readonly TimeZoneGroup[]): readonly string[] {
+  return groups.flatMap((group) => group.zones.map((zone) => zone.id));
+}
 
 describe('choosing a time zone', () => {
   const groups = timeZoneGroups();
@@ -23,11 +29,40 @@ describe('choosing a time zone', () => {
    * between choosing a time zone and reading a database.
    */
   it('names each zone by its place and how far it stands from London', () => {
-    const india = groups
-      .flatMap((group) => group.zones)
-      .find((zone) => zone.id === 'Asia/Kolkata' || zone.id === 'Asia/Calcutta');
+    const india = groups.flatMap((group) => group.zones).find((zone) => zone.id === 'Asia/Kolkata');
 
-    expect(india?.label).toMatch(/^(Kolkata|Calcutta) \(GMT\+5:30\)$/);
+    expect(india?.label).toBe('Kolkata (GMT+5:30)');
+  });
+
+  /**
+   * The platform these tests run on answers, as Chrome does, with CLDR's stable identifiers, some
+   * of which keep a name the place no longer goes by. Each is offered under its current name.
+   */
+  it('offers every zone under the name it goes by now', () => {
+    const ids = idsIn(groups);
+
+    expect(ids).toEqual(
+      expect.arrayContaining(['Asia/Kolkata', 'Europe/Kyiv', 'Asia/Ho_Chi_Minh', 'America/Nuuk']),
+    );
+    expect(ids).not.toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^(Asia\/Calcutta|Europe\/Kiev|Asia\/Saigon)$/),
+      ]),
+    );
+  });
+
+  /** A place a platform happens to name twice is one place, and one choice. */
+  it('offers a place the platform names twice once', () => {
+    vi.spyOn(Intl, 'supportedValuesOf').mockReturnValue(['Asia/Calcutta', 'Asia/Kolkata']);
+
+    expect(idsIn(timeZoneGroups())).toStrictEqual(['Asia/Kolkata', 'UTC']);
+  });
+
+  /** The engine is sent the current name, so this platform has to be able to read it as well. */
+  it('offers only names this platform can read', () => {
+    for (const id of Intl.supportedValuesOf('timeZone')) {
+      expect(() => new Intl.DateTimeFormat('en', { timeZone: currentZoneName(id) })).not.toThrow();
+    }
   });
 
   it('puts the regions in the order somebody would look through them', () => {
@@ -46,7 +81,19 @@ describe('choosing a time zone', () => {
   it('offers the zone this device is set to', () => {
     const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-    expect(thisDeviceTimeZone(groups)).toBe(here);
+    expect(thisDeviceTimeZone(groups)).toBe(currentZoneName(here));
+  });
+
+  /** A device that reports its zone by an earlier name is started on the name it goes by now. */
+  it('starts a device that calls its zone by an earlier name on the current one', () => {
+    const reported = Intl.DateTimeFormat().resolvedOptions();
+
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      ...reported,
+      timeZone: 'Asia/Calcutta',
+    });
+
+    expect(thisDeviceTimeZone(groups)).toBe('Asia/Kolkata');
   });
 
   /**
@@ -77,7 +124,10 @@ describe('choosing a time zone', () => {
 describe('writing a zone into a sentence', () => {
   it.each([
     ['Asia/Kolkata', 'Kolkata'],
+    ['Asia/Calcutta', 'Kolkata'],
+    ['Europe/Kiev', 'Kyiv'],
     ['America/Argentina/Buenos_Aires', 'Buenos Aires'],
+    ['America/Buenos_Aires', 'Buenos Aires'],
     ['Europe/Isle_of_Man', 'Isle of Man'],
     ['UTC', 'UTC'],
   ])('reads %s as %s', (id, expected) => {
@@ -92,10 +142,14 @@ describe('the zone a picker starts on', () => {
     expect(offeredZone(groups, 'Europe/London')).toBe('Europe/London');
   });
 
+  it('starts on a wanted zone named by an earlier name under the name it goes by now', () => {
+    expect(offeredZone(groups, 'Asia/Calcutta')).toBe('Asia/Kolkata');
+  });
+
   /**
-   * Platforms disagree about zone names, so a stored zone is not always among the choices a
-   * particular browser offers. Falling through to whichever happens to be first is how somebody
-   * ends up measuring a website in a country nobody involved has ever been to.
+   * A stored zone is not always among the choices a particular browser offers. Falling through to
+   * whichever happens to be first is how somebody ends up measuring a website in a country nobody
+   * involved has ever been to.
    */
   it('falls back to this device rather than to whichever zone happens to be first', () => {
     const invented = 'Mars/Olympus_Mons';
@@ -137,22 +191,37 @@ describe('the zones a picker offers', () => {
   });
 
   /**
-   * The reason this exists. A website counted in a zone this browser spells differently would
+   * The reason this exists. A website counted in a zone this browser does not offer would
    * otherwise open on a fall-back, and somebody who came to rename it would move the boundary of
    * its day by saving a field they never touched.
    */
   it('puts a zone this browser does not offer under the region it belongs to', () => {
-    const asia = withZone(offered, 'Asia/Calcutta').find((group) => group.area === 'Asia');
+    const asia = withZone(offered, 'Asia/Dubai').find((group) => group.area === 'Asia');
 
-    expect(asia?.zones.map((zone) => zone.id)).toStrictEqual(['Asia/Calcutta', 'Asia/Kolkata']);
+    expect(asia?.zones.map((zone) => zone.id)).toStrictEqual(['Asia/Dubai', 'Asia/Kolkata']);
   });
 
   it('names it the way every other zone is named', () => {
-    const added = withZone(offered, 'Asia/Calcutta')
+    const added = withZone(offered, 'Asia/Dubai')
       .flatMap((group) => group.zones)
-      .find((zone) => zone.id === 'Asia/Calcutta');
+      .find((zone) => zone.id === 'Asia/Dubai');
 
-    expect(added?.label).toBe('Calcutta (GMT+5:30)');
+    expect(added?.label).toBe('Dubai (GMT+4:00)');
+  });
+
+  /** A zone stored under an earlier name is already on offer under its current one. */
+  it('adds nothing for a zone stored under an earlier name of one it offers', () => {
+    expect(withZone(offered, 'Asia/Calcutta')).toBe(offered);
+  });
+
+  /** And where it is not on offer at all, it is added under its current name. */
+  it('adds a zone stored under an earlier name under the name it goes by now', () => {
+    const europe = withZone(offered, 'Europe/Kiev').find((group) => group.area === 'Europe');
+
+    expect(europe?.zones.map((zone) => zone.label)).toStrictEqual([
+      expect.stringMatching(/^Kyiv \(GMT\+[23]:00\)$/),
+      'London (GMT+1)',
+    ]);
   });
 
   it('opens a region for a zone that belongs to none of them, in its place in the order', () => {
@@ -174,8 +243,14 @@ describe('the zones a picker offers', () => {
   });
 
   it('makes a stored zone one a picker can start on', () => {
+    const widened = withZone(timeZoneGroups(), 'Mars/Olympus_Mons');
+
+    expect(offeredZone(widened, 'Mars/Olympus_Mons')).toBe('Mars/Olympus_Mons');
+  });
+
+  it('starts a picker on a zone stored under an earlier name under its current one', () => {
     const widened = withZone(timeZoneGroups(), 'Asia/Calcutta');
 
-    expect(offeredZone(widened, 'Asia/Calcutta')).toBe('Asia/Calcutta');
+    expect(offeredZone(widened, 'Asia/Calcutta')).toBe('Asia/Kolkata');
   });
 });

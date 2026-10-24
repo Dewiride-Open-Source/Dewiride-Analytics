@@ -2,15 +2,17 @@
 
 import { Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { FailureNotice } from '@/components/ui/failure-notice';
-import { Field, SelectInput, TextInput } from '@/components/ui/field';
+import { Field, TextInput } from '@/components/ui/field';
 import { Switch } from '@/components/ui/switch';
+import { TimeZoneSelect } from '@/components/ui/time-zone-select';
 import type { Site, SiteSettings as StoredSettings } from '@/lib/api/schemas';
 import { useRemoveSite, useSiteSettings, useUpdateSiteSettings } from '@/lib/queries/site-settings';
-import { timeZoneGroups, withZone } from '@/lib/time-zones';
+import { currentZoneName, withZone } from '@/lib/time-zones';
+import { useTimeZoneGroups } from '@/lib/use-time-zone-groups';
 
 interface SiteSettingsProps {
   readonly open: boolean;
@@ -116,9 +118,11 @@ interface WebsiteDetailsProps {
  * website cannot move the boundary of its day by passing through the field below.
  *
  * The starting values are the stored ones rather than the ones the screen above is already
- * showing, and the zones offered are widened to include the stored one. Platforms disagree about
- * zone names, and a picker that cannot offer the zone a website is counted in would open on a
- * fall-back and save that instead the moment anything else on this form was changed.
+ * showing, and the zones offered are widened to include the stored one: a picker that cannot offer
+ * the zone a website is counted in would open on a fall-back and save that instead the moment
+ * anything else on this form was changed. A zone stored under an earlier name is held, offered and
+ * compared under the name it goes by now, so the picker shows the place it is and leaving it alone
+ * sends nothing.
  *
  * They are taken again whenever the stored ones move under the form, which is what a save and a
  * re-read both do. Seeded once and left, the boxes would go on holding what was stored a moment
@@ -128,25 +132,32 @@ interface WebsiteDetailsProps {
  * What is watched is the two values this form is about, not the settings they arrive in. The switch
  * below shares those settings, so anybody who typed a new name and then turned recording off would
  * have had the name taken out from under them by a save that had nothing to do with it.
+ *
+ * The zones offered are this browser's own, so they can arrive after the form does. The zone the
+ * form holds needs none of them to be right: it is the stored one, under the name it goes by now,
+ * from the start.
  */
 function WebsiteDetails({ siteId, stored }: WebsiteDetailsProps) {
   const t = useTranslations('siteSettings');
+  const groups = useTimeZoneGroups();
+  const zones = useMemo(
+    () => (groups === null ? null : withZone(groups, stored.timeZoneId)),
+    [groups, stored.timeZoneId],
+  );
   const [seeded, setSeeded] = useState({ name: stored.displayName, zone: stored.timeZoneId });
-  const [zones, setZones] = useState(() => withZone(timeZoneGroups(), stored.timeZoneId));
   const [name, setName] = useState(stored.displayName);
-  const [zone, setZone] = useState(stored.timeZoneId);
+  const [zone, setZone] = useState(() => currentZoneName(stored.timeZoneId));
   const saving = useUpdateSiteSettings(siteId);
 
   if (seeded.name !== stored.displayName || seeded.zone !== stored.timeZoneId) {
     setSeeded({ name: stored.displayName, zone: stored.timeZoneId });
-    setZones(withZone(timeZoneGroups(), stored.timeZoneId));
     setName(stored.displayName);
-    setZone(stored.timeZoneId);
+    setZone(currentZoneName(stored.timeZoneId));
   }
 
   const trimmed = name.trim();
   const renamed = trimmed.length > 0 && trimmed !== stored.displayName;
-  const moved = zone !== stored.timeZoneId;
+  const moved = zone !== currentZoneName(stored.timeZoneId);
   const changed = renamed || moved;
 
   /**
@@ -186,22 +197,13 @@ function WebsiteDetails({ siteId, stored }: WebsiteDetailsProps) {
 
       <Field label={t('timeZone.label')} hint={t('timeZone.hint')}>
         {(attributes) => (
-          <SelectInput
+          <TimeZoneSelect
             {...attributes}
+            zones={zones}
             value={zone}
             onChange={(event) => setZone(event.target.value)}
             required
-          >
-            {zones.map((group) => (
-              <optgroup key={group.area} label={group.area}>
-                {group.zones.map((choice) => (
-                  <option key={choice.id} value={choice.id}>
-                    {choice.label}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </SelectInput>
+          />
         )}
       </Field>
 

@@ -694,6 +694,7 @@ Take a copy first, as above. Then, from the directory you cloned into:
 ```bash
 git pull
 docker compose build --pull
+docker compose restart clickhouse
 docker compose up --wait
 ```
 
@@ -701,6 +702,21 @@ docker compose up --wait
 is how fixes to the runtime beneath the product reach your installation, and a build on an older
 copy can stop and ask for a newer SDK. The data stays in its volumes, and the engine brings both
 stores' schemas up to date as it starts.
+
+Restarting ClickHouse is what makes it read the tuning in `config/clickhouse` as `git pull` left
+it. Compose replaces a container whose image or definition has changed, not one whose mounted file
+has, and ClickHouse reads some of that tuning only as it starts.
+
+The logs that tuning switches off are the entries marked `remove="1"` in
+`config/clickhouse/low-resources.xml`, and a table one of them had already written is left behind:
+a log kept for a set period empties itself as its rows expire, and one kept without end keeps
+everything. Once ClickHouse has restarted, dropping such a table is safe. ClickHouse refuses to drop
+a table larger than 50 GB unless that guard is lifted for the statement, which the command below
+does for the trace log:
+
+```bash
+docker compose exec clickhouse sh -c 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --max_table_size_to_drop 0 --query "DROP TABLE IF EXISTS system.opentelemetry_span_log"'
+```
 
 ## What's inside
 

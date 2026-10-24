@@ -69,6 +69,13 @@
     The internal telemetry tables are the largest thing a quiet ClickHouse writes. Those that
     record one row per second regardless of activity are switched off; query_log stays, because
     "which query was slow" is a question a self-hoster will actually ask, and is kept to a week.
+
+    Two more write for every question rather than every second, and a server the engine asks
+    questions around the clock is soon holding far more of them than of the telemetry they
+    describe: a row for every processor in each question's pipeline, which ClickHouse keeps for a
+    month, and a span for each stage of a question that arrives carrying a trace — which the
+    engine's own tracing gives the questions it asks — kept with no end at all. query_log already
+    says which question was slow and what it cost, and nothing reads either of them.
   -->
   <metric_log remove="1" />
   <asynchronous_metric_log remove="1" />
@@ -77,6 +84,8 @@
   <text_log remove="1" />
   <session_log remove="1" />
   <latency_log remove="1" />
+  <processors_profile_log remove="1" />
+  <opentelemetry_span_log remove="1" />
 
   <query_log>
     <database>system</database>

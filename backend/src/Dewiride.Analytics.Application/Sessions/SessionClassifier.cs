@@ -61,7 +61,8 @@ public sealed partial class SessionClassifier(
         new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>
-    /// Judges everything on one site that has finished and has not been judged yet.
+    /// Judges everything on one site that had finished when the run began and has not been judged
+    /// yet.
     /// </summary>
     /// <param name="siteId">The site to work through.</param>
     /// <param name="siteAddedAt">When the site was added, which is where judging starts from.</param>
@@ -75,6 +76,14 @@ public sealed partial class SessionClassifier(
         var settings = options.Value;
         var ruleset = engine.RulesetVersion;
 
+        // Nothing that began after the horizon can be known to have finished, because a visitor who
+        // is merely pausing has not left. It is fixed when the run begins. The present moves on while
+        // a pass is reading, so a horizon taken again after every pass would always lie a little past
+        // the one just reached, and a site already up to date would be read over and over in slivers
+        // as wide as the last read took, until the run had spent every pass it was given. Whatever
+        // finishes while a run is working is the next run's to judge.
+        var horizon = clock.GetUtcNow() - settings.IdleTimeout;
+
         var resumeFrom = await progress
             .ResumeFromAsync(siteId, ruleset, siteAddedAt, cancellationToken)
             .ConfigureAwait(false);
@@ -82,22 +91,16 @@ public sealed partial class SessionClassifier(
         var judged = 0;
         var passes = 0;
 
-        while (passes < settings.PassesPerRun)
+        while (passes < settings.PassesPerRun && resumeFrom < horizon)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var now = clock.GetUtcNow();
+            // Each pass stamps its verdicts with the moment it began, so where two passes of one run
+            // judge the same visit, the later pass's conclusion is the one that stands.
+            var began = clock.GetUtcNow();
+            var to = Earliest(horizon, resumeFrom + settings.LongestPass);
 
-            // Nothing that began after this can be known to have finished, because a visitor who
-            // is merely pausing has not left.
-            var horizon = now - settings.IdleTimeout;
-
-            if (resumeFrom >= horizon)
-            {
-                break;
-            }
-
-            var pass = await RunPassAsync(siteId, resumeFrom, horizon, now, settings, cancellationToken)
+            var pass = await RunPassAsync(siteId, resumeFrom, to, horizon, began, settings, cancellationToken)
                 .ConfigureAwait(false);
 
             judged += pass.Judged;
@@ -114,6 +117,14 @@ public sealed partial class SessionClassifier(
             }
 
             resumeFrom = pass.ResumeFrom;
+
+            // A pass that read as far as the horizon leaves nothing for another to find. Where it
+            // stopped short, it stopped at a visit still in progress, and that visit stays in progress
+            // until the horizon moves, which happens in the next run.
+            if (to == horizon)
+            {
+                break;
+            }
         }
 
         if (judged > 0)
@@ -127,13 +138,12 @@ public sealed partial class SessionClassifier(
     private async Task<PassResult> RunPassAsync(
         Guid siteId,
         DateTimeOffset resumeFrom,
+        DateTimeOffset to,
         DateTimeOffset horizon,
-        DateTimeOffset now,
+        DateTimeOffset began,
         ClassificationOptions settings,
         CancellationToken cancellationToken)
     {
-        var to = Earliest(horizon, resumeFrom + settings.LongestPass);
-
         var found = await sessions.ReadAsync(
                 new SessionWindow
                 {
@@ -151,7 +161,7 @@ public sealed partial class SessionClassifier(
 
         if (judgements.Length > 0)
         {
-            await verdicts.SaveAsync(siteId, judgements, now, cancellationToken).ConfigureAwait(false);
+            await verdicts.SaveAsync(siteId, judgements, began, cancellationToken).ConfigureAwait(false);
         }
 
         return new PassResult(judgements.Length, EarliestUnfinished(found, to));

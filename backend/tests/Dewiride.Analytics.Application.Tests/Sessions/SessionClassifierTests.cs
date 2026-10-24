@@ -81,7 +81,7 @@ public sealed class SessionClassifierTests
     }
 
     [Fact]
-    public async Task A_Site_Already_Caught_Up_Is_Not_Read_At_All()
+    public async Task A_Site_Judged_As_Far_As_The_Horizon_Is_Not_Read_At_All()
     {
         var harness = new JudgingHarness();
         harness.ResumeFrom(JudgingHarness.Now);
@@ -125,6 +125,86 @@ public sealed class SessionClassifierTests
 
         harness.Windows.Should().HaveCount(2);
         outcome.ResumeFrom.Should().Be(JudgingHarness.AddedAt.AddHours(12));
+    }
+
+    /// <summary>
+    /// A run reads up to the horizon it began with: an idle timeout before the moment it started,
+    /// the latest a visit can have begun and be known to be over. The present moves on while a read
+    /// is running, and a site already up to date is read once a run rather than again and again in
+    /// slivers as wide as the last read took — which, on every site, every half minute, is most of
+    /// the work a store would otherwise be asked to do.
+    /// </summary>
+    [Fact]
+    public async Task A_Site_That_Is_Up_To_Date_Is_Read_Once_However_Long_The_Read_Takes()
+    {
+        var harness = new JudgingHarness { EachReadTakes = TimeSpan.FromMilliseconds(140) };
+        var horizon = JudgingHarness.Now - harness.Settings.IdleTimeout;
+        harness.ResumeFrom(horizon - harness.Settings.Interval);
+
+        await harness.RunAsync();
+
+        harness.Windows.Should().ContainSingle()
+            .Which.To.Should().Be(horizon);
+        harness.Bookmark.Should().Be(horizon);
+    }
+
+    [Fact]
+    public async Task A_Backlog_Run_Ends_At_The_Horizon_It_Began_With_However_Long_Each_Stretch_Takes()
+    {
+        var harness = new JudgingHarness
+        {
+            Settings = new ClassificationOptions { LongestPass = TimeSpan.FromHours(6) },
+            EachReadTakes = TimeSpan.FromMinutes(1),
+        };
+
+        await harness.RunAsync();
+
+        harness.Windows.Should().HaveCount(4);
+        harness.Windows[^1].To.Should().Be(JudgingHarness.Now - harness.Settings.IdleTimeout);
+    }
+
+    /// <summary>
+    /// Once a pass has read as far as the horizon, a visit it found still in progress stays in
+    /// progress for the rest of the run, so reading again from that visit would find nothing new.
+    /// The bookmark waits on the visit, and the next run, with a later horizon, reads from there.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Still_In_Progress_At_The_Horizon_Is_Left_To_The_Next_Run()
+    {
+        var harness = new JudgingHarness();
+        var horizon = JudgingHarness.Now - harness.Settings.IdleTimeout;
+        var resumeFrom = horizon - harness.Settings.Interval;
+        harness.ResumeFrom(resumeFrom);
+        harness.Answer(JudgingHarness.Visit(resumeFrom.AddSeconds(10), isClosed: false));
+
+        await harness.RunAsync();
+
+        harness.Windows.Should().ContainSingle();
+        harness.Bookmark.Should().Be(resumeFrom.AddSeconds(10));
+    }
+
+    /// <summary>
+    /// Two passes of one run can judge the same visit, because each resumes from the earliest visit
+    /// still in progress. The stored verdict with the later stamp is the one that stands, so each
+    /// pass's stamp is when that pass began rather than when the run did.
+    /// </summary>
+    [Fact]
+    public async Task Each_Pass_Stamps_Its_Verdicts_With_The_Moment_It_Began()
+    {
+        var harness = new JudgingHarness
+        {
+            Settings = new ClassificationOptions { LongestPass = TimeSpan.FromHours(6) },
+            EachReadTakes = TimeSpan.FromMinutes(1),
+        };
+        harness.Answer(
+            JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(1), isClosed: false),
+            JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(2)));
+
+        await harness.RunAsync();
+
+        harness.Stored.Should().HaveCount(2)
+            .And.OnlyContain(judgement => judgement.Session.StartedAt == JudgingHarness.AddedAt.AddHours(2));
+        harness.StampedAt.Should().Equal(JudgingHarness.Now, JudgingHarness.Now.AddMinutes(1));
     }
 
     [Fact]

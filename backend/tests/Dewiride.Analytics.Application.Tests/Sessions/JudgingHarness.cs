@@ -12,7 +12,8 @@ using NSubstitute;
 namespace Dewiride.Analytics.Application.Tests.Sessions;
 
 /// <summary>
-/// Builds a classifier with both stores stood in for and the clock held still.
+/// Builds a classifier with both stores stood in for and the clock held still, unless a test says
+/// how long a read takes.
 /// </summary>
 /// <remarks>
 /// What is being proven here is when a visit may be judged, which is arithmetic over a bookmark, a
@@ -27,11 +28,13 @@ internal sealed class JudgingHarness
     /// <summary>When the site was added.</summary>
     public static readonly DateTimeOffset AddedAt = new(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
 
-    /// <summary>The present moment, held still.</summary>
+    /// <summary>The present moment when a run begins.</summary>
     public static readonly DateTimeOffset Now = new(2026, 5, 2, 0, 0, 0, TimeSpan.Zero);
 
+    private readonly FakeTimeProvider _clock = new(Now);
     private readonly List<SessionWindow> _windows = [];
     private readonly List<SessionJudgement> _stored = [];
+    private readonly List<DateTimeOffset> _stampedAt = [];
     private readonly List<IReadOnlyCollection<string>> _asked = [];
     private DateTimeOffset _bookmark = AddedAt;
 
@@ -56,11 +59,24 @@ internal sealed class JudgingHarness
     /// <summary>The verdicts it stored, in order.</summary>
     public IReadOnlyList<SessionJudgement> Stored => _stored;
 
+    /// <summary>When each batch of stored verdicts says it was reached, in order.</summary>
+    public IReadOnlyList<DateTimeOffset> StampedAt => _stampedAt;
+
     /// <summary>Where the bookmark ended up.</summary>
     public DateTimeOffset Bookmark => _bookmark;
 
     /// <summary>How the classifier is tuned.</summary>
     public ClassificationOptions Settings { get; init; } = new();
+
+    /// <summary>
+    /// How far the clock moves while the store answers one read. Nothing unless told otherwise, so
+    /// the present stays where the run found it.
+    /// </summary>
+    /// <remarks>
+    /// A real read takes time, and the present moves on while it runs. Whether a run is thrown by
+    /// that is a question only a clock that moves can ask.
+    /// </remarks>
+    public TimeSpan EachReadTakes { get; init; } = TimeSpan.Zero;
 
     /// <summary>What the name check settles, keyed by address.</summary>
     private readonly Dictionary<string, string> _settles = new(StringComparer.Ordinal);
@@ -117,6 +133,7 @@ internal sealed class JudgingHarness
             .Returns(call =>
             {
                 _stored.AddRange(call.Arg<IReadOnlyCollection<SessionJudgement>>());
+                _stampedAt.Add(call.Arg<DateTimeOffset>());
 
                 return Task.CompletedTask;
             });
@@ -130,7 +147,7 @@ internal sealed class JudgingHarness
         Sessions.ReadAsync(Arg.Any<SessionWindow>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
-                _windows.Add(call.Arg<SessionWindow>());
+                Read(call.Arg<SessionWindow>());
 
                 return ImmutableArray.Create(found);
             });
@@ -144,7 +161,7 @@ internal sealed class JudgingHarness
         Sessions.ReadAsync(Arg.Any<SessionWindow>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
-                _windows.Add(call.Arg<SessionWindow>());
+                Read(call.Arg<SessionWindow>());
 
                 if (served)
                 {
@@ -170,10 +187,18 @@ internal sealed class JudgingHarness
                 Progress,
                 TrafficClassifier.Current(),
                 Names,
-                new FakeTimeProvider(Now),
+                _clock,
                 Options.Create(Settings),
                 NullLogger<SessionClassifier>.Instance)
             .CatchUpAsync(SiteId, AddedAt, CancellationToken.None);
+
+    /// <summary>Notes the window asked for, and lets the clock run on while it is read.</summary>
+    /// <param name="window">The window the classifier asked for.</param>
+    private void Read(SessionWindow window)
+    {
+        _windows.Add(window);
+        _clock.Advance(EachReadTakes);
+    }
 
     /// <summary>An ordinary browser string, which says nothing about who is behind it.</summary>
     public const string Anonymous =

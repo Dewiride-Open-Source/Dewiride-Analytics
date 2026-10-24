@@ -24,7 +24,7 @@ public interface IClassificationStore
     /// </remarks>
     /// <param name="siteId">The site the visits belong to.</param>
     /// <param name="judgements">What was concluded, and about which visit.</param>
-    /// <param name="classifiedAt">When the run reached these conclusions.</param>
+    /// <param name="classifiedAt">When the pass that reached these conclusions began.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task that completes once the verdicts are stored.</returns>
     Task SaveAsync(

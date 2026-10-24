@@ -2,8 +2,10 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SetupForm } from '@/components/account/setup-form';
+import { currentZoneName } from '@/lib/time-zones';
 import { engineAnswering, engineDoing, respondWith } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
+import { CURRENT_BROWSER, hydrated, STALE_SERVER } from '@/test/hydration';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -114,8 +116,32 @@ describe('the setup screen', () => {
 
     const chosen = screen.getByLabelText('Reporting time zone') as HTMLSelectElement;
 
-    expect(chosen.value).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    expect(chosen.value).toBe(currentZoneName(Intl.DateTimeFormat().resolvedOptions().timeZone));
     expect(chosen.options.length).toBeGreaterThan(100);
+  });
+
+  /**
+   * Chrome calls the zone of somebody in India by its earlier name, `Asia/Calcutta`. The form
+   * starts on the place under the name it goes by now, and the website is saved under that name.
+   */
+  it('starts on, and sends, the current name of a zone this device calls by an earlier one', async () => {
+    const reported = Intl.DateTimeFormat().resolvedOptions();
+
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      ...reported,
+      timeZone: 'Asia/Calcutta',
+    });
+    const engine = engineAnswering(200, CLAIMED);
+
+    renderScreen(<SetupForm />);
+
+    expect(screen.getByLabelText('Reporting time zone')).toHaveValue('Asia/Kolkata');
+
+    await fillIn();
+    await userEvent.click(create());
+
+    await waitFor(() => expect(engine.count).toBe(1));
+    expect(engine.body()).toMatchObject({ timeZoneId: 'Asia/Kolkata' });
   });
 
   it('explains a refused password in words rather than repeating a code', async () => {
@@ -162,5 +188,26 @@ describe('the setup screen', () => {
       'href',
       '/app/sign-in',
     );
+  });
+});
+
+describe('a setup page drawn by a server whose time zones are not the browser’s', () => {
+  it('is taken over without either side giving way', () => {
+    const page = hydrated(<SetupForm />, { server: STALE_SERVER, browser: CURRENT_BROWSER });
+
+    expect(page.html).not.toContain('Casablanca');
+    expect(page.recovered).not.toHaveBeenCalled();
+    expect(page.complaints).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The server's own zone is its container's, which is UTC wherever the person setting the product
+   * up happens to be. The zone worth starting on is the one their own device is set to.
+   */
+  it('starts on the zone of the device in front of somebody, not the server’s', () => {
+    hydrated(<SetupForm />, { server: STALE_SERVER, browser: CURRENT_BROWSER });
+
+    expect(screen.getByLabelText('Reporting time zone')).toHaveValue('Africa/Casablanca');
+    expect(screen.getByRole('option', { name: 'Casablanca (GMT)' })).toBeInTheDocument();
   });
 });

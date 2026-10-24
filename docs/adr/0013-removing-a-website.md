@@ -3,6 +3,9 @@
 - **Status**: accepted
 - **Date**: 2026-08-19
 - **Supersedes**: nothing. The first operation that takes data out of the telemetry store.
+- **Revised by**: [0053](0053-a-time-zone-is-called-by-the-name-it-goes-by-now.md), which offers,
+  shows and saves every zone under the name it goes by now, so a place a browser calls by an
+  earlier name is one choice rather than two.
 
 ## Context
 

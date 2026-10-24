@@ -3,8 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SiteSettings } from '@/components/dashboard/site-settings';
 import type { Site, SiteSettings as StoredSettings } from '@/lib/api/schemas';
+import { siteSettingsKey } from '@/lib/queries/keys';
 import { type Engine, engineDoing, engineStopped, respondWith, type Sent } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
+import { CURRENT_BROWSER, hydrated, STALE_SERVER } from '@/test/hydration';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -282,24 +284,67 @@ describe('what a website is called and when its days begin', () => {
   });
 });
 
-describe('a website counted in a zone this browser spells differently', () => {
+describe('a website counted in a zone this browser does not offer', () => {
   /**
-   * Platforms disagree about zone names: the same place is `Asia/Calcutta` on one and
-   * `Asia/Kolkata` on another. A picker that cannot offer the zone a website is actually counted
-   * in opens on whatever it does have, and the first thing ever saved from this form then moves
-   * the website's day boundary without anybody having asked for it.
+   * The engine's copy of the rules can know a zone the browser's does not. A picker that cannot
+   * offer the zone a website is actually counted in opens on whatever it does have, and the first
+   * thing ever saved from this form then moves the website's day boundary without anybody having
+   * asked for it.
    */
   it('still offers the zone the website is counted in', async () => {
+    offering();
+    engineHolding({ timeZoneId: 'Asia/Dubai' });
+
+    show();
+
+    expect(await zonePicker()).toHaveValue('Asia/Dubai');
+    expect(screen.getByRole('option', { name: 'Dubai (GMT+4:00)' })).toBeInTheDocument();
+  });
+
+  it('does not move the day boundary when only the name was changed', async () => {
+    offering();
+    const engine = engineHolding({ timeZoneId: 'Asia/Dubai' });
+
+    show();
+    await rename('Reader Weekly');
+    await userEvent.click(await saveButton());
+
+    await waitFor(() => expect(changes(engine)).toHaveLength(1));
+    expect(sentIn(changes(engine)[0])).toStrictEqual({ displayName: 'Reader Weekly' });
+    expect(await zonePicker()).toHaveValue('Asia/Dubai');
+  });
+});
+
+describe('a website counted in a zone stored under an earlier name', () => {
+  /**
+   * Browsers built on ICU still call some places by a name they no longer go by — `Asia/Calcutta`
+   * for Kolkata — and a website set up from one of them is stored under it. The picker shows the
+   * place under the name it goes by now, and once, rather than offering the same place twice.
+   */
+  it('shows the zone under the name it goes by now, and only once', async () => {
     offering();
     engineHolding({ timeZoneId: 'Asia/Calcutta' });
 
     show();
 
-    expect(await zonePicker()).toHaveValue('Asia/Calcutta');
-    expect(screen.getByRole('option', { name: 'Calcutta (GMT+5:30)' })).toBeInTheDocument();
+    expect(await zonePicker()).toHaveValue('Asia/Kolkata');
+    expect(screen.getByRole('option', { name: 'Kolkata (GMT+5:30)' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Calcutta (GMT+5:30)' })).not.toBeInTheDocument();
   });
 
-  it('does not move the day boundary when only the name was changed', async () => {
+  /** The same place under the name it goes by now is not a change to the website. */
+  it('cannot be saved while nothing has been changed', async () => {
+    offering();
+    engineHolding({ timeZoneId: 'Asia/Calcutta' });
+
+    show();
+
+    await zonePicker();
+
+    expect(await saveButton()).toBeDisabled();
+  });
+
+  it('does not touch the stored zone when only the name was changed', async () => {
     offering();
     const engine = engineHolding({ timeZoneId: 'Asia/Calcutta' });
 
@@ -309,7 +354,7 @@ describe('a website counted in a zone this browser spells differently', () => {
 
     await waitFor(() => expect(changes(engine)).toHaveLength(1));
     expect(sentIn(changes(engine)[0])).toStrictEqual({ displayName: 'Reader Weekly' });
-    expect(await zonePicker()).toHaveValue('Asia/Calcutta');
+    expect(await zonePicker()).toHaveValue('Asia/Kolkata');
   });
 });
 
@@ -603,6 +648,35 @@ describe('stopping measuring a website altogether', () => {
 
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(removed).not.toHaveBeenCalled();
+  });
+});
+
+describe('an open panel drawn by a server whose time zones are not the browser’s', () => {
+  /** The panel as a page that had already read the website's settings would send it. */
+  function drawnOpen() {
+    engineHolding();
+
+    return hydrated(<SiteSettings open onClose={() => {}} site={SITE} onRemoved={() => {}} />, {
+      server: STALE_SERVER,
+      browser: CURRENT_BROWSER,
+      known: (cache) => cache.setQueryData(siteSettingsKey(SITE.id), STORED),
+    });
+  }
+
+  it('is taken over without either side giving way', () => {
+    const page = drawnOpen();
+
+    expect(page.html).toContain('Count its days in');
+    expect(page.html).not.toContain('Casablanca');
+    expect(page.recovered).not.toHaveBeenCalled();
+    expect(page.complaints).not.toHaveBeenCalled();
+  });
+
+  it('offers this browser’s zones, holding the one the website is counted in', async () => {
+    drawnOpen();
+
+    expect(await zonePicker()).toHaveValue('Europe/London');
+    expect(screen.getByRole('option', { name: 'London (GMT)' })).toBeInTheDocument();
   });
 });
 

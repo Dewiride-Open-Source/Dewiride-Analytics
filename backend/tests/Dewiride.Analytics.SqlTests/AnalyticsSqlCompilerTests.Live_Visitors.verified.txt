@@ -10,6 +10,7 @@ WITH
             server_ts,
             kind,
             path,
+            referrer_domain,
             status_code,
             user_agent,
             language,
@@ -69,6 +70,7 @@ WITH
             server_ts,
             kind,
             path,
+            referrer_domain,
             status_code,
             user_agent,
             language,
@@ -181,6 +183,13 @@ WITH
                 operating_system,
                 (server_ts, event_id),
                 operating_system != '') AS system_name,
+            toUInt8(
+                countIf(kind = 'PageView') > 0
+                AND min(server_ts) = minIf(server_ts, kind = 'PageView')
+                AND NOT argMinIf(
+                    referrer_domain != '' AND sending_host = '',
+                    (surface != 'BrowserTracker', surface = 'NoScriptPixel', server_ts, event_id),
+                    kind = 'PageView')) AS seen_arriving,
             toUInt32(count() OVER ()) AS visitors_seen
         FROM present
         GROUP BY visitor_key
@@ -222,6 +231,7 @@ SELECT
     device,
     browser,
     system_name,
+    seen_arriving,
     visitors_seen
 FROM gathered
 ORDER BY last_seen DESC, visitor_key

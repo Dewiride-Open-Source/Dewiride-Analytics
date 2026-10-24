@@ -428,6 +428,28 @@ public static class AnalyticsSqlCompiler
     }
 
     /// <summary>
+    /// The eight columns the account of what a visit was is read back from, in the order the reader
+    /// takes them — the same order the opened visit's account is read in.
+    /// </summary>
+    /// <remarks>
+    /// Held as the list itself because a listed visit is read back from these and then from the page
+    /// it began on, and the eight have to stay the eight: one helper reads them from a listed
+    /// visit's row and from an opened visit's alike. Written ahead of the two statements built from
+    /// it, because static fields are set in the order they are written.
+    /// </remarks>
+    private static readonly string[] ContextColumns =
+    [
+        JudgedVisitDetails.Source,
+        JudgedVisitDetails.SourceKind,
+        JudgedVisitDetails.Country,
+        JudgedVisitDetails.Town,
+        JudgedVisitDetails.Network,
+        JudgedVisitDetails.Device,
+        JudgedVisitDetails.Browser,
+        JudgedVisitDetails.System,
+    ];
+
+    /// <summary>
     /// The visit list, for a narrowing the stored verdicts answer on their own.
     /// </summary>
     /// <remarks>
@@ -471,7 +493,7 @@ public static class AnalyticsSqlCompiler
         SELECT
             {{VerdictColumns(4)}},
             total_visits,
-            {{ContextColumns(4)}}
+            {{ListedVisitColumns(4)}}
         FROM page
         LEFT JOIN described USING (session_key)
         ORDER BY started_at DESC, session_key
@@ -501,7 +523,7 @@ public static class AnalyticsSqlCompiler
             (
                 SELECT
                     session_key,
-                    {{ContextColumns(12)}}
+                    {{ListedVisitColumns(12)}}
                 FROM described
                 WHERE (empty({devices:Array(String)}) OR device IN {devices:Array(String)})
                   AND (empty({source_kinds:Array(String)}) OR from_kind IN {source_kinds:Array(String)})
@@ -516,7 +538,7 @@ public static class AnalyticsSqlCompiler
         SELECT
             {{VerdictColumns(4)}},
             toInt64(count() OVER ()) AS total_visits,
-            {{ContextColumns(4)}}
+            {{ListedVisitColumns(4)}}
         FROM
         {{OneVerdictPerVisit(0)}} AS judged
         INNER JOIN narrowed USING (session_key)
@@ -549,22 +571,21 @@ public static class AnalyticsSqlCompiler
             "signal_parameters");
 
     /// <summary>
-    /// The eight columns the account of what a visit was is read back from, in the order the
-    /// reader takes them — the same order the opened visit's account is read in.
+    /// The nine columns a listed visit is read back from after its verdict: the eight its account is
+    /// read from, in the order the reader takes them, and then the page it began on.
     /// </summary>
+    /// <remarks>
+    /// The page follows the account rather than joining it. The account is what a visit says of
+    /// itself when it is opened, read from both rows by one helper; the page it began on is what a
+    /// list needs beside each of its rows, where an opened visit lists every page it went to
+    /// instead. It is the value the list is narrowed by when a reader asks for the visits that
+    /// landed on a page, taken from the same rebuild, so a row and the filter beside it cannot name
+    /// one page two ways.
+    /// </remarks>
     /// <param name="indent">The column the calling statement lays the list out at.</param>
     /// <returns>The columns, one per line.</returns>
-    private static string ContextColumns(int indent) =>
-        Listed(
-            indent,
-            JudgedVisitDetails.Source,
-            JudgedVisitDetails.SourceKind,
-            JudgedVisitDetails.Country,
-            JudgedVisitDetails.Town,
-            JudgedVisitDetails.Network,
-            JudgedVisitDetails.Device,
-            JudgedVisitDetails.Browser,
-            JudgedVisitDetails.System);
+    private static string ListedVisitColumns(int indent) =>
+        Listed(indent, [.. ContextColumns, JudgedVisitDetails.EntryPage]);
 
     /// <summary>Lays columns out one per line at a column, the first on the calling line.</summary>
     /// <param name="indent">The column the calling statement lays the list out at.</param>
@@ -942,8 +963,11 @@ public static class AnalyticsSqlCompiler
         /// <summary>The operating system underneath it.</summary>
         public const int System = 28;
 
+        /// <summary>Whether the window saw them arrive, as one or nought.</summary>
+        public const int SeenArriving = 29;
+
         /// <summary>How many visitors the window held altogether, before the list was cut short.</summary>
-        public const int VisitorsSeen = 29;
+        public const int VisitorsSeen = 30;
     }
 
     /// <summary>
@@ -971,6 +995,13 @@ public static class AnalyticsSqlCompiler
     /// an answer.
     /// </para>
     /// <para>
+    /// Where each page was reached from is read and not handed back either. It settles which site
+    /// sent the visitor, as it does everywhere else, and whether the window saw them arrive at all;
+    /// beyond those two answers nothing is said about it. The address a referring page reports
+    /// carries whatever that page put in it — a search somebody typed, a token in a link — and a
+    /// screen of who is here has no use for any of it.
+    /// </para>
+    /// <para>
     /// How many visitors there were is counted over every group the window produced rather than over
     /// the rows that fitted, so a busy site says how busy it is instead of describing the size of
     /// its own answer.
@@ -989,6 +1020,7 @@ public static class AnalyticsSqlCompiler
                     "server_ts",
                     "kind",
                     "path",
+                    "referrer_domain",
                     "status_code",
                     "user_agent",
                     "language",
@@ -1045,6 +1077,7 @@ public static class AnalyticsSqlCompiler
                             operating_system,
                             (server_ts, event_id),
                             operating_system != '') AS system_name,
+                        {{LiveActivity.SeenArriving(12)}} AS seen_arriving,
                         toUInt32(count() OVER ()) AS visitors_seen
                     FROM present
                     GROUP BY visitor_key
@@ -1079,6 +1112,7 @@ public static class AnalyticsSqlCompiler
                 device,
                 browser,
                 system_name,
+                seen_arriving,
                 visitors_seen
             FROM gathered
             ORDER BY last_seen DESC, visitor_key

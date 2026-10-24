@@ -427,6 +427,12 @@ public sealed record VisitsResponse(
 /// gives — the same eight fields, spelled the same way, so a row and the panel beneath it never
 /// disagree. Every field empty where nothing established it.
 /// </param>
+/// <param name="EntryPath">
+/// The page the visit began on, exactly as it was asked for — the value the visits that landed on
+/// a page are narrowed by, so a row and the filter beside it name one page one way. Written by
+/// whoever made the request, so it reaches a screen as text and is never followed. Empty where no
+/// page was recorded, which is what a visit whose activity has aged out of the store holds.
+/// </param>
 public sealed record VisitSummary(
     string Id,
     DateTimeOffset StartedAt,
@@ -438,7 +444,8 @@ public sealed record VisitSummary(
     string Ruleset,
     IReadOnlyList<VisitReason> Supporting,
     IReadOnlyList<VisitReason> Contradicting,
-    VisitContextResponse Context);
+    VisitContextResponse Context,
+    string EntryPath);
 
 /// <summary>
 /// One observation behind a verdict.
@@ -823,6 +830,11 @@ public sealed record LiveResponse(
 /// </param>
 /// <param name="Network">The routing number of the network they arrived over, or nought.</param>
 /// <param name="Context">What can be said about them to a reader, which may be nothing.</param>
+/// <param name="SeenArriving">
+/// Whether the stretch of minutes saw them arrive, rather than only saw them already here. Where it
+/// did not and <paramref name="Context"/> names no site that sent them, where they came from is
+/// unknown rather than nowhere.
+/// </param>
 public sealed record LiveVisitorSummary(
     string Visitor,
     DateTimeOffset FirstSeen,
@@ -836,7 +848,8 @@ public sealed record LiveVisitorSummary(
     IReadOnlyList<VisitReason> Contradicting,
     string Operator,
     long Network,
-    VisitContextResponse Context);
+    VisitContextResponse Context,
+    bool SeenArriving);
 
 /// <summary>
 /// One minute of a site's reading.

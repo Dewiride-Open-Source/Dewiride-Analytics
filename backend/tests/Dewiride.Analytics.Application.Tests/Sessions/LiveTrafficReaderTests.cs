@@ -372,6 +372,7 @@ public sealed class LiveTrafficReaderTests
         key,
         evidence,
         new VisitContext("", SourceChannel.Direct, "GB", "London", "Example", DeviceClass.Desktop, "Chrome", "Windows"),
+        SeenArriving: true,
         evidence.Requests.IsEmpty ? "/" : evidence.Requests[^1].Path,
         evidence.ConfirmedOperator ?? string.Empty,
         evidence.AutonomousSystem);

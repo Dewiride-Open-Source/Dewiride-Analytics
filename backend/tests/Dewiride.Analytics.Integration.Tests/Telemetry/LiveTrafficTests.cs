@@ -13,17 +13,38 @@ namespace Dewiride.Analytics.Integration.Tests.Telemetry;
 /// </summary>
 /// <remarks>
 /// These readings answer a screen that renews itself every few seconds, so what they get wrong is
-/// wrong in front of somebody watching. Four properties matter more than the rest and each has a
+/// wrong in front of somebody watching. Five properties matter more than the rest and each has a
 /// test here: one visitor is one row however many surfaces saw them, somebody who has gone is gone,
-/// how busy a site is does not shrink to the length of the list an answer had room for, and every
-/// visitor counted stands on exactly one of the pages listed.
+/// how busy a site is does not shrink to the length of the list an answer had room for, every
+/// visitor counted stands on exactly one of the pages listed, and nobody is said to have come
+/// straight here unless the window saw them arrive.
 /// </remarks>
 /// <param name="stack">The running stack.</param>
 [Collection(SharedStackDefinition.Name)]
 public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
 {
-    /// <summary>The moment these readings are taken at, held still.</summary>
-    private static readonly DateTimeOffset Now = new(2026, 5, 1, 12, 0, 0, TimeSpan.Zero);
+    /// <summary>The address of the site these readings are about, and of every page written here.</summary>
+    private const string SiteDomain = "example.com";
+
+    /// <summary>A page of that site, as a referrer names it.</summary>
+    private const string OwnPage = $"https://{SiteDomain}/posts/hello";
+
+    /// <summary>A search engine's results, as a referrer names them.</summary>
+    private const string SearchResults = "https://www.google.com/";
+
+    /// <summary>The host of those results, as the collector records it.</summary>
+    private const string SearchHost = "www.google.com";
+
+    /// <summary>The instant <see cref="Now"/> settled on, once a test first asked for it.</summary>
+    private DateTimeOffset? _now;
+
+    /// <summary>
+    /// The moment these readings are taken at: the stack's clock when the test first asks, taken
+    /// back to a whole minute and held there for the rest of the test, so a reading's near end falls
+    /// on one and an instant written to the store reads back as itself.
+    /// </summary>
+    private DateTimeOffset Now =>
+        _now ??= OnTheMinute(stack.Services.GetRequiredService<TimeProvider>().GetUtcNow());
 
     /// <summary>As long as a visitor may be quiet before their visit is over.</summary>
     private static readonly TimeSpan HalfHour = TimeSpan.FromMinutes(30);
@@ -179,6 +200,231 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
         here.Visitors.Should().ContainSingle();
         here.Visitors[0].Evidence.Requests.Should().NotBeEmpty();
         here.Visitors[0].Context.NetworkOwner.Should().NotContain("203.0.113.7");
+    }
+
+    /// <summary>
+    /// A visitor a search sent inside the window was seen arriving, and the search is named as what
+    /// sent them. The pages they reached from it afterwards name the site itself and change neither.
+    /// </summary>
+    [Fact]
+    public async Task A_Visitor_A_Search_Sent_Inside_The_Window_Is_Seen_Arriving_From_It()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            Referred(FromBrowser(siteId, Now.AddMinutes(-6), "searcher", "/posts/hello"), SearchResults, SearchHost),
+            Referred(FromBrowser(siteId, Now.AddMinutes(-3), "searcher", "/pricing"), OwnPage, SiteDomain));
+
+        var here = await WhoIsHere(siteId);
+
+        here.Visitors.Should().ContainSingle();
+        here.Visitors[0].SeenArriving.Should().BeTrue();
+        here.Visitors[0].Context.SendingSite.Should().Be("Google");
+        here.Visitors[0].Context.Channel.Should().Be(SourceChannel.Search);
+    }
+
+    /// <summary>
+    /// A first page that names nowhere it was reached from is an arrival with nothing said about
+    /// who sent it, which is what coming straight here means and all it means.
+    /// </summary>
+    [Fact]
+    public async Task A_Visitor_Whose_First_Page_Named_No_Sender_Is_Seen_Arriving()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            FromBrowser(siteId, Now.AddMinutes(-6), "typed-it", "/"),
+            Referred(FromBrowser(siteId, Now.AddMinutes(-3), "typed-it", "/pricing"), OwnPage, SiteDomain));
+
+        var here = await WhoIsHere(siteId);
+
+        here.Visitors[0].SeenArriving.Should().BeTrue();
+        here.Visitors[0].Context.SendingSite.Should().BeEmpty();
+        here.Visitors[0].Context.Channel.Should().Be(SourceChannel.Direct);
+    }
+
+    /// <summary>
+    /// The window is a stretch of minutes rather than a visit, so somebody who arrived before it
+    /// opened reaches it moving from one page of the site to the next. Their first page in it names
+    /// the site itself, which is a visitor who was already here, and saying they came straight in
+    /// would be a claim the window cannot carry.
+    /// </summary>
+    [Fact]
+    public async Task A_Visitor_Whose_First_Page_In_The_Window_Was_Reached_From_The_Site_Was_Already_Here()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            Referred(FromBrowser(siteId, Now.AddMinutes(-6), "already-here", "/pricing"), OwnPage, SiteDomain));
+
+        var here = await WhoIsHere(siteId);
+
+        here.Visitors[0].SeenArriving.Should().BeFalse();
+        here.Visitors[0].Context.SendingSite.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Somebody reading a page they opened before the window began has sent nothing but progress
+    /// reports inside it. A progress report says nothing about how its page was reached, so the
+    /// window did not see them arrive.
+    /// </summary>
+    [Fact]
+    public async Task Somebody_Only_Reading_Was_Not_Seen_Arriving()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(Engaged(siteId, Now.AddMinutes(-5), "reader", "/long-read"));
+
+        var here = await WhoIsHere(siteId);
+
+        here.Visitors.Should().ContainSingle();
+        here.Visitors[0].SeenArriving.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// A visitor already on the site who left and came back through a search was sent by the
+    /// search, and is named as sent by it; the window still did not see them arrive the first time,
+    /// and says so. Both answers travel, and which one a screen leads with is the screen's to say.
+    /// </summary>
+    [Fact]
+    public async Task A_Visitor_Already_Here_Who_Came_Back_From_A_Search_Is_Sent_By_It_Without_Being_Seen_Arriving()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            Referred(FromBrowser(siteId, Now.AddMinutes(-8), "returning", "/pricing"), OwnPage, SiteDomain),
+            Referred(FromBrowser(siteId, Now.AddMinutes(-3), "returning", "/posts/hello"), SearchResults, SearchHost));
+
+        var here = await WhoIsHere(siteId);
+
+        here.Visitors[0].Context.SendingSite.Should().Be("Google");
+        here.Visitors[0].SeenArriving.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// A site reported only from its own server is watched from the request path, and a request
+    /// that named no referrer is as much an arrival there as a tracker's report of one. The pages
+    /// reached from it afterwards name the site, and change nothing about how the visitor arrived.
+    /// </summary>
+    [Fact]
+    public async Task A_Server_Seen_Direct_Arrival_Followed_By_Internal_Pages_Is_Seen_Arriving()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            FromServer(siteId, Now.AddMinutes(-9), "server-seen", "/"),
+            Referred(FromServer(siteId, Now.AddMinutes(-6), "server-seen", "/pricing"), OwnPage, SiteDomain),
+            Referred(FromServer(siteId, Now.AddMinutes(-2), "server-seen", "/docs"), OwnPage, SiteDomain));
+
+        var here = await WhoIsHere(siteId);
+
+        here.Visitors.Should().ContainSingle();
+        here.Visitors[0].SeenArriving.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// A referrer is written by whoever sent the request, and one naming no host anybody could have
+    /// been on says nothing about where they were before. It reads as nobody having named a sender,
+    /// which is what the finished visit makes of it, and never as a visitor who was already here.
+    /// </summary>
+    [Fact]
+    public async Task A_Referrer_Naming_No_Host_Says_Nothing_About_When_Somebody_Arrived()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            Referred(FromBrowser(siteId, Now.AddMinutes(-5), "nameless", "/"), "about:blank", string.Empty));
+
+        var here = await WhoIsHere(siteId);
+
+        here.Visitors[0].SeenArriving.Should().BeTrue();
+        here.Visitors[0].Context.SendingSite.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A reporter on the site's own server need not pass on where a page was reached from, and the
+    /// tracker on the same page says whenever the browser does. The tracker's account is taken
+    /// first, so a visitor clicking through from a page they were already on is not read as an
+    /// arrival because the server's report of the same page reached the store a moment earlier with
+    /// nothing in it.
+    /// </summary>
+    [Fact]
+    public async Task The_Tracker_Is_Taken_At_Its_Word_Ahead_Of_A_Server_That_Named_No_Referrer()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            FromServer(siteId, Now.AddMinutes(-5), "as-the-server-saw-them", "/pricing", "delivery-1"),
+            Referred(
+                FromBrowser(siteId, Now.AddMinutes(-5).AddSeconds(1), "as-the-browser-saw-them", "/pricing", "delivery-1"),
+                OwnPage,
+                SiteDomain));
+
+        var here = await WhoIsHere(siteId);
+
+        here.Visitors.Should().ContainSingle();
+        here.Visitors[0].SeenArriving.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// The image a page with no script running asks for never says where its page was reached
+    /// from. A reporter on the site's own server can send its report of the same page seconds
+    /// later, in a batch, and that report does say: the visitor came from another page of the site.
+    /// The image's silence is read last, so it cannot speak over it.
+    /// </summary>
+    [Fact]
+    public async Task An_Image_That_Named_Nothing_Does_Not_Speak_Over_A_Server_That_Named_The_Site()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            FromImage(siteId, Now.AddMinutes(-5), "scripts-off", "/pricing"),
+            Referred(FromServer(siteId, Now.AddMinutes(-5).AddSeconds(15), "scripts-off", "/pricing"), OwnPage, SiteDomain));
+
+        var here = await WhoIsHere(siteId);
+
+        here.Visitors.Should().ContainSingle();
+        here.Visitors[0].SeenArriving.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Where the image is the only thing that reported a page, its page view is the arrival the
+    /// window saw. It names no sender, which is what the finished visit makes of the same report.
+    /// </summary>
+    [Fact]
+    public async Task A_Visitor_Only_The_Image_Saw_Is_Seen_Arriving()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(FromImage(siteId, Now.AddMinutes(-5), "image-only", "/"));
+
+        var here = await WhoIsHere(siteId);
+
+        here.Visitors.Should().ContainSingle();
+        here.Visitors[0].SeenArriving.Should().BeTrue();
+        here.Visitors[0].Context.SendingSite.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Somebody reading a page they opened before the window began, who then opens another page
+    /// that says nothing about where it was reached from — a link marked to send no referrer, a
+    /// site that sends none — was already here: their own reading is in the window ahead of that
+    /// page view, and it says so.
+    /// </summary>
+    [Fact]
+    public async Task A_Visitor_Already_Reading_Whose_Next_Page_Named_Nothing_Was_Not_Seen_Arriving()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            Engaged(siteId, Now.AddMinutes(-8), "kept-reading", "/long-read"),
+            FromBrowser(siteId, Now.AddMinutes(-3), "kept-reading", "/pricing"));
+
+        var here = await WhoIsHere(siteId);
+
+        here.Visitors.Should().ContainSingle();
+        here.Visitors[0].SeenArriving.Should().BeFalse();
+        here.Visitors[0].Context.SendingSite.Should().BeEmpty();
     }
 
     [Fact]
@@ -593,7 +839,7 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
             new SiteVisitJourneyQuery(
                 new VisitKey(visitorKey, began),
                 HalfHour,
-                "example.com",
+                SiteDomain,
                 SiteVisitJourneyQuery.MostSteps),
             Cancellation.Token);
 
@@ -606,7 +852,7 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
     private Task<LiveVisitors> WhoIsHere(Guid siteId, int limit = 50) =>
         stack.Services.GetRequiredService<ITelemetryQueries>().GetSiteLiveVisitorsAsync(
             Scope(siteId),
-            new SiteLiveVisitorsQuery(Window(), "example.com", limit),
+            new SiteLiveVisitorsQuery(Window(), SiteDomain, limit),
             Cancellation.Token);
 
     private Task<IReadOnlyList<LiveMinute>> ByTheMinute(Guid siteId) =>
@@ -625,7 +871,10 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
     /// The stretch a reading covers, with its near end on a whole minute so that the drawing of it
     /// has whole minutes to draw.
     /// </summary>
-    private static TimeRange Window() => new(Now - HalfHour, Now);
+    private TimeRange Window() => new(Now - HalfHour, Now);
+
+    private static DateTimeOffset OnTheMinute(DateTimeOffset at) =>
+        at.AddTicks(-(at.Ticks % TimeSpan.TicksPerMinute));
 
     private Task WriteAsync(params RawEvent[] events) =>
         stack.Services.GetRequiredService<IEventSink>().WriteBatchAsync(events, Cancellation.Token);
@@ -659,6 +908,13 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
     private static RawEvent Arriving(RawEvent observed, string address) =>
         observed with { IpAddress = address };
 
+    /// <summary>
+    /// A report naming the page its own page was reached from, with the host the collector reads
+    /// out of it — empty for an address that names none.
+    /// </summary>
+    private static RawEvent Referred(RawEvent observed, string address, string host) =>
+        observed with { Referrer = address, ReferrerDomain = host };
+
     private static RawEvent FromBrowser(
         Guid siteId,
         DateTimeOffset at,
@@ -678,6 +934,10 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
     private static RawEvent Engaged(Guid siteId, DateTimeOffset at, string? visitorKey, string path) =>
         Observed(siteId, at, visitorKey, path, EventKind.Engagement, IngestSurface.BrowserTracker, null);
 
+    /// <summary>The image a page with no script running asks for, which names no referrer.</summary>
+    private static RawEvent FromImage(Guid siteId, DateTimeOffset at, string? visitorKey, string path) =>
+        Observed(siteId, at, visitorKey, path, EventKind.PageView, IngestSurface.NoScriptPixel, null);
+
     private static RawEvent Observed(
         Guid siteId,
         DateTimeOffset at,
@@ -694,7 +954,7 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
             Surface = surface,
             ServerTimestamp = at,
             VisitorKey = visitorKey,
-            Host = "example.com",
+            Host = SiteDomain,
             Path = path,
             CorrelationId = correlationId,
         };

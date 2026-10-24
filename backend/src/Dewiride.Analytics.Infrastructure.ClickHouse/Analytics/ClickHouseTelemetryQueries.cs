@@ -611,6 +611,12 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     /// </summary>
     private const int JudgedContextColumn = 15;
 
+    /// <summary>
+    /// Where the page the visit began on sits on a judged-visit row: straight after the eight
+    /// columns its account is read from.
+    /// </summary>
+    private const int EntryPathColumn = 23;
+
     private static JudgedSession ToJudgedSession(ClickHouseDataReader reader)
     {
         var evidence = ToEvidence(reader);
@@ -637,6 +643,7 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
                 Contradicting = [.. evidence.Where(entry => !entry.Supporting).Select(entry => entry.Signal)],
             },
             Context = Established(reader, JudgedContextColumn),
+            EntryPath = reader.GetString(EntryPathColumn),
         };
     }
 
@@ -929,6 +936,7 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
             AsDevice(reader.GetString(Column.Device)),
             reader.GetString(Column.Browser),
             reader.GetString(Column.System)),
+        reader.GetByte(Column.SeenArriving) == 1,
         reader.GetString(Column.CurrentPath),
         reader.GetString(Column.ConfirmedOperator),
         reader.GetFieldValue<uint>(Column.AutonomousSystem));

@@ -251,7 +251,8 @@ WITH
             network,
             device,
             browser,
-            system_name
+            system_name,
+            entry_path
         FROM described
         WHERE (empty({devices:Array(String)}) OR device IN {devices:Array(String)})
           AND (empty({source_kinds:Array(String)}) OR from_kind IN {source_kinds:Array(String)})
@@ -286,7 +287,8 @@ SELECT
     network,
     device,
     browser,
-    system_name
+    system_name,
+    entry_path
 FROM
 (
     SELECT *

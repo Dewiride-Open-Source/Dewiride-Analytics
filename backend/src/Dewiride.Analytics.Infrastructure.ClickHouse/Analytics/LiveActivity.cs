@@ -1,3 +1,5 @@
+using Dewiride.Analytics.Domain.Telemetry;
+
 namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 
 /// <summary>
@@ -18,8 +20,10 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// minutes: a report outside it is not part of that description, whatever it says about a page
 /// somebody is still on. Two things follow. The reading is a prefix of the primary key and touches
 /// nothing else, which is what makes it cheap enough to ask over and over. And a page arrived at
-/// before the window opened still counts, because the visitor was on it — it is only unknown where
-/// they arrived.
+/// before the window opened still counts, because the visitor was on it — and how they reached the
+/// site is then known only as far as the window says. A site that sent them is named wherever a
+/// page in the window names one; that none was named is said only where the window saw them
+/// arrive, which <see cref="SeenArriving"/> decides.
 /// </para>
 /// <para>
 /// A page a visitor was on is counted once here, however many reports described it and however many
@@ -78,6 +82,33 @@ internal static class LiveActivity
     public const string CurrentPage = "argMax(path, (server_ts, event_id))";
 
     /// <summary>
+    /// Orders the tracker's own reports ahead of every other surface's, the store sorting false
+    /// before true.
+    /// </summary>
+    /// <remarks>
+    /// Spelled from the stored name rather than typed out, so the surface tested is the one the
+    /// collector writes. The tracker alone rather than everything in the visitor's browser: the
+    /// image a page with no script running asks for reports no referrer at all.
+    /// </remarks>
+    private static readonly string TheTrackerFirst =
+        $"surface != '{StoredNames.SurfaceNames[IngestSurface.BrowserTracker]}'";
+
+    /// <summary>
+    /// Orders the image a page with no script running asks for behind every other surface's
+    /// reports, the store sorting false before true.
+    /// </summary>
+    /// <remarks>
+    /// The image never says where its page was reached from, so its report of a page is silence
+    /// about that, every time. Ordered among the others by when each reached the collector, it
+    /// would let that silence speak over a report of the same page that did say — a reporter on the
+    /// site's own server may send its reports in batches, well after the image's request has
+    /// landed — and which of the two answered would turn on network timing. Read last, it decides
+    /// only where nothing else reported a page at all.
+    /// </remarks>
+    private static readonly string TheImageLast =
+        $"surface = '{StoredNames.SurfaceNames[IngestSurface.NoScriptPixel]}'";
+
+    /// <summary>
     /// How long a reading about the present moment may run before it is abandoned.
     /// </summary>
     /// <remarks>
@@ -95,6 +126,57 @@ internal static class LiveActivity
     /// </para>
     /// </remarks>
     public const string WithinTheBeat = "SETTINGS max_execution_time = 10";
+
+    /// <summary>
+    /// Whether the window saw a visitor arrive, rather than only saw them already here.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// What lets a reading say that nothing named a site as having sent a visitor. A window is a
+    /// stretch of minutes rather than a visit, so somebody who arrived before it opened and is still
+    /// reading reaches it with no sending site, and "came straight here" would then be a claim the
+    /// window cannot carry. A visitor counts as seen arriving unless the window holds none of their
+    /// page views, holds something of theirs from before the earliest of them — whichever surface
+    /// reported it — or the page view that decides, chosen as set out below, names the site itself
+    /// as where it was reached from. A progress report, a departure or a press ahead of any page view
+    /// is somebody already reading a page; a page reached from another page of the same site is
+    /// somebody who was already here.
+    /// </para>
+    /// <para>
+    /// The page view that decides is the tracker's own first, because the tracker says where its
+    /// page was reached from whenever the browser does — where a reporter on the site's own server
+    /// may not, and the image a page with no script running asks for never does. Where the tracker
+    /// reported no page view, the earliest from a surface able to say decides, and the image's only
+    /// where nothing else reported one. Of what its referrer can say, only one that positively names
+    /// the site counts against an arrival. One naming nothing, or naming no host at all, is what a
+    /// finished visit reads as nobody having named a sender, and the two readings say the same thing
+    /// about it.
+    /// </para>
+    /// <para>
+    /// Over a selection carrying <c>kind</c>, <c>surface</c>, <c>server_ts</c>, <c>event_id</c>,
+    /// <c>referrer_domain</c> and the <c>sending_host</c> <see cref="SendingSites"/> reduces it to,
+    /// grouped by visitor.
+    /// </para>
+    /// </remarks>
+    /// <param name="indent">
+    /// The column the calling statement places the expression at, which its arguments are laid out
+    /// one step inside.
+    /// </param>
+    /// <returns>The expression, which is one for a visitor seen arriving and nought otherwise.</returns>
+    public static string SeenArriving(int indent)
+    {
+        var pad = new string(' ', indent);
+
+        return $"""
+            toUInt8(
+            {pad}    countIf(kind = 'PageView') > 0
+            {pad}    AND min(server_ts) = minIf(server_ts, kind = 'PageView')
+            {pad}    AND NOT argMinIf(
+            {pad}        referrer_domain != '' AND sending_host = '',
+            {pad}        ({TheTrackerFirst}, {TheImageLast}, server_ts, event_id),
+            {pad}        kind = 'PageView'))
+            """;
+    }
 
     /// <summary>
     /// Reads the window straight from the store, ending in a <c>windowed</c> selection.

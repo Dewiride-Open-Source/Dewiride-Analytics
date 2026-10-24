@@ -204,4 +204,16 @@ describe('how people move through a website', () => {
     expect(await screen.findByText('/<img src=x onerror=alert(1)>')).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
+
+  /**
+   * An address reads left to right even where a part of it is written right to left. Left to set
+   * its own direction, a page whose first part is in Arabic would be drawn back to front.
+   */
+  it('draws each address left to right, whatever it is written in', async () => {
+    engineWith(TOTALS, [{ path: '/%D9%85%D9%82%D8%A7%D9%84%D8%A9/admin', visits: 3 }], EXITS);
+
+    show();
+
+    expect(await screen.findByText('/مقالة/admin')).toHaveAttribute('dir', 'ltr');
+  });
 });

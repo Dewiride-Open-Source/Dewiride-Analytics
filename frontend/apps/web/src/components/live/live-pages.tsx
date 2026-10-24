@@ -46,6 +46,7 @@ export function LivePages({ pages, visitorsSeen }: LivePagesProps) {
                   key={page.path}
                   name={address}
                   hint={address}
+                  dir="ltr"
                   detail={t('visitors', { count: page.visitors })}
                   part={page.visitors}
                   most={most}

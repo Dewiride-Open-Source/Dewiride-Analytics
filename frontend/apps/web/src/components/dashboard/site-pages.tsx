@@ -111,6 +111,7 @@ function PageList({
               key={page.path}
               name={address}
               hint={address}
+              dir="ltr"
               detail={
                 <>
                   {t('views', { count: page.pageViews })}

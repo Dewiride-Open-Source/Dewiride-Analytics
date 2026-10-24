@@ -12,6 +12,10 @@
 - **Revises**: [0029](0029-what-a-visit-was-is-rebuilt.md), whose consequence "the ordinary list
   pays nothing" is given up here: every row now carries what its visit was, and the list pays for
   the page it is showing.
+- **Revised by**: [0052](0052-a-row-says-on-its-first-line-how-somebody-arrived.md), which moves how
+  somebody arrived onto a row's first line — the page a visit landed on for the list, where the
+  visitor came from for the live row — says "Came straight here" only where the arrival was seen,
+  and so no longer says it of a visit whose activity has aged out.
 
 ## Context
 

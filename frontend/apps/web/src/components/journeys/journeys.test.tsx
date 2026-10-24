@@ -69,6 +69,7 @@ const READER = {
     browser: 'Firefox',
     system: 'Android',
   },
+  entryPath: '/posts/hello',
 };
 
 const CRAWLER = {
@@ -100,6 +101,7 @@ const CRAWLER = {
     browser: '',
     system: '',
   },
+  entryPath: '/robots.txt',
 };
 
 /** A crawler whose operator vouched for the address, seen only by the website's own server. */
@@ -137,6 +139,7 @@ const VERIFIED = {
     browser: '',
     system: '',
   },
+  entryPath: '/sitemap.xml',
 };
 
 /** The pages one opened visit turns out to have gone through. */
@@ -196,7 +199,11 @@ const HELD = {
     { value: 'Google', visits: 5 },
     { value: '', visits: 4 },
   ],
-  entryPages: [{ value: '/pricing', visits: 6 }],
+  entryPages: [
+    { value: '/pricing', visits: 6 },
+    { value: '/blog/caf%C3%A9', visits: 2 },
+    { value: '', visits: 1 },
+  ],
 };
 
 /**
@@ -288,6 +295,13 @@ function askedWhatIsHere(sent: readonly Sent[]): string[] {
   return sent.map((one) => one.path).filter((path) => path.includes('/visits/facets'));
 }
 
+/** The values of one narrowing the visit list was last asked for, read back as they were sent. */
+function lastAskedFor(sent: readonly Sent[], narrowing: string): string[] {
+  const asked = listed(sent).at(-1) ?? '';
+
+  return new URLSearchParams(asked.slice(asked.indexOf('?') + 1)).getAll(narrowing);
+}
+
 /**
  * The shut row of one visit, found by its page count, which is the one thing every row says.
  *
@@ -358,6 +372,24 @@ describe('the user journey screen', () => {
     show();
 
     expect(await screen.findByText("Can't reach Dewiride Analytics")).toBeInTheDocument();
+  });
+
+  /**
+   * The totals and the list are both refused by an engine that cannot be reached. Saying so twice
+   * reads as two problems, and a list's shape pulsing under the notice promises an answer that is
+   * not coming.
+   */
+  it('says once that the engine cannot be reached, and stops waiting for the list', async () => {
+    engineStopped();
+
+    const { container } = show();
+
+    await screen.findByText("Can't reach Dewiride Analytics");
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('.animate-pulse')).toHaveLength(0);
+    });
+    expect(screen.getAllByText("Can't reach Dewiride Analytics")).toHaveLength(1);
   });
 
   it('opens a visit to show what was seen, in sentences with the figures filled in', async () => {
@@ -479,6 +511,107 @@ describe('the user journey screen', () => {
     expect(within(await rowSaying('64 pages')).getByText('Came straight here')).toBeInTheDocument();
   });
 
+  /**
+   * Which page a visit landed on is said beside what the visit was, on the line a reader scans,
+   * in the words of the narrowing that finds the visits that landed there.
+   */
+  it('says on the first line which page a visit landed on', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    const row = within(await rowSaying('3 pages'));
+
+    expect(row.getByText('A person').parentElement).toHaveTextContent('Landed on /posts/hello');
+  });
+
+  it('writes the page a visit landed on the way somebody would read it', async () => {
+    engineWith(GROUPS, [{ ...READER, entryPath: '/blog/caf%C3%A9' }]);
+
+    show();
+
+    expect(
+      within(await rowSaying('3 pages')).getByText('Landed on /blog/café'),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * The address is written by whoever asked for the page, which includes anybody hoping to make a
+   * row say something else. It reaches the screen as text, in the order it was asked for.
+   */
+  it('shows a page somebody wrote to be something else as nothing but text', async () => {
+    engineWith(GROUPS, [
+      { ...READER, entryPath: '/%3Cimg%20src=x%20onerror=alert(1)%3E' },
+      { ...CRAWLER, entryPath: '/invoice%E2%80%AEfdp.exe' },
+    ]);
+
+    show();
+
+    const written = await rowSaying('3 pages');
+
+    expect(
+      within(written).getByText('Landed on /<img src=x onerror=alert(1)>'),
+    ).toBeInTheDocument();
+    expect(written.querySelector('img')).toBeNull();
+    expect(
+      within(await rowSaying('64 pages')).getByText('Landed on /invoice%E2%80%AEfdp.exe'),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * A visit whose activity has aged out has no page recorded against it, and says nothing about
+   * one rather than naming the front page, which it never opened.
+   */
+  it('says nothing about where a visit landed where no page was recorded', async () => {
+    engineWith(GROUPS, [{ ...VERIFIED, entryPath: '' }]);
+
+    show();
+
+    const row = within(await rowSaying('12 pages'));
+
+    expect(row.getByText('Googlebot')).toBeInTheDocument();
+    expect(row.queryByText(/Landed on/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * A visit whose activity has aged out holds neither the page it landed on nor anything that
+   * named a sender. It named nowhere only because nothing of its arrival is left to name anything,
+   * so it is not said to have come straight here — on the row or in the panel opened from it.
+   */
+  it('says nothing about how a visit arrived where nothing of its arrival is on record', async () => {
+    engineWith(GROUPS, [{ ...VERIFIED, entryPath: '' }]);
+
+    show();
+
+    const summary = await rowSaying('12 pages');
+
+    expect(within(summary).queryByText('Came straight here')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('12 pages'));
+
+    // The filter above the list is also called "Came from", so the panel is asked on its own.
+    const panel = within(summary.closest('details') as HTMLElement);
+
+    await panel.findByText('Nothing in this visit said where it was or what it was read on.');
+
+    expect(panel.queryByText('Came from')).not.toBeInTheDocument();
+    expect(panel.queryByText('Came straight here')).not.toBeInTheDocument();
+  });
+
+  /** The first line is the row's heading, so it stays when the row is opened. */
+  it('keeps the page a visit landed on while the row is open', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    const row = within(await rowSaying('3 pages'));
+
+    await userEvent.click(screen.getByText('3 pages'));
+
+    expect(row.queryByText('Jaipur, India')).not.toBeInTheDocument();
+    expect(row.getByText('Landed on /posts/hello')).toBeInTheDocument();
+  });
+
   it('says roughly where a visit was and what it was read on, without opening it', async () => {
     engineWith(GROUPS, [READER]);
 
@@ -514,9 +647,9 @@ describe('the user journey screen', () => {
   });
 
   /**
-   * A visit nothing was established about — one whose activity has aged out, or one nothing
-   * placed — still says how it arrived, because a visit that named nowhere came straight here,
-   * and says nothing else rather than a line of absences.
+   * A visit nothing placed or named still says how it arrived where the page it landed on is on
+   * record, because a visit seen arriving that named nowhere came straight here — and says nothing
+   * else rather than a line of absences.
    */
   it('says only that a visit came straight here where nothing else was established', async () => {
     engineWith(GROUPS, [VERIFIED]);
@@ -911,6 +1044,108 @@ describe('narrowing by what a visit actually was', () => {
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Not known 1' }));
 
     await waitFor(() => expect(listed(engine.all()).at(-1)).toMatch(/[?&]browser=(&|$)/));
+  });
+
+  /**
+   * A page is offered the way every row writes it, and asked for exactly as it was recorded,
+   * because the recorded value is what the engine narrows by.
+   */
+  it('offers the pages visits landed on as somebody would read them, and asks for them as recorded', async () => {
+    const engine = engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+    await open('Landed on');
+    await userEvent.click(await screen.findByRole('checkbox', { name: '/blog/café 2' }));
+
+    await waitFor(() =>
+      expect(lastAskedFor(engine.all(), 'entryPage')).toEqual(['/blog/caf%C3%A9']),
+    );
+
+    const pill = await screen.findByRole('button', { name: 'Remove Landed on /blog/café' });
+
+    expect(within(pill).getByText('/blog/café')).toHaveAttribute('title', '/blog/café');
+  });
+
+  /**
+   * An address reads left to right even where a part of it is written right to left. Left to set
+   * its own direction, a page whose first part is in Arabic would be drawn back to front in the
+   * list of choices and in the pill it leaves, and read differently from the row it found. Every
+   * other value keeps setting its own.
+   */
+  it('draws the pages visits landed on left to right, in the choices and in the pill', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+    await open('Landed on');
+
+    const choice = await screen.findByRole('checkbox', { name: '/blog/café 2' });
+    const label = choice.closest('label') as HTMLElement;
+
+    expect(within(label).getByText('/blog/café')).toHaveAttribute('dir', 'ltr');
+
+    await userEvent.click(choice);
+
+    const pill = await screen.findByRole('button', { name: 'Remove Landed on /blog/café' });
+
+    expect(within(pill).getByText('/blog/café')).toHaveAttribute('dir', 'ltr');
+  });
+
+  it('leaves every value that is not an address to set its own direction', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+    await open('Came from');
+
+    const choice = await screen.findByRole('checkbox', { name: 'Google 5' });
+    const label = choice.closest('label') as HTMLElement;
+
+    expect(within(label).getByText('Google')).not.toHaveAttribute('dir');
+  });
+
+  /**
+   * The visits with no page recorded are named by a sentence of the catalogue, not by an address,
+   * so that choice and its pill run the way the reader's language does.
+   */
+  it('leaves the choice of visits with no page recorded to run as its words do', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+    await open('Landed on');
+
+    const choice = await screen.findByRole('checkbox', { name: 'No page recorded 1' });
+    const label = choice.closest('label') as HTMLElement;
+
+    expect(within(label).getByText('No page recorded')).not.toHaveAttribute('dir');
+
+    await userEvent.click(choice);
+
+    const pill = await screen.findByRole('button', { name: 'Remove Landed on No page recorded' });
+
+    expect(within(pill).getByText('No page recorded')).not.toHaveAttribute('dir');
+  });
+
+  /**
+   * A visit with no page recorded is a choice of its own, called what it is. Written as "/", it
+   * would offer the visits that never opened a page as visits to the front page.
+   */
+  it('offers the visits with no page recorded by name rather than as the front page', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await screen.findByText('3 pages');
+    await open('Landed on');
+
+    expect(await screen.findByRole('checkbox', { name: 'No page recorded 1' })).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: '/ 1' })).not.toBeInTheDocument();
   });
 
   /**

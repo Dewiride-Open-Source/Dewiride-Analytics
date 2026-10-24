@@ -294,6 +294,21 @@ describe('reading the same period page by page', () => {
 
     expect(screen.getByText(/Measured on 24 of 40 page reads/)).toBeInTheDocument();
   });
+
+  /**
+   * An address reads left to right even where a part of it is written right to left. Left to set
+   * its own direction, a page whose first part is in Arabic would be drawn back to front.
+   */
+  it('draws each address left to right, whatever it is written in', async () => {
+    engineWith(READING, [{ ...PAGES[0], path: '/%D9%85%D9%82%D8%A7%D9%84%D8%A9/admin' }]);
+
+    show();
+
+    await screen.findByText('Just the top');
+    await userEvent.click(screen.getByRole('radio', { name: 'Time' }));
+
+    expect(await screen.findByText('/مقالة/admin')).toHaveAttribute('dir', 'ltr');
+  });
 });
 
 describe('moving through a long list of pages', () => {

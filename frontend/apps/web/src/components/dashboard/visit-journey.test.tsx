@@ -1,6 +1,8 @@
 import { screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VisitJourney } from '@/components/dashboard/visit-journey';
+import { type CameFrom, cameFrom } from '@/lib/analytics/visit-context';
+import type { VisitContext } from '@/lib/api/schemas';
 import { engineDoing, engineStopped, respondWith } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
 
@@ -84,7 +86,7 @@ const SWEPT = [
 ];
 
 /** What a visit says about its visitor when nothing about them was established. */
-const NOTHING_KNOWN = {
+const NOTHING_KNOWN: VisitContext = {
   source: '',
   kind: 'direct',
   countryCode: '',
@@ -95,10 +97,13 @@ const NOTHING_KNOWN = {
   system: '',
 };
 
+/** How the row a visit is opened from says it arrived, where nothing sent it and it was seen. */
+const STRAIGHT_IN: CameFrom = { arrived: 'directly' };
+
 function engineWith(
   steps: readonly unknown[],
   asked: { count: number } = { count: 0 },
-  context: Record<string, string> = NOTHING_KNOWN,
+  context: VisitContext = NOTHING_KNOWN,
 ) {
   return engineDoing(async () => {
     asked.count += 1;
@@ -107,11 +112,12 @@ function engineWith(
   });
 }
 
-function show(pageCount: number, open = true) {
+function show(pageCount: number, open = true, from: CameFrom = STRAIGHT_IN) {
   renderScreen(
     <VisitJourney
       siteId={SITE_ID}
       visit={VISIT}
+      from={from}
       pageCount={pageCount}
       timeZoneId={ZONE}
       open={open}
@@ -139,6 +145,18 @@ describe('the pages one visit went through', () => {
     const addresses = await screen.findAllByTitle(/^\//);
 
     expect(addresses.map((address) => address.textContent)).toEqual(['/posts/hello', '/pricing']);
+  });
+
+  /**
+   * An address reads left to right even where a part of it is written right to left. Left to set
+   * its own direction, a page whose first part is in Arabic would be drawn back to front.
+   */
+  it('draws each address left to right, whatever it is written in', async () => {
+    engineWith([{ ...READ[0], path: '/%D9%85%D9%82%D8%A7%D9%84%D8%A9/admin' }]);
+
+    show(1);
+
+    expect(await screen.findByTitle('/مقالة/admin')).toHaveAttribute('dir', 'ltr');
   });
 
   it('says how long each page held somebody and how far down they got', async () => {
@@ -353,7 +371,7 @@ describe('the pages one visit went through', () => {
 
 describe('who the visit was', () => {
   /** Everything resolved: a reader sent by a search engine, placed, and on named software. */
-  const KNOWN = {
+  const KNOWN: VisitContext = {
     source: 'Google',
     kind: 'search',
     countryCode: 'IN',
@@ -364,9 +382,10 @@ describe('who the visit was', () => {
     system: 'Android',
   };
 
-  function showing(context: Record<string, string>) {
+  /** Opens a visit whose first page is on record, as the row it is opened from describes it. */
+  function showing(context: VisitContext) {
     engineWith(READ, { count: 0 }, context);
-    show(2);
+    show(2, true, cameFrom(context, true));
   }
 
   it('names the site that sent them', async () => {
@@ -400,6 +419,21 @@ describe('who the visit was', () => {
     showing({ ...KNOWN, source: '', kind: 'direct' });
 
     expect(await screen.findByText('Came straight here')).toBeInTheDocument();
+  });
+
+  /**
+   * A visit whose first page is no longer on record named no sender only because nothing of its
+   * arrival is left to name one. Where it came from is a fact nothing answered, and is left out.
+   */
+  it('leaves out where a visit came from when its arrival is not on record', async () => {
+    engineWith([], { count: 0 }, NOTHING_KNOWN);
+    show(2, true, { arrived: 'unseen' });
+
+    expect(
+      await screen.findByText('Nothing in this visit said where it was or what it was read on.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Came from')).not.toBeInTheDocument();
+    expect(screen.queryByText('Came straight here')).not.toBeInTheDocument();
   });
 
   /** A great many town names belong to more than one country. */

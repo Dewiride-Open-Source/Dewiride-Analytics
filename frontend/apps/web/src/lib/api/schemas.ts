@@ -604,6 +604,12 @@ export const visitSchema = z.object({
    * account the journey carries, so a row and the panel under it never disagree.
    */
   context: visitContextSchema,
+  /**
+   * The page the visit landed on, exactly as it was asked for: the value the "Landed on" narrowing
+   * keeps a visit by, so a row and the narrowing that found it name one page. Written by whoever
+   * asked for it, and empty where no page was recorded.
+   */
+  entryPath: z.string(),
 });
 
 export const visitsSchema = z.object({
@@ -689,6 +695,14 @@ export const liveVisitorSchema = z.object({
   operator: z.string(),
   network: z.number().int(),
   context: visitContextSchema,
+  /**
+   * Whether the half hour holds the moment this visitor arrived.
+   *
+   * Where nothing named a sender, this is what tells somebody who came straight here from somebody
+   * who was already reading when the half hour began: neither carries a sender, and only the first
+   * was seen arriving without one. It is for the reader alone, and no verdict rests on it.
+   */
+  seenArriving: z.boolean(),
 });
 
 /**

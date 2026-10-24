@@ -190,6 +190,7 @@ function FlowList({
               key={page.path}
               name={address}
               hint={address}
+              dir="ltr"
               detail={t('visits', { count: page.visits })}
               part={page.visits}
               whole={totalVisits}

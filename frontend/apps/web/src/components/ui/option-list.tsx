@@ -13,6 +13,12 @@ export interface Option {
   readonly label: string;
   /** How many visits held it, where that can honestly be said. */
   readonly count?: number;
+  /**
+   * The direction the label runs in, where it runs one way whatever it is written in: a page's
+   * address, which is read left to right even where a part of it is written right to left. Left
+   * out, the label sets its own direction from the first letter it holds.
+   */
+  readonly dir?: 'ltr';
 }
 
 interface OptionListProps {
@@ -131,20 +137,24 @@ export function OptionList({
                 />
                 {/*
                   Isolated so a value written right to left keeps the figure beside it in place,
-                  and readable in full by resting on it where it had to be cut short.
+                  and readable in full by resting on it where it had to be cut short. As wide as
+                  its words rather than as the row: a value written right to left begins at the
+                  right-hand edge of whatever box it is given, so a box the width of the row would
+                  push it across against the figure, away from every other name in the list.
                 */}
-                <bdi className="min-w-0 flex-1 truncate" title={option.label}>
+                <bdi dir={option.dir} className="min-w-0 truncate" title={option.label}>
                   {option.label}
                 </bdi>
                 {/*
                   A real space between the name and the figure, so what a screen reader reads out
                   is "Phones 412" rather than one word nobody would recognise. The gap on screen
-                  is drawn by the layout and says nothing to anybody listening.
+                  is drawn by the layout and says nothing to anybody listening, and the figure is
+                  pushed to the far end of the row by the layout too.
                 */}
                 {option.count === undefined ? null : (
                   <>
                     {' '}
-                    <span className="shrink-0 text-foreground-muted tabular-nums">
+                    <span className="ms-auto shrink-0 text-foreground-muted tabular-nums">
                       {format.number(option.count)}
                     </span>
                   </>

@@ -3,13 +3,14 @@ import {
   activeNow,
   anybodyActive,
   anythingRead,
+  cameHereFrom,
   type LiveRow,
   minutesSince,
   namedNow,
   rowsToShow,
   runningMinute,
 } from '@/lib/analytics/live';
-import type { LiveMinute, LiveVisitor } from '@/lib/api/schemas';
+import type { LiveMinute, LiveVisitor, VisitContext } from '@/lib/api/schemas';
 
 const AT = '2026-08-29T10:30:00.000Z';
 
@@ -37,9 +38,13 @@ function visitor(overrides: Partial<LiveVisitor> = {}): LiveVisitor {
       browser: '',
       system: '',
     },
+    seenArriving: true,
     ...overrides,
   };
 }
+
+/** What a visitor sent by a search engine carries. */
+const FROM_GOOGLE: VisitContext = { ...visitor().context, source: 'Google', kind: 'search' };
 
 /** Four minutes running up to the reading, the last of which the reading was taken inside. */
 const MINUTES: readonly LiveMinute[] = [
@@ -100,6 +105,39 @@ describe('whether the moment is a busy one', () => {
 
   it('calls a half hour with nobody in it over rather than busy', () => {
     expect(anybodyActive([], AT)).toBe(false);
+  });
+});
+
+describe('how a visitor here reached the site', () => {
+  it('names the site that sent a visitor the half hour saw arrive', () => {
+    expect(cameHereFrom(visitor({ context: FROM_GOOGLE }))).toStrictEqual({
+      arrived: 'from-site',
+      site: 'Google',
+    });
+  });
+
+  /**
+   * The site that sent somebody is said whenever one did, even where the moment they arrived lies
+   * before the half hour: the sender was named on a page the half hour holds.
+   */
+  it('names the site that sent a visitor even where the half hour did not see them arrive', () => {
+    expect(cameHereFrom(visitor({ context: FROM_GOOGLE, seenArriving: false }))).toStrictEqual({
+      arrived: 'from-site',
+      site: 'Google',
+    });
+  });
+
+  it('says a visitor the half hour saw arrive from nowhere came straight here', () => {
+    expect(cameHereFrom(visitor())).toStrictEqual({ arrived: 'directly' });
+  });
+
+  /**
+   * Somebody already reading when the half hour began carries no sender either. Saying they came
+   * straight here would be a guess written as a fact, so their arrival is unseen, and the row says
+   * what the half hour knows: that they arrived earlier.
+   */
+  it('says a visitor who was already here when the half hour began was not seen arriving', () => {
+    expect(cameHereFrom(visitor({ seenArriving: false }))).toStrictEqual({ arrived: 'unseen' });
   });
 });
 

@@ -329,6 +329,30 @@ function useWritten(starts: readonly string[], buckets: Buckets): Written {
   );
 }
 
+/**
+ * What the line under a picture adds about the buckets the engine has not finished judging.
+ *
+ * Nothing where every bucket is settled, the newest where only the end of the period is still
+ * filling, and the whole period where not one bucket is settled — which is what a reader is shown
+ * while the engine is stopped or still working through a backlog, and at the start of any period
+ * whose first bucket ended less than an idle timeout ago. Calling that "the newest" would read as
+ * though the rest were final.
+ *
+ * @param stillJudging The first bucket still being judged, or nothing where every one is settled.
+ * @param wording Which picture's words to use.
+ * @returns The sentence's key, or nothing.
+ */
+function judgingNote(
+  stillJudging: number | null,
+  wording: 'people' | 'who',
+): `${'people' | 'who'}.${'judging' | 'judgingAll'}` | null {
+  if (stillJudging === null) {
+    return null;
+  }
+
+  return stillJudging === 0 ? `${wording}.judgingAll` : `${wording}.judging`;
+}
+
 interface ActivityViewProps extends ViewProps {
   readonly activity: Activity;
   /** Whether the figures are the people's, which is what they are then called. */
@@ -354,6 +378,7 @@ function ActivityView({
   const t = useTranslations('dashboard.chart');
   const { granularity, zone } = buckets;
   const { points, stillJudging } = activity;
+  const note = judgingNote(stillJudging, 'people');
 
   // Where the picture's words are found: the people's measures carry the people in their names.
   const wording = peopleOnly ? 'people.activity' : 'activity';
@@ -411,7 +436,7 @@ function ActivityView({
 
       <p className="text-xs text-foreground-subtle">
         {granularity === 'day' ? t(`${wording}.days`, { zone }) : t(`${wording}.hours`, { zone })}
-        {stillJudging === null ? null : <> {t('people.judging')}</>}
+        {note === null ? null : <> {t(note)}</>}
         {earlier ? <> {t('against.lines', { days: comparison.days })}</> : null}
       </p>
 
@@ -460,6 +485,7 @@ function WhoView({
 
   const totals = useMemo(() => totalsIn(series), [series]);
   const stillJudging = useMemo(() => stillJudgingFrom(series), [series]);
+  const note = judgingNote(stillJudging, wording);
   const { labels, titles } = useWritten(series.buckets, buckets);
 
   const names = useMemo(
@@ -514,10 +540,16 @@ function WhoView({
     return <NothingJudged onShowActivity={onShowActivity} />;
   }
 
-  // An answer rather than a matter of waiting. No way out is offered here, because the control
-  // that kept the screen to people sits above the card and is the way out of it.
+  // An answer rather than a matter of waiting — except over buckets still being judged, which may
+  // yet hold people, and where it says so. No way out is offered here, because the control that
+  // kept the screen to people sits above the card and is the way out of it.
   if (bands.length === 0) {
-    return <NothingDrawn icon={UserRound} body={t('people.none')} />;
+    return (
+      <NothingDrawn
+        icon={UserRound}
+        body={note === null ? t('people.none') : `${t('people.none')} ${t(note)}`}
+      />
+    );
   }
 
   return (
@@ -533,7 +565,7 @@ function WhoView({
 
       <p className="text-xs text-foreground-subtle">
         {granularity === 'day' ? t(`${wording}.days`, { zone }) : t(`${wording}.hours`, { zone })}
-        {stillJudging === null ? null : <> {t(`${wording}.judging`)}</>}
+        {note === null ? null : <> {t(note)}</>}
         {earlier ? <> {t('who.against', { days: comparison.days })}</> : null}
       </p>
 

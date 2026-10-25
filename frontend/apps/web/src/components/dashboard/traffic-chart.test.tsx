@@ -432,6 +432,22 @@ describe('the buckets that have not finished being judged', () => {
     ).toBeInTheDocument();
   });
 
+  /**
+   * While the engine is stopped, or still working through a backlog, not one bucket may have
+   * settled. Calling that "the newest" would read as though the rest were final.
+   */
+  it('says the whole period is still being judged where not one bucket has settled', () => {
+    show({ view: 'who', series: { ...JUDGED, completeTo: JUDGED.from } });
+
+    expect(screen.getAllByText('still being judged')).toHaveLength(3);
+    expect(
+      screen.getByText(
+        'Visits that have finished, by day in Kolkata. This whole period is still being judged.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/The newest are still being judged/)).not.toBeInTheDocument();
+  });
+
   it('says nothing at all once the whole period has settled', () => {
     const option = show({ view: 'who' });
 
@@ -691,6 +707,17 @@ describe('the picture kept to the people a website is for', () => {
     expect(screen.queryByText(/The newest are still being judged/)).not.toBeInTheDocument();
   });
 
+  it('says the whole period is still being judged where not one of its figures has settled', () => {
+    show({ view: 'activity', peopleOnly: true, stillJudging: 0 });
+
+    expect(
+      screen.getByText(
+        'Days run midnight to midnight in Kolkata. This whole period is still being judged.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('still being judged')).toHaveLength(3);
+  });
+
   it("names the earlier period's measures for the people too", () => {
     const activity = show({ view: 'activity', peopleOnly: true, against: true });
     const dashed = activity.series.filter((one) => one.lineStyle?.type === 'dashed');
@@ -730,6 +757,24 @@ describe('the picture kept to the people a website is for', () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Show everyone' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * Over buckets still being judged the people may yet come, so the answer says so rather than
+   * reading as final.
+   */
+  it('says the people may yet come where the period is still being judged', () => {
+    show({
+      view: 'who',
+      peopleOnly: true,
+      series: { ...NOBODY, completeTo: '2026-08-12T18:30:00+00:00' },
+    });
+
+    expect(
+      screen.getByText(
+        'No visits in this period were judged to be people. The newest are still being judged.',
+      ),
+    ).toBeInTheDocument();
   });
 
   /**

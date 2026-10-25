@@ -7,6 +7,11 @@
   index; collects nothing new and widens no retention envelope. The metering statement and the
   fragment it shares with the headline are untouched, so nothing in `ee/` moves. Nothing in
   `integrations/` changes, because nothing about what is captured changes.
+- **Revised by**: [0054](0054-a-visit-still-in-progress-holds-back-only-itself.md). A series of
+  people is complete to the earlier of an idle timeout behind the present and how far judging has
+  actually got, so the buckets an engine stopped or catching up has not reached are washed too, and
+  an overview kept to people that has counted none says "No people yet" while any of it is unsettled.
+  The journeys screen is not told yet.
 - **Revises**: [0040](0040-what-a-screen-remembers.md), whose decisions that "the cards above the
   chart are untouched" and that "the people-only figures … will not add up to the page views and
   visitors in the cards above" are given up: every figure on the overview, and the list of

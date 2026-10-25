@@ -177,11 +177,16 @@
         "action": "Show everyone",
         "unjudged": {
           "title": "Nothing judged yet",
-          "body": "A visit is judged once it has finished, so the first people appear about half an hour after their visit ends."
+          "body": "People appear here once their visits have finished and been judged.",
+          "bodyAll": "This whole period is still being judged."
         },
         "nobody": {
           "title": "No people in this period",
           "body": "Nothing that visited in this period was judged to be a person."
+        },
+        "nobodyYet": {
+          "title": "No people yet",
+          "body": "So far none of this period's visits has been judged to be a person, and the rest are still being judged."
         }
       }
     },
@@ -257,6 +262,7 @@
         "days": "Visits that have finished, by day in {zone}.",
         "hours": "Visits that have finished, by the clock in {zone}.",
         "judging": "The newest are still being judged.",
+        "judgingAll": "This whole period is still being judged.",
         "stillJudging": "still being judged",
         "total": "All visits",
         "none": "No visits have been judged in this period yet.",
@@ -274,6 +280,7 @@
         "days": "Finished visits judged to be people, by day in {zone}.",
         "hours": "Finished visits judged to be people, by the clock in {zone}.",
         "judging": "The newest are still being judged.",
+        "judgingAll": "This whole period is still being judged.",
         "none": "No visits in this period were judged to be people.",
         "activity": {
           "pageViews": "Page views by people",

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Dewiride.Analytics.Api.Contracts;
+using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
@@ -804,8 +805,8 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
 
     /// <summary>
     /// A series of people is complete only to where the judging has reached, which is an idle
-    /// timeout behind the present; a series of everybody is complete to its own end, because
-    /// every report counts as it arrives.
+    /// timeout behind the present once the engine has caught up; a series of everybody is complete
+    /// to its own end, because every report counts as it arrives.
     /// </summary>
     [Fact]
     public async Task A_Series_Of_People_Says_How_Far_The_Judging_Has_Reached()
@@ -813,6 +814,7 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
         var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
         var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
         var now = stack.Services.GetRequiredService<TimeProvider>().GetUtcNow();
+        await JudgeAsync(site);
 
         using (browser)
         {
@@ -824,6 +826,40 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
             everybody.Should().NotBeNull();
             everybody.CompleteTo.Should().Be(everybody.To);
         }
+    }
+
+    /// <summary>
+    /// Until judging has started on a site none of its people have been told apart from anything
+    /// else, so a series of them is complete to nothing; a series of everybody still counts every
+    /// report.
+    /// </summary>
+    [Fact]
+    public async Task A_Series_Of_People_On_A_Site_Judging_Has_Not_Started_On_Is_Complete_To_Nothing()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var people = await SeriesAsync(browser, site.Id, "&only=people");
+            var everybody = await SeriesAsync(browser, site.Id, string.Empty);
+
+            people.Should().NotBeNull();
+            people.CompleteTo.Should().Be(people.From);
+            everybody.Should().NotBeNull();
+            everybody.CompleteTo.Should().Be(everybody.To);
+        }
+    }
+
+    /// <summary>Runs the engine over a site, as the background work would.</summary>
+    /// <param name="site">The site.</param>
+    /// <returns>A task that completes once the run has.</returns>
+    private async Task JudgeAsync(Site site)
+    {
+        await using var scope = stack.Services.CreateAsyncScope();
+
+        await scope.ServiceProvider.GetRequiredService<SessionClassifier>()
+            .CatchUpAsync(site.Id, site.CreatedAt, Cancellation.Token);
     }
 
     /// <summary>

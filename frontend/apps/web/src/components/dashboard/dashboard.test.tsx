@@ -103,6 +103,18 @@ const JUDGED = {
   ],
 };
 
+/** The same week judged, with its newest day still being judged. */
+const STILL_JUDGING = { ...JUDGED, completeTo: BUCKETS[6] ?? TO };
+
+/** A week none of whose visits has been judged yet, with its newest day still being judged. */
+const STILL_COMING = { ...NOTHING_JUDGED, buckets: BUCKETS, completeTo: BUCKETS[6] ?? TO };
+
+/** The same week before judging has reached any of it, which is where an engine stopped leaves it. */
+const NOT_YET_REACHED = { ...NOTHING_JUDGED, buckets: BUCKETS, completeTo: FROM };
+
+/** A week judged to the end in which nothing at all was judged, its traffic all begun before it. */
+const SETTLED_EMPTY = { ...NOTHING_JUDGED, buckets: BUCKETS, completeTo: TO };
+
 /** How recently a window has to end to be the period on screen rather than the one before it. */
 const RECENTLY = 86_400_000;
 
@@ -186,8 +198,13 @@ function engineWith(
   judged: JudgedWeek = NOTHING_JUDGED,
   earlier: unknown = overview,
   people: unknown = overview,
+  refused: readonly string[] = [],
 ) {
   return engineDoing(async (path) => {
+    if (refused.some((address) => path.includes(address))) {
+      return respondWith(500, { status: 500, title: 'The engine is having trouble.' });
+    }
+
     if (path.includes('/server-keys')) {
       return respondWith(200, []);
     }
@@ -829,10 +846,85 @@ describe('the whole screen kept to people', () => {
    * verdicts are still coming has not been found to have no readers.
    */
   it('says nothing has been judged rather than that nobody was a person', async () => {
+    engineWith([SITE], totals(464, 132, 900), STILL_COMING, totals(464, 132, 900), totals(0, 0, 0));
+
+    renderScreen(<Dashboard />, { searchParams: '?only=people' });
+
+    expect(await screen.findByText('Nothing judged yet')).toBeInTheDocument();
+    expect(
+      screen.getByText('People appear here once their visits have finished and been judged.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Look at each visit/ })).not.toBeInTheDocument();
+  });
+
+  /**
+   * A period judged to the end has its answer, even where nothing in it was judged: its traffic
+   * may all belong to visits that began before it.
+   */
+  it('says a period judged to the end that judged nothing has no people in it', async () => {
     engineWith(
       [SITE],
       totals(464, 132, 900),
-      NOTHING_JUDGED,
+      SETTLED_EMPTY,
+      totals(464, 132, 900),
+      totals(0, 0, 0),
+    );
+
+    renderScreen(<Dashboard />, { searchParams: '?only=people' });
+
+    expect(await screen.findByText('No people in this period')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing judged yet')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Without the picture there is no telling whether the period has settled, so the screen says
+   * what went wrong rather than reaching an answer it could not check.
+   */
+  it('says what went wrong rather than an answer when the picture could not be read', async () => {
+    engineWith([SITE], totals(464, 132, 900), JUDGED, totals(464, 132, 900), totals(0, 0, 0), [
+      '/traffic/series',
+    ]);
+
+    renderScreen(<Dashboard />, { searchParams: '?only=people' });
+
+    expect(await screen.findByText('Something went wrong')).toBeInTheDocument();
+    expect(screen.queryByText('No people in this period')).not.toBeInTheDocument();
+    expect(screen.queryByText('No people yet')).not.toBeInTheDocument();
+  });
+
+  /**
+   * A period judging has not finished is never reported as one with no people in it: the people
+   * may be among the visits still to be judged.
+   */
+  it('says there are no people yet while the period is still being judged', async () => {
+    engineWith(
+      [SITE],
+      totals(464, 132, 900),
+      STILL_JUDGING,
+      totals(464, 132, 900),
+      totals(0, 0, 0),
+    );
+
+    renderScreen(<Dashboard />, { searchParams: '?only=people' });
+
+    expect(await screen.findByText('No people yet')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "So far none of this period's visits has been judged to be a person, and the rest are still being judged.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('No people in this period')).not.toBeInTheDocument();
+  });
+
+  /**
+   * While the engine is stopped or still working through a backlog, judging may not have reached
+   * the period at all, and the first people are not half an hour away.
+   */
+  it('says the whole period is still being judged when judging has reached none of it', async () => {
+    engineWith(
+      [SITE],
+      totals(464, 132, 900),
+      NOT_YET_REACHED,
       totals(464, 132, 900),
       totals(0, 0, 0),
     );
@@ -840,8 +932,8 @@ describe('the whole screen kept to people', () => {
     renderScreen(<Dashboard />, { searchParams: '?only=people' });
 
     expect(await screen.findByText('Nothing judged yet')).toBeInTheDocument();
-    expect(screen.getByText(/the first people appear/)).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Look at each visit/ })).not.toBeInTheDocument();
+    expect(screen.getByText('This whole period is still being judged.')).toBeInTheDocument();
+    expect(screen.queryByText(/once their visits have finished/)).not.toBeInTheDocument();
   });
 
   it('offers everyone back from that state', async () => {

@@ -28,10 +28,11 @@ namespace Dewiride.Analytics.Infrastructure.Crawlers;
 /// </para>
 /// <para>
 /// A settled address is also handed to the address directory, so the next report from that machine
-/// is recognised as it arrives rather than after its visit ends. That is what makes an identity
-/// found this way last: the collector stamps it onto the stored activity, where it outlives the
-/// address it was worked out from and is still there when the visit is judged again under a later
-/// ruleset.
+/// is recognised as it arrives rather than after its visit ends — until the published lists are
+/// next reloaded, which is as long as the directory keeps an address nobody published. What makes
+/// the answer last for the visit it was settled for is the engine keeping it beside that visit,
+/// where it outlives the address it was worked out from and is still there when the visit is
+/// judged again under a later ruleset.
 /// </para>
 /// </remarks>
 /// <param name="resolver">Asks the machine's own name server.</param>

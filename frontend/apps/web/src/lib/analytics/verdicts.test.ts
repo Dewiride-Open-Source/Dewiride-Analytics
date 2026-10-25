@@ -90,6 +90,22 @@ describe('choosing an observation a sentence', () => {
   it('uses the observation itself for everything that reads the same however it happened', () => {
     expect(reasonKey(reason('engagement.pointer_used'))).toBe('engagement.pointer_used');
   });
+
+  it('picks the sentence written for the kind of site that sent the visit', () => {
+    const sent = (kind: string) =>
+      reasonKey(reason('arrival.from_another_site', { kind }, 20, 'toward-human'));
+
+    expect(sent('search')).toBe('arrival.from_another_site.search');
+    expect(sent('assistant')).toBe('arrival.from_another_site.assistant');
+    expect(sent('social')).toBe('arrival.from_another_site.social');
+    expect(sent('link')).toBe('arrival.from_another_site.link');
+  });
+
+  it('reads a kind of sender a later release adds as an ordinary link until it has words', () => {
+    expect(
+      reasonKey(reason('arrival.from_another_site', { kind: 'newsletter' }, 20, 'toward-human')),
+    ).toBe('arrival.from_another_site.link');
+  });
 });
 
 describe('the values a sentence counts with', () => {

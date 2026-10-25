@@ -1,5 +1,6 @@
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Sessions;
+using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
@@ -274,7 +275,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
             Page(site.Id, "reader", at, "/posts/hello", Chrome),
             Read(site.Id, "reader", at.AddHours(4), Chrome, "/posts/hello"));
 
-        var found = await ReadSessionsAsync(site.Id);
+        var found = await ReadSessionsAsync(site);
 
         found.Should().ContainSingle();
         found[0].Evidence.PageCount.Should().Be(1);
@@ -297,7 +298,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
             Page(site.Id, "reader", at, "/posts/hello", Chrome),
             Read(site.Id, "reader", at.AddHours(4), Chrome, "/posts/hello"));
 
-        var found = await ReadSessionsAsync(site.Id, at.AddMinutes(-1), at.AddHours(2));
+        var found = await ReadSessionsAsync(site, at.AddMinutes(-1), at.AddHours(2));
 
         found.Should().ContainSingle();
         found[0].IsClosed.Should().BeTrue();
@@ -318,7 +319,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
 
         await WriteAsync(Page(site.Id, "reader", at, "/posts/hello", Chrome));
 
-        var found = await ReadSessionsAsync(site.Id, at.AddMinutes(-1), Now);
+        var found = await ReadSessionsAsync(site, at.AddMinutes(-1), Now);
 
         found.Should().ContainSingle();
         found[0].IsClosed.Should().BeFalse();
@@ -339,7 +340,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
             Page(site.Id, "reader", at, "/posts/hello", Chrome),
             Read(site.Id, "reader", at.AddHours(4), Chrome, "/pricing"));
 
-        var found = await ReadSessionsAsync(site.Id);
+        var found = await ReadSessionsAsync(site);
 
         found.Should().ContainSingle();
         found[0].Evidence.PageCount.Should().Be(1);
@@ -363,7 +364,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
             Read(site.Id, "reader", at.AddSeconds(45), Chrome, "/posts/hello") with { EngagedMs = 45_000 },
             Read(site.Id, "reader", at.AddSeconds(90), Chrome, "/posts/hello") with { EngagedMs = 90_000 });
 
-        var found = await ReadSessionsAsync(site.Id);
+        var found = await ReadSessionsAsync(site);
 
         found.Should().ContainSingle();
         found[0].Evidence.PageCount.Should().Be(1);
@@ -387,7 +388,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
             Page(site.Id, "reader", at.AddMinutes(2), "/posts/hello", Chrome),
             Read(site.Id, "reader", at.AddMinutes(2).AddSeconds(30), Chrome, "/posts/hello") with { EngagedMs = 30_000 });
 
-        var found = await ReadSessionsAsync(site.Id);
+        var found = await ReadSessionsAsync(site);
 
         found.Should().ContainSingle();
         found[0].Evidence.PageCount.Should().Be(3);
@@ -545,7 +546,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
 
         await WriteAsync(Page(site.Id, "returning", Yesterday, "/", Chrome));
 
-        var visit = (await ReadSessionsAsync(site.Id)).Single();
+        var visit = (await ReadSessionsAsync(site)).Single();
         var verdict = TrafficClassifier.Current().Classify(visit.Evidence);
         var store = stack.Services.GetRequiredService<IClassificationStore>();
 
@@ -580,7 +581,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
 
         await WriteAsync(Page(site.Id, "returning", Yesterday, "/", Chrome));
 
-        var visit = (await ReadSessionsAsync(site.Id)).Single();
+        var visit = (await ReadSessionsAsync(site)).Single();
         var earlier = new RulesetVersion(RulesetVersion.Current.Major - 1, 0);
         var verdict = TrafficClassifier.Current().Classify(visit.Evidence) with { RulesetVersion = earlier };
 
@@ -613,8 +614,8 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
             Read(site.Id, "straddling", at.AddMinutes(6), Chrome),
             Read(site.Id, "straddling", at.AddMinutes(12), Chrome));
 
-        var whole = await ReadSessionsAsync(site.Id, at.AddMinutes(-1));
-        var remainder = await ReadSessionsAsync(site.Id, at.AddMinutes(3));
+        var whole = await ReadSessionsAsync(site, at.AddMinutes(-1));
+        var remainder = await ReadSessionsAsync(site, at.AddMinutes(3));
 
         whole.Should().ContainSingle()
             .Which.Evidence.StartedAt.Should().BeCloseTo(at, TimeSpan.FromSeconds(1));
@@ -813,7 +814,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
 
         await WriteAsync(Probe(site.Id, "unwatched", at, "/posts/hello") with { StatusCode = 200 });
 
-        var found = await ReadSessionsAsync(site.Id);
+        var found = await ReadSessionsAsync(site);
 
         found.Should().ContainSingle();
         found[0].Evidence.HadPointerInteraction.Should().BeNull();
@@ -831,7 +832,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
             Page(site.Id, "measured", at, "/", Chrome),
             Read(site.Id, "measured", at.AddMinutes(1), Chrome));
 
-        var found = await ReadSessionsAsync(site.Id);
+        var found = await ReadSessionsAsync(site);
 
         found.Should().ContainSingle();
         found[0].Evidence.EngagedMs.Should().Be(30_000);
@@ -1092,6 +1093,111 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         visits[0].Address.Should().BeNull();
     }
 
+    /// <summary>
+    /// Somebody a search sent to the site, reading on a desktop rented in Microsoft's cloud: a
+    /// person, end to end, with the network kept as the reason pointing the other way.
+    /// </summary>
+    [Fact]
+    public async Task Somebody_A_Search_Sent_To_A_Cloud_Desktop_Who_Then_Read_Is_A_Person()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            OnMicrosoftsNetwork(SentFrom(Page(site.Id, "cloud", at, "/", Chrome), Bing)),
+            OnMicrosoftsNetwork(Page(site.Id, "cloud", at.AddMinutes(2), "/posts/hello", Chrome)),
+            OnMicrosoftsNetwork(Read(site.Id, "cloud", at.AddMinutes(4), Chrome)));
+
+        await JudgeAsync(site);
+
+        var visit = (await VisitsAsync(site)).Should().ContainSingle().Subject;
+
+        visit.Verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        visit.Verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        visit.Verdict.Contradicting.Should().Contain(signal => signal.Code == SignalCodes.HostingNetwork);
+        visit.Verdict.Supporting.Single(signal => signal.Code == SignalCodes.ArrivedFromAnotherSite)
+            .Parameters["kind"].Should().Be("search");
+    }
+
+    /// <summary>
+    /// The shape measured on Microsoft's network: straight to one page, a while on it, the pointer
+    /// pressed and no key. Still not a person.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_That_Came_Straight_To_A_Cloud_Network_And_Only_Pressed_The_Pointer_Is_Not_A_Person()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            OnMicrosoftsNetwork(Page(site.Id, "hands-off", at, "/", Chrome)),
+            OnMicrosoftsNetwork(Read(site.Id, "hands-off", at.AddSeconds(26), Chrome) with
+            {
+                EngagedMs = 26_000,
+                ScrollDepthPercent = 11,
+            }));
+
+        await JudgeAsync(site);
+
+        (await VisitsAsync(site)).Should().ContainSingle()
+            .Which.Verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+    }
+
+    /// <summary>
+    /// What kind of site sent a visit reaches the engine through the reconstruction, from the
+    /// visit's first report naming somebody else — and only the kind, never the address.
+    /// </summary>
+    [Fact]
+    public async Task Which_Kind_Of_Site_Sent_A_Visit_Survives_The_Round_Trip()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            SentFrom(Page(site.Id, "searcher", at, "/", Chrome), Bing),
+            SentFrom(Page(site.Id, "linked", at.AddMinutes(5), "/", Chrome), "https://news.example.org/story/42"),
+            Page(site.Id, "straight", at.AddMinutes(10), "/", Chrome));
+
+        var sent = (await ReadSessionsAsync(site)).ToDictionary(
+            visit => visit.Evidence.SessionKey.Split(':')[0],
+            visit => visit.Evidence.SentBy,
+            StringComparer.Ordinal);
+
+        sent["searcher"].Should().Be(SourceChannel.Search);
+        sent["linked"].Should().Be(SourceChannel.Link);
+        sent["straight"].Should().Be(SourceChannel.Direct);
+    }
+
+    /// <summary>
+    /// A reader moving from one of the site's pages to the next, or onto one of its own
+    /// subdomains, names the site itself as where they came from. That is no arrival.
+    /// </summary>
+    [Fact]
+    public async Task The_Sites_Own_Pages_Never_Send_It_A_Visit()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            SentFrom(Page(site.Id, "inside", at, "/posts/hello", Chrome), $"https://{site.Domain}/"),
+            SentFrom(Page(site.Id, "docs", at.AddMinutes(5), "/", Chrome), $"https://docs.{site.Domain}/guide"));
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().HaveCount(2).And.OnlyContain(visit => visit.Evidence.SentBy == SourceChannel.Direct);
+    }
+
+    /// <summary>A search engine's results page, as a browser names it.</summary>
+    private const string Bing = "https://www.bing.com/search?q=traffic+authenticity";
+
+    /// <summary>The same activity, with the page it was reached from named.</summary>
+    private static RawEvent SentFrom(RawEvent observed, string referrer) =>
+        observed with { Referrer = referrer, ReferrerDomain = new Uri(referrer).Host };
+
+    /// <summary>The same activity, over Microsoft's network.</summary>
+    private static RawEvent OnMicrosoftsNetwork(RawEvent observed) =>
+        observed with { AutonomousSystem = 8075, NetworkOwner = "MICROSOFT-CORP-MSN-AS-BLOCK" };
+
     /// <summary>Rebuilds the visits the engine would be handed, without judging them.</summary>
     private async Task<IReadOnlyList<ObservedSession>> ReconstructAsync(Site site) =>
         await stack.Services.GetRequiredService<ISessionSource>()
@@ -1099,6 +1205,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
                 new SessionWindow
                 {
                     SiteId = site.Id,
+                    SiteDomain = site.Domain,
                     From = Now.AddDays(-2),
                     To = Now.AddMinutes(-31),
                     SettledBefore = Now.AddMinutes(-30),
@@ -1122,7 +1229,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         await using var scope = stack.Services.CreateAsyncScope();
 
         return await scope.ServiceProvider.GetRequiredService<SessionClassifier>()
-            .CatchUpAsync(site.Id, site.CreatedAt.AddDays(-2), Cancellation.Token)
+            .CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt.AddDays(-2)), Cancellation.Token)
             .ConfigureAwait(false);
     }
 
@@ -1143,21 +1250,22 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         await database.SaveChangesAsync(Cancellation.Token).ConfigureAwait(false);
     }
 
-    private Task<IReadOnlyList<ObservedSession>> ReadSessionsAsync(Guid siteId) =>
-        ReadSessionsAsync(siteId, Now.AddDays(-2));
+    private Task<IReadOnlyList<ObservedSession>> ReadSessionsAsync(Site site) =>
+        ReadSessionsAsync(site, Now.AddDays(-2));
 
-    private Task<IReadOnlyList<ObservedSession>> ReadSessionsAsync(Guid siteId, DateTimeOffset from) =>
-        ReadSessionsAsync(siteId, from, Now.AddMinutes(-30));
+    private Task<IReadOnlyList<ObservedSession>> ReadSessionsAsync(Site site, DateTimeOffset from) =>
+        ReadSessionsAsync(site, from, Now.AddMinutes(-30));
 
     private async Task<IReadOnlyList<ObservedSession>> ReadSessionsAsync(
-        Guid siteId,
+        Site site,
         DateTimeOffset from,
         DateTimeOffset to) =>
         await stack.Services.GetRequiredService<ISessionSource>()
             .ReadAsync(
                 new SessionWindow
                 {
-                    SiteId = siteId,
+                    SiteId = site.Id,
+                    SiteDomain = site.Domain,
                     From = from,
                     To = to,
                     SettledBefore = Now.AddMinutes(-30),

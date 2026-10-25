@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Application.Sessions;
+using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
@@ -859,7 +860,7 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
         await using var scope = stack.Services.CreateAsyncScope();
 
         await scope.ServiceProvider.GetRequiredService<SessionClassifier>()
-            .CatchUpAsync(site.Id, site.CreatedAt, Cancellation.Token);
+            .CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt), Cancellation.Token);
     }
 
     /// <summary>

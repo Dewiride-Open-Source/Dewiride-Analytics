@@ -9,6 +9,9 @@
   this that works from published lists and recorded this half as unbuilt.
 - **Revised by**: [0037](0037-a-person-is-not-concluded-from-one-thing.md), which stops asking about
   a visit the product could not rule out as somebody reading, not only one it concluded was.
+- **Revised by**: [0055](0055-an-answer-outlives-the-address-it-came-from.md), which keeps the answer
+  beside the visit it was established for. The hand-back stamps only the reports that arrive while the
+  collector still holds the address, and never the visit that prompted the question.
 
 ## Context
 

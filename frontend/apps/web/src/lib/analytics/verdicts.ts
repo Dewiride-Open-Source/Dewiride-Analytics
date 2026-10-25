@@ -168,6 +168,23 @@ const TOOL_KINDS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * The observation that another site sent the visit, written once for each kind of site.
+ *
+ * "A link from a search engine" and "a link from an assistant" are different sentences in any
+ * language, so the kind picks the sentence rather than being a word dropped into one. A kind a
+ * later release adds reads as an ordinary link until it has a sentence of its own, which is what
+ * every sending site is at the least.
+ */
+const ARRIVED = 'arrival.from_another_site';
+
+const SENDER_KINDS: Readonly<Record<string, string>> = {
+  search: 'search',
+  assistant: 'assistant',
+  social: 'social',
+  link: 'link',
+};
+
+/**
  * The values that are numbers.
  *
  * They arrive as text so that a verdict reads the same wherever it was reached, and a sentence
@@ -195,6 +212,10 @@ export function reasonKey(reason: VisitReason): string {
 
   if (reason.code === DECLARED_TOOL) {
     return `${DECLARED_TOOL}.${TOOL_KINDS[reason.values.kind ?? ''] ?? 'other'}`;
+  }
+
+  if (reason.code === ARRIVED) {
+    return `${ARRIVED}.${SENDER_KINDS[reason.values.kind ?? ''] ?? 'link'}`;
   }
 
   if (reason.code === READ_TIME) {

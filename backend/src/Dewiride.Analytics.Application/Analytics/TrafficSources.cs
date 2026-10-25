@@ -1,48 +1,8 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
+using Dewiride.Analytics.Domain.Telemetry;
 
 namespace Dewiride.Analytics.Application.Analytics;
-
-/// <summary>
-/// What kind of thing sent a visitor.
-/// </summary>
-/// <remarks>
-/// A closed set, and every member is an answer rather than a gap. The words are stored nowhere:
-/// they are compiled into a statement, compared against a column, and read back — so this is a
-/// vocabulary rather than a schema, and correcting it re-answers every period a site has ever
-/// recorded instead of only the ones recorded after the correction.
-/// </remarks>
-public enum SourceChannel
-{
-    /// <summary>
-    /// The visitor's browser named nowhere at all.
-    /// </summary>
-    /// <remarks>
-    /// Typing the address, opening a bookmark, following a link from an application, and arriving
-    /// from a site that withholds the address are indistinguishable, and this covers all of them.
-    /// It is not "nobody sent them": it is "nothing said who did".
-    /// </remarks>
-    Direct = 1,
-
-    /// <summary>A search engine.</summary>
-    Search = 2,
-
-    /// <summary>
-    /// A conversational assistant.
-    /// </summary>
-    /// <remarks>
-    /// Kept apart from search rather than folded into it. Somebody who arrives having been told
-    /// about a page did not read a list of results and choose it, and a product whose subject is
-    /// telling machinery and people apart should not be the one to blur that.
-    /// </remarks>
-    Assistant = 3,
-
-    /// <summary>A social network.</summary>
-    Social = 4,
-
-    /// <summary>An ordinary link on some other website.</summary>
-    Link = 5,
-}
 
 /// <summary>
 /// One entry in the catalogue of things that send traffic.
@@ -89,6 +49,12 @@ public readonly record struct TrafficSource(string Key, string Name, SourceChann
 /// website, which is what it is. The catalogue holds what is worth naming and grouping, not
 /// everything that exists — there is no list of every website, and a product that pretended
 /// otherwise would be inventing precision.
+/// </para>
+/// <para>
+/// <b>The engine reads the kind as well as the screens.</b> Which kind of site sent a visit is
+/// part of the evidence a verdict is reached from, and the verdict keeps it among its reasons, so
+/// moving an entry from one kind to another moves verdicts too — and ships with new rules rather
+/// than on its own.
 /// </para>
 /// </remarks>
 public static class TrafficSources

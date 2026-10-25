@@ -24,6 +24,16 @@ public sealed class SessionEvidenceTests
     }
 
     /// <summary>
+    /// Left unsaid, nothing named a sender — which is not the same as nobody having sent the visit,
+    /// and is never read as evidence of anything.
+    /// </summary>
+    [Fact]
+    public void Left_Unsaid_Nothing_Named_A_Sender()
+    {
+        Visit().SentBy.Should().Be(SourceChannel.Direct);
+    }
+
+    /// <summary>
     /// A hand-written fixture says what it means by listing the pages, and should not have to
     /// repeat itself.
     /// </summary>

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Classification;
 using Microsoft.Extensions.Logging;
@@ -26,9 +27,10 @@ namespace Dewiride.Analytics.Application.Sessions;
 /// and everything that began while it was open is judged as it finishes rather than after it.
 /// </para>
 /// <para>
-/// A run is safe to interrupt, safe to repeat, and safe to have two of. Verdicts are stored under
-/// the visit's own derived identity, so writing one twice leaves one row; the bookmark only moves
-/// forward; and both instances reach the same conclusions because the engine is pure.
+/// A run is safe to interrupt, safe to repeat, and safe to have two of. Verdicts and the answers
+/// they rest on are stored under the visit's own derived identity, so writing either twice leaves
+/// one row; the bookmark only moves forward; and both instances reach the same conclusions because
+/// the engine is pure.
 /// </para>
 /// <para>
 /// The one question that cannot be answered from stored activity alone is asked here rather than
@@ -40,6 +42,14 @@ namespace Dewiride.Analytics.Application.Sessions;
 /// addresses are worth asking after, and its cost is that the engine is pure enough to run twice.
 /// </para>
 /// <para>
+/// An answer settled that way is kept beside its visit, and kept before the verdict resting on it,
+/// so no verdict is ever stored that a later reading could not reach again. The address is
+/// cleared three days after it was collected and history is judged again whenever the rules
+/// improve; the reconstruction hands back the kept answer wherever the activity says nothing, so a
+/// visit judged again next year is still the company's crawler rather than a claim, and an address
+/// that is still kept is not sent to a name server a second time.
+/// </para>
+/// <para>
 /// A visit that came out looking like somebody reading is not asked about at all. Its address
 /// belongs to a person, and sending it to a name server to satisfy a curiosity is not a thing this
 /// product does. The price is that a crawler which produced enough engagement to be taken for a
@@ -48,6 +58,7 @@ namespace Dewiride.Analytics.Application.Sessions;
 /// </remarks>
 /// <param name="sessions">Reconstructs visits from stored activity.</param>
 /// <param name="verdicts">Keeps what was concluded.</param>
+/// <param name="confirmations">Keeps whose crawler a visit was, where that was settled by name.</param>
 /// <param name="progress">Remembers where to resume.</param>
 /// <param name="engine">The detection engine.</param>
 /// <param name="names">Settles whose crawlers an address belongs to from the name it answers to.</param>
@@ -57,6 +68,7 @@ namespace Dewiride.Analytics.Application.Sessions;
 public sealed partial class SessionClassifier(
     ISessionSource sessions,
     IClassificationStore verdicts,
+    INameConfirmationStore confirmations,
     IClassificationProgressStore progress,
     TrafficClassifier engine,
     ICrawlerNameLookup names,
@@ -72,15 +84,15 @@ public sealed partial class SessionClassifier(
     /// Judges everything on one site that had finished when the run began and has not been judged
     /// yet.
     /// </summary>
-    /// <param name="siteId">The site to work through.</param>
-    /// <param name="siteAddedAt">When the site was added, which is where judging starts from.</param>
+    /// <param name="site">
+    /// The site to work through: its address, which tells its own pages from another site sending
+    /// a visit, and when it was added, which is where judging starts from.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>What the run got through.</returns>
-    public async Task<ClassificationOutcome> CatchUpAsync(
-        Guid siteId,
-        DateTimeOffset siteAddedAt,
-        CancellationToken cancellationToken)
+    public async Task<ClassificationOutcome> CatchUpAsync(SiteRegistration site, CancellationToken cancellationToken)
     {
+        var siteId = site.Id;
         var settings = options.Value;
         var ruleset = engine.RulesetVersion;
 
@@ -93,7 +105,7 @@ public sealed partial class SessionClassifier(
         var horizon = clock.GetUtcNow() - settings.IdleTimeout;
 
         var bookmark = await progress
-            .ResumeFromAsync(siteId, ruleset, siteAddedAt, cancellationToken)
+            .ResumeFromAsync(siteId, ruleset, site.AddedAt, cancellationToken)
             .ConfigureAwait(false);
 
         var judged = 0;
@@ -117,6 +129,7 @@ public sealed partial class SessionClassifier(
             var window = new SessionWindow
             {
                 SiteId = siteId,
+                SiteDomain = site.Domain,
                 From = bookmark.ClassifiedThrough,
                 To = Earliest(horizon, bookmark.ReadThrough + settings.LongestPass),
                 SettledBefore = horizon,
@@ -158,20 +171,46 @@ public sealed partial class SessionClassifier(
     {
         var found = await sessions.ReadAsync(window, cancellationToken).ConfigureAwait(false);
 
-        var judgements = await JudgeAsync(found, settings, cancellationToken).ConfigureAwait(false);
+        var readings = await JudgeAsync(found, settings, cancellationToken).ConfigureAwait(false);
 
-        if (judgements.Length > 0)
+        await KeepAsync(window.SiteId, readings, began, cancellationToken).ConfigureAwait(false);
+
+        return new PassResult(readings.Length, EarliestUnfinished(found, window.To));
+    }
+
+    /// <summary>
+    /// Stores what a pass concluded: the answers it settled by name, then the verdicts.
+    /// </summary>
+    /// <remarks>
+    /// In that order, so a verdict is never stored whose evidence a later reading could not find
+    /// again. A failure in either write ends the run before the bookmark moves, so the next run
+    /// reads the same visits and reaches the same conclusions.
+    /// </remarks>
+    private async Task KeepAsync(
+        Guid siteId,
+        ImmutableArray<Reading> readings,
+        DateTimeOffset began,
+        CancellationToken cancellationToken)
+    {
+        NameConfirmation[] settled = [.. readings.Select(reading => reading.Settled).OfType<NameConfirmation>()];
+
+        if (settled.Length > 0)
         {
-            await verdicts.SaveAsync(window.SiteId, judgements, began, cancellationToken).ConfigureAwait(false);
+            await confirmations.RecordAsync(siteId, settled, began, cancellationToken).ConfigureAwait(false);
         }
 
-        return new PassResult(judgements.Length, EarliestUnfinished(found, window.To));
+        if (readings.Length > 0)
+        {
+            SessionJudgement[] judgements = [.. readings.Select(reading => reading.Judgement)];
+
+            await verdicts.SaveAsync(siteId, judgements, began, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
     /// Judges every finished visit in a pass, settling what can be settled about who was visiting.
     /// </summary>
-    private async Task<ImmutableArray<SessionJudgement>> JudgeAsync(
+    private async Task<ImmutableArray<Reading>> JudgeAsync(
         ImmutableArray<ObservedSession> found,
         ClassificationOptions settings,
         CancellationToken cancellationToken)
@@ -198,7 +237,7 @@ public sealed partial class SessionClassifier(
             Log.Named(logger, settled.Count, asking.Length);
         }
 
-        return [.. judged.Select(reading => Reconsidered(reading, settled).Judgement)];
+        return [.. judged.Select(reading => Reconsidered(reading, settled))];
     }
 
     /// <summary>
@@ -207,8 +246,8 @@ public sealed partial class SessionClassifier(
     /// <remarks>
     /// Three conditions, and each rules out a different waste. There is no address left on a visit
     /// older than the retention window; there is nothing to settle where the collector settled it
-    /// already; and a visit that may be somebody reading is treated as somebody reading, whose
-    /// address is not ours to ask anybody about.
+    /// already, or an earlier pass did and kept the answer; and a visit that may be somebody reading
+    /// is treated as somebody reading, whose address is not ours to ask anybody about.
     /// </remarks>
     private static bool WorthAsking(Reading reading) =>
         !string.IsNullOrEmpty(reading.Session.Address)
@@ -237,8 +276,10 @@ public sealed partial class SessionClassifier(
     /// Applied to every visit from a settled address rather than only to the ones that prompted the
     /// question. An address that answers to a company's own name belongs to that company whatever
     /// the visit from it looked like, and two visits from one address cannot have been two
-    /// different companies. A visit the collector had already settled keeps that answer, because a
-    /// list a company publishes about all of its machines is the stronger of the two statements.
+    /// different companies. A visit already settled keeps that answer. The collector settled it
+    /// report by report as they arrived — from a list the company publishes, or from an address a
+    /// name check had already settled — and an answer an earlier pass kept beside the visit is the
+    /// one this pass would reach again.
     /// </remarks>
     private Reading Reconsidered(Reading reading, IReadOnlyDictionary<string, string> settled)
     {
@@ -251,7 +292,10 @@ public sealed partial class SessionClassifier(
 
         var evidence = reading.Session.Evidence with { ConfirmedOperator = operatorName };
 
-        return new Reading(reading.Session with { Evidence = evidence }, engine.Classify(evidence));
+        return new Reading(
+            reading.Session with { Evidence = evidence },
+            engine.Classify(evidence),
+            new NameConfirmation(evidence.SessionKey, evidence.StartedAt, operatorName));
     }
 
     private static DateTimeOffset EarliestUnfinished(ImmutableArray<ObservedSession> found, DateTimeOffset otherwise) =>
@@ -275,7 +319,14 @@ public sealed partial class SessionClassifier(
     /// <summary>One finished visit and what the engine made of it.</summary>
     /// <param name="Session">The visit, with the address the identity check needs.</param>
     /// <param name="Verdict">What the engine concluded.</param>
-    private readonly record struct Reading(ObservedSession Session, ClassificationVerdict Verdict)
+    /// <param name="Settled">
+    /// Whose crawler the visit turned out to be, where this pass settled that from the name its
+    /// address answers to; nothing where it did not.
+    /// </param>
+    private readonly record struct Reading(
+        ObservedSession Session,
+        ClassificationVerdict Verdict,
+        NameConfirmation? Settled = null)
     {
         /// <summary>The pair that gets stored, which carries no address.</summary>
         public SessionJudgement Judgement => new(Session.Evidence, Verdict);

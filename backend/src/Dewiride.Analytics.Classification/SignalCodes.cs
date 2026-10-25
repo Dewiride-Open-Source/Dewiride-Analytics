@@ -79,7 +79,12 @@ public static class SignalCodes
     /// <summary>Pages were in front of somebody for a measurable time.</summary>
     public const string ReadTime = "engagement.read_time";
 
-    /// <summary>A page was scrolled through.</summary>
+    /// <summary>A page came into view at least a quarter of the way down.</summary>
+    /// <remarks>
+    /// How far down counts the first screen, so a page no taller than four screens reaches a quarter
+    /// by being shown. It says how much of a page was seen, and on its own it is no sign that
+    /// anybody scrolled.
+    /// </remarks>
     public const string Scrolled = "engagement.scrolled";
 
     /// <summary>The pointer was used at least once. Presence only; never where.</summary>
@@ -124,7 +129,42 @@ public static class SignalCodes
     /// <remarks>
     /// Where a browser is running is the one thing about it that cannot be rewritten by whoever is
     /// driving it, short of renting a household connection — which is why this carries more weight
-    /// than anything the visit says about itself.
+    /// than anything the visit says about itself. Where it is the only thing pointing toward
+    /// automation, what the visit did and whether another site sent it decide the verdict instead —
+    /// see <see cref="ArrivedFromAnotherSite"/>.
     /// </remarks>
     public const string HostingNetwork = "network.hosting";
+
+    /// <summary>
+    /// Another site sent the visit: a search engine, an assistant, a social network or a link.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A faint sign of somebody reading, and weighted as one: too light to count toward any
+    /// conclusion, so on an ordinary network it changes no verdict about a visit anything else was
+    /// observed about. Programs that fetch pages almost never arrive through another site's link,
+    /// while people mostly do, but the referring address is written by the visitor's own browser
+    /// and can be made up.
+    /// </para>
+    /// <para>
+    /// A visit it is the only observation of is answered as one the product could not tell rather
+    /// than as too little to go on. Nothing this build collects produces one — the image a browser
+    /// fetches without scripts carries no referring address, and every other way of reporting a
+    /// visit adds an observation about the browser — so it takes reports whose way in the running
+    /// build does not recognise, as reports a later release stored would be after going back to
+    /// this one.
+    /// </para>
+    /// <para>
+    /// Beside anything else observed, it matters only where a rented network is the one thing
+    /// pointing the other way. A company's staff sent out through a provider's security edge, or
+    /// somebody on a desktop a company rents in a cloud, reach a page the way everybody else does —
+    /// from a search, an answer or a link — and what they then do with it is what tells them apart
+    /// from a program on the same network.
+    /// </para>
+    /// <para>
+    /// Carries the kind of site and never the site itself, because the address it was read from
+    /// is text the visitor's browser wrote.
+    /// </para>
+    /// </remarks>
+    public const string ArrivedFromAnotherSite = "arrival.from_another_site";
 }

@@ -1,5 +1,6 @@
 using ClickHouse.Driver;
 using Dewiride.Analytics.Application.Analytics;
+using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Domain.Telemetry;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
@@ -12,7 +13,7 @@ namespace Dewiride.Analytics.Integration.Tests.Telemetry;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Both site-scoped tables are partitioned by month and sorted by site, so there is no partition
+/// Every site-scoped table is partitioned by month and sorted by site, so there is no partition
 /// belonging to a single site and nothing to drop wholesale. What is left is deleting by
 /// predicate, and a predicate is exactly the sort of thing that can be right about the rows it
 /// removes and wrong about the rows it leaves. A store shared by every site on an installation
@@ -104,8 +105,41 @@ public sealed class TelemetryPurgeTests(AnalyticsStackFixture stack)
         (await ActivityCountAsync(siteId)).Should().Be(0);
     }
 
+    /// <summary>
+    /// Whose crawler a visit was is kept beside the visit, by site. A removed site's answers would
+    /// otherwise outlive everything they describe, with nothing left to name them by.
+    /// </summary>
+    [Fact]
+    public async Task The_Answers_Kept_For_A_Site_Go_With_It_And_Nobody_Elses_Do()
+    {
+        var going = Guid.NewGuid();
+        var staying = Guid.NewGuid();
+        var answer = new NameConfirmation("crawler:1", Yesterday, "Yandex");
+
+        await KeepAsync(going, answer);
+        await KeepAsync(staying, answer);
+
+        await PurgeAsync(going);
+
+        (await KeptCountAsync(going)).Should().Be(0);
+        (await KeptCountAsync(staying)).Should().Be(1);
+    }
+
+    private DateTimeOffset Yesterday =>
+        stack.Services.GetRequiredService<TimeProvider>().GetUtcNow().AddDays(-1);
+
     private Task PurgeAsync(Guid siteId) =>
         stack.Services.GetRequiredService<ITelemetryPurge>().PurgeSiteAsync(siteId, Cancellation.Token);
+
+    private Task KeepAsync(Guid siteId, NameConfirmation answer) =>
+        stack.Services.GetRequiredService<INameConfirmationStore>()
+            .RecordAsync(siteId, [answer], Yesterday, Cancellation.Token);
+
+    private async Task<ulong> KeptCountAsync(Guid siteId) =>
+        await TelemetryStore.ScalarAsync<ulong>(
+            stack.Services.GetRequiredService<IClickHouseClient>(),
+            "SELECT count() FROM name_confirmations WHERE site_id = {site_id:UUID}",
+            TelemetryStore.Bind("site_id", siteId));
 
     private Task WriteAsync(params RawEvent[] events) =>
         stack.Services.GetRequiredService<IEventSink>().WriteBatchAsync(events, Cancellation.Token);

@@ -14,6 +14,12 @@ namespace Dewiride.Analytics.Classification.Scoring;
 /// whichever detector shouted loudest. A scanner that also scrolled a page is a scanner.
 /// </para>
 /// <para>
+/// The fallback opens with a rule of its own, for a visit over a rented network with nothing else
+/// pointing toward automation: there what the visit did, and whether another site sent it, decide
+/// instead of the network alone — and a visit that came straight in with no key pressed is weighed
+/// as any other.
+/// </para>
+/// <para>
 /// One rule sits outside that order rather than at the top of it: an identity settled against what
 /// a company says about its own crawlers' addresses is not weighed at all. It is the only thing
 /// here the visitor did not author, so it decides the category and the strength together, and it
@@ -209,12 +215,19 @@ public static class EvidenceScorecard
     /// A person is concluded only from corroboration: two observations that each count, or one
     /// that is substantial on its own. One thing pointing toward a person against nothing at all
     /// is a lean rather than a conclusion, and is answered as something the product could not
-    /// tell — which is the honest reading of a page opened and left. So a person is never reported
-    /// on slight signs.
+    /// tell — which is the honest reading of a page opened and left whose first screen held less
+    /// than a quarter of it. A page short enough for its first screen to hold a quarter is seen
+    /// that far down by being shown, so opened and left with nothing pointing the other way it is
+    /// two things agreeing, and a person. So a person is never reported on slight signs.
     /// </para>
     /// </remarks>
     private static TrafficCategory Weighed(EvidenceSet evidence)
     {
+        if (WhereOnlyTheNetworkObjects(evidence) is { } answer)
+        {
+            return answer;
+        }
+
         var human = evidence.HeaviestPointing(SignalDirection.TowardHuman);
         var automation = evidence.HeaviestPointing(SignalDirection.TowardAutomation);
 
@@ -242,12 +255,107 @@ public static class EvidenceScorecard
     /// <remarks>
     /// One passing remark is a lean rather than a conclusion. A browser running the tracker is the
     /// commonest thing an automated browser does too, so on its own it decides nothing; the same
-    /// browser with somebody scrolling is two things agreeing, and somebody reading for a while is
-    /// substantial by itself.
+    /// browser with a quarter of a page seen is two things agreeing, and somebody reading for a
+    /// while is substantial by itself.
     /// </remarks>
     private static bool PointsFirmly(EvidenceSet evidence, SignalDirection direction) =>
-        evidence.HeaviestPointing(direction) >= Substantial
-        || evidence.CountPointing(direction, Corroborating) >= 2;
+        evidence.HeaviestPointing(direction) >= Substantial || TwoAgree(evidence, direction);
+
+    /// <summary>Whether two observations that each count point the same way.</summary>
+    private static bool TwoAgree(EvidenceSet evidence, SignalDirection direction) =>
+        evidence.CountPointing(direction, Corroborating) >= 2;
+
+    /// <summary>
+    /// The answer where a rented network is the one thing pointing toward automation, or nothing
+    /// where the ordinary weighing applies.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A rented network outweighs anything a reader does, and rightly: a program running a real
+    /// browser in a datacentre reads, scrolls and clicks too. But the network is not, on its own, a
+    /// program. A company's staff sent out through a provider's security edge, and somebody working
+    /// on a desktop a company rents in a cloud, arrive from the same networks — and reach a page the
+    /// way everybody else does. Where the network is the only objection, what the visit did and how
+    /// it arrived decide instead:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><description>a key was pressed, and one more observation that counts agrees: a person;</description></item>
+    /// <item><description>another site sent it, the pointer was then pressed or its pages read, and
+    /// one more observation that counts agrees: a person;</description></item>
+    /// <item><description>another site sent it and neither happened — under 15 seconds in front of
+    /// somebody in all, however far down a page came into view, or longer with no page seen a
+    /// quarter of the way down: the product cannot tell;</description></item>
+    /// <item><description>it came straight in and no key was pressed: weighed as any other visit,
+    /// which leaves it automation.</description></item>
+    /// </list>
+    /// <para>
+    /// Named automation measured on every network almost never typed and almost never arrived from
+    /// another site, and neither did the fleets measured on these networks, while the visits
+    /// measured on Microsoft's network that a search sent read, saw a quarter of a page, pressed
+    /// and typed as people on household connections do. The network stays among the reasons,
+    /// pointing the other way, so a person concluded here is never stated more firmly than some
+    /// signs. The second observation is ordinarily the browser having run the tracker at all, so
+    /// what this rests on in practice is one key pressed, or an arrival and one press of the
+    /// pointer, or an arrival, 15 seconds in all in front of somebody and one page seen a quarter
+    /// of the way down — and it is described as that rather than as more corroboration than it is.
+    /// </para>
+    /// </remarks>
+    /// <param name="evidence">What the detectors observed.</param>
+    /// <returns>The category, or <see langword="null"/> to weigh the visit as any other.</returns>
+    private static TrafficCategory? WhereOnlyTheNetworkObjects(EvidenceSet evidence)
+    {
+        if (!TheNetworkStandsAlone(evidence))
+        {
+            return null;
+        }
+
+        var sent = evidence.Has(SignalCodes.ArrivedFromAnotherSite);
+
+        if (WasUsed(evidence, sent) && TwoAgree(evidence, SignalDirection.TowardHuman))
+        {
+            return TrafficCategory.LikelyHuman;
+        }
+
+        return sent ? TrafficCategory.Unknown : null;
+    }
+
+    /// <summary>
+    /// Whether a rented network is the only observation that counts pointing toward automation.
+    /// </summary>
+    /// <remarks>
+    /// Anything else that counts — no user agent sent, no language asked for, no script run on a
+    /// page a browser delivered, nothing happening on a page something was watching, pages taken
+    /// faster or wider than a reader goes, repeated requests for pages that were never there, a
+    /// tool naming itself — is a second objection, and the visit is weighed as any other.
+    /// </remarks>
+    private static bool TheNetworkStandsAlone(EvidenceSet evidence) =>
+        evidence.Has(SignalCodes.HostingNetwork)
+        && evidence.CountPointing(SignalDirection.TowardAutomation, Corroborating) == 1;
+
+    /// <summary>
+    /// Whether the page was used the way a person uses one: a key pressed, or — where another site
+    /// sent the visit — the pointer pressed or its pages read.
+    /// </summary>
+    private static bool WasUsed(EvidenceSet evidence, bool sent) =>
+        evidence.Has(SignalCodes.KeyboardUsed)
+        || (sent && (evidence.Has(SignalCodes.PointerUsed) || WasRead(evidence)));
+
+    /// <summary>
+    /// Whether the visit was read rather than glanced at: its pages in front of somebody long enough
+    /// in all for the reading to count by itself, and one of them seen at least a quarter of the way
+    /// down.
+    /// </summary>
+    /// <remarks>
+    /// The depth alone is not enough, because it counts the first screen: a page short enough
+    /// reaches a quarter of the way down by being shown, so a made-up link to such a page, opened
+    /// and left, would read as somebody who scrolled. The time is what a glance does not spend, and
+    /// the depth is what a visit that saw only the first screens of long pages does not reach. Both
+    /// are the visit's rather than one page's — the time summed across its pages, the depth the
+    /// furthest any of them came into view — so a short page glanced at and a long one left on its
+    /// first screen, 15 seconds between them, count as read.
+    /// </remarks>
+    private static bool WasRead(EvidenceSet evidence) =>
+        evidence.Has(SignalCodes.Scrolled) && evidence.WeightOf(SignalCodes.ReadTime) >= Substantial;
 
     /// <summary>
     /// How much weight stands behind the conclusion.
@@ -260,8 +368,8 @@ public static class EvidenceScorecard
     /// </para>
     /// <para>
     /// Three observations agreeing reach the firmest behavioural band whatever the heaviest of them
-    /// weighs: nothing a person does is decisive on its own, and a reader who read, scrolled and
-    /// clicked has done three things that each had to be produced.
+    /// weighs, because nothing a person does is decisive on its own: without it, a reader who read
+    /// for a while, saw a page well down and clicked could never be stated firmly.
     /// </para>
     /// </remarks>
     private static EvidenceStrength Strength(

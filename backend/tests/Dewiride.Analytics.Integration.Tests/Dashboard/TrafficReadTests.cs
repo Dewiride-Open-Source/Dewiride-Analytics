@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Application.Sessions;
+using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Domain.Sites;
@@ -808,7 +809,7 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
 
         await using var scope = stack.Services.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<SessionClassifier>()
-            .CatchUpAsync(site.Id, site.CreatedAt.AddDays(-2), Cancellation.Token);
+            .CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt.AddDays(-2)), Cancellation.Token);
 
         return site;
     }

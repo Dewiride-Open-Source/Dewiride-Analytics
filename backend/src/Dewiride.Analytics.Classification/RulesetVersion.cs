@@ -19,6 +19,38 @@ public readonly record struct RulesetVersion(int Major, int Minor) : IComparable
     /// <summary>The ruleset currently compiled into this build.</summary>
     /// <remarks>
     /// <para>
+    /// Ten, because a rented computer is not, on its own, a program. A visit over a network whose
+    /// business is renting computers was automation whatever it did, because the network outweighed
+    /// anything a reader does. The visits measured on Microsoft's network that a search sent read,
+    /// saw a quarter of a page, pressed and typed as people on household connections do — which is
+    /// what a desktop a company rents in a cloud, or staff sent out through a provider's security
+    /// edge, would look like. Where the network is the only thing pointing toward automation, a
+    /// visit on which a key was pressed, or one another site sent on which the pointer was then
+    /// pressed or its pages read, is now a person with the network shown against it; one another
+    /// site sent where neither happened is something the product could not tell; and one that came
+    /// straight in with no key pressed is weighed exactly as before.
+    /// </para>
+    /// <para>
+    /// Read means the visit's pages in front of somebody long enough in all for the reading to count
+    /// by itself, with at least a quarter of one of them seen. How far down a page came into view
+    /// counts the first screen, so a page short enough reaches a quarter by being shown, and on
+    /// these networks that alone is not taken for somebody reading.
+    /// </para>
+    /// <para>
+    /// The engine is told for the first time what kind of site sent a visit, and only that: an
+    /// arrival from a search, an assistant, a social network or a link is a faint sign of somebody
+    /// reading, too light to count. On an ordinary network it moves no verdict about a visit anything
+    /// else was observed about; a visit it is the only observation of is something the product could
+    /// not tell rather than too little to go on, which nothing this build collects produces. Ten is
+    /// also walked with the answers kept for crawlers confirmed by the name their address answers
+    /// to, so a visit an earlier ruleset confirmed that way stays confirmed after its address has
+    /// been erased.
+    /// </para>
+    /// <para>
+    /// Categories move, so this is a major version. Verdicts are kept per ruleset, so every earlier
+    /// answer stays on record and history is re-judged rather than rewritten.
+    /// </para>
+    /// <para>
     /// Nine, because a person is never concluded from one thing. A browser running the tracker is
     /// the commonest thing an automated browser does too, so on its own it decides nothing: a
     /// visit is called a person only where two observations point that way and each is worth
@@ -94,7 +126,7 @@ public readonly record struct RulesetVersion(int Major, int Minor) : IComparable
     /// something that will never be reconstructed again.
     /// </para>
     /// </remarks>
-    public static RulesetVersion Current => new(9, 0);
+    public static RulesetVersion Current => new(10, 0);
 
     /// <summary>Compares two ruleset versions by major then minor component.</summary>
     /// <param name="other">The version to compare against.</param>

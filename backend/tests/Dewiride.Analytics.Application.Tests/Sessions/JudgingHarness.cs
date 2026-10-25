@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Dewiride.Analytics.Application.Sessions;
+using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Classification.Sessions;
@@ -28,6 +29,9 @@ internal sealed class JudgingHarness
     /// <summary>When the site was added.</summary>
     public static readonly DateTimeOffset AddedAt = new(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
 
+    /// <summary>The address the site is known by.</summary>
+    public const string SiteDomain = "blog.example.com";
+
     /// <summary>The present moment when a run begins.</summary>
     public static readonly DateTimeOffset Now = new(2026, 5, 2, 0, 0, 0, TimeSpan.Zero);
 
@@ -35,14 +39,26 @@ internal sealed class JudgingHarness
     private readonly List<SessionWindow> _windows = [];
     private readonly List<SessionJudgement> _stored = [];
     private readonly List<DateTimeOffset> _stampedAt = [];
+    private readonly List<NameConfirmation> _kept = [];
+    private readonly List<DateTimeOffset> _keptAt = [];
+    private readonly List<string> _writes = [];
     private readonly List<IReadOnlyCollection<string>> _asked = [];
     private ClassificationBookmark _bookmark = new(AddedAt, AddedAt);
+
+    /// <summary>What <see cref="Writes"/> records for a batch of answers kept.</summary>
+    public const string AnswersWritten = "answers";
+
+    /// <summary>What <see cref="Writes"/> records for a batch of verdicts stored.</summary>
+    public const string VerdictsWritten = "verdicts";
 
     /// <summary>Reconstructs visits.</summary>
     public ISessionSource Sessions { get; } = Substitute.For<ISessionSource>();
 
     /// <summary>Keeps verdicts.</summary>
     public IClassificationStore Verdicts { get; } = Substitute.For<IClassificationStore>();
+
+    /// <summary>Keeps whose crawler a visit was, where that was settled by name.</summary>
+    public INameConfirmationStore Confirmations { get; } = Substitute.For<INameConfirmationStore>();
 
     /// <summary>Remembers where to resume.</summary>
     public IClassificationProgressStore Progress { get; } = Substitute.For<IClassificationProgressStore>();
@@ -61,6 +77,21 @@ internal sealed class JudgingHarness
 
     /// <summary>When each batch of stored verdicts says it was reached, in order.</summary>
     public IReadOnlyList<DateTimeOffset> StampedAt => _stampedAt;
+
+    /// <summary>The answers it kept, in order.</summary>
+    public IReadOnlyList<NameConfirmation> Kept => _kept;
+
+    /// <summary>When each batch of kept answers says it was settled, in order.</summary>
+    public IReadOnlyList<DateTimeOffset> KeptAt => _keptAt;
+
+    /// <summary>
+    /// Every write the classifier made, in the order it made them: <see cref="AnswersWritten"/> or
+    /// <see cref="VerdictsWritten"/>.
+    /// </summary>
+    public IReadOnlyList<string> Writes => _writes;
+
+    /// <summary>Whether keeping an answer fails, as a store that has gone away does.</summary>
+    public bool KeepingFails { get; init; }
 
     /// <summary>Where the bookmark ended up: every visit that began before it has been judged.</summary>
     public DateTimeOffset Bookmark => _bookmark.ClassifiedThrough;
@@ -135,6 +166,26 @@ internal sealed class JudgingHarness
             {
                 _stored.AddRange(call.Arg<IReadOnlyCollection<SessionJudgement>>());
                 _stampedAt.Add(call.Arg<DateTimeOffset>());
+                _writes.Add(VerdictsWritten);
+
+                return Task.CompletedTask;
+            });
+
+        Confirmations.RecordAsync(
+                SiteId,
+                Arg.Any<IReadOnlyCollection<NameConfirmation>>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                if (KeepingFails)
+                {
+                    return Task.FromException(new InvalidOperationException("The store has gone away."));
+                }
+
+                _kept.AddRange(call.Arg<IReadOnlyCollection<NameConfirmation>>());
+                _keptAt.Add(call.Arg<DateTimeOffset>());
+                _writes.Add(AnswersWritten);
 
                 return Task.CompletedTask;
             });
@@ -217,13 +268,14 @@ internal sealed class JudgingHarness
         new SessionClassifier(
                 Sessions,
                 Verdicts,
+                Confirmations,
                 Progress,
                 TrafficClassifier.Current(),
                 Names,
                 _clock,
                 Options.Create(Settings),
                 NullLogger<SessionClassifier>.Instance)
-            .CatchUpAsync(SiteId, AddedAt, CancellationToken.None);
+            .CatchUpAsync(new SiteRegistration(SiteId, SiteDomain, AddedAt), CancellationToken.None);
 
     /// <summary>Notes the window asked for, and lets the clock run on while it is read.</summary>
     /// <param name="window">The window the classifier asked for.</param>

@@ -98,11 +98,11 @@ public sealed class RemoveSiteTests(AnalyticsStackFixture stack)
 
     /// <summary>
     /// The most important property in this file. Removing a website empties the telemetry store of
-    /// everything belonging to it — the activity and the verdicts reached about it alike — and
-    /// touches nothing belonging to any other website. Both tables are partitioned by month and
-    /// sorted by website, so there is no partition to drop and the deletion is by predicate; a
-    /// predicate that named the wrong column, or a table that was left off the list, would look
-    /// exactly like success from every other test in the suite.
+    /// everything belonging to it — the activity, the verdicts reached about it and the answers
+    /// kept beside them alike — and touches nothing belonging to any other website. Every one of
+    /// those tables is partitioned by month and sorted by website, so there is no partition to drop
+    /// and the deletion is by predicate; a predicate that named the wrong column, or a table that
+    /// was left off the list, would look exactly like success from every other test in the suite.
     /// </summary>
     [Fact]
     public async Task Removing_A_Website_Deletes_Everything_Measured_For_It()
@@ -120,11 +120,15 @@ public sealed class RemoveSiteTests(AnalyticsStackFixture stack)
 
             await JudgeAsync(going);
             await JudgeAsync(staying);
+            await KeepAnswerAsync(going.Id, at);
+            await KeepAnswerAsync(staying.Id, at);
 
             (await ActivityCountAsync(going.Id)).Should().Be(2);
             (await VerdictCountAsync(going.Id)).Should().Be(1);
+            (await AnswerCountAsync(going.Id)).Should().Be(1);
             (await ActivityCountAsync(staying.Id)).Should().Be(2);
             (await VerdictCountAsync(staying.Id)).Should().Be(1);
+            (await AnswerCountAsync(staying.Id)).Should().Be(1);
 
             await RemoveAsync(browser, going.Id);
 
@@ -133,9 +137,11 @@ public sealed class RemoveSiteTests(AnalyticsStackFixture stack)
             // rather than that the deletion has been accepted for later.
             (await ActivityCountAsync(going.Id)).Should().Be(0);
             (await VerdictCountAsync(going.Id)).Should().Be(0);
+            (await AnswerCountAsync(going.Id)).Should().Be(0);
 
             (await ActivityCountAsync(staying.Id)).Should().Be(2);
             (await VerdictCountAsync(staying.Id)).Should().Be(1);
+            (await AnswerCountAsync(staying.Id)).Should().Be(1);
         }
     }
 
@@ -418,6 +424,20 @@ public sealed class RemoveSiteTests(AnalyticsStackFixture stack)
             "SELECT count() FROM session_classifications WHERE site_id = {site_id:UUID}",
             TelemetryStore.Bind("site_id", siteId));
 
+    private async Task<ulong> AnswerCountAsync(Guid siteId) =>
+        await TelemetryStore.ScalarAsync<ulong>(
+            Telemetry,
+            "SELECT count() FROM name_confirmations WHERE site_id = {site_id:UUID}",
+            TelemetryStore.Bind("site_id", siteId));
+
+    /// <summary>Keeps an answer for one visit to a website, as a pass that settled it by name does.</summary>
+    /// <param name="siteId">The website.</param>
+    /// <param name="at">When the visit began.</param>
+    /// <returns>A task that completes once the answer is kept.</returns>
+    private Task KeepAnswerAsync(Guid siteId, DateTimeOffset at) =>
+        stack.Services.GetRequiredService<INameConfirmationStore>()
+            .RecordAsync(siteId, [new NameConfirmation("crawler:1", at, "Yandex")], at, Cancellation.Token);
+
     private Task WriteAsync(params RawEvent[] events) =>
         stack.Services.GetRequiredService<IEventSink>().WriteBatchAsync(events, Cancellation.Token);
 
@@ -433,7 +453,7 @@ public sealed class RemoveSiteTests(AnalyticsStackFixture stack)
 
         await work.ServiceProvider
             .GetRequiredService<SessionClassifier>()
-            .CatchUpAsync(site.Id, site.CreatedAt.AddDays(-2), Cancellation.Token);
+            .CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt.AddDays(-2)), Cancellation.Token);
     }
 
     /// <summary>Starts the bookmark the engine keeps for a website.</summary>

@@ -5,6 +5,9 @@
 - **Supersedes**: nothing. Adds no column, collects nothing new, and narrows the envelope rather
   than widening it.
 - **Follows**: `0016-where-a-visit-came-from-counts.md`, which brought the catalogue this reads.
+- **Revised by**: [0056](0056-somebody-can-be-reading-from-a-rented-computer.md). A visitor on a
+  rented network can now be judged a person, and where it is, whatever the others counted with it did
+  in that stretch is counted in that person's visit.
 
 ## Context
 

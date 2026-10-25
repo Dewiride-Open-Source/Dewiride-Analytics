@@ -5,6 +5,9 @@
 - **Supersedes**: nothing. Adds no column and widens no envelope.
 - **Followed by**: [0041](0041-one-population-for-the-whole-screen.md), whose per-visitor figures
   are asked here of a population and counted by the arithmetic this record settled.
+- **Revised by**: [0056](0056-somebody-can-be-reading-from-a-rented-computer.md). The kind of a
+  sending site is now part of the evidence a verdict keeps, so a change to the catalogue ships with a
+  new ruleset rather than on its own.
 
 ## Context
 

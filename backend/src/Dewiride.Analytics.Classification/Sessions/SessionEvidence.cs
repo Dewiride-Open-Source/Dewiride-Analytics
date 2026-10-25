@@ -60,9 +60,11 @@ public sealed record SessionEvidence
     /// </para>
     /// <para>
     /// Settled before the engine is asked anything, never worked out here. The address it was
-    /// settled from is erased 72 hours after the activity was collected, so carrying the answer
-    /// rather than the address is what lets a visit re-judged next year reach the same conclusion
-    /// instead of quietly losing an identity it once had.
+    /// settled from is erased 72 hours after the activity was collected, so it is the answer that
+    /// is kept rather than the address — on the activity itself wherever the collector recognised
+    /// the address as a report arrived, and beside the visit where the name its address answers to
+    /// was settled only once the visit was over — and that is what lets a visit re-judged next year
+    /// reach the same conclusion instead of quietly losing an identity it once had.
     /// </para>
     /// <para>
     /// Absence proves nothing and must never be read as a denial. A company may offer no way to
@@ -81,7 +83,10 @@ public sealed record SessionEvidence
     /// <summary>Milliseconds the pages were actually in front of somebody, summed across the session.</summary>
     public int? EngagedMs { get; init; }
 
-    /// <summary>Furthest any page was scrolled, as a percentage of its height.</summary>
+    /// <summary>
+    /// Deepest point of any page that came into view, as a percentage of its height. The first
+    /// screen counts, so a page that was only shown reports the share of it that screen held.
+    /// </summary>
     public byte? MaxScrollDepthPercent { get; init; }
 
     /// <summary>Whether any pointer interaction was observed. Null means no surface could see.</summary>
@@ -113,6 +118,28 @@ public sealed record SessionEvidence
     /// outlives the names its holders trade under.
     /// </remarks>
     public string? NetworkOwner { get; init; }
+
+    /// <summary>
+    /// What kind of site sent the visit, where one was named. <see cref="SourceChannel.Direct"/>
+    /// where nothing said.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Settled exactly as the visit list settles it: the first report of the visit whose referring
+    /// address names a site other than the one being measured, reduced to a kind through the
+    /// catalogue of sending sites. A site's own pages never send it a visit, so a reader moving
+    /// from one page to the next is not an arrival. A reading of who is here now settles it over
+    /// the reports its window holds rather than the whole visit's, so a visitor who arrived before
+    /// the window opened reads there as sent by nobody.
+    /// </para>
+    /// <para>
+    /// Only the kind reaches the engine, never the address or the site it names. The address is
+    /// text the visitor's browser wrote, and the kind is all a rule needs: that another site sent
+    /// the visit, and which sort of site that was. Direct means nothing named a sender, which is
+    /// not the same as nobody having sent them, and no rule reads it as evidence of anything.
+    /// </para>
+    /// </remarks>
+    public SourceChannel SentBy { get; init; } = SourceChannel.Direct;
 
     /// <summary>How long the session lasted.</summary>
     public TimeSpan Duration => EndedAt - StartedAt;

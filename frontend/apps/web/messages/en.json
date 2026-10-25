@@ -783,7 +783,7 @@
         "seconds": "Your pages were open in front of somebody for {seconds, plural, one {# second} other {# seconds}}.",
         "minutes": "Your pages were open in front of somebody for about {minutes, plural, one {# minute} other {# minutes}}."
       },
-      "scrolled": "Somebody scrolled {percent}% of the way down a page.",
+      "scrolled": "A page was seen {percent}% of the way down.",
       "pointer_used": "A mouse or a finger was used on the page.",
       "keyboard_used": "A key was pressed on the page.",
       "none_observed": "Across {pageCount, plural, one {# page} other {# pages}}, nothing was read, scrolled or touched."
@@ -806,7 +806,15 @@
       "no_language_declared": "It did not say which language it prefers. Browsers always do."
     },
     "network": {
-      "hosting": "It came from a computer rented at {operator}, not from a home or office connection."
+      "hosting": "It came over a network where {operator} rents out computers."
+    },
+    "arrival": {
+      "from_another_site": {
+        "search": "It followed a link from a search engine.",
+        "assistant": "It followed a link from an AI assistant.",
+        "social": "It followed a link from a social network.",
+        "link": "It followed a link from another site."
+      }
     }
   },
   "problems": {

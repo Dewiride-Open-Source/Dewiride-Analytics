@@ -104,6 +104,56 @@ internal static class Visits
             NetworkOwner = "ALIBABA-CN-NET Alibaba US Technology Co., Ltd.",
         };
 
+    /// <summary>
+    /// Somebody reading on a desktop rented in Microsoft's cloud, sent by another site.
+    /// </summary>
+    /// <remarks>
+    /// What a desktop a company rents in a cloud, or staff sent out through a provider's security
+    /// edge, looks like from the site: arrived from a search, read, scrolled and pressed the
+    /// pointer, over Microsoft's network. The network is the only thing about it pointing toward
+    /// automation.
+    /// </remarks>
+    /// <param name="sentBy">What kind of site sent it.</param>
+    public static SessionEvidence AReaderOnACloudDesktop(SourceChannel sentBy = SourceChannel.Search) =>
+        AReader() with
+        {
+            SessionKey = "cloud-desktop",
+            AutonomousSystem = MicrosoftNetwork,
+            NetworkOwner = "MICROSOFT-CORP-MSN-AS-BLOCK",
+            SentBy = sentBy,
+        };
+
+    /// <summary>
+    /// The hands-off shape measured on Microsoft's network: straight to one page in Chrome on
+    /// Windows, 26 seconds on it, an eleventh of the way down, the pointer pressed and no key.
+    /// </summary>
+    /// <remarks>
+    /// Named for what it did and never for what it might have been. It matches what a mail
+    /// provider's link scanner is documented to do, and nothing about one visit establishes that it
+    /// was one.
+    /// </remarks>
+    public static SessionEvidence AHandsOffVisitFromMicrosoftsCloud() => new()
+    {
+        SessionKey = "hands-off",
+        StartedAt = Noon,
+        EndedAt = Noon.AddSeconds(26),
+        Requests = Pages(1, TimeSpan.Zero),
+        Surfaces = [IngestSurface.BrowserTracker],
+        UserAgent = ChromeOnWindows,
+        Language = "en-US",
+        ViewportWidth = 1280,
+        EngagedMs = 26_000,
+        MaxScrollDepthPercent = 11,
+        HadPointerInteraction = true,
+        HadKeyboardInteraction = false,
+        DeclaredWebDriver = false,
+        AutonomousSystem = MicrosoftNetwork,
+        NetworkOwner = "MICROSOFT-CORP-MSN-AS-BLOCK",
+    };
+
+    /// <summary>Microsoft's network, which carries its own cloud's machines and the desktops it rents out.</summary>
+    public const uint MicrosoftNetwork = 8075;
+
     /// <summary>Something sweeping the site for a way in.</summary>
     public static SessionEvidence AScanner() => new()
     {

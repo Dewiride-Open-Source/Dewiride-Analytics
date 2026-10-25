@@ -221,6 +221,9 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
         here.Visitors[0].SeenArriving.Should().BeTrue();
         here.Visitors[0].Context.SendingSite.Should().Be("Google");
         here.Visitors[0].Context.Channel.Should().Be(SourceChannel.Search);
+        here.Visitors[0].Evidence.SentBy.Should().Be(
+            SourceChannel.Search,
+            "what the visitor is judged on and what the screen says sent them are one answer");
     }
 
     /// <summary>
@@ -241,6 +244,7 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
         here.Visitors[0].SeenArriving.Should().BeTrue();
         here.Visitors[0].Context.SendingSite.Should().BeEmpty();
         here.Visitors[0].Context.Channel.Should().Be(SourceChannel.Direct);
+        here.Visitors[0].Evidence.SentBy.Should().Be(SourceChannel.Direct);
     }
 
     /// <summary>

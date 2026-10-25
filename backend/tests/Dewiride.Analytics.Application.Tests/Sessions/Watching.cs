@@ -40,6 +40,29 @@ internal static class Watching
     };
 
     /// <summary>
+    /// Somebody a search sent, reading on a desktop rented in Microsoft's cloud.
+    /// </summary>
+    public static SessionEvidence AReaderOnACloudDesktop() => AReader() with
+    {
+        SessionKey = "cloud-desktop",
+        AutonomousSystem = 8075,
+        SentBy = SourceChannel.Search,
+    };
+
+    /// <summary>
+    /// The hands-off shape measured on Microsoft's network: straight to one page, a while on it, the
+    /// pointer pressed and no key.
+    /// </summary>
+    public static SessionEvidence AHandsOffVisitFromMicrosoftsCloud() => AReader() with
+    {
+        SessionKey = "hands-off",
+        Requests = Pages(1, "/posts/"),
+        EngagedMs = 26_000,
+        MaxScrollDepthPercent = 11,
+        AutonomousSystem = 8075,
+    };
+
+    /// <summary>
     /// A reader on a site that also reports from its own server, in the moment before their browser
     /// has said anything.
     /// </summary>

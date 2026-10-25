@@ -3,9 +3,11 @@ using ClickHouse.Driver.ADO;
 using ClickHouse.Driver.Utility;
 using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Domain.Telemetry;
+using Dewiride.Analytics.Infrastructure.ClickHouse;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Health;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Migrations;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -36,6 +38,32 @@ public sealed class TelemetrySchemaTests(AnalyticsStackFixture stack)
         applied[0]["version"].Should().Be(1u);
         applied[0]["name"].Should().Be("events");
         applied[0]["checksum"].Should().BeOfType<string>().Which.Should().HaveLength(64);
+    }
+
+    /// <summary>
+    /// A migration that copies or rewrites data reads a whole table, and a script is recorded only
+    /// once all of it has finished. Held to the hundred seconds a question from a screen is given,
+    /// an installation large enough would fail every start-up, each attempt beginning the same
+    /// statement again — so the migrations travel over a client of their own, given an hour.
+    /// </summary>
+    [Fact]
+    public async Task Migrations_Run_Over_A_Client_Given_Longer_Than_A_Question_From_A_Screen()
+    {
+        var sent = new Tally();
+
+        using var watched = stack.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddHttpClient(ClickHouseRegistration.SchemaHttpClientName)
+                .AddHttpMessageHandler(() => new Counting(sent))));
+
+        var runner = watched.Services.GetRequiredService<ClickHouseMigrationRunner>();
+        var before = sent.Count;
+
+        await runner.ApplyAsync(Cancellation.Token);
+
+        sent.Count.Should().BeGreaterThan(before, "the migrations send what they send over their own client");
+        watched.Services.GetRequiredService<IHttpClientFactory>()
+            .CreateClient(ClickHouseRegistration.SchemaHttpClientName).Timeout
+            .Should().Be(ClickHouseRegistration.LongestSchemaStatement);
     }
 
     [Fact]
@@ -116,6 +144,38 @@ public sealed class TelemetrySchemaTests(AnalyticsStackFixture stack)
 
         definition.Should().Contain("ReplacingMergeTree(classified_at)");
         definition.Should().Contain("ORDER BY (site_id, session_key, ruleset_major, ruleset_minor)");
+    }
+
+    /// <summary>
+    /// An answer kept by name is the conclusion and never what it was drawn from, so the table has
+    /// nowhere an address or a user agent could go — and it is kept for exactly as long as the
+    /// verdicts it stands behind, one row to a visit.
+    /// </summary>
+    [Fact]
+    public async Task An_Answer_Kept_By_Name_Is_The_Company_Beside_Its_Visit_And_Nothing_Else()
+    {
+        var columns = await TelemetryStore.RowsAsync(
+            Client,
+            """
+            SELECT name, type
+            FROM system.columns
+            WHERE database = currentDatabase() AND table = 'name_confirmations'
+            ORDER BY position
+            """);
+
+        columns.Select(column => $"{column["name"]} {column["type"]}").Should().Equal(
+            "site_id UUID",
+            "session_key String",
+            "started_at DateTime64(3, 'UTC')",
+            "operator LowCardinality(String)",
+            "settled_at DateTime64(3, 'UTC')");
+
+        var definition = await TableDefinitionAsync("name_confirmations");
+
+        definition.Should().Contain("ReplacingMergeTree(settled_at)");
+        definition.Should().Contain("PARTITION BY toYYYYMM(started_at)");
+        definition.Should().Contain("ORDER BY (site_id, started_at, session_key)");
+        definition.Should().Contain("TTL toDateTime(started_at) + toIntervalMonth(12)");
     }
 
     [Fact]
@@ -306,4 +366,31 @@ public sealed class TelemetrySchemaTests(AnalyticsStackFixture stack)
             WHERE database = currentDatabase() AND name = {table:String}
             """,
             TelemetryStore.Bind("table", table));
+
+    /// <summary>How many requests have gone over one client.</summary>
+    private sealed class Tally
+    {
+        private int _count;
+
+        /// <summary>The requests counted so far.</summary>
+        public int Count => Volatile.Read(ref _count);
+
+        /// <summary>Counts one more.</summary>
+        public void Add() => Interlocked.Increment(ref _count);
+    }
+
+    /// <summary>Counts every request that passes through it, and changes none of them.</summary>
+    /// <param name="sent">Where the count is kept.</param>
+    private sealed class Counting(Tally sent) : DelegatingHandler
+    {
+        /// <inheritdoc />
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            sent.Add();
+
+            return base.SendAsync(request, cancellationToken);
+        }
+    }
 }

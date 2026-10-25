@@ -1,5 +1,6 @@
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Classification;
+using Dewiride.Analytics.Domain.Telemetry;
 
 namespace Dewiride.Analytics.Application.Tests.Sessions;
 
@@ -471,6 +472,64 @@ public sealed class SessionClassifierTests
         harness.Windows[0].MaxRequestsPerSession.Should().Be(250);
     }
 
+    /// <summary>
+    /// The site's own address travels with every reading, because it is what tells a reader moving
+    /// from one of its pages to the next from a visitor another site sent.
+    /// </summary>
+    [Fact]
+    public async Task Every_Reading_Carries_The_Sites_Own_Address()
+    {
+        var harness = new JudgingHarness();
+        harness.ResumeFrom(JudgingHarness.Now.AddDays(-1));
+
+        await harness.RunAsync();
+
+        harness.Windows.Should().NotBeEmpty()
+            .And.OnlyContain(window => window.SiteDomain == JudgingHarness.SiteDomain);
+    }
+
+    /// <summary>
+    /// Somebody another site sent, who then pressed the pointer or read the page, is somebody
+    /// reading even on a rented network — and an address that may be a person's is not sent to a
+    /// name server.
+    /// </summary>
+    [Fact]
+    public async Task A_Reader_Another_Site_Sent_Over_A_Rented_Network_Is_Never_Asked_About()
+    {
+        var harness = new JudgingHarness();
+        var reader = JudgingHarness.Reader(JudgingHarness.AddedAt.AddHours(1), "20.42.10.7");
+
+        harness.Settling("20.42.10.7", "Microsoft");
+        harness.AnswerOnce(reader with
+        {
+            Evidence = reader.Evidence with { AutonomousSystem = 8075, SentBy = SourceChannel.Search },
+        });
+
+        await harness.RunAsync();
+
+        harness.Asked.Should().BeEmpty();
+        harness.Stored.Should().ContainSingle().Which.Verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+    }
+
+    /// <summary>
+    /// The same reading, come straight in with no key pressed, is machinery on a rented network,
+    /// and so its address is asked about.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_That_Came_Straight_Over_A_Rented_Network_Is_Still_Asked_About()
+    {
+        var harness = new JudgingHarness();
+        var reader = JudgingHarness.Reader(JudgingHarness.AddedAt.AddHours(1), "20.42.10.7");
+
+        harness.AnswerOnce(reader with { Evidence = reader.Evidence with { AutonomousSystem = 8075 } });
+
+        await harness.RunAsync();
+
+        harness.Asked.Should().ContainSingle().Which.Should().Equal("20.42.10.7");
+        harness.Stored.Should().ContainSingle()
+            .Which.Verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+    }
+
     [Fact]
     public async Task Nothing_Is_Stored_When_There_Was_Nothing_To_Judge()
     {
@@ -637,5 +696,164 @@ public sealed class SessionClassifierTests
 
         harness.Asked.Should().ContainSingle().Which.Should().HaveCount(2);
         harness.Stored.Should().HaveCount(3);
+    }
+
+    /// <summary>
+    /// The address an answer like this is worked out from is cleared after three days. Kept beside
+    /// the visit, the answer is still there when the visit is judged again under better rules,
+    /// rather than the visit going back to being a claim.
+    /// </summary>
+    [Fact]
+    public async Task An_Identity_Settled_By_Name_Is_Kept_For_Its_Visit()
+    {
+        var harness = new JudgingHarness();
+        var visit = JudgingHarness.Visit(
+            JudgingHarness.AddedAt.AddHours(1),
+            address: "77.88.5.1",
+            userAgent: JudgingHarness.Anonymous);
+
+        harness.Settling("77.88.5.1", "Yandex");
+        harness.AnswerOnce(visit);
+
+        await harness.RunAsync();
+
+        harness.Kept.Should().ContainSingle().Which.Should().Be(
+            new NameConfirmation(visit.Evidence.SessionKey, visit.Evidence.StartedAt, "Yandex"));
+    }
+
+    /// <summary>
+    /// A settled address settles every visit from it, and every one of them has to keep the answer:
+    /// the visit that prompted the question is not the only one that would lose it.
+    /// </summary>
+    [Fact]
+    public async Task Every_Visit_A_Settled_Address_Settles_Keeps_The_Answer()
+    {
+        var harness = new JudgingHarness();
+        harness.Settling("77.88.5.1", "Yandex");
+        harness.AnswerOnce(
+            JudgingHarness.Visit(
+                JudgingHarness.AddedAt.AddHours(1),
+                address: "77.88.5.1",
+                userAgent: JudgingHarness.Anonymous),
+            JudgingHarness.Reader(JudgingHarness.AddedAt.AddHours(2), "77.88.5.1"));
+
+        await harness.RunAsync();
+
+        harness.Kept.Should().HaveCount(2).And.OnlyContain(answer => answer.Operator == "Yandex");
+        harness.Kept.Select(answer => answer.SessionKey).Should()
+            .Equal(harness.Stored.Select(judgement => judgement.Session.SessionKey));
+    }
+
+    /// <summary>
+    /// What a visitor wearing another company's name is caught by is the company its address
+    /// belongs to, and that is what is kept — never the name it gave, which is a claim.
+    /// </summary>
+    [Fact]
+    public async Task A_Visitor_Wearing_The_Wrong_Companys_Name_Keeps_The_Company_Its_Address_Belongs_To()
+    {
+        var harness = new JudgingHarness();
+        harness.Settling("77.88.5.1", "Microsoft");
+        harness.AnswerOnce(JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(1), address: "77.88.5.1"));
+
+        await harness.RunAsync();
+
+        harness.Kept.Should().ContainSingle().Which.Operator.Should().Be("Microsoft");
+    }
+
+    /// <summary>
+    /// An address that answers to nobody's name settles nothing, and nothing is kept for it: an
+    /// answer kept for a visit is always a company.
+    /// </summary>
+    [Fact]
+    public async Task Nothing_Is_Kept_Where_Nothing_Was_Settled()
+    {
+        var harness = new JudgingHarness();
+        harness.AnswerOnce(JudgingHarness.Visit(
+            JudgingHarness.AddedAt.AddHours(1),
+            address: "198.51.100.1",
+            userAgent: JudgingHarness.Anonymous));
+
+        await harness.RunAsync();
+
+        harness.Asked.Should().ContainSingle();
+        harness.Kept.Should().BeEmpty();
+        harness.Writes.Should().Equal(JudgingHarness.VerdictsWritten);
+    }
+
+    /// <summary>
+    /// A visit the activity already speaks for keeps the answer it arrived with, even in a pass
+    /// that settles its address afresh because another visit from it said nothing, and nothing more
+    /// is kept for it. The answer on the activity was reached as each report arrived, and it is the
+    /// one the visit is rebuilt with every time.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Already_Settled_Keeps_Its_Answer_And_Nothing_Beside_It()
+    {
+        var harness = new JudgingHarness();
+        var stamped = JudgingHarness.Visit(
+            JudgingHarness.AddedAt.AddHours(1),
+            address: "66.249.64.9",
+            userAgent: JudgingHarness.Anonymous,
+            confirmedOperator: "Google");
+        var unstamped = JudgingHarness.Visit(
+            JudgingHarness.AddedAt.AddHours(2),
+            address: "66.249.64.9",
+            userAgent: JudgingHarness.Anonymous);
+
+        harness.Settling("66.249.64.9", "Microsoft");
+        harness.AnswerOnce(stamped, unstamped);
+
+        await harness.RunAsync();
+
+        harness.Asked.Should().ContainSingle().Which.Should().Equal("66.249.64.9");
+        harness.Kept.Select(answer => answer.SessionKey).Should().Equal(unstamped.Evidence.SessionKey);
+        harness.Stored.Single(judgement => judgement.Session.SessionKey == stamped.Evidence.SessionKey)
+            .Session.ConfirmedOperator.Should().Be("Google");
+        harness.Stored.Single(judgement => judgement.Session.SessionKey == unstamped.Evidence.SessionKey)
+            .Session.ConfirmedOperator.Should().Be("Microsoft");
+    }
+
+    /// <summary>
+    /// The answer goes first, stamped with the same moment as the verdicts, so a verdict is never
+    /// stored that a later reading of its visit could not reach again.
+    /// </summary>
+    [Fact]
+    public async Task The_Answer_Is_Kept_Before_The_Verdict_That_Rests_On_It()
+    {
+        var harness = new JudgingHarness();
+        harness.Settling("77.88.5.1", "Yandex");
+        harness.AnswerOnce(JudgingHarness.Visit(
+            JudgingHarness.AddedAt.AddHours(1),
+            address: "77.88.5.1",
+            userAgent: JudgingHarness.Anonymous));
+
+        await harness.RunAsync();
+
+        harness.Writes.Should().Equal(JudgingHarness.AnswersWritten, JudgingHarness.VerdictsWritten);
+        harness.KeptAt.Should().Equal(harness.StampedAt);
+    }
+
+    /// <summary>
+    /// Where the answers cannot be kept, the verdicts resting on them are not stored either, and
+    /// the bookmark stays where it was: the next run reads the same visits, asks again, and reaches
+    /// the same conclusions with somewhere to keep them.
+    /// </summary>
+    [Fact]
+    public async Task A_Pass_Whose_Answers_Cannot_Be_Kept_Stores_No_Verdict_And_Moves_Nothing()
+    {
+        var harness = new JudgingHarness { KeepingFails = true };
+        harness.Settling("77.88.5.1", "Yandex");
+        harness.AnswerOnce(JudgingHarness.Visit(
+            JudgingHarness.AddedAt.AddHours(1),
+            address: "77.88.5.1",
+            userAgent: JudgingHarness.Anonymous));
+
+        var run = () => harness.RunAsync();
+
+        await run.Should().ThrowAsync<InvalidOperationException>();
+
+        harness.Stored.Should().BeEmpty();
+        harness.Bookmark.Should().Be(JudgingHarness.AddedAt);
+        harness.ReadThrough.Should().Be(JudgingHarness.AddedAt);
     }
 }

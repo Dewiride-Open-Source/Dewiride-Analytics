@@ -16,9 +16,10 @@ namespace Dewiride.Analytics.Integration.Tests.Telemetry;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Two visits do everything the twelve questions count — arrive from a search engine, read two
-/// pages, press a control, report how the reading went — and differ in one thing: one came over a
-/// household network and one from a rented server. The engine concludes the first was a person
+/// Two visits do everything the twelve questions count — read two pages, press a control, report
+/// how the reading went — and differ in where they came from: one arrived from a search engine over
+/// a household network, the other came straight to the site from a rented server, which is the
+/// shape the programs measured on those networks take. The engine concludes the first was a person
 /// and the second was not, and each fact below asks one question of everybody and then of the
 /// people, expecting the second answer to be the first with the scraper taken out.
 /// </para>
@@ -128,8 +129,10 @@ public sealed class PopulationTests(AnalyticsStackFixture stack)
         var everybody = await Queries.GetSiteSourcesAsync(Scope(site), Sources(site, Population.Everybody), Cancellation.Token);
         var people = await Queries.GetSiteSourcesAsync(Scope(site), Sources(site, Population.People), Cancellation.Token);
 
-        everybody.Sources.Single(source => source.Source == DescribedTraffic.Source).Visitors.Should().Be(2);
-        people.Sources.Single(source => source.Source == DescribedTraffic.Source).Visitors.Should().Be(1);
+        everybody.Sources.Single(source => source.Source == DescribedTraffic.Source).Visitors.Should().Be(1);
+        everybody.Sources.Single(source => source.Source.Length == 0).Visitors.Should().Be(1);
+        people.Sources.Should().ContainSingle()
+            .Which.Should().Match<SiteSourceRow>(row => row.Source == DescribedTraffic.Source && row.Visitors == 1);
     }
 
     [Fact]
@@ -401,7 +404,7 @@ public sealed class PopulationTests(AnalyticsStackFixture stack)
         await WriteAsync(
             [
                 .. AReading(site.Id, Reader, at),
-                .. AReading(site.Id, Scraper, at.AddHours(1)).Select(Rented),
+                .. AScraping(site.Id, Scraper, at.AddHours(1)),
             ]);
 
         await DescribedTraffic.JudgeAsync(stack, site);
@@ -517,6 +520,17 @@ public sealed class PopulationTests(AnalyticsStackFixture stack)
         Page(siteId, visitor, at.AddMinutes(2), "/posts/hello"),
         Pressed(siteId, visitor, at.AddMinutes(3), "/posts/hello"),
         Read(siteId, visitor, at.AddMinutes(4), "/"),
+    ];
+
+    /// <summary>
+    /// The same reading from a rented server, come straight to the site with no key pressed — the
+    /// shape the programs measured on those networks take. No site sent it, so nothing about how it
+    /// arrived speaks for a person.
+    /// </summary>
+    private static RawEvent[] AScraping(Guid siteId, string visitor, DateTimeOffset at) =>
+    [
+        .. AReading(siteId, visitor, at).Select(report =>
+            Rented(report with { Referrer = null, ReferrerDomain = null })),
     ];
 
     private static RawEvent Page(Guid siteId, string visitor, DateTimeOffset at, string path) =>

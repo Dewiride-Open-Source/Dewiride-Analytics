@@ -46,6 +46,11 @@ const DECLARED_IDENTITY = path.join(
   'backend/src/Dewiride.Analytics.Classification/Detectors/DeclaredIdentityDetector.cs',
 );
 
+const ARRIVAL = path.join(
+  REPOSITORY,
+  'backend/src/Dewiride.Analytics.Classification/Detectors/ArrivalDetector.cs',
+);
+
 /** Every value a declaration in the engine's source assigns. */
 function declared(file: string, pattern: RegExp): readonly string[] {
   const found = [...readFileSync(file, 'utf8').matchAll(pattern)].map((match) => match[1] ?? '');
@@ -62,6 +67,17 @@ const surfaces = declared(REPORTED_NAMES, /\[IngestSurface\.\w+\] = "([^"]+)"/g)
 const directions = declared(REPORTED_NAMES, /\[SignalDirection\.\w+\] = "([^"]+)"/g);
 const devices = declared(REPORTED_NAMES, /\[DeviceClass\.\w+\] = "([^"]+)"/g);
 const purposes = declared(DECLARED_IDENTITY, /\[CrawlerPurpose\.\w+\] = "([^"]+)"/g);
+const senders = declared(ARRIVAL, /\[SourceChannel\.\w+\] = "([^"]+)"/g);
+
+/** The sentence key the dashboard picks for another site of one kind having sent a visit. */
+function sentBy(kind: string): string {
+  return reasonKey({
+    code: 'arrival.from_another_site',
+    direction: 'toward-human',
+    weight: 0,
+    values: { kind },
+  });
+}
 
 /** What the catalogue holds at a dotted path, whether that is a sentence or a group of them. */
 function wordsAt(dotted: string): unknown {
@@ -155,6 +171,22 @@ describe('the engine vocabulary', () => {
           values: { purpose },
         }).replace('identity.declared_crawler.', ''),
       )
+      .sort();
+
+    expect(written).toEqual(reachable);
+  });
+
+  // Which kind of site sent a visit is written as a whole sentence for each kind, for the same
+  // reason as a crawler's purpose, and the two lists are held against each other both ways.
+  it.each(senders)('says in words that a site of the kind %s sent the visit', (kind) => {
+    expect(sentBy(kind)).toBe(`arrival.from_another_site.${kind}`);
+    expect(isWritten(wordsAt(`reasons.${sentBy(kind)}`))).toBe(true);
+  });
+
+  it('writes no sentence for a kind of sending site the engine cannot report', () => {
+    const written = [...sentencesUnder('reasons.arrival.from_another_site')].sort();
+    const reachable = senders
+      .map((kind) => sentBy(kind).replace('arrival.from_another_site.', ''))
       .sort();
 
     expect(written).toEqual(reachable);

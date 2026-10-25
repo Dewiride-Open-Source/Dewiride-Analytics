@@ -43,6 +43,20 @@ public sealed class EngagementDetectorTests
     }
 
     /// <summary>
+    /// Fifteen seconds is where a reading counts in full; a moment short of it is still a short read.
+    /// </summary>
+    [Fact]
+    public void A_Reading_Counts_In_Full_From_Fifteen_Seconds_And_Not_Before()
+    {
+        var almost = Weight(Visits.AReader(engagedMs: 14_999), SignalCodes.ReadTime);
+        var reached = Weight(Visits.AReader(engagedMs: 15_000), SignalCodes.ReadTime);
+        var settled = Weight(Visits.AReader(engagedMs: 60_000), SignalCodes.ReadTime);
+
+        almost.Should().BeLessThan(reached);
+        reached.Should().Be(settled);
+    }
+
+    /// <summary>
     /// Presence, never content. Knowing somebody typed is useful; knowing what they typed is
     /// surveillance this product does not do, and there is nowhere here to put it.
     /// </summary>

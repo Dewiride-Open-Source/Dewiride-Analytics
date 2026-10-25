@@ -53,7 +53,7 @@ public sealed class TrafficClassifierTests
     }
 
     [Fact]
-    public void A_Page_Somebody_Scrolled_Is_A_Person()
+    public void A_Page_Seen_A_Quarter_Of_The_Way_Down_With_The_Tracker_Running_Is_A_Person()
     {
         var verdict = Engine.Classify(Visits.AGlance() with { MaxScrollDepthPercent = 60 });
 
@@ -364,17 +364,200 @@ public sealed class TrafficClassifierTests
     /// The case this product got wrong in the field, and the reason the ruleset moved to two.
     /// </summary>
     /// <remarks>
-    /// A real browser driven by a script, reading for forty-five seconds and scrolling most of the
-    /// way down, arriving from a rented server. Every behavioural reading says person. Calling it
-    /// one is the single mistake a product about traffic authenticity cannot make.
+    /// A real browser driven by a script, coming straight to the site, reading for forty-five
+    /// seconds and scrolling most of the way down from a rented server, with no key pressed. Every
+    /// behavioural reading says person. Calling it one is the single mistake a product about
+    /// traffic authenticity cannot make.
     /// </remarks>
     [Fact]
-    public void A_Visit_That_Reads_Like_A_Person_From_A_Rented_Server_Is_Not_Called_A_Person()
+    public void A_Visit_That_Reads_Like_A_Person_But_Came_Straight_From_A_Rented_Server_Is_Not_Called_A_Person()
     {
         var verdict = TrafficClassifier.Current().Classify(Visits.AReaderFromARentedServer());
 
         verdict.Category.Should().NotBe(TrafficCategory.LikelyHuman);
     }
+
+    /// <summary>
+    /// Somebody a search sent to a page, reading on a desktop rented in a cloud: a person, with the
+    /// network shown against them and holding the answer to some signs.
+    /// </summary>
+    [Fact]
+    public void Somebody_A_Search_Sent_Who_Then_Read_On_A_Cloud_Desktop_Is_A_Person()
+    {
+        var verdict = Engine.Classify(Visits.AReaderOnACloudDesktop(SourceChannel.Search));
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        verdict.Contradicting.Should().Contain(signal => signal.Code == SignalCodes.HostingNetwork);
+        verdict.Supporting.Single(signal => signal.Code == SignalCodes.ArrivedFromAnotherSite)
+            .Parameters["kind"].Should().Be("search");
+    }
+
+    /// <summary>
+    /// Somebody a search sent who read a page on a cloud desktop without pressing anything: most
+    /// of a minute on it and most of the way down. Reading is what people do with a page, and it
+    /// is enough without a click.
+    /// </summary>
+    [Fact]
+    public void Somebody_A_Search_Sent_Who_Read_On_A_Cloud_Desktop_Without_Pressing_Anything_Is_A_Person()
+    {
+        var verdict = Engine.Classify(Visits.AReaderOnACloudDesktop(SourceChannel.Search) with
+        {
+            HadPointerInteraction = false,
+        });
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+    }
+
+    /// <summary>
+    /// A short page another site sent a visit to, opened and left within seconds. A quarter of it
+    /// was seen only because the first screen held that much, which is no sign of anybody reading,
+    /// so over a rented network it is not a person.
+    /// </summary>
+    [Fact]
+    public void A_Glance_At_A_Short_Page_Another_Site_Sent_To_A_Rented_Network_Is_Not_Called_A_Person()
+    {
+        var verdict = Engine.Classify(Visits.AGlance() with
+        {
+            AutonomousSystem = Visits.MicrosoftNetwork,
+            SentBy = SourceChannel.Search,
+            MaxScrollDepthPercent = 50,
+            EngagedMs = 3_000,
+        });
+
+        verdict.Category.Should().Be(TrafficCategory.Unknown);
+    }
+
+    /// <summary>
+    /// The line the rule is stated by. A page another site sent a visit to over a rented network,
+    /// seen half way down with nothing pressed, counts as read from fifteen seconds in front of
+    /// somebody and not a moment before.
+    /// </summary>
+    [Theory]
+    [InlineData(14_999, TrafficCategory.Unknown)]
+    [InlineData(15_000, TrafficCategory.LikelyHuman)]
+    public void A_Page_Another_Site_Sent_To_A_Rented_Network_Counts_As_Read_From_Fifteen_Seconds(
+        int engagedMs,
+        TrafficCategory expected)
+    {
+        var verdict = Engine.Classify(Visits.AGlance() with
+        {
+            AutonomousSystem = Visits.MicrosoftNetwork,
+            SentBy = SourceChannel.Search,
+            MaxScrollDepthPercent = 50,
+            EngagedMs = engagedMs,
+        });
+
+        verdict.Category.Should().Be(expected);
+    }
+
+    [Fact]
+    public void A_Visit_That_Came_Straight_In_And_Pressed_A_Key_Is_A_Person_Even_On_A_Rented_Network()
+    {
+        var verdict = Engine.Classify(Visits.AReaderFromARentedServer() with { HadKeyboardInteraction = true });
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+    }
+
+    /// <summary>
+    /// Another site sent it and nothing more happened: not a person, and not automation on the
+    /// strength of the network alone either — the product cannot tell.
+    /// </summary>
+    [Fact]
+    public void A_Visit_Another_Site_Sent_To_A_Rented_Network_That_Did_Nothing_More_Is_Not_Recognised()
+    {
+        var verdict = Engine.Classify(Visits.AGlance() with
+        {
+            AutonomousSystem = Visits.MicrosoftNetwork,
+            SentBy = SourceChannel.Search,
+        });
+
+        verdict.Category.Should().Be(TrafficCategory.Unknown);
+        verdict.Strength.Should().Be(EvidenceStrength.Strong);
+    }
+
+    /// <summary>
+    /// The shape measured on Microsoft's network: straight in, 26 seconds on one page, the pointer
+    /// pressed and no key. Something automated: the network outweighs everything it did.
+    /// </summary>
+    [Fact]
+    public void A_Visit_That_Came_Straight_To_A_Cloud_Network_And_Only_Pressed_The_Pointer_Is_Still_Something_Automated()
+    {
+        var verdict = Engine.Classify(Visits.AHandsOffVisitFromMicrosoftsCloud());
+
+        verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.HostingNetwork);
+    }
+
+    /// <summary>
+    /// A browser that asked for no language is a second objection, and the visit is weighed as any
+    /// other from a rented network whatever sent it.
+    /// </summary>
+    [Fact]
+    public void A_Cloud_Visit_That_Asked_For_No_Language_Stays_Automated_Whatever_Sent_It()
+    {
+        var verdict = Engine.Classify(Visits.AReaderOnACloudDesktop(SourceChannel.Search) with { Language = null });
+
+        verdict.Category.Should().NotBe(TrafficCategory.LikelyHuman);
+        verdict.Category.Should().NotBe(TrafficCategory.Unknown);
+    }
+
+    /// <summary>
+    /// Seen only by something on the site's server, with no browser ever running: a page delivered
+    /// to whatever asked for it, which a referring address does nothing to make a reader.
+    /// </summary>
+    [Fact]
+    public void A_Rented_Visit_Only_A_Server_Saw_Stays_Automation_Whatever_Sent_It()
+    {
+        var verdict = Engine.Classify(Visits.Anonymous() with
+        {
+            AutonomousSystem = Visits.MicrosoftNetwork,
+            SentBy = SourceChannel.Search,
+        });
+
+        verdict.Category.Should().NotBe(TrafficCategory.LikelyHuman);
+        verdict.Category.Should().NotBe(TrafficCategory.Unknown);
+    }
+
+    /// <summary>
+    /// Which site sent a visit moves nothing about one anything else was observed about, on a
+    /// network nobody rents servers on. An arrival is too light to count, and the one rule that
+    /// reads it reads it only beside a rented network.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(OrdinaryVisits))]
+    public void Which_Site_Sent_A_Visit_Changes_Nothing_Beside_Anything_Else_Observed_On_Any_Other_Network(
+        string visit)
+    {
+        var observed = Ordinary[visit]();
+        var straight = Engine.Classify(observed with { SentBy = SourceChannel.Direct });
+
+        foreach (var kind in new[] { SourceChannel.Search, SourceChannel.Assistant, SourceChannel.Social, SourceChannel.Link })
+        {
+            var sent = Engine.Classify(observed with { SentBy = kind });
+
+            sent.Category.Should().Be(straight.Category, "{0} sent by {1}", visit, kind);
+            sent.Strength.Should().Be(straight.Strength, "{0} sent by {1}", visit, kind);
+        }
+    }
+
+    /// <summary>The visits on ordinary networks the rule must leave alone, by name.</summary>
+    public static TheoryData<string> OrdinaryVisits => new(Ordinary.Keys);
+
+    private static readonly Dictionary<string, Func<SessionEvidence>> Ordinary = new(StringComparer.Ordinal)
+    {
+        ["a reader"] = () => Visits.AReader(),
+        ["a glance"] = Visits.AGlance,
+        ["a crawler naming itself"] = () => Visits.ANamedCrawler(
+            "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"),
+        ["a confirmed crawler"] = () => Visits.AConfirmedCrawler("Google"),
+        ["a nameless crawler"] = Visits.ANamelessCrawler,
+        ["a scanner"] = Visits.AScanner,
+        ["an owner signing in"] = Visits.AnOwnerSigningIn,
+        ["a visit nothing is known about"] = Visits.Anonymous,
+    };
 
     [Fact]
     public void The_Same_Visit_From_A_Household_Network_Is_Still_A_Person()

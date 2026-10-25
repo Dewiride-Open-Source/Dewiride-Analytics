@@ -1,5 +1,60 @@
 ﻿--- statement ---
 WITH
+    arrived AS
+    (
+        SELECT
+            event_id,
+            visitor_key,
+            correlation_id,
+            server_ts,
+            kind,
+            path,
+            status_code,
+            surface,
+            user_agent,
+            language,
+            viewport_width,
+            engaged_ms,
+            scroll_depth_percent,
+            had_pointer_interaction,
+            had_keyboard_interaction,
+            declared_web_driver,
+            autonomous_system,
+            network_owner,
+            confirmed_operator,
+            ip_address,
+            referrer AS source_address,
+            if(
+                referrer_domain != ''
+                AND referrer_domain != {site_domain:String}
+                AND NOT endsWith(referrer_domain, concat('.', {site_domain:String})),
+                if(
+                    startsWith(referrer_domain, 'www.'),
+                    substring(referrer_domain, 5),
+                    referrer_domain),
+                '') AS sending_host
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64} - {longest_visit_seconds:Int64} * 1000, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64} + {longest_visit_seconds:Int64} * 1000, 'UTC')
+    ),
+    named AS
+    (
+        SELECT
+            *,
+            splitByChar('.', sending_host) AS labels,
+            multiIf(
+                length(labels) < 2, sending_host,
+                length(labels) > 2
+                    AND has({second_levels:Array(String)}, arrayElement(labels, -2)),
+                    arrayElement(labels, -3),
+                arrayElement(labels, -2)) AS sending_name,
+            if(
+                has({source_keys:Array(String)}, sending_host),
+                sending_host,
+                sending_name) AS catalogue_key
+        FROM arrived
+    ),
     windowed AS
     (
         SELECT
@@ -22,13 +77,23 @@ WITH
             autonomous_system,
             network_owner,
             confirmed_operator,
-            ip_address
-        FROM events
-        WHERE site_id = {site_id:UUID}
-          AND server_ts >= fromUnixTimestamp64Milli(
-              {from_ms:Int64} - {longest_visit_seconds:Int64} * 1000, 'UTC')
-          AND server_ts < fromUnixTimestamp64Milli(
-              {to_ms:Int64} + {longest_visit_seconds:Int64} * 1000, 'UTC')
+            ip_address,
+            source_address,
+            sending_host,
+            transform(
+                catalogue_key,
+                {source_keys:Array(String)},
+                {source_names:Array(String)},
+                sending_host) AS source_site,
+            if(
+                sending_host = '',
+                '',
+                transform(
+                    catalogue_key,
+                    {source_keys:Array(String)},
+                    {source_channels:Array(String)},
+                    'link')) AS source_channel
+        FROM named
     ),
     echoed AS
     (
@@ -146,46 +211,87 @@ WITH
             max(engaged_ms) OVER (
                 PARTITION BY visitor_key, visit_ordinal, path, page_ordinal) AS page_engaged_ms
         FROM opened
+    ),
+    visits AS
+    (
+        SELECT
+            concat(visitor_key, ':', toString(toUnixTimestamp64Milli(min(server_ts)))) AS session_key,
+            min(server_ts) AS started_at,
+            max(server_ts) AS ended_at,
+            toBool(max(server_ts) < fromUnixTimestamp64Milli({settled_ms:Int64}, 'UTC')) AS is_closed,
+            toUInt32(countIf(opens_page)) AS page_count,
+            groupArraySortedIf({max_requests:UInt32})(
+                (toUnixTimestamp64Milli(server_ts), path, status_code),
+                opens_page) AS requests,
+            groupUniqArray(toString(surface)) AS surfaces,
+            anyIf(user_agent, user_agent != '') AS user_agent,
+            anyIf(language, language != '') AS language,
+            max(viewport_width) AS viewport_width,
+            sumIf(page_engaged_ms, opens_page) AS engaged_ms,
+            max(scroll_depth_percent) AS max_scroll_depth_percent,
+            toUInt32(countIf(had_pointer_interaction != 'Unobserved')) AS pointer_observed,
+            toUInt32(countIf(had_pointer_interaction = 'Yes')) AS pointer_seen,
+            toUInt32(countIf(had_keyboard_interaction != 'Unobserved')) AS keyboard_observed,
+            toUInt32(countIf(had_keyboard_interaction = 'Yes')) AS keyboard_seen,
+            toUInt32(countIf(declared_web_driver != 'Unobserved')) AS web_driver_observed,
+            toUInt32(countIf(declared_web_driver = 'Yes')) AS web_driver_seen,
+            max(autonomous_system) AS autonomous_system,
+            anyIf(network_owner, network_owner != '') AS network_owner,
+            anyIf(confirmed_operator, confirmed_operator != '') AS stamped_operator,
+            argMinIf(source_channel, (server_ts, event_id), sending_host != '') AS from_kind,
+            anyIf(ip_address, ip_address != '') AS ip_address
+        FROM attended
+        GROUP BY visitor_key, visit_ordinal
+        HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+           AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+           AND (session_key, ended_at) NOT IN
+           (
+               SELECT session_key, ended_at
+               FROM session_classifications
+               WHERE site_id = {site_id:UUID}
+                 AND ruleset_major = {ruleset_major:UInt16}
+                 AND ruleset_minor = {ruleset_minor:UInt16}
+                 AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                 AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+           )
+    ),
+    confirmations AS
+    (
+        SELECT
+            session_key,
+            argMax(operator, settled_at) AS operator
+        FROM name_confirmations
+        WHERE site_id = {site_id:UUID}
+          AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+        GROUP BY session_key
     )
 SELECT
-    concat(visitor_key, ':', toString(toUnixTimestamp64Milli(min(server_ts)))) AS session_key,
-    min(server_ts) AS started_at,
-    max(server_ts) AS ended_at,
-    toBool(max(server_ts) < fromUnixTimestamp64Milli({settled_ms:Int64}, 'UTC')) AS is_closed,
-    toUInt32(countIf(opens_page)) AS page_count,
-    groupArraySortedIf({max_requests:UInt32})(
-        (toUnixTimestamp64Milli(server_ts), path, status_code),
-        opens_page) AS requests,
-    groupUniqArray(toString(surface)) AS surfaces,
-    anyIf(user_agent, user_agent != '') AS user_agent,
-    anyIf(language, language != '') AS language,
-    max(viewport_width) AS viewport_width,
-    sumIf(page_engaged_ms, opens_page) AS engaged_ms,
-    max(scroll_depth_percent) AS max_scroll_depth_percent,
-    toUInt32(countIf(had_pointer_interaction != 'Unobserved')) AS pointer_observed,
-    toUInt32(countIf(had_pointer_interaction = 'Yes')) AS pointer_seen,
-    toUInt32(countIf(had_keyboard_interaction != 'Unobserved')) AS keyboard_observed,
-    toUInt32(countIf(had_keyboard_interaction = 'Yes')) AS keyboard_seen,
-    toUInt32(countIf(declared_web_driver != 'Unobserved')) AS web_driver_observed,
-    toUInt32(countIf(declared_web_driver = 'Yes')) AS web_driver_seen,
-    max(autonomous_system) AS autonomous_system,
-    anyIf(network_owner, network_owner != '') AS network_owner,
-    anyIf(confirmed_operator, confirmed_operator != '') AS confirmed_operator,
-    anyIf(ip_address, ip_address != '') AS ip_address
-FROM attended
-GROUP BY visitor_key, visit_ordinal
-HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-   AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
-   AND (session_key, ended_at) NOT IN
-   (
-       SELECT session_key, ended_at
-       FROM session_classifications
-       WHERE site_id = {site_id:UUID}
-         AND ruleset_major = {ruleset_major:UInt16}
-         AND ruleset_minor = {ruleset_minor:UInt16}
-         AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-         AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
-   )
+    session_key,
+    started_at,
+    ended_at,
+    is_closed,
+    page_count,
+    requests,
+    surfaces,
+    user_agent,
+    language,
+    viewport_width,
+    engaged_ms,
+    max_scroll_depth_percent,
+    pointer_observed,
+    pointer_seen,
+    keyboard_observed,
+    keyboard_seen,
+    web_driver_observed,
+    web_driver_seen,
+    autonomous_system,
+    network_owner,
+    if(stamped_operator != '', stamped_operator, ifNull(operator, '')) AS confirmed_operator,
+    from_kind,
+    ip_address
+FROM visits
+LEFT JOIN confirmations USING (session_key)
 ORDER BY started_at, session_key
 
 --- bound values ---
@@ -198,3 +304,8 @@ longest_visit_seconds = 86400
 max_requests = 1000
 ruleset_major = 4
 ruleset_minor = 2
+site_domain = 'blog.example.com'
+second_levels = ['ac', 'co', 'com', 'edu', 'go', 'gob', 'gouv', 'gov', 'govt', 'ne', 'net', 'or', 'org']
+source_keys = ['mail.google.com', 'news.google.com', 'translate.google.com', 'gemini.google.com', 'chat.openai.com', 'copilot.microsoft.com', 'com.google.android.gm', 'google', 'bing', 'yahoo', 'duckduckgo', 'ecosia', 'qwant', 'startpage', 'brave', 'kagi', 'mojeek', 'marginalia', 'searx', 'yandex', 'baidu', 'naver', 'daum', 'seznam', 'sogou', 'ask', 'aol', 'lycos', 'chatgpt', 'openai', 'perplexity', 'claude', 'copilot', 'phind', 'poe', 'facebook', 'instagram', 'threads', 'twitter', 'x', 't', 'linkedin', 'lnkd', 'reddit', 'youtube', 'youtu', 'pinterest', 'tiktok', 'bsky', 'mastodon', 'tumblr', 'vk', 'weibo', 'quora']
+source_names = ['Gmail', 'Google News', 'Google Translate', 'Gemini', 'ChatGPT', 'Copilot', 'Gmail', 'Google', 'Bing', 'Yahoo', 'DuckDuckGo', 'Ecosia', 'Qwant', 'Startpage', 'Brave Search', 'Kagi', 'Mojeek', 'Marginalia', 'SearXNG', 'Yandex', 'Baidu', 'Naver', 'Daum', 'Seznam', 'Sogou', 'Ask', 'AOL', 'Lycos', 'ChatGPT', 'ChatGPT', 'Perplexity', 'Claude', 'Copilot', 'Phind', 'Poe', 'Facebook', 'Instagram', 'Threads', 'X', 'X', 'X', 'LinkedIn', 'LinkedIn', 'Reddit', 'YouTube', 'YouTube', 'Pinterest', 'TikTok', 'Bluesky', 'Mastodon', 'Tumblr', 'VK', 'Weibo', 'Quora']
+source_channels = ['link', 'link', 'link', 'assistant', 'assistant', 'assistant', 'link', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social']

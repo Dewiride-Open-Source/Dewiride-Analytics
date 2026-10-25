@@ -19,6 +19,14 @@ namespace Dewiride.Analytics.Application.Sessions;
 /// was there, and grouping all of those together would invent one impossibly busy phantom and
 /// judge it.
 /// </para>
+/// <para>
+/// One part of the evidence is kept rather than derived: whose crawler a visit was. The collector
+/// marks a report with the company wherever it recognises the address as the report arrives — from
+/// a list the company publishes, or from an address a name check has already settled — and that
+/// comes back from the activity. A visit whose own reports arrived before its address was settled
+/// has the answer kept beside it instead, by the pass that settled it, because what the answer was
+/// worked out from, the address, does not survive.
+/// </para>
 /// </remarks>
 public interface ISessionSource
 {
@@ -41,6 +49,19 @@ public sealed record SessionWindow
 {
     /// <summary>The site whose activity is being grouped.</summary>
     public required Guid SiteId { get; init; }
+
+    /// <summary>
+    /// The address the site is known by, so its own pages are never taken for another site
+    /// sending a visit.
+    /// </summary>
+    /// <remarks>
+    /// A reader moving from one page to the next carries the site's own address as where they came
+    /// from. Read against this and the addresses below it, that is no arrival at all; read against
+    /// nothing, every page opened after the first would look like a link from somewhere else.
+    /// Never blank, for that reason. Taken from the site catalogue, never from anything a visitor
+    /// sent.
+    /// </remarks>
+    public required string SiteDomain { get; init; }
 
     /// <summary>Only visits that began at or after this instant are returned.</summary>
     /// <remarks>
@@ -135,7 +156,8 @@ public sealed record SessionWindow
 /// Absent for anything older than the retention window, because the address is erased 72 hours
 /// after the activity was received. A visit re-judged a year later is judged without it, which is
 /// correct: the evidence for that visit no longer includes an address, and inventing one would be
-/// the only alternative.
+/// the only alternative. What the address once established about whose crawler the visit was is
+/// not lost with it, because that answer is kept and comes back in the evidence.
 /// </para>
 /// </remarks>
 public readonly record struct ObservedSession(SessionEvidence Evidence, bool IsClosed, string? Address = null);

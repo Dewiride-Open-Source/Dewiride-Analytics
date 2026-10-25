@@ -6,6 +6,7 @@ using ClickHouse.Driver.Utility;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Classification.Sessions;
 using Dewiride.Analytics.Domain.Telemetry;
+using Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 using Column = Dewiride.Analytics.Infrastructure.ClickHouse.Sessions.SessionSqlCompiler.Column;
 
 namespace Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
@@ -81,6 +82,7 @@ internal sealed class ClickHouseSessionSource(IClickHouseClient client) : ISessi
         AutonomousSystem = reader.GetFieldValue<uint>(Column.AutonomousSystem),
         NetworkOwner = NullIfEmpty(reader.GetString(Column.NetworkOwner)),
         ConfirmedOperator = NullIfEmpty(reader.GetString(Column.ConfirmedOperator)),
+        SentBy = SendingSites.KindOf(reader.GetString(Column.SentBy)),
     };
 
     private static ImmutableArray<ObservedRequest> ToRequests(Tuple<long, string, short?>[] rows) =>

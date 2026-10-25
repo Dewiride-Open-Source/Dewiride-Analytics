@@ -26,6 +26,7 @@ public sealed class ClassificationProgressConfiguration : IEntityTypeConfigurati
         });
 
         builder.Property(progress => progress.ClassifiedThrough).IsRequired();
+        builder.Property(progress => progress.ReadThrough).IsRequired();
         builder.Property(progress => progress.UpdatedAt).IsRequired();
 
         builder.HasOne<Site>()

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Classification.Sessions;
 
 namespace Dewiride.Analytics.Application.Sessions;
@@ -22,11 +23,14 @@ namespace Dewiride.Analytics.Application.Sessions;
 public interface ISessionSource
 {
     /// <summary>
-    /// Reconstructs the visits that began inside a window.
+    /// Reconstructs the visits that began inside a window and still need judging.
     /// </summary>
     /// <param name="window">Which site, which stretch of time, and what counts as one visit.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The visits, oldest first, finished and unfinished alike.</returns>
+    /// <returns>
+    /// The visits, oldest first, finished and unfinished alike, less the ones already judged on
+    /// everything they now hold.
+    /// </returns>
     Task<ImmutableArray<ObservedSession>> ReadAsync(SessionWindow window, CancellationToken cancellationToken);
 }
 
@@ -74,6 +78,26 @@ public sealed record SessionWindow
     /// </para>
     /// </remarks>
     public required DateTimeOffset SettledBefore { get; init; }
+
+    /// <summary>
+    /// The rules the visits are being judged under. A visit already judged under them is left out,
+    /// unless more of it has arrived since.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// What lets a caller read from the earliest visit still in progress without judging everything
+    /// after it over again on every run. Judging waits on a visit that has not finished, and the
+    /// reading has to start where it waits so that the visit is found again; the visits after it
+    /// that were judged last time are what this leaves behind.
+    /// </para>
+    /// <para>
+    /// A visit is left out only while it is the visit that was judged: the same visit, ending at the
+    /// same instant. A report that arrives after the verdict and belongs to the visit — a page
+    /// announcing it is being left, hours after it was opened — makes it a longer visit than the
+    /// one judged, and it is read again and judged on all of itself once it is over.
+    /// </para>
+    /// </remarks>
+    public required RulesetVersion UnjudgedUnder { get; init; }
 
     /// <summary>How long a visitor may be quiet before their next activity counts as a new visit.</summary>
     public required TimeSpan IdleTimeout { get; init; }

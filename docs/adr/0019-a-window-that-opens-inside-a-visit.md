@@ -9,6 +9,10 @@
 - **Revised by**: [0035](0035-a-visit-is-judged-on-all-of-itself.md). The proof below that one idle
   timeout is enough rests on a visit being a chain of reports each less than one apart, which stopped
   being true in [0034](0034-a-visit-begins-where-somebody-arrived.md). The reach is now a full day.
+- **Revised by**: [0054](0054-a-visit-still-in-progress-holds-back-only-itself.md). "The bookmark is
+  left alone" held only for visits shorter than one stretch: a page left open longer pinned every
+  pass to the same six hours. The bookmark now keeps how far it has read beside how far it has
+  judged, and a reading leaves out what it judged last time.
 
 ## Context
 

@@ -18,6 +18,14 @@ namespace Dewiride.Analytics.Application.Sessions;
 /// would have been wrong in the meantime.
 /// </para>
 /// <para>
+/// A visit still in progress holds back nothing but itself. The bookmark keeps two instants: how
+/// far every visit has been judged, which waits where the earliest unfinished visit began so that
+/// it is found again, and how far every visit has been read, which does not wait for anybody. Each
+/// pass reads from the first to new ground past the second, and is handed only what still needs
+/// judging — so a page somebody leaves open all afternoon is picked up whole when it is closed,
+/// and everything that began while it was open is judged as it finishes rather than after it.
+/// </para>
+/// <para>
 /// A run is safe to interrupt, safe to repeat, and safe to have two of. Verdicts are stored under
 /// the visit's own derived identity, so writing one twice leaves one row; the bookmark only moves
 /// forward; and both instances reach the same conclusions because the engine is pure.
@@ -84,47 +92,54 @@ public sealed partial class SessionClassifier(
         // finishes while a run is working is the next run's to judge.
         var horizon = clock.GetUtcNow() - settings.IdleTimeout;
 
-        var resumeFrom = await progress
+        var bookmark = await progress
             .ResumeFromAsync(siteId, ruleset, siteAddedAt, cancellationToken)
             .ConfigureAwait(false);
 
         var judged = 0;
         var passes = 0;
 
-        while (passes < settings.PassesPerRun && resumeFrom < horizon)
+        // A run is over once everything that began before the horizon has been read. What was still
+        // in progress then stays in progress for the rest of the run, so reading again would find
+        // nothing new; the next run, with a later horizon, starts from it.
+        while (passes < settings.PassesPerRun && bookmark.ReadThrough < horizon)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Each pass stamps its verdicts with the moment it began, so where two passes of one run
-            // judge the same visit, the later pass's conclusion is the one that stands.
+            // Each pass stamps its verdicts with the moment it began, so where two passes judge the
+            // same visit, the later pass's conclusion is the one that stands.
             var began = clock.GetUtcNow();
-            var to = Earliest(horizon, resumeFrom + settings.LongestPass);
 
-            var pass = await RunPassAsync(siteId, resumeFrom, to, horizon, began, settings, cancellationToken)
-                .ConfigureAwait(false);
+            // The reading starts where judging waits, at the earliest visit that was still in
+            // progress, so that visit is found again. How far it reaches is counted from where the
+            // last reading stopped instead: the stretch between the two holds nothing but visits
+            // already judged, which the reading leaves out, and the visits still waiting.
+            var window = new SessionWindow
+            {
+                SiteId = siteId,
+                From = bookmark.ClassifiedThrough,
+                To = Earliest(horizon, bookmark.ReadThrough + settings.LongestPass),
+                SettledBefore = horizon,
+                UnjudgedUnder = ruleset,
+                IdleTimeout = settings.IdleTimeout,
+                MaxRequestsPerSession = settings.MaxRequestsPerSession,
+            };
+
+            var pass = await RunPassAsync(window, began, settings, cancellationToken).ConfigureAwait(false);
 
             judged += pass.Judged;
             passes++;
 
-            // The bookmark stops at the earliest visit still in progress. Everything after it was
-            // judged all the same and will simply be judged again next time, which costs a little
-            // work and means one visitor reading all afternoon does not hold up the whole site.
-            if (pass.ResumeFrom <= resumeFrom
-                || !await progress.AdvanceAsync(siteId, ruleset, pass.ResumeFrom, cancellationToken)
-                    .ConfigureAwait(false))
+            var reached = new ClassificationBookmark(pass.ClassifiedThrough, window.To);
+
+            if (!await progress.AdvanceAsync(siteId, ruleset, reached, cancellationToken).ConfigureAwait(false))
             {
+                // Another instance of the engine has already been at least this far, and is the one
+                // to carry on from here — or the site has been removed while this run was reading it.
                 break;
             }
 
-            resumeFrom = pass.ResumeFrom;
-
-            // A pass that read as far as the horizon leaves nothing for another to find. Where it
-            // stopped short, it stopped at a visit still in progress, and that visit stays in progress
-            // until the horizon moves, which happens in the next run.
-            if (to == horizon)
-            {
-                break;
-            }
+            bookmark = reached;
         }
 
         if (judged > 0)
@@ -132,39 +147,25 @@ public sealed partial class SessionClassifier(
             Log.Judged(logger, judged, siteId, ruleset);
         }
 
-        return new ClassificationOutcome(judged, resumeFrom);
+        return new ClassificationOutcome(judged, bookmark.ClassifiedThrough);
     }
 
     private async Task<PassResult> RunPassAsync(
-        Guid siteId,
-        DateTimeOffset resumeFrom,
-        DateTimeOffset to,
-        DateTimeOffset horizon,
+        SessionWindow window,
         DateTimeOffset began,
         ClassificationOptions settings,
         CancellationToken cancellationToken)
     {
-        var found = await sessions.ReadAsync(
-                new SessionWindow
-                {
-                    SiteId = siteId,
-                    From = resumeFrom,
-                    To = to,
-                    SettledBefore = horizon,
-                    IdleTimeout = settings.IdleTimeout,
-                    MaxRequestsPerSession = settings.MaxRequestsPerSession,
-                },
-                cancellationToken)
-            .ConfigureAwait(false);
+        var found = await sessions.ReadAsync(window, cancellationToken).ConfigureAwait(false);
 
         var judgements = await JudgeAsync(found, settings, cancellationToken).ConfigureAwait(false);
 
         if (judgements.Length > 0)
         {
-            await verdicts.SaveAsync(siteId, judgements, began, cancellationToken).ConfigureAwait(false);
+            await verdicts.SaveAsync(window.SiteId, judgements, began, cancellationToken).ConfigureAwait(false);
         }
 
-        return new PassResult(judgements.Length, EarliestUnfinished(found, to));
+        return new PassResult(judgements.Length, EarliestUnfinished(found, window.To));
     }
 
     /// <summary>
@@ -262,7 +263,14 @@ public sealed partial class SessionClassifier(
     private static DateTimeOffset Earliest(DateTimeOffset left, DateTimeOffset right) =>
         left <= right ? left : right;
 
-    private readonly record struct PassResult(int Judged, DateTimeOffset ResumeFrom);
+    /// <summary>What one pass got through.</summary>
+    /// <param name="Judged">How many visits it judged.</param>
+    /// <param name="ClassifiedThrough">
+    /// Every visit that began before this has now been judged: where the earliest visit the pass
+    /// found still in progress began, or the end of what it read where every visit it found had
+    /// finished.
+    /// </param>
+    private readonly record struct PassResult(int Judged, DateTimeOffset ClassifiedThrough);
 
     /// <summary>One finished visit and what the engine made of it.</summary>
     /// <param name="Session">The visit, with the address the identity check needs.</param>
@@ -293,5 +301,7 @@ public sealed partial class SessionClassifier(
 /// What a run got through.
 /// </summary>
 /// <param name="Judged">How many visits were judged.</param>
-/// <param name="ResumeFrom">Where the next run will pick up.</param>
+/// <param name="ResumeFrom">
+/// Where this run left judging waiting: every visit that began before it has been judged.
+/// </param>
 public readonly record struct ClassificationOutcome(int Judged, DateTimeOffset ResumeFrom);

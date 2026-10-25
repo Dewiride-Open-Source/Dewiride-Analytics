@@ -36,7 +36,7 @@ internal sealed class JudgingHarness
     private readonly List<SessionJudgement> _stored = [];
     private readonly List<DateTimeOffset> _stampedAt = [];
     private readonly List<IReadOnlyCollection<string>> _asked = [];
-    private DateTimeOffset _bookmark = AddedAt;
+    private ClassificationBookmark _bookmark = new(AddedAt, AddedAt);
 
     /// <summary>Reconstructs visits.</summary>
     public ISessionSource Sessions { get; } = Substitute.For<ISessionSource>();
@@ -62,8 +62,17 @@ internal sealed class JudgingHarness
     /// <summary>When each batch of stored verdicts says it was reached, in order.</summary>
     public IReadOnlyList<DateTimeOffset> StampedAt => _stampedAt;
 
-    /// <summary>Where the bookmark ended up.</summary>
-    public DateTimeOffset Bookmark => _bookmark;
+    /// <summary>Where the bookmark ended up: every visit that began before it has been judged.</summary>
+    public DateTimeOffset Bookmark => _bookmark.ClassifiedThrough;
+
+    /// <summary>How far the bookmark has read: every visit that began before it has been read.</summary>
+    public DateTimeOffset ReadThrough => _bookmark.ReadThrough;
+
+    /// <summary>
+    /// Whether another instance of the engine has always already been further than this one gets,
+    /// so that no move this one asks for is ever made.
+    /// </summary>
+    public bool AnotherEngineIsAhead { get; init; }
 
     /// <summary>How the classifier is tuned.</summary>
     public ClassificationOptions Settings { get; init; } = new();
@@ -110,20 +119,12 @@ internal sealed class JudgingHarness
         Progress.ResumeFromAsync(SiteId, Arg.Any<RulesetVersion>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .Returns(_ => _bookmark);
 
-        Progress.AdvanceAsync(SiteId, Arg.Any<RulesetVersion>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                var to = call.Arg<DateTimeOffset>();
-
-                if (to <= _bookmark)
-                {
-                    return false;
-                }
-
-                _bookmark = to;
-
-                return true;
-            });
+        Progress.AdvanceAsync(
+                SiteId,
+                Arg.Any<RulesetVersion>(),
+                Arg.Any<ClassificationBookmark>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => Advance(call.Arg<ClassificationBookmark>()));
 
         Verdicts.SaveAsync(
                 SiteId,
@@ -174,9 +175,41 @@ internal sealed class JudgingHarness
             });
     }
 
+    /// <summary>
+    /// Makes the source answer the way the store does: with the visits that began inside the window
+    /// asked for, less the ones already judged on everything they now hold.
+    /// </summary>
+    /// <param name="stored">Every visit the store holds.</param>
+    public void Holding(params ObservedSession[] stored) =>
+        Sessions.ReadAsync(Arg.Any<SessionWindow>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var window = call.Arg<SessionWindow>();
+
+                Read(window);
+
+                return ImmutableArray.CreateRange(stored.Where(visit =>
+                    visit.Evidence.StartedAt >= window.From
+                    && visit.Evidence.StartedAt < window.To
+                    && !JudgedAsItIs(visit, window.UnjudgedUnder)));
+            });
+
     /// <summary>Starts the bookmark somewhere other than when the site was added.</summary>
-    /// <param name="instant">Where judging should resume from.</param>
-    public void ResumeFrom(DateTimeOffset instant) => _bookmark = instant;
+    /// <param name="instant">Where judging and reading should both resume from.</param>
+    public void ResumeFrom(DateTimeOffset instant) => _bookmark = new ClassificationBookmark(instant, instant);
+
+    /// <summary>
+    /// Starts the bookmark with judging waiting behind how far it has read, as it does while a
+    /// visit is still in progress.
+    /// </summary>
+    /// <param name="classifiedThrough">Where judging waits.</param>
+    /// <param name="readThrough">How far everything has been read.</param>
+    public void ResumeFrom(DateTimeOffset classifiedThrough, DateTimeOffset readThrough) =>
+        _bookmark = new ClassificationBookmark(classifiedThrough, readThrough);
+
+    /// <summary>Lets the present move on, as it does between two runs.</summary>
+    /// <param name="interval">How far.</param>
+    public void Wait(TimeSpan interval) => _clock.Advance(interval);
 
     /// <summary>Runs the classifier over the site.</summary>
     /// <returns>What the run got through.</returns>
@@ -199,6 +232,42 @@ internal sealed class JudgingHarness
         _windows.Add(window);
         _clock.Advance(EachReadTakes);
     }
+
+    /// <summary>
+    /// Moves the bookmark the way the store does: each instant forward only, and nothing at all
+    /// where another engine is always ahead.
+    /// </summary>
+    /// <param name="reached">How far the classifier says it has got.</param>
+    /// <returns>Whether anything moved.</returns>
+    private bool Advance(ClassificationBookmark reached)
+    {
+        var judgedFurther = reached.ClassifiedThrough > _bookmark.ClassifiedThrough;
+        var readFurther = reached.ReadThrough > _bookmark.ReadThrough;
+
+        if (AnotherEngineIsAhead || (!judgedFurther && !readFurther))
+        {
+            return false;
+        }
+
+        _bookmark = new ClassificationBookmark(
+            judgedFurther ? reached.ClassifiedThrough : _bookmark.ClassifiedThrough,
+            readFurther ? reached.ReadThrough : _bookmark.ReadThrough);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a verdict is already stored for this visit under these rules, reached on everything
+    /// the visit now holds.
+    /// </summary>
+    /// <param name="visit">The visit.</param>
+    /// <param name="ruleset">The rules it is being judged under.</param>
+    /// <returns><see langword="true"/> where the store would leave it out of a reading.</returns>
+    private bool JudgedAsItIs(ObservedSession visit, RulesetVersion ruleset) =>
+        _stored.Exists(judgement =>
+            judgement.Session.SessionKey == visit.Evidence.SessionKey
+            && judgement.Session.EndedAt == visit.Evidence.EndedAt
+            && judgement.Verdict.RulesetVersion == ruleset);
 
     /// <summary>An ordinary browser string, which says nothing about who is behind it.</summary>
     public const string Anonymous =

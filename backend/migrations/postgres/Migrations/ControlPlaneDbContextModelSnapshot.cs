@@ -18,7 +18,7 @@ namespace Dewiride.Analytics.Migrations.Postgres.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.13")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -40,6 +40,10 @@ namespace Dewiride.Analytics.Migrations.Postgres.Migrations
                     b.Property<DateTimeOffset>("ClassifiedThrough")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("classified_through");
+
+                    b.Property<DateTimeOffset>("ReadThrough")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("read_through");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")

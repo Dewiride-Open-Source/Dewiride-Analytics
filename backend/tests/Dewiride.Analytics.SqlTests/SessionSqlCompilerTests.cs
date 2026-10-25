@@ -1,4 +1,5 @@
 using Dewiride.Analytics.Application.Sessions;
+using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
 using Dewiride.Analytics.Testing;
 
@@ -17,6 +18,12 @@ public sealed class SessionSqlCompilerTests
     private static readonly Guid SiteId = Guid.Parse("0197c0de-0000-7000-8000-000000000001");
     private static readonly DateTimeOffset From = new(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset To = new(2026, 5, 1, 6, 0, 0, TimeSpan.Zero);
+
+    /// <summary>
+    /// Rules other than the ones compiled into the build, so the approved statement does not change
+    /// every time the rules do.
+    /// </summary>
+    private static readonly RulesetVersion Rules = new(4, 2);
 
     [Fact]
     public void Reconstructing_Visits()
@@ -179,6 +186,43 @@ public sealed class SessionSqlCompilerTests
         sql.Should().Contain("AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')");
     }
 
+    /// <summary>
+    /// The reading starts where judging waits, at the earliest visit still in progress, and that
+    /// can be most of a day back. A visit already judged under the same rules is left out, so the
+    /// visits after an open one are judged once rather than on every run until it closes — and the
+    /// match includes when the visit ended, so one a later report has made longer is read again.
+    /// </summary>
+    [Fact]
+    public void A_Visit_Already_Judged_Under_The_Same_Rules_Is_Left_Out_Until_More_Of_It_Arrives()
+    {
+        var statement = SessionSqlCompiler.Compile(Window());
+
+        statement.Sql.Should().Contain("AND (session_key, ended_at) NOT IN");
+        statement.Sql.Should().Contain("SELECT session_key, ended_at");
+        statement.Sql.Should().Contain("FROM session_classifications");
+        statement.Sql.Should().Contain("AND ruleset_major = {ruleset_major:UInt16}");
+        statement.Sql.Should().Contain("AND ruleset_minor = {ruleset_minor:UInt16}");
+        statement.Parameters.Should().Contain(parameter =>
+            parameter.Name == "ruleset_major" && (ushort)parameter.Value == Rules.Major);
+        statement.Parameters.Should().Contain(parameter =>
+            parameter.Name == "ruleset_minor" && (ushort)parameter.Value == Rules.Minor);
+    }
+
+    /// <summary>
+    /// The verdicts looked up are this site's, inside the same window: the bounds keep a reading to
+    /// the month the window falls in, which is how the table is partitioned, rather than to a site's
+    /// whole history.
+    /// </summary>
+    [Fact]
+    public void The_Verdicts_Looked_Up_Are_This_Sites_And_Inside_The_Window()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+
+        sql.Should().Contain("site_id = {site_id:UUID}", Exactly.Twice());
+        sql.Should().Contain("started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')", Exactly.Twice());
+        sql.Should().Contain("started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')", Exactly.Twice());
+    }
+
     [Fact]
     public void Compiling_Refuses_A_Missing_Window()
     {
@@ -193,6 +237,7 @@ public sealed class SessionSqlCompilerTests
         From = From,
         To = To,
         SettledBefore = To,
+        UnjudgedUnder = Rules,
         IdleTimeout = TimeSpan.FromMinutes(30),
         MaxRequestsPerSession = 1000,
     };

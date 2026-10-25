@@ -48,6 +48,14 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
 /// silence before it, so a departure sent when a tab is finally closed joins a visit it is hours
 /// adrift of, and a visit is a chain that can have hours between its links.
 /// </para>
+/// <para>
+/// A visit already judged under the caller's rules is left out, for as long as it is the visit
+/// that was judged. The caller's reading starts where its judging waits, at the earliest visit
+/// still in progress, and that can be most of a day behind the present when somebody leaves a page
+/// open; without this, every visit judged since would be judged again on every run until the page
+/// was closed. The match is on the visit's name and the instant it ended, so a visit that a later
+/// report has made longer is read again and judged on all of itself.
+/// </para>
 /// </remarks>
 public static class SessionSqlCompiler
 {
@@ -58,6 +66,8 @@ public static class SessionSqlCompiler
     private const string IdleParameter = "idle_seconds";
     private const string LongestVisitParameter = "longest_visit_seconds";
     private const string MaxRequestsParameter = "max_requests";
+    private const string RulesetMajorParameter = "ruleset_major";
+    private const string RulesetMinorParameter = "ruleset_minor";
 
     /// <summary>
     /// Column positions in the statement below, so the reader and the statement cannot drift.
@@ -255,6 +265,16 @@ public static class SessionSqlCompiler
         GROUP BY visitor_key, visit_ordinal
         HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
            AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+           AND (session_key, ended_at) NOT IN
+           (
+               SELECT session_key, ended_at
+               FROM session_classifications
+               WHERE site_id = {site_id:UUID}
+                 AND ruleset_major = {ruleset_major:UInt16}
+                 AND ruleset_minor = {ruleset_minor:UInt16}
+                 AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                 AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+           )
         ORDER BY started_at, session_key
         """;
 
@@ -277,6 +297,8 @@ public static class SessionSqlCompiler
                 new QueryParameter(IdleParameter, (long)window.IdleTimeout.TotalSeconds),
                 new QueryParameter(LongestVisitParameter, (long)VisitorKeys.LongestVisit.TotalSeconds),
                 new QueryParameter(MaxRequestsParameter, (uint)window.MaxRequestsPerSession),
+                new QueryParameter(RulesetMajorParameter, (ushort)window.UnjudgedUnder.Major),
+                new QueryParameter(RulesetMinorParameter, (ushort)window.UnjudgedUnder.Minor),
             ]);
     }
 }

@@ -9,6 +9,7 @@ using Dewiride.Analytics.Infrastructure.Persistence;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Dewiride.Analytics.Integration.Tests.Classification;
 
@@ -510,24 +511,88 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// Judging a visit twice must leave one verdict. That is what lets a run be interrupted, and
-    /// what lets two instances of the engine work the same site without coordinating.
+    /// A run that has lost its bookmark reads the site again from the start, and leaves out every
+    /// visit already judged on everything it holds: nothing is judged a second time.
     /// </summary>
     [Fact]
-    public async Task Judging_The_Same_Visit_Again_Leaves_One_Verdict()
+    public async Task Reading_A_Site_Again_From_The_Start_Judges_Nothing_It_Already_Judged()
     {
         var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
         var at = Yesterday;
 
         await WriteAsync(Page(site.Id, "returning", at, "/", Chrome));
 
-        await JudgeAsync(site);
+        var first = await JudgeAsync(site);
         await ResetBookmarkAsync(site.Id);
-        await JudgeAsync(site);
+        var again = await JudgeAsync(site);
 
         var breakdown = await BreakdownAsync(site);
 
+        first.Judged.Should().Be(1);
+        again.Judged.Should().Be(0);
         breakdown.Sum(group => group.Sessions).Should().Be(1);
+    }
+
+    /// <summary>
+    /// Two instances of the engine reading the same stretch at once can each judge a visit before
+    /// either verdict is stored, and a visit made longer is judged again. Every verdict is kept under
+    /// the visit's one name, the visit is counted once, and the conclusion reached later stands.
+    /// </summary>
+    [Fact]
+    public async Task Judging_The_Same_Visit_Twice_Leaves_One_Verdict_And_The_Later_Stands()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+
+        await WriteAsync(Page(site.Id, "returning", Yesterday, "/", Chrome));
+
+        var visit = (await ReadSessionsAsync(site.Id)).Single();
+        var verdict = TrafficClassifier.Current().Classify(visit.Evidence);
+        var store = stack.Services.GetRequiredService<IClassificationStore>();
+
+        await store.SaveAsync(
+            site.Id,
+            [new SessionJudgement(visit.Evidence, verdict)],
+            Now.AddMinutes(-2),
+            Cancellation.Token);
+        await store.SaveAsync(
+            site.Id,
+            [new SessionJudgement(visit.Evidence, verdict with { Category = TrafficCategory.SecurityScanner })],
+            Now.AddMinutes(-1),
+            Cancellation.Token);
+
+        var breakdown = await BreakdownAsync(site);
+        var visits = await VisitsAsync(site);
+
+        breakdown.Sum(group => group.Sessions).Should().Be(1);
+        visits.Should().ContainSingle()
+            .Which.Verdict.Category.Should().Be(TrafficCategory.SecurityScanner);
+    }
+
+    /// <summary>
+    /// A verdict under other rules does not stand for one under these. That is what lets a change
+    /// of rules judge a site's whole history again: the reading leaves out only what the rules being
+    /// run have judged.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Judged_Only_Under_Other_Rules_Is_Judged_Under_These()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+
+        await WriteAsync(Page(site.Id, "returning", Yesterday, "/", Chrome));
+
+        var visit = (await ReadSessionsAsync(site.Id)).Single();
+        var earlier = new RulesetVersion(RulesetVersion.Current.Major - 1, 0);
+        var verdict = TrafficClassifier.Current().Classify(visit.Evidence) with { RulesetVersion = earlier };
+
+        await stack.Services.GetRequiredService<IClassificationStore>()
+            .SaveAsync(site.Id, [new SessionJudgement(visit.Evidence, verdict)], Now, Cancellation.Token);
+
+        var outcome = await JudgeAsync(site);
+        var visits = await VisitsAsync(site);
+
+        outcome.Judged.Should().Be(1);
+        visits.Should().ContainSingle()
+            .Which.Verdict.RulesetVersion.Should().Be(RulesetVersion.Current);
     }
 
     /// <summary>
@@ -581,6 +646,116 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         var visits = await VisitsAsync(site);
 
         visits.Should().ContainSingle().Which.PageCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// A page left on somebody's screen reports every minute while it is in front of them, so
+    /// their visit is still going hours later. It waits to be judged; the visits that began while it
+    /// was open do not — not the one an hour in, and not the one that began more than a whole
+    /// stretch after it, past anything the engine reads in one pass.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_Left_Open_All_Day_Holds_Back_Only_Its_Own_Visit()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var stretch = stack.Services.GetRequiredService<IOptions<ClassificationOptions>>().Value.LongestPass;
+        var later = stretch + TimeSpan.FromHours(1);
+        var opened = Now - later - TimeSpan.FromHours(1);
+
+        await WriteAsync(LeftOpen(site.Id, "lingering", opened, Now.AddMinutes(-5)));
+        await WriteAsync(
+            Page(site.Id, "early", opened.AddHours(1), "/", Chrome),
+            Read(site.Id, "early", opened.AddHours(1).AddMinutes(4), Chrome),
+            Page(site.Id, "late", opened + later, "/posts/later", Chrome),
+            Read(site.Id, "late", opened + later + TimeSpan.FromMinutes(4), Chrome, "/posts/later"));
+
+        var outcome = await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Select(visit => visit.StartedAt).Order().Should().SatisfyRespectively(
+            early => early.Should().BeCloseTo(opened.AddHours(1), TimeSpan.FromMilliseconds(1)),
+            late => late.Should().BeCloseTo(opened + later, TimeSpan.FromMilliseconds(1)));
+        outcome.ResumeFrom.Should().BeCloseTo(opened, TimeSpan.FromMilliseconds(1));
+    }
+
+    /// <summary>
+    /// Every run starts back at the visit still open, so as to find it again, and leaves out what
+    /// it judged last time. A visit is judged once, however many runs pass before the page left
+    /// open is closed.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Judged_Behind_One_Still_Open_Is_Not_Judged_Again()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var opened = Now.AddHours(-3);
+
+        await WriteAsync(LeftOpen(site.Id, "lingering", opened, Now.AddMinutes(-5)));
+        await WriteAsync(
+            Page(site.Id, "behind", opened.AddHours(1), "/", Chrome),
+            Read(site.Id, "behind", opened.AddHours(1).AddMinutes(4), Chrome));
+
+        var first = await JudgeAsync(site);
+        var second = await JudgeAsync(site);
+
+        first.Judged.Should().Be(1);
+        second.Judged.Should().Be(0);
+    }
+
+    /// <summary>
+    /// A page announcing it is being left can arrive long after the reading it ends, and it belongs
+    /// to the visit that page was opened in. Where that visit has been judged already, it is a
+    /// longer visit than the one judged, and it is judged again on all of itself.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Made_Longer_After_It_Was_Judged_Is_Judged_Again_On_All_Of_Itself()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var opened = Now.AddHours(-3);
+        var arrived = opened.AddHours(1);
+
+        await WriteAsync(LeftOpen(site.Id, "lingering", opened, Now.AddMinutes(-5)));
+        await WriteAsync(
+            Page(site.Id, "returning", arrived, "/", Chrome),
+            Read(site.Id, "returning", arrived.AddMinutes(4), Chrome));
+
+        await JudgeAsync(site);
+        await WriteAsync(Read(site.Id, "returning", arrived.AddHours(1), Chrome));
+        var again = await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        again.Judged.Should().Be(1);
+        visits.Should().ContainSingle()
+            .Which.EndedAt.Should().BeCloseTo(arrived.AddHours(1), TimeSpan.FromMilliseconds(1));
+    }
+
+    /// <summary>
+    /// The same case while the report is still recent, which is how it reaches a live site: the
+    /// collector stamps a report when it arrives, so a visit a report has just made longer is in
+    /// progress again. It is not judged again yet, and its verdict stands as it was until it is.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_A_Report_Has_Just_Made_Longer_Keeps_Its_Verdict_Until_It_Is_Over()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var opened = Now.AddHours(-3);
+        var arrived = opened.AddHours(1);
+
+        await WriteAsync(LeftOpen(site.Id, "lingering", opened, Now.AddMinutes(-5)));
+        await WriteAsync(
+            Page(site.Id, "returning", arrived, "/", Chrome),
+            Read(site.Id, "returning", arrived.AddMinutes(4), Chrome));
+
+        await JudgeAsync(site);
+        await WriteAsync(Read(site.Id, "returning", Now.AddMinutes(-10), Chrome));
+        var again = await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        again.Judged.Should().Be(0);
+        visits.Should().ContainSingle()
+            .Which.EndedAt.Should().BeCloseTo(arrived.AddMinutes(4), TimeSpan.FromMilliseconds(1));
     }
 
     /// <summary>
@@ -796,10 +971,14 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         // reads its own value back one truncation coarser than the engines that lost the race. A
         // starting point is a window boundary measured in minutes; agreeing to the precision the
         // store keeps is the guarantee, and the whole of it.
-        starts.Should().AllSatisfy(start => start.Should().BeCloseTo(from, TimeSpan.FromMicroseconds(1)));
+        starts.Should().AllSatisfy(start =>
+        {
+            start.ClassifiedThrough.Should().BeCloseTo(from, TimeSpan.FromMicroseconds(1));
+            start.ReadThrough.Should().BeCloseTo(from, TimeSpan.FromMicroseconds(1));
+        });
     }
 
-    private async Task<DateTimeOffset> ResumePointAsync(Guid siteId, DateTimeOffset from)
+    private async Task<ClassificationBookmark> ResumePointAsync(Guid siteId, DateTimeOffset from)
     {
         await using var scope = stack.Services.CreateAsyncScope();
 
@@ -923,6 +1102,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
                     From = Now.AddDays(-2),
                     To = Now.AddMinutes(-31),
                     SettledBefore = Now.AddMinutes(-30),
+                    UnjudgedUnder = RulesetVersion.Current,
                     IdleTimeout = TimeSpan.FromMinutes(30),
                     MaxRequestsPerSession = 1000,
                 },
@@ -947,8 +1127,8 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// Moves the bookmark back so the same activity is judged again, which is what an interrupted
-    /// run or a second instance of the engine would do.
+    /// Removes the bookmark so the same activity is read again from the start, which is what an
+    /// interrupted run or a second instance of the engine would do.
     /// </summary>
     private async Task ResetBookmarkAsync(Guid siteId)
     {
@@ -981,6 +1161,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
                     From = from,
                     To = to,
                     SettledBefore = Now.AddMinutes(-30),
+                    UnjudgedUnder = RulesetVersion.Current,
                     IdleTimeout = TimeSpan.FromMinutes(30),
                     MaxRequestsPerSession = 1000,
                 },
@@ -1032,6 +1213,41 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
             Kind = EventKind.Exit,
             EngagedMs = 30_000,
             ScrollDepthPercent = 70,
+            HadPointerInteraction = true,
+            HadKeyboardInteraction = false,
+            DeclaredWebDriver = false,
+        };
+
+    /// <summary>
+    /// A page held in front of somebody from one moment to another, reporting on itself while it
+    /// is, as a tracker does — often enough that the visit is never quiet for an idle timeout, so
+    /// it is still going at the last report.
+    /// </summary>
+    /// <param name="siteId">The site.</param>
+    /// <param name="visitor">Whose page it is.</param>
+    /// <param name="from">When the page was opened.</param>
+    /// <param name="until">When it last reported.</param>
+    /// <returns>The arrival and every report after it.</returns>
+    private static RawEvent[] LeftOpen(Guid siteId, string visitor, DateTimeOffset from, DateTimeOffset until)
+    {
+        var reports = new List<RawEvent> { Page(siteId, visitor, from, "/docs", Chrome) };
+
+        for (var at = from.AddMinutes(20); at < until; at = at.AddMinutes(20))
+        {
+            reports.Add(StillReading(siteId, visitor, from, at));
+        }
+
+        reports.Add(StillReading(siteId, visitor, from, until));
+
+        return [.. reports];
+    }
+
+    private static RawEvent StillReading(Guid siteId, string visitor, DateTimeOffset opened, DateTimeOffset at) =>
+        Page(siteId, visitor, at, "/docs", Chrome) with
+        {
+            Kind = EventKind.Engagement,
+            EngagedMs = (int)(at - opened).TotalMilliseconds,
+            ScrollDepthPercent = 40,
             HadPointerInteraction = true,
             HadKeyboardInteraction = false,
             DeclaredWebDriver = false,

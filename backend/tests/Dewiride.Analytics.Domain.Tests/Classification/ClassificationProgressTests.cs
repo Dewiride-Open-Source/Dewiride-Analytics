@@ -3,7 +3,8 @@ using Dewiride.Analytics.Domain.Classification;
 namespace Dewiride.Analytics.Domain.Tests.Classification;
 
 /// <summary>
-/// Proves the bookmark behaves the way two engines working the same site need it to.
+/// Proves where a bookmark starts. How it moves is the store's to enforce, because only the store
+/// sees every instance of the engine, and it is proved against a real database.
 /// </summary>
 public sealed class ClassificationProgressTests
 {
@@ -19,35 +20,7 @@ public sealed class ClassificationProgressTests
         progress.RulesetMajor.Should().Be(1);
         progress.RulesetMinor.Should().Be(0);
         progress.ClassifiedThrough.Should().Be(Noon);
-    }
-
-    [Fact]
-    public void Moving_It_Forward_Records_When_It_Moved()
-    {
-        var progress = new ClassificationProgress(SiteId, 1, 0, Noon);
-
-        progress.AdvanceTo(Noon.AddHours(6), Noon.AddHours(7)).Should().BeTrue();
-
-        progress.ClassifiedThrough.Should().Be(Noon.AddHours(6));
-        progress.UpdatedAt.Should().Be(Noon.AddHours(7));
-    }
-
-    /// <summary>
-    /// Two instances of the engine may work the same site without coordinating, and one of them
-    /// may be a moment behind. A bookmark that could move backwards would send it over the same
-    /// stretch for ever.
-    /// </summary>
-    [Theory]
-    [InlineData(-1)]
-    [InlineData(0)]
-    public void It_Never_Moves_Backwards(int hours)
-    {
-        var progress = new ClassificationProgress(SiteId, 1, 0, Noon);
-        progress.AdvanceTo(Noon.AddHours(6), Noon.AddHours(7));
-
-        progress.AdvanceTo(Noon.AddHours(6 + hours), Noon.AddHours(8)).Should().BeFalse();
-
-        progress.ClassifiedThrough.Should().Be(Noon.AddHours(6));
-        progress.UpdatedAt.Should().Be(Noon.AddHours(7));
+        progress.ReadThrough.Should().Be(Noon);
+        progress.UpdatedAt.Should().Be(Noon);
     }
 }

@@ -40,11 +40,21 @@ public sealed class ClassificationOptions
     public TimeSpan IdleTimeout { get; init; } = TimeSpan.FromMinutes(30);
 
     /// <summary>
-    /// Longest stretch of time one pass covers.
+    /// Longest stretch of new time one pass covers.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Caps how much is reconstructed at once, which is what keeps an install that has been
     /// switched off for a month from trying to group a month of activity in a single statement.
+    /// </para>
+    /// <para>
+    /// Counted from where the last pass stopped reading rather than from where judging waits. A
+    /// pass starts at the earliest visit still in progress so that the visit is found again, and
+    /// that can be most of a day back when somebody has left a page open; what lies between there
+    /// and the last reading is visits already judged, which are left out, and the visits still
+    /// waiting. Counted from the visit instead, a page open for longer than this would stop every
+    /// visit after it being read until it was closed.
+    /// </para>
     /// </remarks>
     [Range(typeof(TimeSpan), "00:15:00", "7.00:00:00")]
     public TimeSpan LongestPass { get; init; } = TimeSpan.FromHours(6);

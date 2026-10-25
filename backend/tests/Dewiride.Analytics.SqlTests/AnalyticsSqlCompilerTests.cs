@@ -2865,6 +2865,7 @@ public sealed partial class AnalyticsSqlCompilerTests
             From = From,
             To = To,
             SettledBefore = To,
+            UnjudgedUnder = RulesetVersion.Current,
             IdleTimeout = IdleTimeout,
             MaxRequestsPerSession = 1000,
         };

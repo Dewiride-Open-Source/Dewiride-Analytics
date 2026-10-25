@@ -6,10 +6,22 @@ namespace Dewiride.Analytics.Domain.Classification;
 /// <remarks>
 /// <para>
 /// A bookmark, not a queue. Sessions are reconstructed from the events themselves, so the only
-/// thing that has to be remembered between runs is where to resume — and remembering an instant
+/// thing that has to be remembered between runs is where to resume — and remembering two instants
 /// rather than a list of outstanding work means an interrupted run resumes correctly whatever it
 /// had already done, and a run that judges the same session twice costs a little time and changes
 /// nothing.
+/// </para>
+/// <para>
+/// Two instants, because a visit still in progress and the reading of everything after it are two
+/// different things to wait for. Judging cannot step past a visit that has not finished, or that
+/// visit would never be judged; reading has no such reason to stop, and a bookmark that kept only
+/// the first would make one visitor who leaves a page open all afternoon the reason nothing after
+/// them is judged until they close it.
+/// </para>
+/// <para>
+/// Each instant only ever moves forward. Two instances of the engine may work the same site without
+/// coordinating, and one of them may be running a moment behind; a bookmark that could move
+/// backwards would send it over the same stretch for ever.
 /// </para>
 /// <para>
 /// Kept per ruleset. Improving the rules does not rewrite what the old ones concluded; it starts
@@ -32,11 +44,22 @@ public sealed class ClassificationProgress
     /// Every session that began before this instant has been judged.
     /// </summary>
     /// <remarks>
-    /// Sessions that began after it may also have been judged — a run judges everything it can
-    /// see and then moves the bookmark only as far as the earliest visit that had not finished,
-    /// so that one long visit does not hold up everything behind it.
+    /// It stops at the earliest visit that had not finished when it was last read, and sessions
+    /// that began after it have been judged too wherever they had finished — see
+    /// <see cref="ReadThrough"/>.
     /// </remarks>
     public DateTimeOffset ClassifiedThrough { get; private set; }
+
+    /// <summary>
+    /// Every session that began before this instant has been read.
+    /// </summary>
+    /// <remarks>
+    /// The ones that had finished when they were read were judged then, and any that had not began
+    /// no earlier than <see cref="ClassifiedThrough"/>, which is where the next reading starts from
+    /// so that they are found again. Everything judged has been read, so wherever this is earlier
+    /// than <see cref="ClassifiedThrough"/> the reading is taken to have got that far.
+    /// </remarks>
+    public DateTimeOffset ReadThrough { get; private set; }
 
     /// <summary>When the bookmark last moved.</summary>
     public DateTimeOffset UpdatedAt { get; private set; }
@@ -56,31 +79,7 @@ public sealed class ClassificationProgress
         RulesetMajor = rulesetMajor;
         RulesetMinor = rulesetMinor;
         ClassifiedThrough = startingAt;
+        ReadThrough = startingAt;
         UpdatedAt = startingAt;
-    }
-
-    /// <summary>
-    /// Moves the bookmark forward.
-    /// </summary>
-    /// <remarks>
-    /// Forward only. Two instances of the engine may work the same site without coordinating —
-    /// they reach the same conclusions from the same events and store them idempotently — but one
-    /// of them may be running a moment behind, and a bookmark that could move backwards would
-    /// make it judge the same stretch for ever.
-    /// </remarks>
-    /// <param name="instant">The instant to move to.</param>
-    /// <param name="at">When the move happened, from the injected clock.</param>
-    /// <returns><see langword="true"/> when the bookmark moved.</returns>
-    public bool AdvanceTo(DateTimeOffset instant, DateTimeOffset at)
-    {
-        if (instant <= ClassifiedThrough)
-        {
-            return false;
-        }
-
-        ClassifiedThrough = instant;
-        UpdatedAt = at;
-
-        return true;
     }
 }

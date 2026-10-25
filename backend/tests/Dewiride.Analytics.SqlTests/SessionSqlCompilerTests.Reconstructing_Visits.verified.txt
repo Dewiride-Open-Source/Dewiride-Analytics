@@ -176,6 +176,16 @@ FROM attended
 GROUP BY visitor_key, visit_ordinal
 HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
    AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+   AND (session_key, ended_at) NOT IN
+   (
+       SELECT session_key, ended_at
+       FROM session_classifications
+       WHERE site_id = {site_id:UUID}
+         AND ruleset_major = {ruleset_major:UInt16}
+         AND ruleset_minor = {ruleset_minor:UInt16}
+         AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+         AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+   )
 ORDER BY started_at, session_key
 
 --- bound values ---
@@ -186,3 +196,5 @@ settled_ms = 1777615200000
 idle_seconds = 1800
 longest_visit_seconds = 86400
 max_requests = 1000
+ruleset_major = 4
+ruleset_minor = 2

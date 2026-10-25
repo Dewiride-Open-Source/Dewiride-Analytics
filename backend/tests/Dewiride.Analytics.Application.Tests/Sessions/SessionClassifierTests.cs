@@ -33,36 +33,249 @@ public sealed class SessionClassifierTests
     }
 
     /// <summary>
-    /// The bookmark stops at the earliest visit that had not finished, so the next run picks that
-    /// visit up rather than stepping over it.
+    /// Judging waits at the earliest visit that had not finished, so the next run picks that visit
+    /// up rather than stepping over it. Reading does not wait for it.
     /// </summary>
     [Fact]
-    public async Task The_Bookmark_Stops_At_The_Earliest_Unfinished_Visit()
+    public async Task Judging_Waits_At_The_Earliest_Unfinished_Visit_While_The_Reading_Moves_On()
     {
         var harness = new JudgingHarness();
-        harness.Answer(JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(2), isClosed: false));
+        harness.Holding(JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(2), isClosed: false));
 
         await harness.RunAsync();
 
         harness.Bookmark.Should().Be(JudgingHarness.AddedAt.AddHours(2));
+        harness.ReadThrough.Should().Be(JudgingHarness.Now - harness.Settings.IdleTimeout);
     }
 
     /// <summary>
-    /// Finished visits after the unfinished one are judged all the same, and simply judged again
-    /// next time. One visitor reading all afternoon must not hold up everything behind them.
+    /// Finished visits after the unfinished one are judged all the same, and the next reading,
+    /// which starts back at the unfinished one so as to find it again, leaves them out.
     /// </summary>
     [Fact]
-    public async Task Finished_Visits_After_An_Unfinished_One_Are_Still_Judged()
+    public async Task Finished_Visits_After_An_Unfinished_One_Are_Judged_Once()
     {
         var harness = new JudgingHarness();
-        harness.AnswerOnce(
+        harness.Holding(
             JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(2), isClosed: false),
             JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(3)));
 
         var outcome = await harness.RunAsync();
 
         outcome.Judged.Should().Be(1);
+        harness.Stored.Should().ContainSingle()
+            .Which.Session.StartedAt.Should().Be(JudgingHarness.AddedAt.AddHours(3));
         harness.Windows[1].From.Should().Be(JudgingHarness.AddedAt.AddHours(2));
+    }
+
+    /// <summary>
+    /// A page left open on somebody's screen reports every minute while it is in front of them, so
+    /// their visit is not over until they close it. It waits; nothing that began after it does —
+    /// however much longer than one stretch it stays open.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_In_Progress_For_Longer_Than_A_Stretch_Holds_Back_Only_Itself()
+    {
+        var harness = new JudgingHarness
+        {
+            Settings = new ClassificationOptions { LongestPass = TimeSpan.FromHours(6) },
+        };
+        var open = JudgingHarness.AddedAt.AddHours(1);
+        harness.Holding(
+            JudgingHarness.Visit(open, isClosed: false),
+            JudgingHarness.Visit(open.AddHours(8)),
+            JudgingHarness.Visit(open.AddHours(14)),
+            JudgingHarness.Visit(open.AddHours(21)));
+
+        var outcome = await harness.RunAsync();
+
+        outcome.Judged.Should().Be(3);
+        harness.Stored.Select(judgement => judgement.Session.StartedAt)
+            .Should().Equal(open.AddHours(8), open.AddHours(14), open.AddHours(21));
+        harness.Bookmark.Should().Be(open);
+        harness.ReadThrough.Should().Be(JudgingHarness.Now - harness.Settings.IdleTimeout);
+    }
+
+    /// <summary>
+    /// Once a run has read up to the present, the next one has half a minute of new ground and the
+    /// visit still open somewhere behind it. One reading covers both: it starts where judging waits
+    /// and stops at the new horizon, however far back the open visit began.
+    /// </summary>
+    [Fact]
+    public async Task A_Run_Behind_A_Visit_Still_Open_Reads_Once_From_It_To_The_Present()
+    {
+        var harness = new JudgingHarness();
+        var horizon = JudgingHarness.Now - harness.Settings.IdleTimeout;
+        var open = horizon.AddHours(-18);
+        harness.ResumeFrom(open, horizon - harness.Settings.Interval);
+        harness.Holding(JudgingHarness.Visit(open, isClosed: false));
+
+        await harness.RunAsync();
+
+        harness.Windows.Should().ContainSingle();
+        harness.Windows[0].From.Should().Be(open);
+        harness.Windows[0].To.Should().Be(horizon);
+        harness.Bookmark.Should().Be(open);
+        harness.ReadThrough.Should().Be(horizon);
+    }
+
+    /// <summary>
+    /// How far a reading reaches is counted from where the last one stopped, not from where judging
+    /// waits: between the two there is nothing but visits already judged, which are left out, and
+    /// the visits still waiting.
+    /// </summary>
+    [Fact]
+    public async Task How_Far_A_Reading_Reaches_Is_Counted_From_Where_The_Last_One_Stopped()
+    {
+        var harness = new JudgingHarness
+        {
+            Settings = new ClassificationOptions { LongestPass = TimeSpan.FromHours(6) },
+        };
+        harness.ResumeFrom(JudgingHarness.AddedAt.AddHours(1), JudgingHarness.AddedAt.AddHours(10));
+
+        await harness.RunAsync();
+
+        harness.Windows[0].From.Should().Be(JudgingHarness.AddedAt.AddHours(1));
+        harness.Windows[0].To.Should().Be(JudgingHarness.AddedAt.AddHours(16));
+    }
+
+    /// <summary>
+    /// Every reading is told the rules it is judging under, which is what lets the store leave out
+    /// what those rules have judged already — and only what they have.
+    /// </summary>
+    [Fact]
+    public async Task Every_Reading_Names_The_Rules_It_Judges_Under()
+    {
+        var harness = new JudgingHarness();
+
+        await harness.RunAsync();
+
+        harness.Windows.Should().NotBeEmpty()
+            .And.OnlyContain(window => window.UnjudgedUnder == RulesetVersion.Current);
+    }
+
+    /// <summary>
+    /// The next run starts back at the open visit and leaves out what it judged last time, so a
+    /// visit is judged once however many runs pass before the page left open is closed — and the
+    /// next run reads once, from the open visit to its own horizon.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Judged_Behind_One_Still_Open_Is_Not_Judged_Again_On_The_Next_Run()
+    {
+        var harness = new JudgingHarness();
+        harness.Holding(
+            JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(2), isClosed: false),
+            JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(3)));
+
+        await harness.RunAsync();
+        var readBefore = harness.Windows.Count;
+        harness.Wait(harness.Settings.Interval);
+        var next = await harness.RunAsync();
+
+        next.Judged.Should().Be(0);
+        harness.Stored.Should().ContainSingle();
+        harness.Windows.Should().HaveCount(readBefore + 1);
+        harness.Windows[^1].From.Should().Be(JudgingHarness.AddedAt.AddHours(2));
+        harness.Windows[^1].To.Should().Be(
+            JudgingHarness.Now + harness.Settings.Interval - harness.Settings.IdleTimeout);
+    }
+
+    /// <summary>
+    /// When the page left open is finally closed, its visit is judged once, on all of itself, and
+    /// judging moves on past it to wherever the reading has got.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_That_Held_Judging_Back_Is_Judged_Once_It_Closes_And_Judging_Moves_On()
+    {
+        var harness = new JudgingHarness();
+        var open = JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(2), isClosed: false);
+        var behind = JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(3));
+        var closed = open with
+        {
+            IsClosed = true,
+            Evidence = open.Evidence with { EndedAt = open.Evidence.EndedAt.AddHours(5) },
+        };
+        harness.Holding(open, behind);
+
+        await harness.RunAsync();
+        harness.Holding(closed, behind);
+        harness.Wait(harness.Settings.Interval);
+        var next = await harness.RunAsync();
+
+        next.Judged.Should().Be(1);
+        harness.Stored[^1].Session.SessionKey.Should().Be(open.Evidence.SessionKey);
+        harness.Stored[^1].Session.EndedAt.Should().Be(closed.Evidence.EndedAt);
+        harness.Bookmark.Should().Be(
+            JudgingHarness.Now + harness.Settings.Interval - harness.Settings.IdleTimeout);
+    }
+
+    /// <summary>
+    /// A visit judged already that a later report puts back in progress is waited on like any
+    /// other visit still in progress: judging stops where it began until it is over again.
+    /// </summary>
+    [Fact]
+    public async Task Judging_Waits_At_A_Judged_Visit_A_Later_Report_Has_Put_Back_In_Progress()
+    {
+        var harness = new JudgingHarness();
+        var open = JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(1), isClosed: false);
+        var judged = JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(2));
+        var closed = open with { IsClosed = true };
+        var growing = judged with
+        {
+            IsClosed = false,
+            Evidence = judged.Evidence with { EndedAt = judged.Evidence.EndedAt.AddHours(3) },
+        };
+        harness.Holding(open, judged);
+
+        await harness.RunAsync();
+        harness.Holding(closed, growing);
+        harness.Wait(harness.Settings.Interval);
+        await harness.RunAsync();
+
+        harness.Bookmark.Should().Be(JudgingHarness.AddedAt.AddHours(2));
+        harness.Stored.Select(judgement => judgement.Session.SessionKey)
+            .Should().Equal(judged.Evidence.SessionKey, open.Evidence.SessionKey);
+    }
+
+    /// <summary>
+    /// A report that arrives after a visit was judged and belongs to it — a page announcing it is
+    /// being left, hours after it was opened — makes it a longer visit than the one judged. Once it
+    /// is over it is judged again, on all of itself.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Made_Longer_After_It_Was_Judged_Is_Judged_Again_On_All_Of_Itself()
+    {
+        var harness = new JudgingHarness();
+        var open = JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(1), isClosed: false);
+        var judged = JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(2));
+        var longer = judged with
+        {
+            Evidence = judged.Evidence with { EndedAt = judged.Evidence.EndedAt.AddHours(1) },
+        };
+        harness.Holding(open, judged);
+
+        await harness.RunAsync();
+        harness.Holding(open, longer);
+        harness.Wait(harness.Settings.Interval);
+        var again = await harness.RunAsync();
+
+        again.Judged.Should().Be(1);
+        harness.Stored.Select(judgement => judgement.Session.EndedAt)
+            .Should().Equal(judged.Evidence.EndedAt, longer.Evidence.EndedAt);
+    }
+
+    /// <summary>
+    /// Another instance of the engine that has already been at least as far is the one to carry on,
+    /// and this one stops rather than reading what the other has read.
+    /// </summary>
+    [Fact]
+    public async Task A_Run_Stops_Where_Another_Engine_Has_Already_Been()
+    {
+        var harness = new JudgingHarness { AnotherEngineIsAhead = true };
+
+        await harness.RunAsync();
+
+        harness.Windows.Should().ContainSingle();
     }
 
     /// <summary>
@@ -166,7 +379,7 @@ public sealed class SessionClassifierTests
     /// <summary>
     /// Once a pass has read as far as the horizon, a visit it found still in progress stays in
     /// progress for the rest of the run, so reading again from that visit would find nothing new.
-    /// The bookmark waits on the visit, and the next run, with a later horizon, reads from there.
+    /// Judging waits on the visit, and the next run, with a later horizon, reads from there.
     /// </summary>
     [Fact]
     public async Task A_Visit_Still_In_Progress_At_The_Horizon_Is_Left_To_The_Next_Run()
@@ -175,18 +388,19 @@ public sealed class SessionClassifierTests
         var horizon = JudgingHarness.Now - harness.Settings.IdleTimeout;
         var resumeFrom = horizon - harness.Settings.Interval;
         harness.ResumeFrom(resumeFrom);
-        harness.Answer(JudgingHarness.Visit(resumeFrom.AddSeconds(10), isClosed: false));
+        harness.Holding(JudgingHarness.Visit(resumeFrom.AddSeconds(10), isClosed: false));
 
         await harness.RunAsync();
 
         harness.Windows.Should().ContainSingle();
         harness.Bookmark.Should().Be(resumeFrom.AddSeconds(10));
+        harness.ReadThrough.Should().Be(horizon);
     }
 
     /// <summary>
-    /// Two passes of one run can judge the same visit, because each resumes from the earliest visit
-    /// still in progress. The stored verdict with the later stamp is the one that stands, so each
-    /// pass's stamp is when that pass began rather than when the run did.
+    /// Two instances of the engine reading the same stretch at once can each judge one visit, and
+    /// the stored verdict with the later stamp is the one that stands — so each pass's stamp is when
+    /// that pass began rather than when its run did.
     /// </summary>
     [Fact]
     public async Task Each_Pass_Stamps_Its_Verdicts_With_The_Moment_It_Began()
@@ -196,14 +410,15 @@ public sealed class SessionClassifierTests
             Settings = new ClassificationOptions { LongestPass = TimeSpan.FromHours(6) },
             EachReadTakes = TimeSpan.FromMinutes(1),
         };
-        harness.Answer(
+        harness.Holding(
             JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(1), isClosed: false),
-            JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(2)));
+            JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(2)),
+            JudgingHarness.Visit(JudgingHarness.AddedAt.AddHours(8)));
 
         await harness.RunAsync();
 
-        harness.Stored.Should().HaveCount(2)
-            .And.OnlyContain(judgement => judgement.Session.StartedAt == JudgingHarness.AddedAt.AddHours(2));
+        harness.Stored.Select(judgement => judgement.Session.StartedAt)
+            .Should().Equal(JudgingHarness.AddedAt.AddHours(2), JudgingHarness.AddedAt.AddHours(8));
         harness.StampedAt.Should().Equal(JudgingHarness.Now, JudgingHarness.Now.AddMinutes(1));
     }
 

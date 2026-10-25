@@ -66,6 +66,7 @@ export function SiteOverview({ site }: SiteOverviewProps) {
   const [showingKeys, setShowingKeys] = useState(false);
   const [showingSettings, setShowingSettings] = useState(false);
   const periodControl = useRef<HTMLSelectElement>(null);
+  const clicksHeading = useRef<HTMLHeadingElement>(null);
 
   // Resolved once per period rather than on every render: the window is part of the name each
   // answer is cached under, and one that moved with the clock would never find a cached answer.
@@ -397,6 +398,9 @@ export function SiteOverview({ site }: SiteOverviewProps) {
             siteId={site.id}
             window={window}
             population={population}
+            mayChangeSettings={site.role !== 'viewer'}
+            onShowSettings={() => setShowingSettings(true)}
+            returnPoint={clicksHeading}
           />
 
           <JudgedTraffic key={`visits:${listing}`} site={site} window={window} />
@@ -420,13 +424,17 @@ export function SiteOverview({ site }: SiteOverviewProps) {
 
       {/*
         Removing the website puts the panel away and nothing else. The list of websites is asked
-        for again as part of the removal, and the screen settles on whichever one is left.
+        for again as part of the removal, and the screen settles on whichever one is left. Opened
+        from the clicks card, the panel can take that card's own way in away with it — switching
+        recording on does — so focus comes back to the card's heading, which by then says what
+        changed, rather than to the top of the page.
       */}
       <SiteSettings
         open={showingSettings}
         onClose={() => setShowingSettings(false)}
         site={site}
         onRemoved={() => setShowingSettings(false)}
+        returnFocusTo={clicksHeading}
       />
     </div>
   );

@@ -175,7 +175,7 @@ public sealed class CollectEndpointTests(AnalyticsStackFixture stack)
         string? declared,
         string expected)
     {
-        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var site = await RecordingPressesAsync();
         using var client = stack.CreateClient();
 
         var report = Report(site.Id, $"https://{site.Domain}/posts/hello");
@@ -187,6 +187,74 @@ public sealed class CollectEndpointTests(AnalyticsStackFixture stack)
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
         (await StoredControlAsync(site.Id)).Should().Be(expected);
+    }
+
+    /// <summary>
+    /// A text area, or anything declaring a role somebody writes into, is never named. A page built
+    /// with React keeps a text area's own text in step with what was typed into it, so a name read
+    /// from one is the typing; the tracker sends none for a text area, and a report naming one of
+    /// these anyway — an older copy of the tracker a browser still holds, or an input a site gave
+    /// one of these roles — has the name dropped where it arrives.
+    /// </summary>
+    [Theory]
+    [InlineData("textarea")]
+    [InlineData("TEXTAREA")]
+    [InlineData("textbox")]
+    [InlineData("searchbox")]
+    [InlineData("combobox")]
+    public async Task A_Text_Area_Or_A_Role_Somebody_Writes_Into_Is_Never_Named(string declared)
+    {
+        var site = await RecordingPressesAsync();
+        using var client = stack.CreateClient();
+
+        var report = Report(site.Id, $"https://{site.Domain}/contact");
+        report["kind"] = "action";
+        report["element"] = declared;
+        report["label"] = "Dear Jane, my account is 12345678";
+
+        var response = await PostAsync(client, report, site.Domain);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await StoredControlAsync(site.Id)).Should().Be("Field");
+        (await StoredLabelAsync(site.Id)).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// An input keeps the name the site gave it: the tracker sends what the site declared for it,
+    /// never what was typed into it.
+    /// </summary>
+    [Fact]
+    public async Task A_Field_Keeps_The_Name_The_Site_Gave_It()
+    {
+        var site = await RecordingPressesAsync();
+        using var client = stack.CreateClient();
+
+        var report = Report(site.Id, $"https://{site.Domain}/contact");
+        report["kind"] = "action";
+        report["element"] = "input";
+        report["label"] = "Email address";
+
+        await PostAsync(client, report, site.Domain);
+
+        (await StoredLabelAsync(site.Id)).Should().Be("Email address");
+    }
+
+    /// <summary>
+    /// What followed the path of the page somebody came from is never kept, however it was
+    /// reported. A search box puts what was searched for there, on another site or on this one.
+    /// </summary>
+    [Fact]
+    public async Task Where_A_Visitor_Came_From_Is_Kept_Without_What_Followed_Its_Path()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        using var client = stack.CreateClient();
+
+        var report = Report(site.Id, $"https://{site.Domain}/posts/hello");
+        report["referrer"] = $"https://{site.Domain}/search?q=jane+doe+refund#results";
+
+        await PostAsync(client, report, site.Domain);
+
+        (await StoredReferrerAsync(site.Id)).Should().Be($"https://{site.Domain}/search");
     }
 
     /// <summary>
@@ -419,6 +487,22 @@ public sealed class CollectEndpointTests(AnalyticsStackFixture stack)
             Client,
             "SELECT toString(action_control) FROM events WHERE site_id = {site_id:UUID} LIMIT 1",
             TelemetryStore.Bind("site_id", siteId));
+
+    private async Task<string?> StoredLabelAsync(Guid siteId) =>
+        await TelemetryStore.ScalarAsync<string>(
+            Client,
+            "SELECT action_label FROM events WHERE site_id = {site_id:UUID} LIMIT 1",
+            TelemetryStore.Bind("site_id", siteId));
+
+    private async Task<string?> StoredReferrerAsync(Guid siteId) =>
+        await TelemetryStore.ScalarAsync<string>(
+            Client,
+            "SELECT referrer FROM events WHERE site_id = {site_id:UUID} LIMIT 1",
+            TelemetryStore.Bind("site_id", siteId));
+
+    /// <summary>A site that has asked for the controls its visitors operate to be recorded.</summary>
+    private Task<Site> RecordingPressesAsync() =>
+        ControlPlaneSeed.AddSiteAsync(stack, domain: Domain(), configure: created => created.SetClickCapture(true));
 
     private async Task<ulong> StoredCountAsync(Guid siteId) =>
         await TelemetryStore.ScalarAsync<ulong>(

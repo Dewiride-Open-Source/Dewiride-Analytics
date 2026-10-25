@@ -361,8 +361,8 @@ interface PressedProps {
  * A control the visitor operated on the page above.
  *
  * Marked with a hollow point rather than a filled one, so a glance down the rail separates the
- * pages somebody went to from the things they did on the way. What the control said is the site's
- * own writing, so it reaches the screen as text and nothing else.
+ * pages somebody went to from the things they did on the way. What the control said is the words on
+ * it, which on some pages are a visitor's own, so it reaches the screen as text and nothing else.
  */
 function Pressed({ press, at, timeZoneId }: PressedProps) {
   const t = useTranslations('dashboard.journey');

@@ -67,11 +67,16 @@ public sealed class Site
     public bool RetainQueryStrings { get; private set; }
 
     /// <summary>
-    /// Whether the controls visitors operate are recorded. On by default: what somebody pressed
-    /// is the question the tracker is installed to answer, and what is kept of it is the site's
-    /// own name for its own control rather than anything about the person pressing it.
+    /// Whether the controls visitors operate are recorded. Off until somebody switches it on.
     /// </summary>
-    public bool CaptureClicks { get; private set; } = true;
+    /// <remarks>
+    /// What is kept of a press is the words on the control, and only somebody who knows the site
+    /// knows what those are. On a page that shows nothing but the site's own writing they are its
+    /// own names for its own controls; on a page that shows its visitors their own things — their
+    /// messages, their names, their accounts — the words on its buttons and links are those
+    /// things, and nothing collected here can tell the two apart.
+    /// </remarks>
+    public bool CaptureClicks { get; private set; }
 
     private readonly List<string> _allowedOrigins = [];
 
@@ -121,7 +126,6 @@ public sealed class Site
         Domain = normalized;
         TimeZoneId = timeZoneId;
         CreatedAt = createdAt;
-        CaptureClicks = true;
 
         // Through the same method a rename goes through, so a site's name is subject to one set of
         // rules whether the site or a person chose it.

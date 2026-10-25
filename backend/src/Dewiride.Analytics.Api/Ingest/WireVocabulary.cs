@@ -54,6 +54,19 @@ internal static class WireVocabulary
             ["combobox"] = ControlKind.Field,
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// The controls somebody writes into, by the word used on the wire.
+    /// </summary>
+    /// <remarks>
+    /// A page built with React keeps a text area's own text in step with what is typed into it, so
+    /// the text of a box somebody writes in can be the typing itself. The tracker names no text
+    /// area, and a report that names one of these anyway — an older copy of the tracker a browser
+    /// still holds, an input a site gave one of these roles, or anything else posting to the
+    /// collector — has the name dropped where it arrives.
+    /// </remarks>
+    public static readonly FrozenSet<string> WrittenIn =
+        new[] { "textarea", "textbox", "searchbox", "combobox" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>What sort of place a reported word describes.</summary>
     public static readonly FrozenDictionary<string, TargetKind> Targets =
         new Dictionary<string, TargetKind>(StringComparer.OrdinalIgnoreCase)

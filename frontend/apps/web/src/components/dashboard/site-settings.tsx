@@ -2,7 +2,7 @@
 
 import { Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { FailureNotice } from '@/components/ui/failure-notice';
@@ -20,6 +20,11 @@ interface SiteSettingsProps {
   readonly site: Site;
   /** Called once the website is gone, so the screen can put this away. */
   readonly onRemoved: () => void;
+  /**
+   * Where focus goes on closing when whatever opened the panel has gone — as the clicks card's own
+   * way in does once recording is switched on here.
+   */
+  readonly returnFocusTo?: RefObject<HTMLElement | null>;
 }
 
 /** The longest name the engine will keep, so a name is stopped here rather than refused there. */
@@ -35,7 +40,7 @@ const LONGEST_ADDRESS = 253;
  * name typed and then abandoned is gone by the time somebody looks again, and the confirmation
  * that removes a website is never found already armed.
  */
-export function SiteSettings({ open, onClose, site, onRemoved }: SiteSettingsProps) {
+export function SiteSettings({ open, onClose, site, onRemoved, returnFocusTo }: SiteSettingsProps) {
   const t = useTranslations('siteSettings');
   const settings = useSiteSettings(site.id, open);
   const saving = useUpdateSiteSettings(site.id);
@@ -61,12 +66,13 @@ export function SiteSettings({ open, onClose, site, onRemoved }: SiteSettingsPro
       onClose={close}
       title={t('title')}
       closeLabel={t('close')}
+      returnFocusTo={returnFocusTo}
       className="max-w-lg"
     >
       <div className="flex flex-col gap-5">
         <p className="text-sm text-foreground-muted">{t('body', { site: site.domain })}</p>
 
-        {settings.isError ? <FailureNotice error={settings.error} /> : null}
+        {open && settings.isError ? <FailureNotice error={settings.error} /> : null}
 
         {open && settings.data ? (
           <>

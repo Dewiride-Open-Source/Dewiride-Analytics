@@ -8,6 +8,9 @@
 - **Revised by**: [0056](0056-somebody-can-be-reading-from-a-rented-computer.md). The kind of a
   sending site is now part of the evidence a verdict keeps, so a change to the catalogue ships with a
   new ruleset rather than on its own.
+- **Revised by**: [0057](0057-a-text-box-is-never-read-and-clicks-start-switched-off.md). A
+  referrer is kept only up to its path; what followed it, where a search box puts what was searched
+  for, is cut on the way in and was removed from what was already stored.
 
 ## Context
 

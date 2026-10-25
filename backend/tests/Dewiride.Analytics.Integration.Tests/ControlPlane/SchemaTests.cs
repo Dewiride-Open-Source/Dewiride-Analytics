@@ -67,6 +67,8 @@ public sealed class SchemaTests(AnalyticsStackFixture stack)
     /// <summary>The migration applied before a bookmark kept how far it had read.</summary>
     private const string BeforeReadThrough = "20260921061732_AddOrganizationClosure";
 
+    private const string BeforeClicksStartOff = "20261024155457_AddClassificationReadThrough";
+
     [Fact]
     public async Task Every_Control_Plane_Table_Was_Created()
     {
@@ -224,20 +226,8 @@ public sealed class SchemaTests(AnalyticsStackFixture stack)
     public async Task Bookmarks_Already_Kept_Read_As_Far_As_They_Judged_Once_The_Reading_Is_Recorded()
     {
         var judged = new DateTimeOffset(2026, 5, 1, 6, 0, 0, TimeSpan.Zero);
-        var connection = new NpgsqlConnectionStringBuilder(stack.ControlPlaneConnectionString)
-        {
-            Database = $"bookmarks_{Guid.NewGuid():n}",
-        };
 
-        // A database of its own, created by the first migration applied to it and deleted again
-        // afterwards, so that applying an earlier schema touches nothing the other tests read.
-        await using var database = new ControlPlaneDbContext(
-            new DbContextOptionsBuilder<ControlPlaneDbContext>()
-                .UseNpgsql(connection.ConnectionString, npgsql => npgsql
-                    .MigrationsHistoryTable("__ef_migrations_history")
-                    .MigrationsAssembly(InfrastructureRegistration.MigrationsAssemblyName))
-                .UseSnakeCaseNamingConvention()
-                .Options);
+        await using var database = OwnDatabase("bookmarks");
 
         try
         {
@@ -287,6 +277,130 @@ public sealed class SchemaTests(AnalyticsStackFixture stack)
         {
             await database.Database.EnsureDeletedAsync(Cancellation.Token);
         }
+    }
+
+    /// <summary>
+    /// Every website comes through the upgrade with recording what people press switched off, as
+    /// one added from then on starts: the words on its buttons can be its visitors' own, and only
+    /// somebody who knows the site can say they are not.
+    /// </summary>
+    [Fact]
+    public async Task Websites_That_Recorded_Presses_Stop_Once_The_Upgrade_Runs()
+    {
+        var added = new DateTimeOffset(2026, 9, 1, 6, 0, 0, TimeSpan.Zero);
+
+        await using var database = OwnDatabase("presses");
+
+        try
+        {
+            var migrator = database.GetService<IMigrator>();
+
+            await migrator.MigrateAsync(BeforeClicksStartOff, Cancellation.Token);
+
+            var organizationId = Guid.NewGuid();
+
+            await database.Database.ExecuteSqlAsync(
+                $"""
+                INSERT INTO organizations (id, name, created_at)
+                VALUES ({organizationId}, 'Owner of two older websites', {added})
+                """,
+                Cancellation.Token);
+
+            foreach (var (domain, recording) in new[] { ("recording.example.com", true), ("quiet.example.com", false) })
+            {
+                await database.Database.ExecuteSqlAsync(
+                    $"""
+                    INSERT INTO sites
+                        (id, organization_id, domain, display_name, time_zone_id, created_at,
+                         capture_clicks, retain_query_strings, allowed_origins)
+                    VALUES
+                        ({Guid.NewGuid()}, {organizationId}, {domain}, {domain}, 'Etc/UTC', {added},
+                         {recording}, false, ARRAY[]::text[])
+                    """,
+                    Cancellation.Token);
+            }
+
+            await migrator.MigrateAsync(cancellationToken: Cancellation.Token);
+
+            var recordingNow = await database.Database
+                .SqlQueryRaw<bool>("SELECT capture_clicks AS \"Value\" FROM sites")
+                .ToListAsync(Cancellation.Token);
+
+            recordingNow.Should().HaveCount(2).And.OnlyContain(capture => !capture);
+        }
+        finally
+        {
+            await database.Database.EnsureDeletedAsync(Cancellation.Token);
+        }
+    }
+
+    /// <summary>
+    /// A website written by something that does not say whether it records presses — a script, a
+    /// restore, an insert by hand — records none, as one added through the product does.
+    /// </summary>
+    [Fact]
+    public async Task A_Website_Written_Without_Saying_Whether_It_Records_Presses_Records_None()
+    {
+        var added = new DateTimeOffset(2026, 10, 25, 6, 0, 0, TimeSpan.Zero);
+
+        await using var database = OwnDatabase("unsaid");
+
+        try
+        {
+            await database.Database.MigrateAsync(Cancellation.Token);
+
+            var organizationId = Guid.NewGuid();
+
+            await database.Database.ExecuteSqlAsync(
+                $"""
+                INSERT INTO organizations (id, name, created_at)
+                VALUES ({organizationId}, 'Owner of a website written by a script', {added})
+                """,
+                Cancellation.Token);
+
+            await database.Database.ExecuteSqlAsync(
+                $"""
+                INSERT INTO sites
+                    (id, organization_id, domain, display_name, time_zone_id, created_at,
+                     retain_query_strings, allowed_origins)
+                VALUES
+                    ({Guid.NewGuid()}, {organizationId}, 'scripted.example.com', 'scripted.example.com',
+                     'Etc/UTC', {added}, false, ARRAY[]::text[])
+                """,
+                Cancellation.Token);
+
+            var recording = await database.Database
+                .SqlQueryRaw<bool>("SELECT capture_clicks AS \"Value\" FROM sites")
+                .SingleAsync(Cancellation.Token);
+
+            recording.Should().BeFalse();
+        }
+        finally
+        {
+            await database.Database.EnsureDeletedAsync(Cancellation.Token);
+        }
+    }
+
+    /// <summary>
+    /// A database of a test's own, created by the first migration applied to it and deleted again
+    /// afterwards, so that applying an earlier schema touches nothing the other tests read.
+    /// </summary>
+    /// <param name="purpose">Begins the database's name, so a leftover one says what made it.</param>
+    /// <returns>A context over the new database.</returns>
+    private ControlPlaneDbContext OwnDatabase(string purpose)
+    {
+        var connection = new NpgsqlConnectionStringBuilder(stack.ControlPlaneConnectionString)
+        {
+            Database = $"{purpose}_{Guid.NewGuid():n}",
+        };
+
+        return new ControlPlaneDbContext(
+            new DbContextOptionsBuilder<ControlPlaneDbContext>()
+                .UseNpgsql(connection.ConnectionString, npgsql => npgsql
+                    .MigrationsHistoryTable("__ef_migrations_history")
+                    .MigrationsAssembly(InfrastructureRegistration.MigrationsAssemblyName))
+                .UseSnakeCaseNamingConvention()
+                .Options);
     }
 
     private Task<List<string>> TableNamesAsync() => QueryAsync(TableNamesSql);

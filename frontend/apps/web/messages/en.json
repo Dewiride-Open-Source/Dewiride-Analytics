@@ -531,7 +531,7 @@
       "empty": "Nothing was recorded for this visit.",
       "failed": "This visit could not be loaded.",
       "pressed": "Clicked {name}",
-      "pressedUnnamed": "Clicked something unnamed",
+      "pressedUnnamed": "Clicked something — no name kept",
       "toHost": "went to {host}",
       "toContact": "opened your contact link",
       "control": {
@@ -548,7 +548,7 @@
         "destination": "{count, plural, one {# click that led off your site} other {# clicks that led off your site}}"
       },
       "presses": "{count, plural, one {# click} other {# clicks}}",
-      "unnamed": "Unnamed",
+      "unnamed": "No name kept",
       "control": {
         "link": "Link",
         "button": "Button",
@@ -570,6 +570,13 @@
       "empty": {
         "title": "No clicks yet",
         "body": "Once somebody uses a link or a button on one of your pages, it appears here with how often it was clicked."
+      },
+      "off": {
+        "title": "Clicks aren't being recorded",
+        "body": "Switch on “Record what people click” in this website's settings to see which links and buttons people use.",
+        "bodyReader": "Somebody who manages this website can switch on “Record what people click” in its settings.",
+        "action": "Open settings",
+        "caption": "Not recording new clicks"
       }
     }
   },
@@ -919,7 +926,7 @@
     "saved": "Saved",
     "presses": {
       "label": "Record what people click",
-      "hint": "Your own wording on the button or link is kept — never anything a visitor types."
+      "hint": "Keeps the words on each button and link. Leave it off if your pages show visitors their own messages, names or accounts."
     },
     "removal": {
       "title": "Remove this website",

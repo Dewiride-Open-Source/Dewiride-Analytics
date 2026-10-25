@@ -1,6 +1,6 @@
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { Dialog } from '@/components/ui/dialog';
 import { renderScreen } from '@/test/harness';
@@ -107,6 +107,36 @@ describe('a focal overlay', () => {
 
     expect(screen.getByLabelText('Address')).toHaveFocus();
   });
+
+  /**
+   * A panel can take away the control that opened it — switching something on there can change
+   * the card behind it — and focus would otherwise fall to the page, sending a keyboard back to
+   * the top of the screen.
+   */
+  it('hands focus to the place it was given when what opened it has gone', async () => {
+    const acting = userEvent.setup();
+
+    renderScreen(<OpenedFromWhatItChanges />);
+
+    await acting.click(screen.getByRole('button', { name: 'Open settings' }));
+    await acting.click(screen.getByRole('button', { name: 'Switch it on' }));
+    await acting.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(screen.queryByRole('button', { name: 'Open settings' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Settings' })).toHaveFocus();
+  });
+
+  it('leaves focus to the browser when what opened it is still there', async () => {
+    const acting = userEvent.setup();
+
+    renderScreen(<OpenedFromWhatItChanges />);
+
+    await acting.click(screen.getByRole('button', { name: 'Open settings' }));
+    await acting.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(screen.getByRole('button', { name: 'Open settings' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Settings' })).not.toHaveFocus();
+  });
 });
 
 /** A panel that is asked for rather than already open, which is how every one of them arrives. */
@@ -120,6 +150,40 @@ function Openable() {
       </button>
       <Dialog open={open} onClose={() => setOpen(false)} title="Add a website" closeLabel="Close">
         <input aria-label="Address" data-opens-on />
+      </Dialog>
+    </>
+  );
+}
+
+/**
+ * A panel opened from a control that something inside it can take away, with a steadier control
+ * elsewhere on the screen given as the place for focus to go back to.
+ */
+function OpenedFromWhatItChanges() {
+  const [open, setOpen] = useState(false);
+  const [switchedOn, setSwitchedOn] = useState(false);
+  const steady = useRef<HTMLButtonElement>(null);
+
+  return (
+    <>
+      <button ref={steady} type="button">
+        Settings
+      </button>
+      {switchedOn ? null : (
+        <button type="button" onClick={() => setOpen(true)}>
+          Open settings
+        </button>
+      )}
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Website settings"
+        closeLabel="Close"
+        returnFocusTo={steady}
+      >
+        <button type="button" onClick={() => setSwitchedOn(true)}>
+          Switch it on
+        </button>
       </Dialog>
     </>
   );

@@ -78,25 +78,27 @@ public sealed class SiteTests
     }
 
     /// <summary>
-    /// On, so that what somebody sees on the dashboard is what the product does out of the box.
-    /// What is kept of a press is the site's own name for its own control, and there is a switch
-    /// for anybody who would rather it were not kept at all.
+    /// Off until somebody who knows the site switches it on. What is kept of a press is the words
+    /// on the control, and on a site that shows its visitors their own messages, names and
+    /// accounts, those words are the visitors' own.
     /// </summary>
     [Fact]
-    public void Constructor_Leaves_Click_Capture_On()
+    public void Constructor_Leaves_Click_Capture_Off()
     {
         var site = NewSite();
 
-        site.CaptureClicks.Should().BeTrue();
+        site.CaptureClicks.Should().BeFalse();
     }
 
     [Fact]
-    public void SetClickCapture_Turns_Capture_Off()
+    public void SetClickCapture_Turns_Capture_On_And_Off_Again()
     {
         var site = NewSite();
 
-        site.SetClickCapture(false);
+        site.SetClickCapture(true);
+        site.CaptureClicks.Should().BeTrue();
 
+        site.SetClickCapture(false);
         site.CaptureClicks.Should().BeFalse();
     }
 
@@ -235,6 +237,7 @@ public sealed class SiteTests
     {
         var site = NewSite(domain: "blog.example.com", timeZoneId: "Etc/UTC");
         site.SetDisplayName("Example Blog");
+        site.SetClickCapture(true);
 
         site.SetTimeZone("Asia/Kolkata");
 

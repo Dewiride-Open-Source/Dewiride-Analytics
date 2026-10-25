@@ -68,11 +68,11 @@ public sealed class SiteStorageTests(AnalyticsStackFixture stack)
         var site = await ControlPlaneSeed.AddSiteAsync(
             stack,
             domain: "presses.example",
-            configure: created => created.SetClickCapture(false));
+            configure: created => created.SetClickCapture(true));
 
         var stored = await ReadAsync(site.Id);
 
-        stored.CaptureClicks.Should().BeFalse();
+        stored.CaptureClicks.Should().BeTrue();
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public sealed class SiteStorageTests(AnalyticsStackFixture stack)
             configure: created =>
             {
                 created.SetQueryStringRetention(true);
-                created.SetClickCapture(false);
+                created.SetClickCapture(true);
                 created.ReplaceAllowedOrigins(origins);
             });
 
@@ -111,7 +111,7 @@ public sealed class SiteStorageTests(AnalyticsStackFixture stack)
         snapshot.Should().NotBeNull();
         snapshot.Domain.Should().Be("catalog.example");
         snapshot.RetainQueryStrings.Should().BeTrue();
-        snapshot.CaptureClicks.Should().BeFalse();
+        snapshot.CaptureClicks.Should().BeTrue();
         snapshot.AllowedOrigins.Should().Equal("docs.example.com");
     }
 

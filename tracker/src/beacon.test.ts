@@ -26,6 +26,28 @@ describe('what the beacon reports when a page is opened', () => {
   });
 
   /**
+   * The address a browser says the reader came from can carry what they searched for on the site
+   * that sent them, or anything else that site put after its path. Where they came from is the
+   * page; the rest is theirs.
+   */
+  it('says where the reader came from without what followed that page’s path', () => {
+    Object.defineProperty(document, 'referrer', {
+      value: 'https://search.example.org/find?q=jane+doe#top',
+      configurable: true,
+    });
+
+    try {
+      page.open();
+
+      const view = only(page.sent, 'pageview');
+
+      expect(view['referrer']).toBe('https://search.example.org/find');
+    } finally {
+      delete (document as { referrer?: string }).referrer;
+    }
+  });
+
+  /**
    * The store keeps "nobody touched this page" and "we were not watching yet" apart, and a page
    * view is sent in the first instant of the second one. Reporting nought for engagement there
    * would assert a measurement that has not been taken.
@@ -212,6 +234,22 @@ describe('a page that moves itself to another address', () => {
     const views = page.sent.filter((report) => report['kind'] === 'pageview') as Sent[];
 
     expect(views[1]?.['referrer']).toContain('/posts/hello');
+  });
+
+  /**
+   * A search box puts what was searched for after the page's path, and a site that moves itself
+   * from its results to an article would otherwise hand the search on to the article's reading.
+   */
+  it('names the page that was left without what followed its path', () => {
+    window.history.replaceState({}, '', '/search?q=jane+doe+invoice#results');
+    page.open();
+
+    goTo('/posts/second');
+
+    const views = page.sent.filter((report) => report['kind'] === 'pageview') as Sent[];
+
+    expect(views[1]?.['referrer']).toBe(`${window.location.origin}/search`);
+    expect(JSON.stringify(views[1])).not.toContain('jane');
   });
 
   it('says nothing when a site rewrites the address it is already on', () => {
@@ -481,12 +519,29 @@ describe('what somebody pressed on the page', () => {
     expect(JSON.stringify(click)).not.toContain('jane@example.com');
   });
 
-  it('prefers the name a control is given to the text inside it', () => {
+  /** What the site called a control comes first; a list is named by nothing else. */
+  it.each([
+    [
+      'prefers the name a control is given to the text inside it',
+      '<button data-press aria-label="Close" title="Dismiss"><span>x</span></button>',
+      'Close',
+    ],
+    [
+      'still names a control in a part of the page the site made uneditable',
+      '<div contenteditable="false"><button data-press>Subscribe</button></div>',
+      'Subscribe',
+    ],
+    [
+      'names a list by what the site called it',
+      '<select data-press aria-label="Ship to"><option>Jane Doe, 12 High Street</option></select>',
+      'Ship to',
+    ],
+  ])('%s', (_, markup, name) => {
     page.open();
 
-    press('<button data-press aria-label="Close" title="Dismiss"><span>x</span></button>');
+    press(markup);
 
-    expect(only(page.sent, 'action')['label']).toBe('Close');
+    expect(only(page.sent, 'action')['label']).toBe(name);
   });
 
   /** What somebody typed is theirs. The name of the field is the site's own writing. */
@@ -500,6 +555,67 @@ describe('what somebody pressed on the page', () => {
     expect(click['element']).toBe('input');
     expect(click['label']).toBe('Email address');
     expect(JSON.stringify(click)).not.toContain('jane@example.com');
+  });
+
+  /**
+   * A page built with React keeps a text area's own text in step with what is typed into it, so
+   * the text of the box is the typing. A press there is a press on a field, and nothing more —
+   * not even the name the site gave the box.
+   */
+  it('reads nothing from a box somebody writes in, even where the page keeps its text in step', () => {
+    page.open();
+
+    press(
+      '<textarea data-press aria-label="Your message">Dear Jane, my account is 12345678</textarea>',
+    );
+
+    const click = only(page.sent, 'action');
+
+    expect(click['element']).toBe('textarea');
+    expect(click).not.toHaveProperty('label');
+    expect(JSON.stringify(click)).not.toMatch(/Jane|12345678|message/);
+  });
+
+  /** A link somebody wrote points wherever they wrote, so neither its words nor its address travel. */
+  it('reads nothing from a control inside a part of the page somebody is writing in', () => {
+    page.open();
+
+    press(
+      '<div contenteditable="true"><a data-press href="/notes/7">Call Jane about her refund</a></div>',
+    );
+
+    const click = only(page.sent, 'action');
+
+    expect(click['element']).toBe('a');
+    expect(click).not.toHaveProperty('label');
+    expect(click).not.toHaveProperty('target');
+    expect(click).not.toHaveProperty('targetKind');
+  });
+
+  it('reads nothing from a control that holds something somebody is writing', () => {
+    page.open();
+
+    press('<button data-press>Send <span contenteditable="true">my draft to Jane</span></button>');
+
+    expect(only(page.sent, 'action')).not.toHaveProperty('label');
+  });
+
+  /**
+   * A list's choices are what can be picked — somebody's addresses, their accounts — and not what
+   * the list is called, so a list is named only by what the site called it.
+   */
+  it('never names a list by the choices it offers', () => {
+    page.open();
+
+    press(
+      '<select data-press><option>Jane Doe, 12 High Street, Leeds</option><option>Jane Doe (work)</option></select>',
+    );
+
+    const click = only(page.sent, 'action');
+
+    expect(click['element']).toBe('select');
+    expect(click).not.toHaveProperty('label');
+    expect(JSON.stringify(click)).not.toContain('Jane');
   });
 
   it('says nothing at all about a part of the page the site marked as private', () => {

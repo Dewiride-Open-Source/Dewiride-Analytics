@@ -19,6 +19,9 @@ public sealed class SessionSqlCompilerTests
     private static readonly DateTimeOffset From = new(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset To = new(2026, 5, 1, 6, 0, 0, TimeSpan.Zero);
 
+    /// <summary>The address the site is known by.</summary>
+    private const string SiteDomain = "blog.example.com";
+
     /// <summary>
     /// Rules other than the ones compiled into the build, so the approved statement does not change
     /// every time the rules do.
@@ -180,10 +183,12 @@ public sealed class SessionSqlCompilerTests
     [Fact]
     public void A_Visit_Belongs_To_The_Window_It_Began_In()
     {
-        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+        var bounds = Between(
+            SessionSqlCompiler.Compile(Window()).Sql,
+            "HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')",
+            "NOT IN");
 
-        sql.Should().Contain("HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')");
-        sql.Should().Contain("AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')");
+        bounds.Should().Contain("AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')");
     }
 
     /// <summary>
@@ -216,11 +221,51 @@ public sealed class SessionSqlCompilerTests
     [Fact]
     public void The_Verdicts_Looked_Up_Are_This_Sites_And_Inside_The_Window()
     {
+        var lookup = Between(
+            SessionSqlCompiler.Compile(Window()).Sql,
+            "FROM session_classifications",
+            "confirmations AS");
+
+        lookup.Should().Contain("site_id = {site_id:UUID}");
+        lookup.Should().Contain("started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')");
+        lookup.Should().Contain("started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')");
+    }
+
+    /// <summary>
+    /// An answer kept for a visit is read for this site and for the window's own visits — the
+    /// bounds are the window's, because an answer is filed under when its visit began — and found
+    /// by the visit's name alone. On a rented network one visitor key can stand for a whole
+    /// network's day, so an answer looked up by visitor would vouch for activity nobody checked.
+    /// </summary>
+    [Fact]
+    public void An_Answer_Kept_For_A_Visit_Is_Read_For_This_Site_And_Found_By_The_Visit()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+        var kept = Between(sql, "confirmations AS", "GROUP BY session_key");
+
+        kept.Should().Contain("FROM name_confirmations");
+        kept.Should().Contain("WHERE site_id = {site_id:UUID}");
+        kept.Should().Contain("AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')");
+        kept.Should().Contain("AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')");
+        kept.Should().Contain("argMax(operator, settled_at) AS operator");
+        kept.Should().NotContain("visitor_key");
+        kept.Should().NotContain("ip_address");
+        sql.Should().Contain("LEFT JOIN confirmations USING (session_key)");
+    }
+
+    /// <summary>
+    /// What the activity itself says comes first. A list a company publishes about all of its
+    /// machines is the stronger statement, and a visit nobody vouched for reads as nobody's — a
+    /// visit with no answer kept is not a visit somebody denied.
+    /// </summary>
+    [Fact]
+    public void What_The_Activity_Says_About_Whose_Crawler_A_Visit_Was_Is_Read_Before_What_Was_Kept()
+    {
         var sql = SessionSqlCompiler.Compile(Window()).Sql;
 
-        sql.Should().Contain("site_id = {site_id:UUID}", Exactly.Twice());
-        sql.Should().Contain("started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')", Exactly.Twice());
-        sql.Should().Contain("started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')", Exactly.Twice());
+        sql.Should().Contain("anyIf(confirmed_operator, confirmed_operator != '') AS stamped_operator");
+        sql.Should().Contain(
+            "if(stamped_operator != '', stamped_operator, ifNull(operator, '')) AS confirmed_operator");
     }
 
     [Fact]
@@ -231,9 +276,97 @@ public sealed class SessionSqlCompilerTests
         act.Should().Throw<ArgumentNullException>();
     }
 
+    /// <summary>
+    /// Without the site's own address every page a reader opened after the first would name the
+    /// site as where they came from, and read as a link from somewhere else.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Compiling_Refuses_A_Window_That_Names_No_Address_For_The_Site(string domain)
+    {
+        var act = () => SessionSqlCompiler.Compile(Window() with { SiteDomain = domain });
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    /// <summary>
+    /// The site's own address is bound like every other value, never written into the text.
+    /// </summary>
+    [Fact]
+    public void The_Sites_Own_Address_Is_Bound_And_Never_Written_Into_The_Statement()
+    {
+        var statement = SessionSqlCompiler.Compile(Window());
+
+        statement.Sql.Should().NotContain(SiteDomain);
+        statement.Parameters.Should().Contain(parameter =>
+            parameter.Name == "site_domain" && (string)parameter.Value == SiteDomain);
+    }
+
+    /// <summary>
+    /// Which kind of site sent a visit is settled the way the visit list settles it — the first
+    /// report naming a site other than this one — so the kind a visit is judged with is the kind a
+    /// reader is shown beside it.
+    /// </summary>
+    [Fact]
+    public void Which_Kind_Of_Site_Sent_A_Visit_Is_Settled_As_The_Visit_List_Settles_It()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+
+        sql.Should().Contain("argMinIf(source_channel, (server_ts, event_id), sending_host != '') AS from_kind");
+    }
+
+    /// <summary>
+    /// A reader moving between the site's own pages, or onto one of its own subdomains, names the
+    /// site as where they came from, and that is no arrival at all.
+    /// </summary>
+    [Fact]
+    public void The_Sites_Own_Pages_Never_Send_It_A_Visit()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+
+        sql.Should().Contain("AND referrer_domain != {site_domain:String}");
+        sql.Should().Contain("AND NOT endsWith(referrer_domain, concat('.', {site_domain:String}))");
+    }
+
+    /// <summary>
+    /// The referring address is text the visitor's browser wrote, and the site it names is no rule's
+    /// business: the kind of site is all that leaves the statement.
+    /// </summary>
+    [Fact]
+    public void Neither_The_Referring_Address_Nor_The_Site_It_Names_Is_Handed_Back()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+        var answer = sql[sql.LastIndexOf("SELECT", StringComparison.Ordinal)..];
+
+        answer.Should().Contain("from_kind");
+        answer.Should().NotContain("source_address");
+        answer.Should().NotContain("sending_host");
+        answer.Should().NotContain("source_site");
+    }
+
+    /// <summary>The text from one marker to the first occurrence of another after it.</summary>
+    /// <param name="sql">The statement.</param>
+    /// <param name="from">Where the slice starts.</param>
+    /// <param name="to">What ends it.</param>
+    /// <returns>The slice, including the opening marker.</returns>
+    private static string Between(string sql, string from, string to)
+    {
+        var start = sql.IndexOf(from, StringComparison.Ordinal);
+
+        start.Should().BeGreaterThanOrEqualTo(0, "the statement holds {0}", from);
+
+        var end = sql.IndexOf(to, start + from.Length, StringComparison.Ordinal);
+
+        end.Should().BeGreaterThan(start, "{0} is closed by {1}", from, to);
+
+        return sql[start..end];
+    }
+
     private static SessionWindow Window() => new()
     {
         SiteId = SiteId,
+        SiteDomain = SiteDomain,
         From = From,
         To = To,
         SettledBefore = To,

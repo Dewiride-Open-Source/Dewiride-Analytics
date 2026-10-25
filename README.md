@@ -120,8 +120,10 @@ and the [master plan](#master-plan) below it says what does not yet.
   that is settled a visit at a time by asking what the address is called and whether that name
   points back at it — a pair of questions only the company could arrange the answers to. Both reach
   crawlers that give no name at all: the largest search engine's fetches arrive behind an ordinary
-  browser string. Only visits that already look like machinery are ever asked about, so a reader's
-  address is never sent anywhere. An install with no way out to the internet can be given the lists
+  browser string. Only a visit that does not look like a person is ever asked about, so the address
+  of a visit that looks like somebody reading is never sent anywhere; a person taken for machinery —
+  somebody reading over a rented network who came straight to the page and pressed no key, for one —
+  is asked about as machinery is. An install with no way out to the internet can be given the lists
   by hand, or go without either check: traffic is measured the same, and every crawler simply reads
   as a claim.
 
@@ -175,8 +177,12 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
 **2.2 Weak spot to close**
 
 - **Not started** · A headless browser with an ordinary Chrome name, its automation flag hidden, on
-  an unlisted network, that runs the script and scrolls once is judged "A person · some signs"
-  today.
+  an unlisted network, that runs the script on a page a quarter of which fits on its first screen —
+  or scrolls a quarter of the way down a longer one — is judged "A person · some signs" today, and
+  "A person · strong signs" once the page has stayed on screen for two seconds.
+- **Not started** · On a rented network a program is judged "A person · some signs" if it presses one
+  key, or makes up a link from another site and then clicks once, or stays 15 seconds on pages one
+  of which is short enough to be seen a quarter of the way down.
 
 **2.3 Timing**
 
@@ -191,7 +197,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
 - **Not started** · Sequential, alphabetical and numeric traversal.
 - **Not started** · Sitemap-like order; breadth-first and depth-first crawling.
 - **Not started** · Following a contextual internal link as a human signal.
-- **Not started** · Arriving from a search engine as a human signal.
+- **Partly done** · Arriving from another site is a faint human signal, and it decides anything
+  only for a visit from a rented network that nothing else points against.
 - **Not started** · Progressive scrolling, not just the deepest point reached.
 
 **2.5 Journey types**
@@ -278,7 +285,7 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
 - **Done** · Page views, including sites that change page without reloading.
 - **Done** · The page and site a visitor came from.
 - **Done** · Time a page was actually on screen.
-- **Done** · How far down a page was scrolled.
+- **Done** · How far down a page was seen, the first screen included.
 - **Done** · Whether the visitor clicked, tapped or typed — presence only, never content.
 - **Done** · Screen size, language, time-zone offset, and whether the browser declares itself
   automated.
@@ -429,6 +436,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
   four uptime monitors, three social previews, the known AI crawlers.
 - **Done** · Confirmation from published address lists fetched twice a day, and from the
   reverse-name check.
+- **Done** · A crawler confirmed by the name its address answers to stays confirmed when history is
+  judged again under improved rules, long after its address has been deleted.
 - **Done** · Confirmed name on the visit row; an unconfirmed name marked as a claim.
 - **Not started** · Link checkers.
 - **Not started** · Security tools by name.
@@ -453,6 +462,11 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
   DB-IP credit.
 - **Done** · Datacentre origin as a reason on the visit; hosting operators named in the Networks
   list.
+- **Done** · A rented network is not, on its own, automation. Where nothing else points against
+  it, a visit on which a key was pressed, or one another website sent on which something was then
+  clicked or that was read for 15 seconds or more with a quarter of the page seen, is called a
+  person with the network shown against it; one another website sent that did neither is "Couldn't
+  tell"; one that came straight in with no key pressed is still weighed as machinery.
 - **Not started** · Region shown — stored, never shown.
 - **Not started** · Network number shown.
 - **Not started** · A "datacentre / hosting" label on rows and lists.

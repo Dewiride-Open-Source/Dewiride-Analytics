@@ -71,7 +71,7 @@ internal sealed partial class ClassificationWorker(
 
             try
             {
-                await classifier.CatchUpAsync(site.Id, site.AddedAt, cancellationToken).ConfigureAwait(false);
+                await classifier.CatchUpAsync(site, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception failure) when (failure is not OperationCanceledException)
             {

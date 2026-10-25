@@ -23,8 +23,12 @@ public interface ISiteRoster
 /// A site, as the background work needs to know it.
 /// </summary>
 /// <param name="Id">Identity of the site.</param>
+/// <param name="Domain">
+/// The address it is known by, which is what tells a reader moving between its own pages from a
+/// visitor another site sent.
+/// </param>
 /// <param name="AddedAt">
 /// When it was added. Nothing can have been observed before then, so it is where work on a site
 /// that has never been processed begins.
 /// </param>
-public readonly record struct SiteRegistration(Guid Id, DateTimeOffset AddedAt);
+public readonly record struct SiteRegistration(Guid Id, string Domain, DateTimeOffset AddedAt);

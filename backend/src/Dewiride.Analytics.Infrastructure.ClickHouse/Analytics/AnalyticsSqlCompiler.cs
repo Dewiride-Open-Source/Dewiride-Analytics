@@ -52,11 +52,6 @@ public static class AnalyticsSqlCompiler
     private const string SettledParameter = "settled_ms";
     private const string LongestVisitParameter = "longest_visit_seconds";
     private const string VisitorKeyParameter = "visitor_key";
-    private const string SiteDomainParameter = "site_domain";
-    private const string SuffixesParameter = "second_levels";
-    private const string SourceKeysParameter = "source_keys";
-    private const string SourceNamesParameter = "source_names";
-    private const string SourceChannelsParameter = "source_channels";
     private const string HostingNumbersParameter = "hosting_numbers";
     private const string HostingNamesParameter = "hosting_names";
     private const string CategoriesParameter = "categories";
@@ -182,23 +177,6 @@ public static class AnalyticsSqlCompiler
             [SourceGrouping.Page] = "source_site",
             [SourceGrouping.Kind] = "''",
         }.ToFrozenDictionary();
-
-    /// <summary>
-    /// The catalogue of sending sites, held as the arrays the store binds.
-    /// </summary>
-    /// <remarks>
-    /// Copied once rather than converted per question, and as plain arrays because that is what
-    /// the driver knows how to send as an <c>Array(String)</c>. They are bound rather than written
-    /// into the statement so that what a reviewer reads in an approved statement stays the shape
-    /// of the question instead of a hundred hostnames.
-    /// </remarks>
-    private static readonly string[] SecondLevels = [.. TrafficSources.SecondLevelSuffixes];
-
-    private static readonly string[] SourceKeys = [.. TrafficSources.Keys];
-
-    private static readonly string[] SourceNames = [.. TrafficSources.Names];
-
-    private static readonly string[] SourceChannels = [.. TrafficSources.Channels];
 
     /// <summary>
     /// Which resolved column a software list groups on.
@@ -909,7 +887,7 @@ public static class AnalyticsSqlCompiler
         /// <summary>Milliseconds the pages were in front of them, added up across the window.</summary>
         public const int EngagedMs = 10;
 
-        /// <summary>Furthest any page was scrolled.</summary>
+        /// <summary>Deepest point of any page that came into view, first screen included.</summary>
         public const int MaxScrollDepthPercent = 11;
 
         /// <summary>How many reports could see pointer activity.</summary>
@@ -1124,7 +1102,7 @@ public static class AnalyticsSqlCompiler
             sql,
             [
                 .. WindowParameters(scope, query.Range),
-                .. CatalogueParameters(query.SiteDomain),
+                .. SendingSites.Parameters(query.SiteDomain),
                 .. NetworkNames(),
                 new QueryParameter(MaxRequestsParameter, (uint)SiteLiveVisitorsQuery.MostRequests),
                 new QueryParameter(LimitParameter, (uint)query.Limit),
@@ -1721,7 +1699,7 @@ public static class AnalyticsSqlCompiler
             sql,
             [
                 .. WindowParameters(scope, query.Range),
-                .. CatalogueParameters(query.SiteDomain),
+                .. SendingSites.Parameters(query.SiteDomain),
                 .. NetworkNames(),
                 new QueryParameter(IdleParameter, (long)query.IdleTimeout.TotalSeconds),
                 new QueryParameter(VisitorKeyParameter, query.Visit.VisitorKey),
@@ -1937,7 +1915,7 @@ public static class AnalyticsSqlCompiler
     /// <returns>The two catalogues, what counts as one visit, and how long a visit can be.</returns>
     private static QueryParameter[] RebuildParameters(JudgedSessionsQuery query) =>
     [
-        .. CatalogueParameters(query.SiteDomain),
+        .. SendingSites.Parameters(query.SiteDomain),
         .. NetworkNames(),
         new QueryParameter(IdleParameter, (long)query.IdleTimeout.TotalSeconds),
         LongestVisit(),
@@ -1970,7 +1948,7 @@ public static class AnalyticsSqlCompiler
             VisitDetailCounts,
             [
                 .. WindowParameters(scope, query.Range),
-                .. CatalogueParameters(query.SiteDomain),
+                .. SendingSites.Parameters(query.SiteDomain),
                 .. NetworkNames(),
                 new QueryParameter(IdleParameter, (long)query.IdleTimeout.TotalSeconds),
                 LongestVisit(),
@@ -2491,7 +2469,7 @@ public static class AnalyticsSqlCompiler
             sql,
             [
                 .. WindowParameters(scope, query.Range),
-                .. CatalogueParameters(query.SiteDomain),
+                .. SendingSites.Parameters(query.SiteDomain),
                 new QueryParameter(LimitParameter, (uint)query.Limit),
                 new QueryParameter(OffsetParameter, (uint)query.Offset),
                 .. PopulationParameters(query.Population),
@@ -2710,32 +2688,6 @@ public static class AnalyticsSqlCompiler
         new(SiteIdParameter, scope.SiteId),
         new(FromParameter, range.From.ToUnixTimeMilliseconds()),
         new(ToParameter, range.To.ToUnixTimeMilliseconds()),
-    ];
-
-    /// <summary>
-    /// What <see cref="SendingSites"/> needs bound: the measured site's own address, and the
-    /// catalogue as three parallel arrays.
-    /// </summary>
-    /// <remarks>
-    /// The catalogue is applied when the question is asked rather than resolved into a stored
-    /// column when the traffic arrives, so correcting an entry re-answers every period a site has
-    /// already recorded instead of leaving the same visit classified two ways depending on when it
-    /// happened to arrive. Binding it also keeps a hostile referrer on the value side of the
-    /// boundary, which is the rule the whole compiler is built on.
-    /// </remarks>
-    /// <param name="siteDomain">
-    /// The measured site's own address, so it never appears as a source of its own traffic. Read
-    /// from the site catalogue by the endpoint and never from the request, so a caller cannot
-    /// decide whose traffic is left out of somebody else's answer.
-    /// </param>
-    /// <returns>The five values, in the order the statements bind them.</returns>
-    private static QueryParameter[] CatalogueParameters(string siteDomain) =>
-    [
-        new(SiteDomainParameter, siteDomain),
-        new(SuffixesParameter, SecondLevels),
-        new(SourceKeysParameter, SourceKeys),
-        new(SourceNamesParameter, SourceNames),
-        new(SourceChannelsParameter, SourceChannels),
     ];
 
     /// <summary>

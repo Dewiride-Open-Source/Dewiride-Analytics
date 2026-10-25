@@ -2683,6 +2683,36 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     /// <summary>
+    /// Which kind of site sent a visit is part of what a verdict rests on, so the list a reader
+    /// opens, the reading of who is here now, and the engine that judges the visit have to settle it
+    /// identically — from the same reduction, bound with the same catalogue, taking the same report.
+    /// Otherwise a row could say "From Google" beside a verdict reached as though nothing sent it.
+    /// </summary>
+    [Fact]
+    public void Every_Statement_That_Says_Where_A_Visit_Came_From_Says_It_The_Same_Way()
+    {
+        const string kind = "argMinIf(source_channel, (server_ts, event_id), sending_host != '') AS from_kind";
+
+        CompiledStatement[] statements =
+        [
+            AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail()),
+            AnalyticsSqlCompiler.Compile(Scope(), LiveVisitors()),
+            SessionSqlCompiler.Compile(Judging()),
+        ];
+
+        foreach (var statement in statements)
+        {
+            statement.Sql.Should().Contain(kind);
+            statement.Sql.Should().Contain("AND NOT endsWith(referrer_domain, concat('.', {site_domain:String}))");
+
+            statement.Parameters
+                .Where(parameter => parameter.Name is "second_levels" or "source_keys" or "source_names" or "source_channels")
+                .Select(parameter => parameter.Name)
+                .Should().Equal("second_levels", "source_keys", "source_names", "source_channels");
+        }
+    }
+
+    /// <summary>
     /// A visit already under way when the period opened has to keep its own beginning, because its
     /// beginning is half its name. Read from the period's own start it would be handed an invented
     /// one, and every visit that crossed the edge would quietly disappear from a narrowed list.
@@ -2862,6 +2892,7 @@ public sealed partial class AnalyticsSqlCompilerTests
         new()
         {
             SiteId = SiteId,
+            SiteDomain = "example.com",
             From = From,
             To = To,
             SettledBefore = To,

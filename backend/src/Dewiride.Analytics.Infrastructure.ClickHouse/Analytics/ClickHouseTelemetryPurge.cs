@@ -10,7 +10,7 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Both tables are partitioned by month and sorted by site, so there is no partition that belongs
+/// Every table is partitioned by month and sorted by site, so there is no partition that belongs
 /// to a single site and nothing to drop wholesale. What is left is deleting by predicate, and the
 /// lightweight form is the one the store's own documentation recommends for that: it marks the
 /// matching rows and leaves the parts alone, where <c>ALTER TABLE … DELETE</c> rewrites every part
@@ -42,7 +42,7 @@ internal sealed class ClickHouseTelemetryPurge(IClickHouseClient client) : ITele
     /// missing from here would leave a removed site's rows behind with nothing left to name them
     /// by, since every read is scoped through a site that no longer exists.
     /// </remarks>
-    private static readonly string[] SiteScopedTables = ["events", "session_classifications"];
+    private static readonly string[] SiteScopedTables = ["events", "session_classifications", "name_confirmations"];
 
     /// <inheritdoc />
     public async Task PurgeSiteAsync(Guid siteId, CancellationToken cancellationToken)

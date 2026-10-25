@@ -1,5 +1,5 @@
-using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Sessions;
+using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Domain.Telemetry;
@@ -151,7 +151,7 @@ internal static class DescribedTraffic
         await using var scope = stack.Services.CreateAsyncScope();
 
         await scope.ServiceProvider.GetRequiredService<SessionClassifier>()
-            .CatchUpAsync(site.Id, site.CreatedAt.AddDays(-2), Cancellation.Token)
+            .CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt.AddDays(-2)), Cancellation.Token)
             .ConfigureAwait(false);
     }
 

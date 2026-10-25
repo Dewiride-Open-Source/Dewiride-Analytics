@@ -29,7 +29,10 @@ public sealed class EngagementDetector : IDetector
     /// <summary>Time beyond which the reading counts for as much as it is going to.</summary>
     private const int SubstantialReadMs = 15000;
 
-    /// <summary>Scroll depth below which a page may simply have been rendered rather than read.</summary>
+    /// <summary>
+    /// How far down a page has to have come into view, first screen included, to be reported. A
+    /// page no taller than four screens gets there by being shown, so this alone is not reading.
+    /// </summary>
     private const byte MeaningfulScrollPercent = 25;
 
     /// <summary>Pages a session must reach before the absence of any interaction is worth reporting.</summary>

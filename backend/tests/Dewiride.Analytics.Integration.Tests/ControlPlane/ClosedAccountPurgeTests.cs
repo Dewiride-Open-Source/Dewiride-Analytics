@@ -81,9 +81,10 @@ public sealed class ClosedAccountPurgeTests(AnalyticsStackFixture stack)
 
     /// <summary>
     /// The most important property in this file. Deleting an account empties the telemetry store
-    /// of everything measured for its websites — the activity and the verdicts alike — and touches
-    /// nothing measured for anybody else's. One store holds every website on the installation, so
-    /// the predicate that empties one account of it is the only thing keeping the rest.
+    /// of everything measured for its websites — the activity, the verdicts and the answers kept
+    /// beside them alike — and touches nothing measured for anybody else's. One store holds every
+    /// website on the installation, so the predicate that empties one account of it is the only
+    /// thing keeping the rest.
     /// </summary>
     [Fact]
     public async Task Everything_Measured_For_Its_Websites_Is_Deleted_And_A_Neighbour_Keeps_Its_Own()
@@ -100,9 +101,12 @@ public sealed class ClosedAccountPurgeTests(AnalyticsStackFixture stack)
 
         await JudgeAsync(going.SiteId);
         await JudgeAsync(staying.SiteId);
+        await KeepAnswerAsync(going.SiteId, at);
+        await KeepAnswerAsync(staying.SiteId, at);
 
         (await ActivityCountAsync(going.SiteId)).Should().Be(2);
         (await VerdictCountAsync(going.SiteId)).Should().Be(1);
+        (await AnswerCountAsync(going.SiteId)).Should().Be(1);
 
         await CloseAsync(stack.Services, going.OrganizationId, going.OwnerId, Overdue);
         await SweepAsync(stack.Services);
@@ -111,9 +115,11 @@ public sealed class ClosedAccountPurgeTests(AnalyticsStackFixture stack)
         // by the time the sweep returns, not merely been accepted for later.
         (await ActivityCountAsync(going.SiteId)).Should().Be(0);
         (await VerdictCountAsync(going.SiteId)).Should().Be(0);
+        (await AnswerCountAsync(going.SiteId)).Should().Be(0);
 
         (await ActivityCountAsync(staying.SiteId)).Should().Be(2);
         (await VerdictCountAsync(staying.SiteId)).Should().Be(1);
+        (await AnswerCountAsync(staying.SiteId)).Should().Be(1);
         (await HeldAboutAsync(staying)).Organizations.Should().Be(1);
     }
 
@@ -811,6 +817,17 @@ public sealed class ClosedAccountPurgeTests(AnalyticsStackFixture stack)
             "SELECT count() FROM session_classifications WHERE site_id = {site_id:UUID}",
             TelemetryStore.Bind("site_id", siteId));
 
+    private async Task<ulong> AnswerCountAsync(Guid siteId) =>
+        await TelemetryStore.ScalarAsync<ulong>(
+            Telemetry,
+            "SELECT count() FROM name_confirmations WHERE site_id = {site_id:UUID}",
+            TelemetryStore.Bind("site_id", siteId));
+
+    /// <summary>Keeps an answer for one visit to a website, as a pass that settled it by name does.</summary>
+    private Task KeepAnswerAsync(Guid siteId, DateTimeOffset at) =>
+        stack.Services.GetRequiredService<INameConfirmationStore>()
+            .RecordAsync(siteId, [new NameConfirmation("crawler:1", at, "Yandex")], at, Cancellation.Token);
+
     private Task WriteAsync(params RawEvent[] events) =>
         stack.Services.GetRequiredService<IEventSink>().WriteBatchAsync(events, Cancellation.Token);
 
@@ -820,11 +837,16 @@ public sealed class ClosedAccountPurgeTests(AnalyticsStackFixture stack)
     /// </summary>
     private async Task JudgeAsync(Guid siteId)
     {
+        var domain = await ReadAsync(database => database.Sites
+            .Where(site => site.Id == siteId)
+            .Select(site => site.Domain)
+            .SingleAsync(Cancellation.Token));
+
         await using var work = stack.Services.CreateAsyncScope();
 
         await work.ServiceProvider
             .GetRequiredService<SessionClassifier>()
-            .CatchUpAsync(siteId, Now.AddDays(-2), Cancellation.Token);
+            .CatchUpAsync(new SiteRegistration(siteId, domain, Now.AddDays(-2)), Cancellation.Token);
     }
 
     /// <summary>Starts the bookmark the engine keeps for a website.</summary>

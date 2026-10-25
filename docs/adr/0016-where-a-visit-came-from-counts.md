@@ -4,6 +4,10 @@
 - **Date**: 2026-08-20
 - **Ruleset**: 1.0 → **2.0**. Moves sessions between categories, so the major component moves.
 - **Supersedes**: nothing. Adds no column and collects nothing new.
+- **Revised by**: [0056](0056-somebody-can-be-reading-from-a-rented-computer.md). Where a rented
+  network is the only thing pointing toward automation, a visit on which a key was pressed, or one
+  another site sent on which the pointer was then pressed or the page read, is a person with the
+  network shown against it.
 
 ## Context
 

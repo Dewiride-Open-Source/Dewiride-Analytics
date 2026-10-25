@@ -31,4 +31,13 @@
     <EmbeddedResource Include="..\..\migrations\clickhouse\*.sql" LinkBase="Migrations" />
   </ItemGroup>
 
+  <!--
+    How the store is reached is internal because the rest of the product asks through ports and
+    never names a client. The integration suite is the exception: how long a migration is allowed to
+    run is a property of that wiring, and it can only be checked against the wiring itself.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dewiride.Analytics.Integration.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -425,7 +425,7 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     private static VisitContext Established(ClickHouseDataReader reader, int first) =>
         new(
             reader.GetString(first),
-            AsSourceKind(reader.GetString(first + 1)),
+            SendingSites.KindOf(reader.GetString(first + 1)),
             reader.GetString(first + 2),
             reader.GetString(first + 3),
             reader.GetString(first + 4),
@@ -726,7 +726,7 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
             SourceKinds =
             [
                 .. Of(rows, JudgedVisitDetails.SourceKind)
-                    .Select(row => new VisitDetailCount<SourceChannel>(AsSourceKind(row.Value), row.Visits)),
+                    .Select(row => new VisitDetailCount<SourceChannel>(SendingSites.KindOf(row.Value), row.Visits)),
             ],
             Browsers = AsText(rows, JudgedVisitDetails.Browser),
             OperatingSystems = AsText(rows, JudgedVisitDetails.System),
@@ -770,18 +770,6 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     /// <returns>The kind of device.</returns>
     private static DeviceClass AsDevice(string stored) =>
         StoredNames.DeviceClasses.TryGetValue(stored, out var device) ? device : DeviceClass.Unknown;
-
-    /// <summary>
-    /// Reads a kind of source back.
-    /// </summary>
-    /// <remarks>
-    /// On the same terms as a kind of device. A visit nothing sent is stored as an empty text and
-    /// reads as direct, which is not "nobody sent them" but "nothing said who did".
-    /// </remarks>
-    /// <param name="stored">What the store holds.</param>
-    /// <returns>The kind of source.</returns>
-    private static SourceChannel AsSourceKind(string stored) =>
-        TrafficSources.Kinds.TryGetValue(stored, out var kind) ? kind : SourceChannel.Direct;
 
     /// <summary>
     /// One row of a facets answer, before it is sorted into the detail it belongs to.
@@ -926,10 +914,14 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
             AutonomousSystem = reader.GetFieldValue<uint>(Column.AutonomousSystem),
             NetworkOwner = NothingIfEmpty(reader.GetString(Column.NetworkOwner)),
             ConfirmedOperator = NothingIfEmpty(reader.GetString(Column.ConfirmedOperator)),
+
+            // The column the row's own "came from" is read from, so what the visitor is judged on
+            // and what the screen says sent them are one answer.
+            SentBy = SendingSites.KindOf(reader.GetString(Column.SourceKind)),
         },
         new VisitContext(
             reader.GetString(Column.SendingSite),
-            AsSourceKind(reader.GetString(Column.SourceKind)),
+            SendingSites.KindOf(reader.GetString(Column.SourceKind)),
             reader.GetString(Column.Country),
             reader.GetString(Column.Town),
             reader.GetString(Column.Network),

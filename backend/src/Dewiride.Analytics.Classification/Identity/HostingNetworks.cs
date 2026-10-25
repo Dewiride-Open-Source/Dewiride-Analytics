@@ -72,6 +72,14 @@ public readonly record struct HostingNetwork(uint AutonomousSystem, string Opera
 /// </item>
 /// </list>
 /// <para>
+/// <b>A network that carries people as well as servers is kept where the servers are the reason it
+/// is here.</b> Microsoft's and Amazon's networks carry desktops companies rent in their clouds and
+/// staff whose browsing is sent out through a security edge, as well as the programs that make
+/// them worth listing. Leaving them out would release the programs too; keeping them is answered in
+/// the engine instead, where a visit whose only objection is the network is decided by what it did
+/// and how it arrived.
+/// </para>
+/// <para>
 /// <b>Keeping this current is an accepted ongoing cost</b>, on the same terms as the crawler
 /// catalogue beside it. It is consulted when a visit is judged, so adding an entry is a code change
 /// and a re-judging, with no migration and nothing to backfill.

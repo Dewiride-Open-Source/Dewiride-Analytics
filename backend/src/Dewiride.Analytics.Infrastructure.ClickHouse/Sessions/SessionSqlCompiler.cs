@@ -56,6 +56,21 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
 /// was closed. The match is on the visit's name and the instant it ended, so a visit that a later
 /// report has made longer is read again and judged on all of itself.
 /// </para>
+/// <para>
+/// Which kind of site sent a visit is settled on the visit list's own terms: the reduction in
+/// <see cref="SendingSites"/> reads each report's referring address against the site's own address
+/// and the catalogue of sending sites, and the visit takes the kind its first report naming
+/// somebody else gives. The kind the engine judges a visit with is therefore the kind a reader is
+/// shown beside it. The referring address and the site it names stay inside the statement; only
+/// the kind comes out.
+/// </para>
+/// <para>
+/// One thing about a visit is read from beside the activity rather than out of it: whose crawler
+/// it was, where an earlier pass settled that from the name its address answers to. The address is
+/// cleared after three days, so the answer is kept under the visit's own name instead, and it is
+/// read for the window's own visits — by site and by when each began, and never by the visitor
+/// key, which on a rented network can stand for a whole network's day.
+/// </para>
 /// </remarks>
 public static class SessionSqlCompiler
 {
@@ -124,7 +139,7 @@ public static class SessionSqlCompiler
         /// </remarks>
         public const int EngagedMs = 10;
 
-        /// <summary>Furthest any page was scrolled.</summary>
+        /// <summary>Deepest point of any page that came into view, first screen included.</summary>
         public const int MaxScrollDepthPercent = 11;
 
         /// <summary>How many reports could see pointer activity.</summary>
@@ -159,12 +174,32 @@ public static class SessionSqlCompiler
 
         /// <summary>The company that vouches for the address the visit arrived from.</summary>
         /// <remarks>
+        /// <para>
         /// Any one report establishing it settles the visit. A crawler asks for several pages and
         /// the check is made against each request as it arrives, so a visit where one report
         /// resolved and the rest did not is a visit whose address was published by then; there is
         /// no reading of that under which the visit was somebody else.
+        /// </para>
+        /// <para>
+        /// Where no report says, the answer an earlier pass settled from the name the visit's
+        /// address answers to is read instead, which is what lets a visit judged again after its
+        /// address has been cleared keep the identity it was given. What the activity says comes
+        /// first, as it does when a visit is first judged. It was settled report by report as the
+        /// activity arrived — from a list the company publishes, or from an address a name check
+        /// had already settled — so it speaks for the reports themselves, where the answer kept
+        /// beside the visit speaks for the one address the visit was asked about.
+        /// </para>
         /// </remarks>
         public const int ConfirmedOperator = 20;
+
+        /// <summary>What kind of site sent the visit, or empty where nothing named one.</summary>
+        /// <remarks>
+        /// Settled by the same expression the visit list uses — the first report whose referring
+        /// address names a site other than this one, reduced through the catalogue of sending sites
+        /// — so the kind a visit is judged with is the kind a reader is shown. Only the kind leaves
+        /// the statement: the referring address and the site it names stay inside it.
+        /// </remarks>
+        public const int SentBy = 21;
 
         /// <summary>One of the addresses the visit arrived from, while one is still kept.</summary>
         /// <remarks>
@@ -182,7 +217,7 @@ public static class SessionSqlCompiler
         /// network mid-visit is a person under either answer.
         /// </para>
         /// </remarks>
-        public const int Address = 21;
+        public const int Address = 22;
     }
 
     /// <summary>
@@ -196,36 +231,28 @@ public static class SessionSqlCompiler
     /// </remarks>
     private static readonly string Sql = $$"""
         WITH
-            windowed AS
-            (
-                SELECT
-                    event_id,
-                    visitor_key,
-                    correlation_id,
-                    server_ts,
-                    kind,
-                    path,
-                    status_code,
-                    surface,
-                    user_agent,
-                    language,
-                    viewport_width,
-                    engaged_ms,
-                    scroll_depth_percent,
-                    had_pointer_interaction,
-                    had_keyboard_interaction,
-                    declared_web_driver,
-                    autonomous_system,
-                    network_owner,
-                    confirmed_operator,
-                    ip_address
-                FROM events
-                WHERE site_id = {site_id:UUID}
-                  AND server_ts >= fromUnixTimestamp64Milli(
-                      {from_ms:Int64} - {longest_visit_seconds:Int64} * 1000, 'UTC')
-                  AND server_ts < fromUnixTimestamp64Milli(
-                      {to_ms:Int64} + {longest_visit_seconds:Int64} * 1000, 'UTC')
-            ),
+            {{SendingSites.Of(
+                SendingSites.ThePeriodAndTheVisitsAcrossIt,
+                "event_id",
+                "visitor_key",
+                "correlation_id",
+                "server_ts",
+                "kind",
+                "path",
+                "status_code",
+                "surface",
+                "user_agent",
+                "language",
+                "viewport_width",
+                "engaged_ms",
+                "scroll_depth_percent",
+                "had_pointer_interaction",
+                "had_keyboard_interaction",
+                "declared_web_driver",
+                "autonomous_system",
+                "network_owner",
+                "confirmed_operator",
+                "ip_address")}},
             {{ReconciledEvents.Reconciliation}},
             {{VisitGrouping.Of(VisitGrouping.EveryVisitor)}},
             attended AS
@@ -235,46 +262,87 @@ public static class SessionSqlCompiler
                     max(engaged_ms) OVER (
                         PARTITION BY visitor_key, visit_ordinal, path, page_ordinal) AS page_engaged_ms
                 FROM opened
+            ),
+            visits AS
+            (
+                SELECT
+                    concat(visitor_key, ':', toString(toUnixTimestamp64Milli(min(server_ts)))) AS session_key,
+                    min(server_ts) AS started_at,
+                    max(server_ts) AS ended_at,
+                    toBool(max(server_ts) < fromUnixTimestamp64Milli({settled_ms:Int64}, 'UTC')) AS is_closed,
+                    toUInt32(countIf(opens_page)) AS page_count,
+                    groupArraySortedIf({max_requests:UInt32})(
+                        (toUnixTimestamp64Milli(server_ts), path, status_code),
+                        opens_page) AS requests,
+                    groupUniqArray(toString(surface)) AS surfaces,
+                    anyIf(user_agent, user_agent != '') AS user_agent,
+                    anyIf(language, language != '') AS language,
+                    max(viewport_width) AS viewport_width,
+                    sumIf(page_engaged_ms, opens_page) AS engaged_ms,
+                    max(scroll_depth_percent) AS max_scroll_depth_percent,
+                    toUInt32(countIf(had_pointer_interaction != 'Unobserved')) AS pointer_observed,
+                    toUInt32(countIf(had_pointer_interaction = 'Yes')) AS pointer_seen,
+                    toUInt32(countIf(had_keyboard_interaction != 'Unobserved')) AS keyboard_observed,
+                    toUInt32(countIf(had_keyboard_interaction = 'Yes')) AS keyboard_seen,
+                    toUInt32(countIf(declared_web_driver != 'Unobserved')) AS web_driver_observed,
+                    toUInt32(countIf(declared_web_driver = 'Yes')) AS web_driver_seen,
+                    max(autonomous_system) AS autonomous_system,
+                    anyIf(network_owner, network_owner != '') AS network_owner,
+                    anyIf(confirmed_operator, confirmed_operator != '') AS stamped_operator,
+                    argMinIf(source_channel, (server_ts, event_id), sending_host != '') AS from_kind,
+                    anyIf(ip_address, ip_address != '') AS ip_address
+                FROM attended
+                GROUP BY visitor_key, visit_ordinal
+                HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                   AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+                   AND (session_key, ended_at) NOT IN
+                   (
+                       SELECT session_key, ended_at
+                       FROM session_classifications
+                       WHERE site_id = {site_id:UUID}
+                         AND ruleset_major = {ruleset_major:UInt16}
+                         AND ruleset_minor = {ruleset_minor:UInt16}
+                         AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                         AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+                   )
+            ),
+            confirmations AS
+            (
+                SELECT
+                    session_key,
+                    argMax(operator, settled_at) AS operator
+                FROM name_confirmations
+                WHERE site_id = {site_id:UUID}
+                  AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                  AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+                GROUP BY session_key
             )
         SELECT
-            concat(visitor_key, ':', toString(toUnixTimestamp64Milli(min(server_ts)))) AS session_key,
-            min(server_ts) AS started_at,
-            max(server_ts) AS ended_at,
-            toBool(max(server_ts) < fromUnixTimestamp64Milli({settled_ms:Int64}, 'UTC')) AS is_closed,
-            toUInt32(countIf(opens_page)) AS page_count,
-            groupArraySortedIf({max_requests:UInt32})(
-                (toUnixTimestamp64Milli(server_ts), path, status_code),
-                opens_page) AS requests,
-            groupUniqArray(toString(surface)) AS surfaces,
-            anyIf(user_agent, user_agent != '') AS user_agent,
-            anyIf(language, language != '') AS language,
-            max(viewport_width) AS viewport_width,
-            sumIf(page_engaged_ms, opens_page) AS engaged_ms,
-            max(scroll_depth_percent) AS max_scroll_depth_percent,
-            toUInt32(countIf(had_pointer_interaction != 'Unobserved')) AS pointer_observed,
-            toUInt32(countIf(had_pointer_interaction = 'Yes')) AS pointer_seen,
-            toUInt32(countIf(had_keyboard_interaction != 'Unobserved')) AS keyboard_observed,
-            toUInt32(countIf(had_keyboard_interaction = 'Yes')) AS keyboard_seen,
-            toUInt32(countIf(declared_web_driver != 'Unobserved')) AS web_driver_observed,
-            toUInt32(countIf(declared_web_driver = 'Yes')) AS web_driver_seen,
-            max(autonomous_system) AS autonomous_system,
-            anyIf(network_owner, network_owner != '') AS network_owner,
-            anyIf(confirmed_operator, confirmed_operator != '') AS confirmed_operator,
-            anyIf(ip_address, ip_address != '') AS ip_address
-        FROM attended
-        GROUP BY visitor_key, visit_ordinal
-        HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-           AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
-           AND (session_key, ended_at) NOT IN
-           (
-               SELECT session_key, ended_at
-               FROM session_classifications
-               WHERE site_id = {site_id:UUID}
-                 AND ruleset_major = {ruleset_major:UInt16}
-                 AND ruleset_minor = {ruleset_minor:UInt16}
-                 AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-                 AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
-           )
+            session_key,
+            started_at,
+            ended_at,
+            is_closed,
+            page_count,
+            requests,
+            surfaces,
+            user_agent,
+            language,
+            viewport_width,
+            engaged_ms,
+            max_scroll_depth_percent,
+            pointer_observed,
+            pointer_seen,
+            keyboard_observed,
+            keyboard_seen,
+            web_driver_observed,
+            web_driver_seen,
+            autonomous_system,
+            network_owner,
+            if(stamped_operator != '', stamped_operator, ifNull(operator, '')) AS confirmed_operator,
+            from_kind,
+            ip_address
+        FROM visits
+        LEFT JOIN confirmations USING (session_key)
         ORDER BY started_at, session_key
         """;
 
@@ -283,9 +351,14 @@ public static class SessionSqlCompiler
     /// </summary>
     /// <param name="window">Which site, which stretch of time, and what counts as one visit.</param>
     /// <returns>The statement and its bound values.</returns>
+    /// <exception cref="ArgumentException">
+    /// The window names no address for the site, which would make every page a reader opened after
+    /// the first look like an arrival from another site.
+    /// </exception>
     public static CompiledStatement Compile(SessionWindow window)
     {
         ArgumentNullException.ThrowIfNull(window);
+        ArgumentException.ThrowIfNullOrWhiteSpace(window.SiteDomain);
 
         return new CompiledStatement(
             Sql,
@@ -299,6 +372,7 @@ public static class SessionSqlCompiler
                 new QueryParameter(MaxRequestsParameter, (uint)window.MaxRequestsPerSession),
                 new QueryParameter(RulesetMajorParameter, (ushort)window.UnjudgedUnder.Major),
                 new QueryParameter(RulesetMinorParameter, (ushort)window.UnjudgedUnder.Minor),
+                .. SendingSites.Parameters(window.SiteDomain),
             ]);
     }
 }

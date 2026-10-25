@@ -1,4 +1,6 @@
+using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Telemetry;
+using Dewiride.Analytics.Domain.Telemetry;
 
 namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 
@@ -24,22 +26,48 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// Written once here because several statements need it: the one that ranks where a window's
 /// visitors came from, the one that opens a single visit, the one that rebuilds what each visit
 /// was so a reader can narrow to the sites that sent them, the one that lists visits with what
-/// each was, and the reading of who is here now. A site is therefore named identically wherever
-/// it is shown, and a correction to the catalogue reaches all of them.
+/// each was, the reading of who is here now, and the reconstruction the engine judges visits
+/// from. A site is therefore named identically wherever it is shown, a visit is sent by the same
+/// kind of site in the evidence it is judged on as on the screen it is listed on, and a correction
+/// to the catalogue reaches all of them — the verdicts included, which keep the kind they were
+/// judged with until history is judged again, so such a correction ships with new rules.
 /// </para>
 /// <para>
-/// Every value it depends on is bound by the caller — the site's own address, the approximate
-/// public-suffix list, and the three parallel catalogue arrays. Nothing here is concatenated from
-/// anything a caller supplied.
+/// Every value it depends on is bound by the caller from <see cref="Parameters"/> — the site's
+/// own address, the approximate public-suffix list, and the three parallel catalogue arrays.
+/// Nothing here is concatenated from anything a caller supplied.
 /// </para>
 /// </remarks>
 internal static class SendingSites
 {
+    private const string SiteDomainParameter = "site_domain";
+    private const string SuffixesParameter = "second_levels";
+    private const string SourceKeysParameter = "source_keys";
+    private const string SourceNamesParameter = "source_names";
+    private const string SourceChannelsParameter = "source_channels";
+
     /// <summary>Where a carried-through column sits in the statement this writes.</summary>
     private const string ColumnIndent = "\n            ";
 
     /// <summary>Where a further condition on the activity read sits.</summary>
     private const string ConditionIndent = "\n          AND ";
+
+    /// <summary>
+    /// The catalogue of sending sites, held as the arrays the store binds.
+    /// </summary>
+    /// <remarks>
+    /// Copied once rather than converted per question, and as plain arrays because that is what
+    /// the driver knows how to send as an <c>Array(String)</c>. They are bound rather than written
+    /// into the statement so that what a reviewer reads in an approved statement stays the shape
+    /// of the question instead of a hundred hostnames.
+    /// </remarks>
+    private static readonly string[] SecondLevels = [.. TrafficSources.SecondLevelSuffixes];
+
+    private static readonly string[] SourceKeys = [.. TrafficSources.Keys];
+
+    private static readonly string[] SourceNames = [.. TrafficSources.Names];
+
+    private static readonly string[] SourceChannels = [.. TrafficSources.Channels];
 
     /// <summary>
     /// The activity a period itself holds.
@@ -176,6 +204,47 @@ internal static class SendingSites
     /// </returns>
     public static string Of(string window, params string[] carried) =>
         Reduction(window, string.Join($",{ColumnIndent}", carried));
+
+    /// <summary>
+    /// What the reduction needs bound: the measured site's own address, and the catalogue as three
+    /// parallel arrays.
+    /// </summary>
+    /// <remarks>
+    /// The catalogue is applied when the question is asked rather than resolved into a stored
+    /// column when the traffic arrives, so correcting an entry re-answers every period a screen
+    /// asks about instead of leaving the same visit classified two ways depending on when it
+    /// happened to arrive. The engine's reconstruction binds it too, and a verdict keeps the kind
+    /// it was judged with until history is judged again, so such a correction ships with new rules
+    /// rather than on its own. Binding it also keeps a hostile referrer on the value side of the
+    /// boundary, which is the rule every compiler here is built on.
+    /// </remarks>
+    /// <param name="siteDomain">
+    /// The measured site's own address, so it never appears as a source of its own traffic. Read
+    /// from the site catalogue and never from a request, so a caller cannot decide whose traffic is
+    /// left out of somebody else's answer.
+    /// </param>
+    /// <returns>The five values, in the order the statements bind them.</returns>
+    public static QueryParameter[] Parameters(string siteDomain) =>
+    [
+        new(SiteDomainParameter, siteDomain),
+        new(SuffixesParameter, SecondLevels),
+        new(SourceKeysParameter, SourceKeys),
+        new(SourceNamesParameter, SourceNames),
+        new(SourceChannelsParameter, SourceChannels),
+    ];
+
+    /// <summary>
+    /// Reads the kind of a sending site back.
+    /// </summary>
+    /// <remarks>
+    /// A visit nothing sent is held as an empty text and reads as direct, which is not "nobody
+    /// sent them" but "nothing said who did". A spelling this build does not know reads the same
+    /// way rather than throwing.
+    /// </remarks>
+    /// <param name="stored">What the statement handed back.</param>
+    /// <returns>The kind of site.</returns>
+    public static SourceChannel KindOf(string stored) =>
+        TrafficSources.Kinds.TryGetValue(stored, out var kind) ? kind : SourceChannel.Direct;
 
     private static string Reduction(string window, string columns) => $$"""
         arrived AS

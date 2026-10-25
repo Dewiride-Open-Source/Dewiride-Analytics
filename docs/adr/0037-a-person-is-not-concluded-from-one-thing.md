@@ -14,6 +14,11 @@
 - **Revises**: [0033](0033-an-identity-from-the-name-an-address-answers-to.md), which asked the name
   server about every visit not concluded to be a person. Under this ruleset a visit the product
   could not rule out as a person is not asked about either.
+- **Revised by**: [0056](0056-somebody-can-be-reading-from-a-rented-computer.md). Microsoft's cloud
+  carries people as well as programs; whether a key was pressed, or whether another site sent the
+  visit and the pointer was then pressed or its pages read, is what tells them apart. 0056 also
+  records that how far down a page was seen counts the first screen, so on any other network a page
+  short enough, opened and left with the tracker running, is a person.
 
 ## Context
 

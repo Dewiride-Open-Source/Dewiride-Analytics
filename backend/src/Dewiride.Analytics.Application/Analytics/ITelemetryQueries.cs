@@ -925,9 +925,13 @@ public sealed record LiveVisitors(int VisitorsSeen, ImmutableArray<LiveVisitor> 
 /// </para>
 /// <para>
 /// <see cref="SeenArriving"/> belongs to the second account. It decides what a reader may be told
-/// about where the visitor came from, and it never reaches <see cref="SessionEvidence"/>: nothing
-/// the engine concludes about a visitor rests on whether a stretch of minutes happened to hold
-/// their arrival.
+/// about where the visitor came from, and it never reaches <see cref="SessionEvidence"/>. What the
+/// evidence says sent the visitor, <see cref="SessionEvidence.SentBy"/>, is read from the same
+/// column as <see cref="VisitContext.Channel"/> and, like everything else in it, covers only the
+/// window: a visitor whose arriving page fell before it opened reads as sent by nobody, which no
+/// rule reads as evidence of anything. A reason saying another site sent them can therefore come
+/// and go with where the window starts — one more reason a live name rests only on observations
+/// that cannot be withdrawn.
 /// </para>
 /// <para>
 /// The evidence is what the window holds rather than what the whole visit will eventually hold, so

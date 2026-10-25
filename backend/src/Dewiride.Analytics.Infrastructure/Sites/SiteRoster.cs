@@ -22,7 +22,7 @@ public sealed class SiteRoster(ControlPlaneDbContext database) : ISiteRoster
             .AsNoTracking()
             .OrderBy(site => site.CreatedAt)
             .ThenBy(site => site.Id)
-            .Select(site => new SiteRegistration(site.Id, site.CreatedAt))
+            .Select(site => new SiteRegistration(site.Id, site.Domain, site.CreatedAt))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 }

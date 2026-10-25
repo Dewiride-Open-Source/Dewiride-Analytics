@@ -1,4 +1,5 @@
 using Dewiride.Analytics.Application.Telemetry;
+using Dewiride.Analytics.Domain.Telemetry;
 
 namespace Dewiride.Analytics.Application.Analytics;
 

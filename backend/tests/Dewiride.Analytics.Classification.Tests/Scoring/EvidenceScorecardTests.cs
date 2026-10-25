@@ -337,6 +337,221 @@ public sealed class EvidenceScorecardTests
         verdict.Contradicting.Should().ContainSingle().Which.Code.Should().Be(SignalCodes.ReadTime);
     }
 
+    /// <summary>
+    /// A key pressed over a rented network, with the tracker having run: the network is the only
+    /// objection, and what was done to the page is what a program on that network almost never does.
+    /// </summary>
+    [Fact]
+    public void A_Key_Pressed_Over_A_Rented_Network_Is_A_Person_With_The_Network_Against_It()
+    {
+        var verdict = Weigh(Rented, Tracker, Key);
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        verdict.Contradicting.Should().ContainSingle().Which.Code.Should().Be(SignalCodes.HostingNetwork);
+    }
+
+    [Fact]
+    public void A_Visit_Another_Site_Sent_Over_A_Rented_Network_And_Then_Pressed_Is_A_Person()
+    {
+        var verdict = Weigh(Rented, Sent("search"), Tracker, Pointer);
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.ArrivedFromAnotherSite);
+    }
+
+    /// <summary>
+    /// Sent by another site and then read: open long enough for the reading to count by itself, and
+    /// seen at least a quarter of the way down. Nothing had to be pressed.
+    /// </summary>
+    [Fact]
+    public void A_Visit_Another_Site_Sent_Over_A_Rented_Network_And_Then_Read_Is_A_Person()
+    {
+        var verdict = Weigh(Rented, Sent("search"), Tracker, Seen, LongRead);
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.ArrivedFromAnotherSite);
+    }
+
+    /// <summary>
+    /// Sent by another site and then only glanced at: a short page seen a quarter of the way down
+    /// by being shown, the same for less time than a reading counts, or the first screen of a long
+    /// page left open. None of them is a person over a rented network, and none of them is
+    /// something automated on the network's word alone.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Glances))]
+    public void A_Visit_Another_Site_Sent_Over_A_Rented_Network_And_Only_Glanced_At_Is_Not_Recognised(string glance)
+    {
+        var verdict = Weigh([Rented, Sent("search"), Tracker, .. GlancesByName[glance]]);
+
+        verdict.Category.Should().Be(TrafficCategory.Unknown);
+    }
+
+    /// <summary>The glances a rented network does not let pass for reading, by name.</summary>
+    public static TheoryData<string> Glances => new(GlancesByName.Keys);
+
+    private static readonly Dictionary<string, Signal[]> GlancesByName = new(StringComparer.Ordinal)
+    {
+        ["a short page shown"] = [Seen],
+        ["a short page shown for less time than a reading counts"] = [Seen, Glimpsed],
+        ["the first screen of a long page left open"] = [LongRead],
+    };
+
+    /// <summary>
+    /// Sent by another site and then nothing more: not enough for a person, and not enough for
+    /// automation on the network's word alone either. The band says how much was seen, as it does
+    /// for any open answer.
+    /// </summary>
+    [Fact]
+    public void A_Visit_Another_Site_Sent_Over_A_Rented_Network_That_Did_Nothing_More_Is_Not_Recognised()
+    {
+        var verdict = Weigh(Rented, Sent("social"), Tracker);
+
+        verdict.Category.Should().Be(TrafficCategory.Unknown);
+        verdict.Strength.Should().Be(EvidenceStrength.Strong);
+    }
+
+    /// <summary>
+    /// The hands-off shape measured on Microsoft's network: straight to a page, a while on it, a
+    /// press of the pointer, and no key. The network is its only objection and nothing the visit
+    /// did answers it, so it is something automated.
+    /// </summary>
+    [Fact]
+    public void A_Visit_That_Came_Straight_In_With_No_Key_Pressed_Is_Something_Automated()
+    {
+        var verdict = Weigh(Rented, Tracker, Pointer, LongRead);
+
+        verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+    }
+
+    /// <summary>
+    /// A guard on the rule rather than a promise the product makes: the second observation is
+    /// ordinarily the tracker having run, and without one a single key is not enough.
+    /// </summary>
+    [Fact]
+    public void A_Key_Pressed_With_Nothing_Else_That_Counts_Is_Not_A_Person_Over_A_Rented_Network()
+    {
+        Weigh(Rented, Key).Category.Should().NotBe(TrafficCategory.LikelyHuman);
+    }
+
+    /// <summary>
+    /// A guard on the rule as well: a press of the pointer is substantial on its own, and over a
+    /// rented network it still needs a second observation that counts beside it.
+    /// </summary>
+    [Fact]
+    public void One_Substantial_Observation_Is_Not_Enough_Over_A_Rented_Network()
+    {
+        Weigh(Rented, Sent("search"), Pointer).Category.Should().NotBe(TrafficCategory.LikelyHuman);
+    }
+
+    /// <summary>
+    /// The network stays among the reasons, pointing the other way, and holds the answer back
+    /// however much more the visit did.
+    /// </summary>
+    [Fact]
+    public void A_Person_Over_A_Rented_Network_Is_Never_Stated_More_Firmly_Than_Some_Signs()
+    {
+        var verdict = Weigh(
+            Rented,
+            Sent("search"),
+            Tracker,
+            Key,
+            Pointer,
+            Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 45),
+            Signal(SignalCodes.ReadTime, SignalDirection.TowardHuman, 60));
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+    }
+
+    /// <summary>
+    /// Every other observation that counts toward automation is a second objection, and a visit
+    /// with two is weighed as any other — whatever sent it and whatever it did.
+    /// </summary>
+    [Theory]
+    [InlineData(SignalCodes.NoLanguageDeclared, 25)]
+    [InlineData(SignalCodes.NoUserAgent, 30)]
+    [InlineData(SignalCodes.NoEngagement, 50)]
+    [InlineData(SignalCodes.RetrievalRate, 50)]
+    [InlineData(SignalCodes.RetrievalBreadth, 50)]
+    [InlineData(SignalCodes.MissingPaths, 45)]
+    [InlineData(SignalCodes.NoScriptExecution, 50)]
+    [InlineData(SignalCodes.DeclaredTool, 60)]
+    public void A_Second_Objection_Leaves_A_Visit_Over_A_Rented_Network_Weighed_As_Any_Other(string objection, int weight)
+    {
+        var verdict = Weigh(
+            Rented,
+            Signal(objection, SignalDirection.TowardAutomation, weight),
+            Sent("search"),
+            Tracker,
+            Key,
+            Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 45));
+
+        verdict.Category.Should().NotBe(TrafficCategory.LikelyHuman);
+        verdict.Category.Should().NotBe(TrafficCategory.Unknown);
+    }
+
+    /// <summary>
+    /// An arrival is too light to count toward anything. On its own, or beside the tracker having
+    /// run, it concludes nothing — the referring address it rests on is the visitor's own text.
+    /// </summary>
+    [Fact]
+    public void An_Arrival_Concludes_Nothing_On_Its_Own()
+    {
+        var alone = Weigh(Sent("search"));
+        var withTheTracker = Weigh(Sent("search"), Tracker);
+
+        alone.Category.Should().Be(TrafficCategory.Unknown);
+        alone.Strength.Should().Be(EvidenceStrength.None);
+        withTheTracker.Category.Should().Be(TrafficCategory.Unknown);
+    }
+
+    /// <summary>
+    /// Where the network is not involved, an arrival beside anything else observed changes neither
+    /// the answer nor how firmly it is stated.
+    /// </summary>
+    [Fact]
+    public void An_Arrival_Beside_Anything_Else_Changes_Nothing_Where_No_Rented_Network_Objects()
+    {
+        var straight = Weigh(Tracker, Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 45));
+        var sent = Weigh(Tracker, Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 45), Sent("link"));
+
+        sent.Category.Should().Be(straight.Category);
+        sent.Strength.Should().Be(straight.Strength);
+    }
+
+    /// <summary>A rented network, as the engine reports one.</summary>
+    private static Signal Rented => Signal(
+        SignalCodes.HostingNetwork,
+        SignalDirection.TowardAutomation,
+        65,
+        ("operator", "Microsoft"));
+
+    /// <summary>A browser having run the tracker at all.</summary>
+    private static Signal Tracker => Signal(SignalCodes.ScriptExecuted, SignalDirection.TowardHuman, 35);
+
+    /// <summary>A key pressed on the page.</summary>
+    private static Signal Key => Signal(SignalCodes.KeyboardUsed, SignalDirection.TowardHuman, 50);
+
+    /// <summary>The pointer pressed on the page.</summary>
+    private static Signal Pointer => Signal(SignalCodes.PointerUsed, SignalDirection.TowardHuman, 55);
+
+    /// <summary>A page seen a quarter of the way down or further.</summary>
+    private static Signal Seen => Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 45, ("percent", "50"));
+
+    /// <summary>A page open long enough for the reading to count by itself.</summary>
+    private static Signal LongRead => Signal(SignalCodes.ReadTime, SignalDirection.TowardHuman, 60, ("seconds", "40"));
+
+    /// <summary>A page open for less time than a reading counts by itself.</summary>
+    private static Signal Glimpsed => Signal(SignalCodes.ReadTime, SignalDirection.TowardHuman, 40, ("seconds", "5"));
+
+    /// <summary>Another site having sent the visit.</summary>
+    private static Signal Sent(string kind) =>
+        Signal(SignalCodes.ArrivedFromAnotherSite, SignalDirection.TowardHuman, 20, ("kind", kind));
+
     private static ClassificationVerdict Weigh(params Signal[] observed) =>
         EvidenceScorecard.Weigh(new EvidenceSet([.. observed]), Ruleset);
 

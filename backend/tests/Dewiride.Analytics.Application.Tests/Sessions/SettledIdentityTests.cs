@@ -74,6 +74,18 @@ public sealed class SettledIdentityTests
     }
 
     /// <summary>
+    /// On a rented network what a visitor is called rests on what it did and how it arrived, and
+    /// that is still arriving while it is here. Neither the reader another site sent nor the
+    /// visitor that came straight in and barely touched the page is named until its visit is over.
+    /// </summary>
+    [Fact]
+    public void A_Visitor_On_A_Rented_Network_Is_Not_Named_While_It_Is_Still_Here()
+    {
+        Read(Watching.AReaderOnACloudDesktop()).Should().BeNull();
+        Read(Watching.AHandsOffVisitFromMicrosoftsCloud()).Should().BeNull();
+    }
+
+    /// <summary>
     /// The case the rule exists for. On a site reported by both its own server and the browser, the
     /// server speaks first, and for that moment the engine's honest reading of a person is that
     /// nothing has executed — which it weighs towards machinery. Shown, it would put a real reader
@@ -166,6 +178,8 @@ public sealed class SettledIdentityTests
     private static IEnumerable<SessionEvidence> EveryKindOfVisitor() =>
     [
         Watching.AReader(),
+        Watching.AReaderOnACloudDesktop(),
+        Watching.AHandsOffVisitFromMicrosoftsCloud(),
         Watching.AReaderWhoseBrowserHasNotSpokenYet(),
         Watching.ACrawlerThatNamedItself(),
         Watching.ANamelessCrawler(),

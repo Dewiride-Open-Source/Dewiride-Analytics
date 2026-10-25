@@ -47,7 +47,9 @@ public sealed record OverviewResponse(
 /// The instant the answer is complete up to. Counted for everybody it is the end of the window,
 /// because every report counts as it arrives; counted for people it is the instant judging has
 /// finished up to, because a visit is judged once it has been silent long enough to have ended,
-/// and the buckets past it hold fewer people than they eventually will.
+/// and the buckets past it hold fewer people than they eventually will. That is an idle timeout
+/// behind the present at the closest, and further behind wherever the engine is stopped or still
+/// working through a backlog.
 /// </param>
 /// <param name="Points">The buckets, oldest first, with empty ones present and zeroed.</param>
 public sealed record SeriesResponse(
@@ -361,7 +363,9 @@ public sealed record TrafficGroup(string Category, string Strength, long Session
 /// <param name="CompleteTo">
 /// The instant judging has finished up to. A visit is judged once it has been silent long enough to
 /// have ended, so buckets reaching past this hold fewer visits than they eventually will — which a
-/// reader has to be told rather than left to infer from a line that falls away at the end.
+/// reader has to be told rather than left to infer from a line that falls away at the end. An idle
+/// timeout behind the present at the closest, and further behind wherever the engine is stopped or
+/// still working through a backlog.
 /// </param>
 /// <param name="Buckets">Where each bucket begins, oldest first.</param>
 /// <param name="Groups">One entry per category the window held.</param>

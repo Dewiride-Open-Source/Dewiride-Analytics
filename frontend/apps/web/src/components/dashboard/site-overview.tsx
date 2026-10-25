@@ -39,7 +39,7 @@ import { useChartView } from '@/lib/analytics/use-chart-view';
 import { useComparison } from '@/lib/analytics/use-comparison';
 import { usePeopleOnly } from '@/lib/analytics/use-people-only';
 import { usePeriod } from '@/lib/analytics/use-period';
-import type { Overview, Series, Site } from '@/lib/api/schemas';
+import type { Overview, Series, Site, TrafficSeries } from '@/lib/api/schemas';
 import { useOverview, useSeries, useTraffic, useTrafficSeries } from '@/lib/queries/sites';
 import { readableZone } from '@/lib/time-zones';
 
@@ -301,7 +301,9 @@ export function SiteOverview({ site }: SiteOverviewProps) {
 
       {deserted ? (
         <PeopleAbsent
-          judged={traffic.data === undefined ? undefined : traffic.data.groups.length > 0}
+          breakdown={traffic}
+          stillJudging={judgingIn(drawingActivity, activity, who.data)}
+          pictureProblem={problem}
           onShowEveryone={() => showOnlyPeople(false)}
         />
       ) : null}
@@ -468,8 +470,18 @@ function nought(totals: Overview | undefined): boolean {
 }
 
 interface PeopleAbsentProps {
-  /** Whether anything in the period has been judged, or nothing until that is known. */
-  readonly judged: boolean | undefined;
+  /** The period's breakdown of what was judged, as it is being asked for. */
+  readonly breakdown: {
+    readonly data: { readonly groups: readonly unknown[] } | undefined;
+    readonly error: Error | null;
+  };
+  /**
+   * The first bucket of the period still being judged, nothing where every one has settled, or
+   * undefined until that is known.
+   */
+  readonly stillJudging: number | null | undefined;
+  /** Why the picture the period was drawn from could not be had, or nothing. */
+  readonly pictureProblem: Error | null;
   readonly onShowEveryone: () => void;
 }
 
@@ -477,24 +489,39 @@ interface PeopleAbsentProps {
  * The screen a period shows when the website had traffic and none of it was counted as people.
  *
  * One state in place of the picture and every list, because eight cards each saying nothing is
- * eight ways of saying one thing. Two bodies, because "nobody was a person" and "nobody has been
- * looked at yet" are different facts; both offer everyone back, since the screen was kept to
- * people on purpose and the way out is the choice that kept it.
+ * eight ways of saying one thing. Several bodies, because "nobody was a person", "nobody has been
+ * looked at yet" and "nobody so far, with more still to look at" are different facts — and a
+ * period judging has not finished is never reported as one with no people in it. Every one offers
+ * everyone back, since the screen was kept to people on purpose and the way out is the choice that
+ * kept it.
+ *
+ * Which of them it is takes both the breakdown and the picture. Where either could not be had the
+ * screen says so, rather than guessing at an answer it had no way to check.
  */
-function PeopleAbsent({ judged, onShowEveryone }: PeopleAbsentProps) {
+function PeopleAbsent({
+  breakdown,
+  stillJudging,
+  pictureProblem,
+  onShowEveryone,
+}: PeopleAbsentProps) {
   const t = useTranslations('dashboard.population.empty');
+  const problem = pictureProblem ?? breakdown.error;
 
-  if (judged === undefined) {
+  if (problem !== null) {
+    return <FailureNotice error={problem} />;
+  }
+
+  if (breakdown.data === undefined || stillJudging === undefined) {
     return <ListWaiting />;
   }
 
-  const reason = judged ? 'nobody' : 'unjudged';
+  const { reason, body } = absence(breakdown.data.groups.length > 0, stillJudging);
 
   return (
     <ListEmpty
-      icon={judged ? UserRound : ScanSearch}
+      icon={reason === 'nobody' ? UserRound : ScanSearch}
       title={t(`${reason}.title`)}
-      body={t(`${reason}.body`)}
+      body={t(body)}
       action={
         <Button tone="secondary" size="sm" onClick={onShowEveryone}>
           {t('action')}
@@ -502,6 +529,56 @@ function PeopleAbsent({ judged, onShowEveryone }: PeopleAbsentProps) {
       }
     />
   );
+}
+
+/**
+ * Where the picture being drawn says judging has reached: the first of its buckets still being
+ * judged, nothing where every one has settled, or undefined until that picture is in.
+ *
+ * @param drawingActivity Whether the picture is of how much was read rather than of who came.
+ * @param activity How much was read, where that is the picture.
+ * @param who Who came, where that is the picture.
+ * @returns The bucket, nothing, or undefined.
+ */
+function judgingIn(
+  drawingActivity: boolean,
+  activity: Activity | undefined,
+  who: TrafficSeries | undefined,
+): number | null | undefined {
+  if (drawingActivity) {
+    return activity?.stillJudging;
+  }
+
+  return who === undefined ? undefined : stillJudgingFrom(who);
+}
+
+/**
+ * Which of the absent screens a period is, and the sentence that explains it.
+ *
+ * Settled first: a period judged to the end has its answer whether or not anything in it was
+ * judged — a visit that began before the period and was judged there leaves the period's own
+ * breakdown empty — and only a period still being judged waits.
+ *
+ * @param judged Whether anything in the period has been judged.
+ * @param stillJudging The first bucket still being judged, or nothing where every one has settled.
+ * @returns The state's name and the key of its sentence.
+ */
+function absence(
+  judged: boolean,
+  stillJudging: number | null,
+): {
+  readonly reason: 'unjudged' | 'nobody' | 'nobodyYet';
+  readonly body: 'unjudged.body' | 'unjudged.bodyAll' | 'nobody.body' | 'nobodyYet.body';
+} {
+  if (stillJudging === null) {
+    return { reason: 'nobody', body: 'nobody.body' };
+  }
+
+  if (judged) {
+    return { reason: 'nobodyYet', body: 'nobodyYet.body' };
+  }
+
+  return { reason: 'unjudged', body: stillJudging === 0 ? 'unjudged.bodyAll' : 'unjudged.body' };
 }
 
 /**

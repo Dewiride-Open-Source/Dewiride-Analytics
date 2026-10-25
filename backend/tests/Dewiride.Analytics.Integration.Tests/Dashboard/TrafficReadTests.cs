@@ -8,7 +8,9 @@ using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Domain.Telemetry;
+using Dewiride.Analytics.Infrastructure.Persistence;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dewiride.Analytics.Integration.Tests.Dashboard;
@@ -445,6 +447,65 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
 
             series.CompleteTo.Should().BeAfter(series.From).And.BeBefore(series.To);
         }
+    }
+
+    /// <summary>
+    /// Where judging has fallen behind — the engine stopped for a while, or still working through a
+    /// backlog — the series says so from the point it stopped, rather than an idle timeout before
+    /// the present, and the visits it has not reached yet are not drawn as traffic that never came.
+    /// </summary>
+    [Fact]
+    public async Task The_Series_Says_Where_Judging_Stopped_When_It_Has_Fallen_Behind()
+    {
+        var site = await JudgedSiteAsync();
+        var stopped = stack.Services.GetRequiredService<TimeProvider>().GetUtcNow().AddHours(-5);
+        await JudgingStoppedAsync(site.Id, stopped);
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var series = await ReadTrafficSeriesAsync(browser, site.Id, "granularity=hour");
+
+            series.CompleteTo.Should().BeCloseTo(stopped, TimeSpan.FromMilliseconds(1));
+        }
+    }
+
+    /// <summary>
+    /// A site judging has not started on has nothing judged at all, and every part of the series
+    /// says it is still to come.
+    /// </summary>
+    [Fact]
+    public async Task A_Site_Judging_Has_Not_Started_On_Is_Complete_To_Nothing()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: $"{Guid.NewGuid():n}.example.com");
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var series = await ReadTrafficSeriesAsync(browser, site.Id, "granularity=day");
+
+            series.CompleteTo.Should().Be(series.From);
+        }
+    }
+
+    /// <summary>
+    /// Puts both instants of the site's bookmark back at an earlier moment, where an engine stopped
+    /// then would have left them.
+    /// </summary>
+    /// <param name="siteId">The site.</param>
+    /// <param name="stopped">Where judging stopped.</param>
+    /// <returns>A task that completes once the bookmark says so.</returns>
+    private async Task JudgingStoppedAsync(Guid siteId, DateTimeOffset stopped)
+    {
+        await using var scope = stack.Services.CreateAsyncScope();
+
+        await scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>().ClassificationProgress
+            .Where(progress => progress.SiteId == siteId)
+            .ExecuteUpdateAsync(
+                set => set
+                    .SetProperty(progress => progress.ClassifiedThrough, stopped)
+                    .SetProperty(progress => progress.ReadThrough, stopped),
+                Cancellation.Token);
     }
 
     /// <summary>

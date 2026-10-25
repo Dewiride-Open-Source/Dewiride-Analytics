@@ -1160,6 +1160,51 @@ internal static class SiteEndpoints
     private static VisitBoundaries Boundaries(ClassificationOptions settings, TimeProvider clock) =>
         new(settings.IdleTimeout, clock.GetUtcNow() - settings.IdleTimeout);
 
+    /// <summary>
+    /// Where a series counted from verdicts stops being complete.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The earlier of two instants. Nothing that began within an idle timeout of the present can be
+    /// known to be over — the instant the visit-shaped answers stop counting at — so nothing after
+    /// it has a verdict yet. Nor does anything past where judging has actually reached, which falls
+    /// behind the first whenever the engine has been stopped, is working through a backlog, or has
+    /// not started on the site at all; a series that called those stretches complete would draw the
+    /// verdicts it is still waiting for as traffic that never came.
+    /// </para>
+    /// <para>
+    /// Read before the series it qualifies, never after. The engine stores a pass's verdicts before
+    /// it moves its bookmark past them, so a bookmark read first can only be behind what a series
+    /// read afterwards holds — which washes a bucket that had in fact settled — whereas read second
+    /// it can be ahead of it, and call a stretch complete whose verdicts the series never saw.
+    /// </para>
+    /// </remarks>
+    /// <param name="scope">The site being read.</param>
+    /// <param name="range">
+    /// The window being read, whose start is the answer for a site judging has not started on.
+    /// </param>
+    /// <param name="progress">Where judging has reached.</param>
+    /// <param name="settings">The engine's own idle timeout.</param>
+    /// <param name="clock">The present moment.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The instant.</returns>
+    private static async Task<DateTimeOffset> JudgedUpToAsync(
+        TenantScope scope,
+        TimeRange range,
+        IClassificationProgressStore progress,
+        ClassificationOptions settings,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var settled = Boundaries(settings, clock).SettledBefore;
+        var caughtUp = await progress
+                .CaughtUpToAsync(scope.SiteId, RulesetVersion.Current, cancellationToken)
+                .ConfigureAwait(false)
+            ?? range.From;
+
+        return caughtUp < settled ? caughtUp : settled;
+    }
+
     private static async Task<Results<Ok<TrafficResponse>, NotFound, ProblemHttpResult>> TrafficAsync(
         [AsParameters] JudgedParameters parameters,
         ITenantScopeProvider scopes,
@@ -1208,6 +1253,7 @@ internal static class SiteEndpoints
         [AsParameters] TrafficSeriesParameters parameters,
         ITenantScopeProvider scopes,
         ITelemetryQueries telemetry,
+        IClassificationProgressStore progress,
         IOptions<ClassificationOptions> classification,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -1239,14 +1285,12 @@ internal static class SiteEndpoints
             return TypedResults.NotFound();
         }
 
+        var completeTo = await JudgedUpToAsync(scope, range, progress, classification.Value, clock, cancellationToken)
+            .ConfigureAwait(false);
+
         var series = await telemetry
             .GetTrafficSeriesAsync(scope, new TrafficSeriesQuery(range, granularity), cancellationToken)
             .ConfigureAwait(false);
-
-        // The same instant the visit-shaped answers treat as the end of what has finished, so the
-        // point this series stops being complete at and the point those stop counting are one
-        // decision rather than two that happen to agree.
-        var completeTo = Boundaries(classification.Value, clock).SettledBefore;
 
         return TypedResults.Ok(
             new TrafficSeriesResponse(
@@ -2031,6 +2075,7 @@ internal static class SiteEndpoints
         [AsParameters] SeriesParameters parameters,
         ITenantScopeProvider scopes,
         ITelemetryQueries telemetry,
+        IClassificationProgressStore progress,
         IOptions<ClassificationOptions> classification,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -2072,19 +2117,17 @@ internal static class SiteEndpoints
             return TypedResults.NotFound();
         }
 
+        var completeTo = population == Population.People
+            ? await JudgedUpToAsync(scope, range, progress, classification.Value, clock, cancellationToken)
+                .ConfigureAwait(false)
+            : range.To;
+
         var points = await telemetry
             .GetTimeSeriesAsync(
                 scope,
                 new TimeSeriesQuery(range, granularity, metric) { Population = population },
                 cancellationToken)
             .ConfigureAwait(false);
-
-        // The same instant the visit-shaped answers treat as the end of what has finished, so the
-        // point a series of people stops being complete at and the point those stop counting are
-        // one decision rather than two that happen to agree.
-        var completeTo = population == Population.People
-            ? Boundaries(classification.Value, clock).SettledBefore
-            : range.To;
 
         return TypedResults.Ok(
             new SeriesResponse(

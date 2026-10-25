@@ -32,11 +32,11 @@ namespace Dewiride.Analytics.Integration.Tests.Dashboard;
 public sealed class SiteSettingsTests(AnalyticsStackFixture stack)
 {
     /// <summary>
-    /// On, so that a site added before this existed behaves like one added after it. A difference
-    /// nobody could see the cause of is worse than either answer.
+    /// Off until somebody who knows the site asks for it. On a site that shows its visitors their
+    /// own messages, names and accounts, the words on its buttons and links are those things.
     /// </summary>
     [Fact]
-    public async Task A_New_Site_Records_What_Its_Visitors_Operate()
+    public async Task A_New_Site_Records_Nothing_Its_Visitors_Operate_Until_Asked()
     {
         var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
         var browser = await SignedIn.AsAsync(stack, SiteRole.Viewer, site.Id);
@@ -45,7 +45,7 @@ public sealed class SiteSettingsTests(AnalyticsStackFixture stack)
         {
             var settings = await ReadAsync(browser, site.Id);
 
-            settings.CaptureClicks.Should().BeTrue();
+            settings.CaptureClicks.Should().BeFalse();
         }
     }
 
@@ -72,7 +72,10 @@ public sealed class SiteSettingsTests(AnalyticsStackFixture stack)
     [Fact]
     public async Task An_Editor_Can_Turn_Recording_Off_And_On_Again()
     {
-        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var site = await ControlPlaneSeed.AddSiteAsync(
+            stack,
+            domain: Domain(),
+            configure: created => created.SetClickCapture(true));
         var browser = await SignedIn.AsAsync(stack, SiteRole.Editor, site.Id);
 
         using (browser)
@@ -85,6 +88,7 @@ public sealed class SiteSettingsTests(AnalyticsStackFixture stack)
 
             var on = await ApplyAsync(browser, site.Id, new UpdateSiteSettingsRequest { CaptureClicks = true });
             on.CaptureClicks.Should().BeTrue();
+            (await ReadAsync(browser, site.Id)).CaptureClicks.Should().BeTrue();
         }
     }
 
@@ -96,7 +100,10 @@ public sealed class SiteSettingsTests(AnalyticsStackFixture stack)
     [Fact]
     public async Task Turning_Recording_Off_Stops_The_Collector_At_Once()
     {
-        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var site = await ControlPlaneSeed.AddSiteAsync(
+            stack,
+            domain: Domain(),
+            configure: created => created.SetClickCapture(true));
         var browser = await SignedIn.AsAsync(stack, SiteRole.Owner, site.Id);
 
         using (browser)
@@ -310,12 +317,12 @@ public sealed class SiteSettingsTests(AnalyticsStackFixture stack)
         {
             var response = await browser.PutAsync(
                 Settings(site.Id),
-                new UpdateSiteSettingsRequest { CaptureClicks = false });
+                new UpdateSiteSettingsRequest { CaptureClicks = true });
 
             response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
             var unchanged = await ReadAsync(browser, site.Id);
-            unchanged.CaptureClicks.Should().BeTrue();
+            unchanged.CaptureClicks.Should().BeFalse();
         }
     }
 
@@ -361,14 +368,14 @@ public sealed class SiteSettingsTests(AnalyticsStackFixture stack)
 
         using (browser)
         {
-            await ApplyAsync(browser, site.Id, new UpdateSiteSettingsRequest { CaptureClicks = false });
+            await ApplyAsync(browser, site.Id, new UpdateSiteSettingsRequest { CaptureClicks = true });
 
             var response = await browser.PutAsync(Settings(site.Id), new UpdateSiteSettingsRequest());
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             var settings = await ReadAsync(browser, site.Id);
-            settings.CaptureClicks.Should().BeFalse();
+            settings.CaptureClicks.Should().BeTrue();
         }
     }
 
@@ -386,7 +393,7 @@ public sealed class SiteSettingsTests(AnalyticsStackFixture stack)
 
         using (browser)
         {
-            await ApplyAsync(browser, site.Id, new UpdateSiteSettingsRequest { CaptureClicks = false });
+            await ApplyAsync(browser, site.Id, new UpdateSiteSettingsRequest { CaptureClicks = true });
 
             var renamed = await ApplyAsync(
                 browser,
@@ -394,7 +401,7 @@ public sealed class SiteSettingsTests(AnalyticsStackFixture stack)
                 new UpdateSiteSettingsRequest { DisplayName = "The Reading Room" });
 
             renamed.TimeZoneId.Should().Be("Europe/London");
-            renamed.CaptureClicks.Should().BeFalse();
+            renamed.CaptureClicks.Should().BeTrue();
 
             var moved = await ApplyAsync(
                 browser,
@@ -402,15 +409,15 @@ public sealed class SiteSettingsTests(AnalyticsStackFixture stack)
                 new UpdateSiteSettingsRequest { TimeZoneId = "Asia/Kolkata" });
 
             moved.DisplayName.Should().Be("The Reading Room");
-            moved.CaptureClicks.Should().BeFalse();
+            moved.CaptureClicks.Should().BeTrue();
 
-            var recording = await ApplyAsync(
+            var stopped = await ApplyAsync(
                 browser,
                 site.Id,
-                new UpdateSiteSettingsRequest { CaptureClicks = true });
+                new UpdateSiteSettingsRequest { CaptureClicks = false });
 
-            recording.DisplayName.Should().Be("The Reading Room");
-            recording.TimeZoneId.Should().Be("Asia/Kolkata");
+            stopped.DisplayName.Should().Be("The Reading Room");
+            stopped.TimeZoneId.Should().Be("Asia/Kolkata");
         }
     }
 
@@ -496,12 +503,12 @@ public sealed class SiteSettingsTests(AnalyticsStackFixture stack)
         {
             var response = await browser.PutWithoutProofAsync(
                 Settings(site.Id),
-                new UpdateSiteSettingsRequest { DisplayName = "Not This Way", CaptureClicks = false });
+                new UpdateSiteSettingsRequest { DisplayName = "Not This Way", CaptureClicks = true });
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
             var unchanged = await ReadAsync(browser, site.Id);
-            unchanged.CaptureClicks.Should().BeTrue();
+            unchanged.CaptureClicks.Should().BeFalse();
             unchanged.DisplayName.Should().Be(domain);
         }
     }

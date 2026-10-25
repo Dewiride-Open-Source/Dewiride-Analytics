@@ -1,6 +1,8 @@
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SiteActions } from '@/components/dashboard/site-actions';
 import { SiteSettings } from '@/components/dashboard/site-settings';
 import type { Site, SiteSettings as StoredSettings } from '@/lib/api/schemas';
 import { siteSettingsKey } from '@/lib/queries/keys';
@@ -649,6 +651,46 @@ describe('stopping measuring a website altogether', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(removed).not.toHaveBeenCalled();
   });
+
+  /**
+   * The clicks card reads the same settings as this panel. Taking the card's copy away with the
+   * website would send it straight back to ask about a website that no longer exists, and the
+   * refusal would flash on a screen that is about to be replaced.
+   */
+  it('asks nothing more about a removed website while its clicks are still on the screen', async () => {
+    offering();
+    let removed = false;
+
+    const engine = engineDoing(async (path, init) => {
+      if (init.method === 'DELETE') {
+        removed = true;
+
+        return respondWith(204, null);
+      }
+
+      if (path.includes('/actions')) {
+        return respondWith(200, NO_PRESSES);
+      }
+
+      return removed && path.includes('/settings')
+        ? respondWith(404, { title: 'There is no such website.' })
+        : respondWith(200, STORED);
+    });
+
+    renderScreen(<RemovedWithItsClicksShowing />);
+    await askToRemove(SITE.domain);
+    await userEvent.click(screen.getByRole('button', { name: 'Delete everything' }));
+
+    await waitFor(() => expect(removals(engine)).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    const asked = settingsReads(engine);
+
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+
+    expect(settingsReads(engine)).toBe(asked);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 });
 
 describe('an open panel drawn by a server whose time zones are not the browser’s', () => {
@@ -701,6 +743,51 @@ function changes(engine: Engine): readonly Sent[] {
 /** Every removal the panel asked the engine for. */
 function removals(engine: Engine): readonly Sent[] {
   return engine.all().filter((sent) => sent.init.method === 'DELETE');
+}
+
+/** How many times the website's settings were read. */
+function settingsReads(engine: Engine): number {
+  return engine
+    .all()
+    .filter((sent) => sent.path.includes('/settings') && (sent.init.method ?? 'GET') === 'GET')
+    .length;
+}
+
+/** A week in which nobody pressed anything, as the clicks card is answered. */
+const NO_PRESSES = {
+  from: '2026-08-11T00:00:00+00:00',
+  to: '2026-08-18T00:00:00+00:00',
+  grouping: 'control',
+  presses: 0,
+  totalControls: 0,
+  mostPresses: 0,
+  controls: [],
+};
+
+/**
+ * The clicks card and this panel on one screen, the way the overview has them, with removing the
+ * website putting the panel away.
+ */
+function RemovedWithItsClicksShowing() {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <>
+      <SiteActions
+        siteId={SITE.id}
+        window={{ from: NO_PRESSES.from, to: NO_PRESSES.to }}
+        population="everybody"
+        mayChangeSettings
+        onShowSettings={() => setOpen(true)}
+      />
+      <SiteSettings
+        open={open}
+        onClose={() => setOpen(false)}
+        site={SITE}
+        onRemoved={() => setOpen(false)}
+      />
+    </>
+  );
 }
 
 /** What a request actually carried, read back as the object it was sent as. */

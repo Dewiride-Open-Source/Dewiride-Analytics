@@ -67,7 +67,10 @@ public sealed record RawEvent
     /// <summary>Query string, retained without its values where the site opts out.</summary>
     public string? QueryString { get; init; }
 
-    /// <summary>Full referring URL as supplied, or null when absent.</summary>
+    /// <summary>
+    /// Referring URL up to its path — nothing from its first <c>?</c> or <c>#</c> on — or null when
+    /// absent.
+    /// </summary>
     public string? Referrer { get; init; }
 
     /// <summary>Registrable domain of <see cref="Referrer"/>, pre-computed for grouping.</summary>
@@ -218,7 +221,9 @@ public sealed record RawEvent
 
     /// <summary>
     /// What the operated control said it was: its own accessible name, or failing that the text
-    /// it reads as on the screen. The site's own writing, never anything a visitor entered.
+    /// it reads as on the screen; null for a press in a text area or a part of the page made
+    /// editable. The words on the control, which on a page that shows visitors their own things
+    /// are theirs.
     /// </summary>
     public string? ActionLabel { get; init; }
 

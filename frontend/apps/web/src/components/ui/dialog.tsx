@@ -1,7 +1,7 @@
 'use client';
 
 import { X } from 'lucide-react';
-import { type ReactNode, useEffect, useId, useRef } from 'react';
+import { type ReactNode, type RefObject, useEffect, useId, useRef } from 'react';
 import { cn } from '@/lib/styling';
 
 interface DialogProps {
@@ -11,6 +11,14 @@ interface DialogProps {
   readonly title: string;
   /** Accessible name for the button that closes it. */
   readonly closeLabel: string;
+  /**
+   * Where focus goes when the panel closes and whatever opened it is no longer on the page.
+   *
+   * The browser hands focus back to the control that opened the panel. A panel that changes what is
+   * behind it can take that control away, and focus would then fall to the page itself, sending a
+   * keyboard back to the top of it.
+   */
+  readonly returnFocusTo?: RefObject<HTMLElement | null>;
   readonly children: ReactNode;
   readonly className?: string;
 }
@@ -27,8 +35,19 @@ interface DialogProps {
  * these hold is meant to be read and selected, and a selection dragged past the edge of the panel
  * ends with a press on the backdrop — which would throw away the thing the reader was copying.
  */
-export function Dialog({ open, onClose, title, closeLabel, children, className }: DialogProps) {
+export function Dialog({
+  open,
+  onClose,
+  title,
+  closeLabel,
+  returnFocusTo,
+  children,
+  className,
+}: DialogProps) {
   const dialog = useRef<HTMLDialogElement>(null);
+
+  /** What held focus as the panel opened, which the browser gives focus back to as it closes. */
+  const opener = useRef<HTMLElement | null>(null);
 
   /*
     Generated rather than written down. A screen keeps every panel it can open mounted at once, so
@@ -45,6 +64,8 @@ export function Dialog({ open, onClose, title, closeLabel, children, className }
     }
 
     if (open && !element.open) {
+      opener.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
       element.showModal();
 
       /*
@@ -55,10 +76,20 @@ export function Dialog({ open, onClose, title, closeLabel, children, className }
         read as the panel opens, and by then this component has already rendered without it.
       */
       element.querySelector<HTMLElement>('[data-opens-on]')?.focus();
-    } else if (!open && element.open) {
-      element.close();
+    } else if (!open) {
+      // Escape has already closed it by the time the state that opened it hears; anything else
+      // closes it here.
+      if (element.open) {
+        element.close();
+      }
+
+      if (opener.current && !opener.current.isConnected) {
+        returnFocusTo?.current?.focus();
+      }
+
+      opener.current = null;
     }
-  }, [open]);
+  }, [open, returnFocusTo]);
 
   return (
     <dialog

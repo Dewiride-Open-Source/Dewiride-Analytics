@@ -288,7 +288,7 @@ describe('the pages one visit went through', () => {
     expect(screen.queryByText(/went to \/pricing/)).not.toBeInTheDocument();
   });
 
-  it('says plainly when a site gave the thing that was clicked no name', async () => {
+  it('says plainly when no name was kept for the thing that was clicked', async () => {
     engineWith([
       {
         at: '2026-08-19T04:29:50.000+00:00',
@@ -302,7 +302,7 @@ describe('the pages one visit went through', () => {
 
     show(1);
 
-    expect(await screen.findByText('Clicked something unnamed')).toBeInTheDocument();
+    expect(await screen.findByText('Clicked something — no name kept')).toBeInTheDocument();
   });
 
   /**

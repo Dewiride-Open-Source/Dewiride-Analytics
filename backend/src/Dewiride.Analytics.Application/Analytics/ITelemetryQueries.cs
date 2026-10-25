@@ -500,9 +500,10 @@ public sealed record SiteActions(
 /// </summary>
 /// <param name="Name">
 /// What the row is called: the control's own name under <see cref="ActionGrouping.Control"/>, and
-/// the host a press led to under <see cref="ActionGrouping.Destination"/>. Written by whoever wrote
-/// the page, so it is data everywhere it travels and never anything else. Empty where a site gave
-/// its control no name, which is a finding rather than a gap.
+/// the host a press led to under <see cref="ActionGrouping.Destination"/>. Read from the page — the
+/// words on a control can be a visitor's own — so it is data everywhere it travels and never
+/// anything else. Empty where no name was kept: the site gave its control none, it was a box
+/// somebody writes in, or the name was removed from what was stored.
 /// </param>
 /// <param name="Control">
 /// What sort of thing it was. Always <see cref="ControlKind.Unknown"/> under
@@ -881,8 +882,10 @@ public readonly record struct VisitContext(
 /// One control a visitor operated, as it appears inside a visit.
 /// </summary>
 /// <param name="Name">
-/// What the control said. Written by whoever wrote the page, so it is data everywhere it travels
-/// and never anything else. Empty where the site gave the control no name.
+/// What the control said. Read from the page — the words on a control can be a visitor's own — so
+/// it is data everywhere it travels and never anything else. Empty where no name was kept: the
+/// site gave the control none, it was a box somebody writes in, or the name was removed from what
+/// was stored.
 /// </param>
 /// <param name="Control">What sort of thing it was.</param>
 /// <param name="Target">

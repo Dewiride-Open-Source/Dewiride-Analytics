@@ -1,8 +1,8 @@
 'use client';
 
-import { MousePointerClick } from 'lucide-react';
+import { MousePointerBan, MousePointerClick } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { type Ref, useState } from 'react';
 import {
   ListEmpty,
   ListSwitch,
@@ -10,11 +10,13 @@ import {
   RankedNav,
   RankedRow,
 } from '@/components/dashboard/ranked-list';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import type { Population } from '@/lib/analytics/people-only';
 import type { AnalyticsWindow } from '@/lib/analytics/period';
-import type { ActionGrouping, ControlKind, SiteAction } from '@/lib/api/schemas';
+import type { ActionGrouping, ControlKind, SiteAction, SiteSettings } from '@/lib/api/schemas';
+import { useSiteSettings } from '@/lib/queries/site-settings';
 import { useActions } from '@/lib/queries/sites';
 
 interface SiteActionsProps {
@@ -22,6 +24,15 @@ interface SiteActionsProps {
   readonly window: AnalyticsWindow;
   /** Whose figures the card counts. */
   readonly population: Population;
+  /** Whether the person reading may switch recording on, which decides what the card offers. */
+  readonly mayChangeSettings: boolean;
+  /** Opens this website's settings, where recording is switched on. */
+  readonly onShowSettings: () => void;
+  /**
+   * Where focus is put back once the settings, opened from this card, close after switching
+   * recording on took the card's own way in away: its heading, which by then says what changed.
+   */
+  readonly returnPoint?: Ref<HTMLHeadingElement>;
 }
 
 /** How many rows are shown at once, matching the lists around it. */
@@ -38,12 +49,24 @@ const PER_PAGE = 10;
  * The screen above gives this a key that changes with the website and the period, so choosing
  * either starts afresh rather than leaving somebody on a screenful that no longer exists.
  */
-export function SiteActions({ siteId, window, population }: SiteActionsProps) {
+export function SiteActions({
+  siteId,
+  window,
+  population,
+  mayChangeSettings,
+  onShowSettings,
+  returnPoint,
+}: SiteActionsProps) {
   const t = useTranslations('dashboard.presses');
   const [grouping, setGrouping] = useState<ActionGrouping>('control');
   const [offset, setOffset] = useState(0);
   const controls = useActions(siteId, window, population, 'control', PER_PAGE, 0, true);
   const shown = useActions(siteId, window, population, grouping, PER_PAGE, offset, true);
+
+  // Each empty state below promises one answer about recording — clicks on their way, or none
+  // until somebody switches it on — so neither is drawn until the website's settings say which.
+  const settings = useSiteSettings(siteId, true);
+  const switchedOff = settings.data?.captureClicks === false;
 
   // What the list on screen is counted against, which is not always every press: the presses
   // that led off the site are their own total, and a share taken against the larger one would
@@ -64,7 +87,15 @@ export function SiteActions({ siteId, window, population }: SiteActionsProps) {
   }
 
   if (controls.data.presses === 0) {
-    return <ListEmpty icon={MousePointerClick} title={t('empty.title')} body={t('empty.body')} />;
+    return (
+      <NothingPressed
+        stored={settings.data}
+        failure={settings.error}
+        mayChangeSettings={mayChangeSettings}
+        onShowSettings={onShowSettings}
+        returnPoint={returnPoint}
+      />
+    );
   }
 
   return (
@@ -77,6 +108,7 @@ export function SiteActions({ siteId, window, population }: SiteActionsProps) {
               {t(`caption.${grouping}`, { count: counted })}
             </p>
           ) : null}
+          {switchedOff ? <p className="text-sm text-foreground-muted">{t('off.caption')}</p> : null}
         </div>
         <ListSwitch
           label={t('view.label')}
@@ -101,6 +133,64 @@ export function SiteActions({ siteId, window, population }: SiteActionsProps) {
         onMove={setOffset}
       />
     </Card>
+  );
+}
+
+interface NothingPressedProps {
+  /** The website's settings, once read. */
+  readonly stored: SiteSettings | undefined;
+  /** Why the settings could not be read, where they could not be. */
+  readonly failure: Error | null;
+  readonly mayChangeSettings: boolean;
+  readonly onShowSettings: () => void;
+  readonly returnPoint?: Ref<HTMLHeadingElement>;
+}
+
+/**
+ * What the card says before anything was pressed: that clicks will appear, or that none are being
+ * recorded and where that is changed.
+ *
+ * Somebody who may change the setting is offered the way there; somebody who may only read is told
+ * who can, because a button to a switch they cannot move would be a door that does not open.
+ */
+function NothingPressed({
+  stored,
+  failure,
+  mayChangeSettings,
+  onShowSettings,
+  returnPoint,
+}: NothingPressedProps) {
+  const t = useTranslations('dashboard.presses');
+
+  if (!stored) {
+    return failure ? <FailureNotice error={failure} /> : <ListWaiting />;
+  }
+
+  if (stored.captureClicks) {
+    return (
+      <ListEmpty
+        icon={MousePointerClick}
+        title={t('empty.title')}
+        body={t('empty.body')}
+        headingRef={returnPoint}
+      />
+    );
+  }
+
+  return (
+    <ListEmpty
+      icon={MousePointerBan}
+      title={t('off.title')}
+      body={mayChangeSettings ? t('off.body') : t('off.bodyReader')}
+      headingRef={returnPoint}
+      action={
+        mayChangeSettings ? (
+          <Button tone="secondary" size="sm" onClick={onShowSettings}>
+            {t('off.action')}
+          </Button>
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -188,8 +278,9 @@ function PressList({
  * A name is written by whoever wrote the page, so it reaches the screen as text and nothing else —
  * never a link, and never markup. What sort of thing it was is said in a word beside it, drawn
  * from this dashboard's own catalogue rather than from anything the page said, so a site cannot
- * write its own labels onto somebody's screen. A site that gave its control no name at all gets a
- * row saying so, which is both honest and the prompt it needs to go and name the thing.
+ * write its own labels onto somebody's screen. A press kept without a name — on a control its site
+ * named nothing, in a box somebody writes in, whose name is never kept, or recorded before stored
+ * names were removed — gets a row saying no name was kept, rather than a guess at why.
  */
 function Named({ row, grouping }: { readonly row: SiteAction; readonly grouping: ActionGrouping }) {
   const t = useTranslations('dashboard.presses');

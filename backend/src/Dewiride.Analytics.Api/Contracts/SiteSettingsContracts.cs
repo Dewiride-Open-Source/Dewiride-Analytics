@@ -6,8 +6,9 @@ namespace Dewiride.Analytics.Api.Contracts;
 /// <param name="DisplayName">Name it is shown under.</param>
 /// <param name="TimeZoneId">IANA time zone its days are counted in.</param>
 /// <param name="CaptureClicks">
-/// Whether the controls visitors operate are recorded. What is kept of a press is the site's own
-/// name for its own control and where that control pointed, never anything a visitor entered.
+/// Whether the controls visitors operate are recorded. What is kept of a press is the words on the
+/// control and where it pointed — on a page that shows visitors their own messages, names or
+/// accounts those words are theirs — and nothing is ever read out of a text area.
 /// </param>
 public sealed record SiteSettingsResponse(string DisplayName, string TimeZoneId, bool CaptureClicks);
 

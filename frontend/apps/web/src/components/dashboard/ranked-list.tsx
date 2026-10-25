@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight, type LucideIcon } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { shareOf } from '@/lib/analytics/share';
@@ -317,6 +317,11 @@ interface ListEmptyProps {
    * beneath a bordered box reads as belonging to whatever comes next on the screen.
    */
   readonly action?: ReactNode;
+  /**
+   * Lets a screen put focus on the heading, for when a reader has to be brought back to this card
+   * — a panel opened from it that took its action away while it was open.
+   */
+  readonly headingRef?: Ref<HTMLHeadingElement>;
 }
 
 /**
@@ -326,7 +331,7 @@ interface ListEmptyProps {
  * apology. Every list on the dashboard wears the same one so that a quiet website reads as a
  * quiet website rather than as four different kinds of nothing.
  */
-export function ListEmpty({ icon: Icon, title, body, action }: ListEmptyProps) {
+export function ListEmpty({ icon: Icon, title, body, action, headingRef }: ListEmptyProps) {
   return (
     <Card className="flex flex-col items-center gap-2 px-6 py-14 text-center">
       <span
@@ -335,7 +340,13 @@ export function ListEmpty({ icon: Icon, title, body, action }: ListEmptyProps) {
       >
         <Icon className="size-5 text-accent-strong" />
       </span>
-      <h2 className="text-base font-semibold text-foreground">{title}</h2>
+      <h2
+        ref={headingRef}
+        tabIndex={headingRef === undefined ? undefined : -1}
+        className="text-base font-semibold text-foreground"
+      >
+        {title}
+      </h2>
       <p className="max-w-sm text-sm text-foreground-muted">{body}</p>
       {action === undefined ? null : <div className="mt-4">{action}</div>}
     </Card>

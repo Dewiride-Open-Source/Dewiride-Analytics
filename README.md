@@ -74,11 +74,14 @@ and the [master plan](#master-plan) below it says what does not yet.
   each held them, how far down they got, and — where your own server reported the request — what
   your site answered with. A sweep for a way in reads as what it is: a handful of addresses that do
   not exist, asked for in under a second, with nothing measuring how any of them was read.
-- What people clicked: every link, button and field somebody uses, ranked by how often — and,
-  separately, the places off your site that readers followed a link to. What is kept of a click is
-  your own wording on the control and where it pointed; never anything a visitor typed, and nothing
-  at all about where on the screen they pressed. It is on by default, it can be switched off for a
-  website from the dashboard, and a `data-dw-ignore` attribute keeps any part of a page out of it.
+- What people clicked, for a website that switches it on: every link, button and field somebody
+  uses, ranked by how often — and, separately, the places off your site that readers followed a
+  link to. What is kept of a click is the words on the control and where it pointed — nothing is
+  ever read out of a text box — and nothing at all about where on the screen they pressed. It
+  starts switched off for every website, because on pages that show visitors their own messages,
+  names or accounts the words on the buttons are theirs. Until a browser is told otherwise it still
+  sends each press, and the collector drops it unstored for a website that records none; a
+  `data-dw-ignore` attribute keeps any part of a page out of it altogether.
 - A tracker you paste into your own site, and an image fallback for readers whose browsers run no
   scripts. The dashboard hands you both lines with your address already filled in.
 - A collection endpoint your own server can report to, so the traffic that never runs a script —
@@ -289,8 +292,12 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
 - **Done** · Whether the visitor clicked, tapped or typed — presence only, never content.
 - **Done** · Screen size, language, time-zone offset, and whether the browser declares itself
   automated.
-- **Done** · Clicks on links, buttons and fields — your own wording on the control, never what was
-  typed; can be switched off per website.
+- **Done** · Clicks on links, buttons and fields, for a website that switches it on — the words on
+  the control; nothing is read out of a text box, and a list is never named by its choices.
+- **Done** · Where a visitor came from is kept only up to its path: what followed it, where a search
+  box usually puts what was searched for, is cut.
+- **Not started** · A browser that sends no presses at all for a website that records none — today
+  it sends them, and the collector drops them unstored.
 - **Done** · Timestamps from the browser and the server, with drift reconciled.
 - **Not started** · Campaign tags in links (utm and similar).
 - **Not started** · Active time told apart from idle time — today only "on screen" is measured.
@@ -318,7 +325,7 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
 
 **4.6 Privacy**
 
-- **Done** · Nothing typed is collected: no form contents, keystrokes or recordings.
+- **Done** · Nothing is read out of a text box: no form contents, keystrokes or recordings.
 - **Done** · Raw address dropped after 72 hours; visitor key rotated daily.
 - **Done** · Towns named as estimates; only the three low-entropy browser hints read.
 - **Not started** · Per-website option to keep query strings — exists in the engine, nothing can

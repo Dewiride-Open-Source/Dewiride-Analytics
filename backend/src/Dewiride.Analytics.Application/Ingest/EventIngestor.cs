@@ -167,7 +167,7 @@ public sealed partial class EventIngestor(
         DateTimeOffset receivedAt)
     {
         var clientTimestamp = ToTimestamp(command.ClientTimestampUnixMs);
-        var referrer = Truncate(command.Referrer, MaxReferrerLength);
+        var referrer = Truncate(PathOnly(command.Referrer), MaxReferrerLength);
 
         // Only a report about an operated control may describe one. Anything else claiming to is
         // a caller filling in fields that do not belong to what it says it is reporting, and the
@@ -371,6 +371,30 @@ public sealed partial class EventIngestor(
 
     private static string? ExtractHost(string? value) =>
         Uri.TryCreate(value, UriKind.Absolute, out var parsed) ? parsed.Host.ToLowerInvariant() : null;
+
+    /// <summary>
+    /// The address somebody came from, without whatever followed its path.
+    /// </summary>
+    /// <remarks>
+    /// Everything this product asks of a referrer is answered by the site it names and the page on
+    /// it. What follows the path is where a search box puts what somebody searched for — on another
+    /// site, or on this one, where going from the results to a page would otherwise carry the search
+    /// onto that page's reading. It is cut here, for every way a visit can be reported, so that no
+    /// reporter has to be trusted to have cut it first.
+    /// </remarks>
+    /// <param name="value">The referrer as reported.</param>
+    /// <returns>The referrer up to its first question mark or hash, or the value unchanged.</returns>
+    private static string? PathOnly(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        var end = value.AsSpan().IndexOfAny('?', '#');
+
+        return end < 0 ? value : value[..end];
+    }
 
     private static DateTimeOffset? ToTimestamp(long? unixMilliseconds) =>
         unixMilliseconds is null ? null : DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds.Value);

@@ -139,6 +139,39 @@ public sealed class EventIngestorRecordingTests
         harness.Single.ReferrerDomain.Should().Be("news.example.org");
     }
 
+    /// <summary>
+    /// What followed the path of the page somebody came from is never kept. A search box puts what
+    /// was searched for there, and the site it names and the page on it are all anything here asks.
+    /// </summary>
+    [Theory]
+    [InlineData("https://search.example.org/find?q=jane+doe", "https://search.example.org/find", "search.example.org")]
+    [InlineData("https://news.example.org/story/42#comments", "https://news.example.org/story/42", "news.example.org")]
+    [InlineData("https://news.example.org/?utm_source=letter#top", "https://news.example.org/", "news.example.org")]
+    [InlineData("https://news.example.org/a#b?c=d", "https://news.example.org/a", "news.example.org")]
+    public async Task Records_The_Referrer_Without_What_Followed_Its_Path(
+        string reported,
+        string stored,
+        string domain)
+    {
+        var harness = IngestHarness.ForSite();
+
+        await harness.IngestAsync(IngestHarness.PageView() with { Referrer = reported });
+
+        harness.Single.Referrer.Should().Be(stored);
+        harness.Single.ReferrerDomain.Should().Be(domain);
+    }
+
+    [Fact]
+    public async Task Records_No_Referrer_When_Nothing_Came_Before_What_Followed_The_Path()
+    {
+        var harness = IngestHarness.ForSite();
+
+        await harness.IngestAsync(IngestHarness.PageView() with { Referrer = "?q=jane+doe" });
+
+        harness.Single.Referrer.Should().BeNull();
+        harness.Single.ReferrerDomain.Should().BeNull();
+    }
+
     [Fact]
     public async Task Records_No_Referrer_Domain_When_There_Was_No_Referrer()
     {

@@ -3,6 +3,11 @@
 - **Status**: accepted
 - **Date**: 2026-08-19
 - **Supersedes**: nothing. Widens the envelope recorded in ADR 0005.
+- **Revised by**: [0057](0057-a-text-box-is-never-read-and-clicks-start-switched-off.md). Recording
+  starts switched off for every website, a text area or a part of the page made editable is never
+  named, a list is never named by its choices, and the names already stored for presses on fields
+  were removed. A press kept without a name reads "No name kept" rather than "Unnamed": an empty
+  name no longer means the site gave its control none, so it is not a prompt to go and name it.
 
 ## Context
 

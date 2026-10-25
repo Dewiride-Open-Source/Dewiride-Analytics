@@ -149,7 +149,9 @@ internal static class CollectEndpoint
             HadKeyboardInteraction = request.KeyboardInteraction,
             DeclaredWebDriver = request.WebDriver,
             ActionControl = WireVocabulary.ResolveControl(request.Element),
-            ActionLabel = request.Label,
+            ActionLabel = request.Element is not null && WireVocabulary.WrittenIn.Contains(request.Element)
+                ? null
+                : request.Label,
             ActionTarget = request.Target,
             ActionTargetKind = WireVocabulary.ResolveTarget(request.TargetKind),
             CorrelationId = request.CorrelationId,

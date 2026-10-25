@@ -8,7 +8,8 @@
  * has not been taken is left out of the payload rather than sent as nought, because "nobody
  * touched this page" and "we were not watching yet" are different facts and the store keeps them
  * apart. And nothing is read that describes the reader rather than the reading: no cookie, no
- * stored identifier, no canvas, no font list, and never the content of anything typed.
+ * stored identifier, no canvas, no font list, and nothing out of a field or a box somebody writes
+ * in. The words on a pressed control are read, and on some pages those are the visitor's own.
  */
 
 /** What one report carries. Anything not measured is absent rather than nought. */
@@ -119,6 +120,16 @@ const UNREPORTED = '[data-dw-ignore]';
  */
 const CONTROLS =
   'a,button,summary,select,textarea,input,[role=button],[role=link],[role=tab],[role=menuitem]';
+
+/**
+ * Anything a person writes into where it stands: a text area, or a part of the page made editable.
+ *
+ * Its text is what somebody wrote. A page built with React keeps a text area's own text in step
+ * with what is typed into it, so the text of a control there is the typing itself, and a link
+ * somebody wrote there points wherever they wrote. A press in one, on a control inside one, or on a
+ * control holding one is reported as the kind of control pressed and nothing more.
+ */
+const WRITTEN_IN = 'textarea,[contenteditable]:not([contenteditable=false])';
 
 /**
  * Longest label kept, in characters.
@@ -300,7 +311,9 @@ export function start(settings: Settings): void {
 
     send({
       ...base('pageview'),
-      referrer: cameFrom || undefined,
+      // The page that was left, without whatever followed its path. A search box puts what was
+      // searched for there, and the page somebody goes on to would otherwise carry it.
+      referrer: cameFrom?.split(/[?#]/)[0] || undefined,
       // Rounded because a zoomed or scaled display reports a fraction of a pixel, and the store
       // holds whole ones. Sent as written, the whole report is refused as unreadable and that
       // reader is never counted.
@@ -368,8 +381,8 @@ export function start(settings: Settings): void {
    * Reports one click: what was pressed, what it said, and where it pointed.
    *
    * Structural on purpose. Nothing is recorded about where on the screen the press landed, and
-   * nothing is ever read out of a field, so what travels is the site's own description of its own
-   * control. Sent as it happens rather than saved up, because the commonest click is the one that
+   * nothing typed into a field is ever read, so what travels is the words on the control and where
+   * it led. Sent as it happens rather than saved up, because the commonest click is the one that
    * takes the page away.
    */
   function reportClick(event: Event): void {
@@ -391,8 +404,9 @@ export function start(settings: Settings): void {
       // a site that builds its buttons out of other elements has already written down what they
       // are, and the element alone would report those as whatever they happen to be made of.
       element: control.getAttribute('role') || control.tagName.toLowerCase(),
-      label: labelOf(control),
-      ...pointedAt(control),
+      ...(at.closest(WRITTEN_IN) || control.querySelector(WRITTEN_IN)
+        ? {}
+        : { label: labelOf(control), ...pointedAt(control) }),
     });
   }
 
@@ -459,13 +473,14 @@ export function start(settings: Settings): void {
  * What a control says it is.
  *
  * Its own accessible name first, then whatever it reads as on the screen. Never the value of a
- * field: what somebody typed is theirs, and a control's name is the site's own writing.
+ * field: what somebody typed is theirs. Never the choices a list offers either: those are what
+ * can be picked — an address book, a list of accounts — and not what the list is called.
  */
 function labelOf(control: Element): string | undefined {
   const written =
     control.getAttribute('aria-label') ||
     control.getAttribute('title') ||
-    control.textContent ||
+    (control.tagName === 'SELECT' ? '' : control.textContent) ||
     '';
 
   return written.replace(/\s+/g, ' ').trim().slice(0, LONGEST_LABEL) || undefined;

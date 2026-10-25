@@ -14,9 +14,10 @@ export function useSiteSettings(siteId: string, enabled: boolean) {
     retry: false,
     enabled,
 
-    // Never held. A panel that opens on the setting somebody last saw rather than the one that is
-    // in force would be worse than a panel that takes a moment, and this is read when a panel is
-    // opened rather than repeatedly.
+    // Never held. The settings panel has to open on the setting in force rather than the one
+    // somebody last saw, and the clicks card has to say whether clicks are being recorded now. It is
+    // one small row, read when the panel opens and whenever the clicks card is drawn afresh — on
+    // each change of period or of whose figures it counts — and never on a timer.
     staleTime: 0,
   });
 }
@@ -53,7 +54,9 @@ export function useUpdateSiteSettings(siteId: string) {
  * the screen beneath it both go on naming a website that no longer exists until it is. Exactly the
  * list and nothing under it: asking by prefix would send every question already answered about the
  * removed website round again, and each of them would come back refused on a screen that is about
- * to be replaced anyway. Its settings are dropped outright, since nothing can answer for them now.
+ * to be replaced anyway. Its settings are dropped only where nothing on the screen is reading them:
+ * a copy the clicks card is still drawing from would be asked for again the moment it went, and
+ * come back refused. That copy goes with the screen.
  */
 export function useRemoveSite(siteId: string) {
   const cache = useQueryClient();
@@ -62,7 +65,7 @@ export function useRemoveSite(siteId: string) {
     mutationFn: () => removeSite(siteId, proofFrom(cache)),
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: sitesKey, exact: true });
-      cache.removeQueries({ queryKey: siteSettingsKey(siteId) });
+      cache.removeQueries({ queryKey: siteSettingsKey(siteId), type: 'inactive' });
     },
   });
 }

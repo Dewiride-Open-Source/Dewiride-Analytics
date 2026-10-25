@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Dashboard } from '@/components/dashboard/dashboard';
@@ -207,6 +207,14 @@ function engineWith(
 
     if (path.includes('/server-keys')) {
       return respondWith(200, []);
+    }
+
+    if (path.includes('/settings')) {
+      return respondWith(200, {
+        displayName: 'Example',
+        timeZoneId: 'Etc/UTC',
+        captureClicks: true,
+      });
     }
 
     // Named before the breakdown, whose address it begins with.
@@ -1206,5 +1214,60 @@ describe('a day pressed on the picture', () => {
     expect(await screen.findByRole('combobox', { name: 'Period' })).toHaveValue('chosen');
     expect(screen.getByRole('option', { name: 'Your dates' })).toBeInTheDocument();
     expect(await screen.findAllByText(/the day before/)).toHaveLength(3);
+  });
+});
+
+/**
+ * The busy website with recording what people click switched off, switched on by whatever the
+ * settings panel saves. Every other question is answered as the busy website answers it.
+ */
+function recordingSwitchedOff() {
+  busy();
+
+  const answering = globalThis.fetch as unknown as (
+    path: string,
+    init: RequestInit,
+  ) => Promise<Response>;
+  let captureClicks = false;
+
+  return engineDoing(async (path, init) => {
+    if (!path.includes('/settings')) {
+      return answering(path, init);
+    }
+
+    if (init.method === 'PUT') {
+      const saved = JSON.parse(String(init.body)) as { readonly captureClicks?: boolean };
+
+      captureClicks = saved.captureClicks ?? captureClicks;
+    }
+
+    return respondWith(200, { displayName: 'Example', timeZoneId: 'Etc/UTC', captureClicks });
+  });
+}
+
+describe('the settings panel opened from the clicks card', () => {
+  /**
+   * Switching recording on there changes the card behind the panel, and the card's own way in goes
+   * with it. Closing the panel then puts focus on the card's heading, where the reader was and
+   * which now says what changed, rather than on the page or on a control at the top of it.
+   */
+  it('puts focus back on the clicks card once the card’s own way in has gone', async () => {
+    recordingSwitchedOff();
+
+    renderScreen(<Dashboard />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open settings' }));
+
+    const panel = screen.getByRole('dialog', { name: 'Settings' });
+
+    await userEvent.click(
+      await within(panel).findByRole('switch', { name: /Record what people click/ }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Open settings' })).not.toBeInTheDocument(),
+    );
+    await userEvent.click(within(panel).getByRole('button', { name: 'Close' }));
+
+    expect(screen.getByRole('heading', { name: 'No clicks yet' })).toHaveFocus();
   });
 });

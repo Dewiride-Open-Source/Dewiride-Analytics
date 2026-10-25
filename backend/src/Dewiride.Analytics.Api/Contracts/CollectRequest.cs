@@ -66,7 +66,10 @@ public sealed record CollectRequest
     /// </summary>
     public string? Element { get; init; }
 
-    /// <summary>What the operated control said it was. Never the contents of a field.</summary>
+    /// <summary>
+    /// What the operated control said it was. Nothing typed into a field is ever read, and none is
+    /// kept for a text area.
+    /// </summary>
     public string? Label { get; init; }
 
     /// <summary>Where the operated control pointed: a path here, a host anywhere else.</summary>

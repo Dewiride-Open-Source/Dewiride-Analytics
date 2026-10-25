@@ -309,9 +309,10 @@ public sealed record ActionsResponse(
 /// One thing a window's visitors operated, and how often.
 /// </summary>
 /// <param name="Name">
-/// The control's own name, or the host a press led to. Written by whoever wrote the page, so it
-/// is data everywhere it travels and never anything else. Empty where a site gave its control no
-/// name at all.
+/// The control's own name, or the host a press led to. Read from the page — the words on a control
+/// can be a visitor's own — so it is data everywhere it travels and never anything else. Empty where
+/// no name was kept: the site gave the control none, it was a box somebody writes in, or the name
+/// was removed from what was stored.
 /// </param>
 /// <param name="Control">
 /// What sort of thing it was, as an identifier the dashboard looks up in its own catalogue. Always
@@ -747,8 +748,10 @@ public sealed record VisitJourneyStep(
 /// One control a visitor operated, as it appears inside a visit.
 /// </summary>
 /// <param name="Name">
-/// What the control said. Written by whoever wrote the page, so it is data everywhere it travels
-/// and never anything else. Empty where the website gave the control no name.
+/// What the control said. Read from the page — the words on a control can be a visitor's own — so
+/// it is data everywhere it travels and never anything else. Empty where no name was kept: the
+/// website gave the control none, it was a box somebody writes in, or the name was removed from
+/// what was stored.
 /// </param>
 /// <param name="Control">
 /// What sort of thing it was, as an identifier the dashboard looks up in its own catalogue.

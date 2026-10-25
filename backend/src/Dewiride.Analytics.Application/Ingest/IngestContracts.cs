@@ -58,7 +58,7 @@ public sealed record IngestCommand
     /// <summary>The kind of control that was operated.</summary>
     public ControlKind ActionControl { get; init; }
 
-    /// <summary>What the operated control said it was. The site's own writing.</summary>
+    /// <summary>What the operated control said it was: the words on it.</summary>
     public string? ActionLabel { get; init; }
 
     /// <summary>Where the operated control pointed.</summary>

@@ -201,7 +201,31 @@ the pointer; a rule on "Chrome on Windows", a string the visitor writes;
 and a rule on following somebody else to a page, which the engine cannot see, because it judges one
 visit at a time.
 
-**After release** the 9.0 and 10.0 verdicts are compared visit by visit, for visits that began before
-the release day, by category, band, network, what sent the visit, whether a key was pressed, and the
-operator; any departure from the simulation (of the 351: 49 people, 30 couldn't tell, 272 automation)
-is explained here.
+**Measured after release.** The 10.0 walk had read every website to within the idle timeout of the
+present by 2026-10-26 11:25 UTC, and the newest 9.0 and 10.0 verdicts were compared visit by visit
+that day. Every one of the 6,811 visits begun before the release day has both.
+
+- The 351 went exactly as simulated. 49 are people (`LikelyHuman · Moderate`; a key was pressed in 20,
+  another site sent 42), 30 could not be told (`Unknown · Strong`; another site sent all 30, and none
+  pressed anything), and 272 stay automation (`SuspiciousAutomation · Moderate`; another site sent
+  none). By the network's owner:
+
+  | Network             | Visits | Person | Couldn't tell | Automation |
+  | ------------------- | -----: | -----: | ------------: | ---------: |
+  | Microsoft           |     82 |     20 |             5 |         57 |
+  | Alibaba Cloud       |     61 |      0 |             0 |         61 |
+  | Tencent Cloud       |     49 |      2 |             0 |         47 |
+  | Amazon Web Services |     49 |     11 |             2 |         36 |
+  | Google Cloud        |     45 |      3 |             0 |         42 |
+  | Sinnet              |     11 |      0 |             0 |         11 |
+  | HostRoyale          |     10 |      0 |             9 |          1 |
+  | Latitude.sh         |      9 |      2 |             7 |          0 |
+  | China Unicom        |      8 |      0 |             0 |          8 |
+  | Eleven others       |     27 |     11 |             7 |          9 |
+
+- Over the run's window people went from 2,105 to 2,168, not to 2,154. The 14 beyond the simulation
+  are not this rule's: none is on a rented network. 9.0 judged each 30 to 51 minutes after the last
+  report it had, before the rest of the visit arrived — every report 10.0 read beyond where 9.0's
+  reading ended came afterwards, and eleven were judged on their opening page view alone — and could
+  not tell. 10.0's walk read each once all of it had arrived, 36 minutes to more than nine hours from
+  first report to last, and found it read, seen or pressed.

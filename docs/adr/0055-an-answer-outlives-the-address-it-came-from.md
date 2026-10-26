@@ -160,3 +160,12 @@ engine is shown is what a ruleset is, so an installation part-way through a walk
 judge the rest of its history with answers the first part lacked. Verdicts reached under 9.0 are left as they are. After
 that release, the 403 visits above stay confirmed and the 78 are confirmed again when the walk
 reaches them.
+
+**Measured after the release.** The 10.0 walk had read every website by 2026-10-26, and the newest 9.0
+and 10.0 verdicts were compared visit by visit that day. Every visit begun before the release day
+whose identity 9.0 had settled — confirmed, or a claim shown false — is settled the same way under
+10.0: 619 visits, the 403 that rested on the name alone among them; 484 are a known search crawler's,
+71 an automated service's, 37 a web crawler's and 27 an AI crawler's, all `Verified`. The 78 the 9.0
+walk had lost are confirmed again, 73 as a known search crawler's and 5 as a web crawler's, `Verified`.
+The release filled the table with 702 answers: Baidu 352, Yandex 148, Microsoft 118, Ahrefs 42,
+DuckDuckGo 26, Anthropic 8 and OpenAI 8.

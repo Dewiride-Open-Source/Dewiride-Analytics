@@ -129,3 +129,14 @@ public enum IngestOutcome
     /// <summary>The payload was malformed.</summary>
     Invalid = 2,
 }
+
+/// <summary>
+/// What became of one report, and whether its website records what visitors press.
+/// </summary>
+/// <param name="Outcome">What became of the report.</param>
+/// <param name="RecordsPresses">
+/// Whether the website the report was filed under records presses. True only for a report that was
+/// <see cref="IngestOutcome.Accepted"/>, so a website that does not exist or is no longer measured,
+/// an origin it does not accept and a website that records no presses all read false alike.
+/// </param>
+public readonly record struct IngestReceipt(IngestOutcome Outcome, bool RecordsPresses);

@@ -10,6 +10,9 @@
   every website and a press on any field could be named by its text.
 - **Revises**: [0014](0014-where-traffic-comes-from.md), under which a referrer was kept as it was
   reported.
+- **Revised by**: [0058](0058-a-browser-is-told-whether-its-website-records-presses.md). A page
+  opened on a website that records none sends no presses: the reply to its first page view says
+  whether to listen for one.
 
 ## Context
 

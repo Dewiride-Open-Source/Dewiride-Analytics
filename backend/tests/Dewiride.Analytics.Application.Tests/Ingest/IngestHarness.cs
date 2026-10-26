@@ -96,8 +96,8 @@ internal sealed class IngestHarness
     /// What the ingestor wrote to the log while it worked.
     /// </summary>
     /// <remarks>
-    /// The collector answers a refused report exactly as it answers an accepted one, so the log
-    /// is the only place a refusal's reason exists and the only thing a test can hold it to.
+    /// Nothing in the collector's answer says why a report was refused, so the log is the only
+    /// place a refusal's reason exists and the only thing a test can hold it to.
     /// </remarks>
     public IReadOnlyList<FakeLogRecord> Logged => _logger.Collector.GetSnapshot();
 
@@ -149,6 +149,13 @@ internal sealed class IngestHarness
     /// <returns>The outcome.</returns>
     public Task<IngestOutcome> IngestAsync(IngestCommand command, IngestContext? context = null) =>
         Ingestor.IngestAsync(command, context ?? BrowserRequest(), CancellationToken.None);
+
+    /// <summary>Runs one ingest and reads back everything it says.</summary>
+    /// <param name="command">The report.</param>
+    /// <param name="context">What the server observed, or a browser report from the site itself.</param>
+    /// <returns>What became of the report, and whether its website records presses.</returns>
+    public Task<IngestReceipt> ReceiptOfAsync(IngestCommand command, IngestContext? context = null) =>
+        Ingestor.IngestWithReceiptAsync(command, context ?? BrowserRequest(), CancellationToken.None);
 
     /// <summary>Builds a report of the shape the browser tracker sends.</summary>
     /// <param name="url">Absolute URL of the page.</param>

@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stampedIdentifier } from './beacon';
-import { goTo, only, openPage, press, type Sent, stampResponse, visibility } from './harness';
+import {
+  goTo,
+  only,
+  openPage,
+  press,
+  replied,
+  type Sent,
+  stampResponse,
+  visibility,
+} from './harness';
 
 let page: ReturnType<typeof openPage>;
 
@@ -10,7 +19,10 @@ beforeEach(() => {
   page = openPage();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // A reply still on its way is let arrive first: read after the page had been unhooked, it would
+  // leave something listening into the next test.
+  await replied();
   page.close();
 });
 
@@ -138,22 +150,243 @@ describe('how the beacon sends what it has measured', () => {
    */
   it('sends plain text, so no permission has to be asked for', () => {
     page.open();
+    visibility('hidden');
 
-    expect(page.bodies[0]).toBeTypeOf('string');
-    expect(page.bodies[0]).not.toBeInstanceOf(Blob);
+    expect(page.bodies).toHaveLength(2);
+
+    for (const body of page.bodies) {
+      expect(body).toBeTypeOf('string');
+    }
   });
 
-  it('sends it another way when the browser will not take it', () => {
-    page.refuseTransport();
+  /**
+   * Some browsers send a beacon from a page that keeps private where its requests come from as
+   * coming from nowhere, and the collector turns away what it cannot place. Sent the one way, a
+   * page's reports are all placed or none are.
+   */
+  it('sends every report the one way, so each carries the page’s own origin', () => {
+    page.open();
+    goTo('/posts/next');
+    visibility('hidden');
 
+    expect(page.sent.map((report) => report['kind'])).toEqual([
+      'pageview',
+      'exit',
+      'pageview',
+      'exit',
+    ]);
+
+    for (const [address, init] of vi.mocked(fetch).mock.calls) {
+      expect(address).toBe('https://analytics.example.com/collect');
+      expect(init).toMatchObject({
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'omit',
+        keepalive: true,
+      });
+    }
+
+    expect(navigator.sendBeacon).not.toHaveBeenCalled();
+  });
+
+  describe('from a browser that cannot keep a request alive past its page', () => {
+    beforeEach(() => {
+      page.close();
+      page = openPage('presses', { keepsRequestsAlive: false });
+    });
+
+    /** Its beacon is the one way a report sent as the page closes still arrives. */
+    it('hands every report to the browser’s beacon', () => {
+      page.open();
+      visibility('hidden');
+
+      expect(fetch).not.toHaveBeenCalled();
+      expect(navigator.sendBeacon).toHaveBeenCalledTimes(2);
+      expect(page.sent.map((report) => report['kind'])).toEqual(['pageview', 'exit']);
+
+      for (const body of page.bodies) {
+        expect(body).toBeTypeOf('string');
+      }
+    });
+
+    it('sends what the beacon will not take another way', () => {
+      page.refuseTransport();
+
+      page.open();
+      visibility('hidden');
+
+      expect(fetch).toHaveBeenCalledWith(
+        'https://analytics.example.com/collect',
+        expect.objectContaining({ method: 'POST', mode: 'cors', credentials: 'omit' }),
+      );
+      expect(page.sent.map((report) => report['kind'])).toEqual(['pageview', 'exit']);
+    });
+  });
+
+  /**
+   * Safari 13 says it can keep a request alive, but will not start one while its page is being left
+   * for another — which is when a reading's last report goes. Safari 14 does, and is the first with
+   * BigInt; a browser that has the one without the other hands its reports to the beacon.
+   */
+  it('hands every report to the beacon from a browser that cannot send one as its page is left', () => {
+    vi.stubGlobal('BigInt', undefined);
+
+    page.open();
+    visibility('hidden');
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(page.sent.map((report) => report['kind'])).toEqual(['pageview', 'exit']);
+  });
+});
+
+describe('whether presses are listened for at all', () => {
+  /** The collector's refusal of a report it cannot read, as it writes one. */
+  const REFUSED = {
+    status: 400,
+    body: '{"title":"The report could not be read.","status":400}',
+  } as const;
+
+  /** The collector's refusal of an address that has sent too much, as it writes one. */
+  const TOO_MANY = { status: 429, body: '{"title":"Too Many Requests","status":429}' } as const;
+
+  /** Whatever the reply says, the page view it answers was sent, and sent once. */
+  it.each([
+    ['says nothing', 'nothing'],
+    ['says the website records presses', 'presses'],
+    ['refuses the report', REFUSED],
+    ['answers with something that cannot be read', { status: 200, body: '<html></html>' }],
+  ] as const)('sends the first page view once where the collector %s', async (_, answer) => {
+    page.close();
+    page = openPage(answer);
+
+    page.open();
+    await replied();
+
+    expect(only(page.sent, 'pageview')).toBeDefined();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The first page view asks whether this website records presses, so it is sent in the one way
+   * whose reply can be read. Nothing about the reader goes with it: no cookie, no credential.
+   */
+  it('asks with the first page view, in a way whose reply can be read', () => {
     page.open();
 
     expect(fetch).toHaveBeenCalledWith(
       'https://analytics.example.com/collect',
-      expect.objectContaining({ method: 'POST', mode: 'no-cors', keepalive: true }),
+      expect.objectContaining({
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'omit',
+        keepalive: true,
+      }),
     );
-    expect(only(page.sent, 'pageview')).toBeDefined();
   });
+
+  /** A press made before the reply has arrived is one nobody had agreed to record. */
+  it('listens for presses from the moment the collector says the website records them', async () => {
+    page.close();
+    page = openPage('presses');
+
+    page.open();
+    press('<button data-press>Before the answer</button>');
+
+    await replied();
+    press('<button data-press>Subscribe</button>');
+
+    expect(only(page.sent, 'action')['label']).toBe('Subscribe');
+  });
+
+  /**
+   * A website that records no presses is answered with nothing, and so is a page the collector
+   * never heard from. Only a reply that plainly says yes is one; anything else — a refusal, a reply
+   * that says no or says something else, one that cannot be read — means no.
+   */
+  it.each([
+    ['says nothing', 'nothing'],
+    ['cannot be reached', 'unreachable'],
+    ['says the website records none', { status: 200, body: '{"presses":false}' }],
+    ['says nothing about presses', { status: 200, body: '{}' }],
+    ['answers with nothing in particular', { status: 200, body: 'null' }],
+    ['answers with something that cannot be read', { status: 200, body: '<html></html>' }],
+    ['refuses the report', REFUSED],
+    ['has heard too much from this address', TOO_MANY],
+  ] as const)('never listens for a press where the collector %s', async (_, answer) => {
+    page.close();
+    page = openPage(answer);
+
+    page.open();
+    await replied();
+    press('<button data-press>Subscribe</button>');
+
+    expect(page.sent.filter((report) => report['kind'] === 'action')).toHaveLength(0);
+  });
+
+  /** The answer belongs to the website, so a page the site moves itself to does not ask again. */
+  it('asks once, and not again for a page the site moves itself to', async () => {
+    page.close();
+    page = openPage('presses');
+
+    page.open();
+    await replied();
+
+    goTo('/posts/next');
+    await replied();
+    press('<button data-press>Subscribe</button>');
+
+    expect(page.repliesRead()).toBe(1);
+    expect(page.sent.filter((report) => report['kind'] === 'pageview')).toHaveLength(2);
+    expect(only(page.sent, 'action')['url']).toContain('/posts/next');
+  });
+
+  /** A page the browser kept and brings back is the same page, and keeps what it was told. */
+  it('goes on listening on a page the browser kept and brought back', async () => {
+    page.close();
+    page = openPage('presses');
+
+    page.open();
+    await replied();
+
+    window.dispatchEvent(new Event('pagehide'));
+
+    const restored = new Event('pageshow') as Event & { persisted: boolean };
+
+    Object.defineProperty(restored, 'persisted', { value: true });
+    window.dispatchEvent(restored);
+    await replied();
+    press('<button data-press>Subscribe</button>');
+
+    expect(page.repliesRead()).toBe(1);
+    expect(only(page.sent, 'action')['label']).toBe('Subscribe');
+  });
+
+  /**
+   * Asked, a browser that cannot keep a request alive would have to send its first page view apart
+   * from the rest of its reports — so it is not asked, and records no presses anywhere.
+   */
+  it.each([
+    ['its beacon takes the page view', false],
+    ['its beacon refuses the page view', true],
+  ])(
+    'never asks a browser that cannot keep a request alive past its page, where %s',
+    async (_, refused) => {
+      page.close();
+      page = openPage('presses', { keepsRequestsAlive: false });
+
+      if (refused) {
+        page.refuseTransport();
+      }
+
+      page.open();
+      await replied();
+      press('<button data-press>Subscribe</button>');
+
+      expect(only(page.sent, 'pageview')).toBeDefined();
+      expect(page.repliesRead()).toBe(0);
+      expect(page.sent.filter((report) => report['kind'] === 'action')).toHaveLength(0);
+    },
+  );
 });
 
 describe('what the beacon reports when a reading ends', () => {
@@ -457,8 +690,17 @@ describe('what somebody pressed on the page', () => {
     return page.sent.filter((report) => report['kind'] === 'action');
   }
 
-  it('names the control, what it said, and the page it was on', () => {
+  /** Opens the page on a website that records presses, and lets the collector say so. */
+  async function opened(): Promise<void> {
+    page.close();
+    page = openPage('presses');
+
     page.open();
+    await replied();
+  }
+
+  it('names the control, what it said, and the page it was on', async () => {
+    await opened();
 
     press('<button data-press>Subscribe</button>');
 
@@ -473,16 +715,16 @@ describe('what somebody pressed on the page', () => {
    * A press lands on whatever is under the finger, which is usually a fragment of the thing
    * somebody meant to press. Reporting the fragment would answer a question nobody asked.
    */
-  it('attributes a press to the control rather than to the scrap of it that was hit', () => {
-    page.open();
+  it('attributes a press to the control rather than to the scrap of it that was hit', async () => {
+    await opened();
 
     press('<button><span data-press>Subscribe</span></button>');
 
     expect(only(page.sent, 'action')['element']).toBe('button');
   });
 
-  it('keeps a page on the same site in full, so which page they went to can be answered', () => {
-    page.open();
+  it('keeps a page on the same site in full, so which page they went to can be answered', async () => {
+    await opened();
 
     press('<a data-press href="/pricing">Pricing</a>');
 
@@ -496,8 +738,8 @@ describe('what somebody pressed on the page', () => {
    * The rest of an address off the site is written by whoever wrote the link and can carry
    * anything at all, including who followed it. Where they went is the host and nothing more.
    */
-  it('keeps only the host of somewhere off the site', () => {
-    page.open();
+  it('keeps only the host of somewhere off the site', async () => {
+    await opened();
 
     press('<a data-press href="https://github.com/dewiride/analytics?from=jane">Source</a>');
 
@@ -507,8 +749,8 @@ describe('what somebody pressed on the page', () => {
     expect(click['targetKind']).toBe('external');
   });
 
-  it('records that an address to write to was used, and never the address itself', () => {
-    page.open();
+  it('records that an address to write to was used, and never the address itself', async () => {
+    await opened();
 
     press('<a data-press href="mailto:jane@example.com">Email me</a>');
 
@@ -536,8 +778,8 @@ describe('what somebody pressed on the page', () => {
       '<select data-press aria-label="Ship to"><option>Jane Doe, 12 High Street</option></select>',
       'Ship to',
     ],
-  ])('%s', (_, markup, name) => {
-    page.open();
+  ])('%s', async (_, markup, name) => {
+    await opened();
 
     press(markup);
 
@@ -545,8 +787,8 @@ describe('what somebody pressed on the page', () => {
   });
 
   /** What somebody typed is theirs. The name of the field is the site's own writing. */
-  it('never reads what somebody typed into a field', () => {
-    page.open();
+  it('never reads what somebody typed into a field', async () => {
+    await opened();
 
     press('<input data-press type="text" value="jane@example.com" aria-label="Email address">');
 
@@ -562,8 +804,8 @@ describe('what somebody pressed on the page', () => {
    * the text of the box is the typing. A press there is a press on a field, and nothing more —
    * not even the name the site gave the box.
    */
-  it('reads nothing from a box somebody writes in, even where the page keeps its text in step', () => {
-    page.open();
+  it('reads nothing from a box somebody writes in, even where the page keeps its text in step', async () => {
+    await opened();
 
     press(
       '<textarea data-press aria-label="Your message">Dear Jane, my account is 12345678</textarea>',
@@ -577,8 +819,8 @@ describe('what somebody pressed on the page', () => {
   });
 
   /** A link somebody wrote points wherever they wrote, so neither its words nor its address travel. */
-  it('reads nothing from a control inside a part of the page somebody is writing in', () => {
-    page.open();
+  it('reads nothing from a control inside a part of the page somebody is writing in', async () => {
+    await opened();
 
     press(
       '<div contenteditable="true"><a data-press href="/notes/7">Call Jane about her refund</a></div>',
@@ -592,8 +834,8 @@ describe('what somebody pressed on the page', () => {
     expect(click).not.toHaveProperty('targetKind');
   });
 
-  it('reads nothing from a control that holds something somebody is writing', () => {
-    page.open();
+  it('reads nothing from a control that holds something somebody is writing', async () => {
+    await opened();
 
     press('<button data-press>Send <span contenteditable="true">my draft to Jane</span></button>');
 
@@ -604,8 +846,8 @@ describe('what somebody pressed on the page', () => {
    * A list's choices are what can be picked — somebody's addresses, their accounts — and not what
    * the list is called, so a list is named only by what the site called it.
    */
-  it('never names a list by the choices it offers', () => {
-    page.open();
+  it('never names a list by the choices it offers', async () => {
+    await opened();
 
     press(
       '<select data-press><option>Jane Doe, 12 High Street, Leeds</option><option>Jane Doe (work)</option></select>',
@@ -618,16 +860,16 @@ describe('what somebody pressed on the page', () => {
     expect(JSON.stringify(click)).not.toContain('Jane');
   });
 
-  it('says nothing at all about a part of the page the site marked as private', () => {
-    page.open();
+  it('says nothing at all about a part of the page the site marked as private', async () => {
+    await opened();
 
     press('<div data-dw-ignore><button data-press>Delete everything Jane wrote</button></div>');
 
     expect(pressed()).toHaveLength(0);
   });
 
-  it('says nothing about a press that landed on the page rather than on anything in it', () => {
-    page.open();
+  it('says nothing about a press that landed on the page rather than on anything in it', async () => {
+    await opened();
 
     press('<p data-press>Just some words.</p>');
 
@@ -638,8 +880,8 @@ describe('what somebody pressed on the page', () => {
    * A browser answers a press on a field's own name by raising a second press on the field. Both
    * reach the same watcher, and counting both would report one tick of a box as two.
    */
-  it('counts one tick of a labelled box once', () => {
-    page.open();
+  it('counts one tick of a labelled box once', async () => {
+    await opened();
 
     press(
       '<label data-press for="letters">Send me letters</label><input id="letters" type="checkbox">',
@@ -648,16 +890,16 @@ describe('what somebody pressed on the page', () => {
     expect(pressed()).toHaveLength(1);
   });
 
-  it('keeps a long label down to something that is still a name', () => {
-    page.open();
+  it('keeps a long label down to something that is still a name', async () => {
+    await opened();
 
     press(`<button data-press>${'first '.repeat(40)}</button>`);
 
-    expect((only(page.sent, 'action')['label'] as string).length).toBe(64);
+    expect(only(page.sent, 'action')['label']).toHaveLength(64);
   });
 
-  it('measures a page that handles its own presses and stops them going any further', () => {
-    page.open();
+  it('measures a page that handles its own presses and stops them going any further', async () => {
+    await opened();
 
     document.body.innerHTML = '<div><button data-press>Subscribe</button></div>';
     document.body.firstElementChild?.addEventListener('click', (event) => event.stopPropagation());
@@ -668,8 +910,8 @@ describe('what somebody pressed on the page', () => {
     expect(only(page.sent, 'action')['label']).toBe('Subscribe');
   });
 
-  it('leaves out where a press pointed when it pointed nowhere', () => {
-    page.open();
+  it('leaves out where a press pointed when it pointed nowhere', async () => {
+    await opened();
 
     press('<button data-press>Subscribe</button>');
 
@@ -679,8 +921,8 @@ describe('what somebody pressed on the page', () => {
     expect(click).not.toHaveProperty('targetKind');
   });
 
-  it('says nothing about an address the browser itself cannot read', () => {
-    page.open();
+  it('says nothing about an address the browser itself cannot read', async () => {
+    await opened();
 
     press('<a data-press href="http://[">Broken</a>');
 
@@ -697,8 +939,8 @@ describe('what somebody pressed on the page', () => {
    * describe the reader rather than the reading, and none of them is here. Written as the complete
    * set rather than as a list of absences, so a field added later has to be argued for.
    */
-  it('says what was pressed and nothing whatever about the person pressing it', () => {
-    page.open();
+  it('says what was pressed and nothing whatever about the person pressing it', async () => {
+    await opened();
 
     press('<button data-press>Subscribe</button>');
 

@@ -153,10 +153,10 @@ rendered, which is itself evidence.
 { "accepted": 3, "rejected": 1 }
 ```
 
-Unlike the browser collector, which answers with nothing whatever happens, this one says what
-became of the batch. The caller has already proved it holds a key for the site, so there is
-nothing left for the answer to disclose, and whoever is writing the reporter needs to know whether
-it works.
+Unlike the browser collector, which tells a page whose page view it stored for a website that
+records presses only that, and answers every other report it reads with nothing, this one says what
+became of the batch. The caller has already proved it holds a key for the site, so there is nothing
+left for the answer to disclose, and whoever is writing the reporter needs to know whether it works.
 
 `rejected` counts observations that were malformed, that named a page on a hostname the site does
 not cover, or that arrived while the account the website belongs to was closed. The rest of the

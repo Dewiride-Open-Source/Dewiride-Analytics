@@ -10,7 +10,7 @@ namespace Dewiride.Analytics.Application.Tests.Ingest;
 /// A self-hosted installation always answers yes and none of this is reachable there. Where
 /// somebody else is running the service it is what stops an account that has run out of allowance
 /// from going on being measured, and the whole of what it may do is drop the report — quietly, in
-/// exactly the words the collector uses for everything else.
+/// exactly the words the collector uses for a website that does not exist.
 /// </remarks>
 public sealed class MeasurementAllowanceTests
 {
@@ -37,8 +37,8 @@ public sealed class MeasurementAllowanceTests
     }
 
     /// <summary>
-    /// A dropped report is dropped in silence. The collector answers a stored report and a refused
-    /// one identically, and a line written for every report an unmeasured account is still sending
+    /// A dropped report is dropped in silence. Nothing in the collector's answer says why a report
+    /// was refused, and a line written for every report an unmeasured account is still sending
     /// would be a log file whose size somebody else chooses.
     /// </summary>
     [Fact]

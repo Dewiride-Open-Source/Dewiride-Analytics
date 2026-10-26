@@ -8,6 +8,9 @@
   named, a list is never named by its choices, and the names already stored for presses on fields
   were removed. A press kept without a name reads "No name kept" rather than "Unnamed": an empty
   name no longer means the site gave its control none, so it is not a prompt to go and name it.
+- **Revised by**: [0058](0058-a-browser-is-told-whether-its-website-records-presses.md). The tracker
+  listens for presses only once the collector, answering the first page view, says the website
+  records them.
 
 ## Context
 

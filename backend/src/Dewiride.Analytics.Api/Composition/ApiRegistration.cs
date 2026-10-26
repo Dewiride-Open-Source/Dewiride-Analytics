@@ -198,9 +198,11 @@ internal static class ApiRegistration
         "Sonar",
         "S5122:Authorizing an origin is security-sensitive",
         Justification = "The policy is attached to the collector alone, which is unauthenticated, "
-            + "sends no credentials and returns an empty body. There is nothing for a cross-origin "
-            + "reader to obtain, and the origin a report may be filed under is checked against the "
-            + "site's own declared list after the body is read. Every other endpoint is same-origin.")]
+            + "sends no credentials and answers at most that a website records presses — and that "
+            + "only to a page on a host the website accepts, which is one of its own pages and "
+            + "could see as much by opening any other. The origin a report may be filed under is "
+            + "checked against the site's own declared list after the body is read. Every other "
+            + "endpoint is same-origin.")]
     private static void ConfigureCrossOrigin(IServiceCollection services) =>
         services.AddCors(options => options.AddPolicy(
             CollectEndpoint.CorsPolicyName,

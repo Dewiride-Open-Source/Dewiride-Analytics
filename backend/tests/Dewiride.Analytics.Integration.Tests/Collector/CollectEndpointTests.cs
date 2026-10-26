@@ -17,8 +17,9 @@ namespace Dewiride.Analytics.Integration.Tests.Collector;
 /// <remarks>
 /// Almost everything here is about what the answer does <em>not</em> say. A site identifier is
 /// printed in the source of every page it measures, so anyone can send reports; the endpoint must
-/// therefore answer a report for a site that does not exist exactly as it answers a stored one,
-/// or it becomes a way to find out which identifiers are real.
+/// therefore answer every report it turns away as it answers one for a site that does not exist,
+/// and tell a stored one nothing beyond whether its website records presses — or it becomes a way
+/// to find out which identifiers are real and why a report was refused.
 /// </remarks>
 /// <param name="stack">The running stack.</param>
 [Collection(SharedStackDefinition.Name)]
@@ -45,7 +46,8 @@ public sealed class CollectEndpointTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// The same empty answer as a stored report, and nothing written.
+    /// The same empty answer as a report stored for a website that records no presses, and nothing
+    /// written.
     /// </summary>
     [Fact]
     public async Task A_Report_For_A_Site_That_Does_Not_Exist_Is_Answered_The_Same_Way()
@@ -284,8 +286,113 @@ public sealed class CollectEndpointTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// A malformed body is the one thing answered plainly, because it is a mistake by whoever is
-    /// writing an integration and telling them nothing helps nobody.
+    /// A page view from a website that records presses is told so, which is what the tracker waits
+    /// for before it listens for a press at all — and the answer can be read from the page that
+    /// sent it.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_View_From_A_Website_That_Records_Presses_Is_Told_So()
+    {
+        var site = await RecordingPressesAsync();
+        using var client = stack.CreateClient();
+
+        var response = await PostAsync(client, Report(site.Id, $"https://{site.Domain}/posts/hello"), site.Domain);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync(Cancellation.Token)).Should().Be("""{"presses":true}""");
+        response.Headers.GetValues("Access-Control-Allow-Origin").Should().Equal("*");
+        (await StoredCountAsync(site.Id)).Should().Be(1);
+    }
+
+    /// <summary>
+    /// Every other page view is told nothing, and alike: one from a website that records no
+    /// presses, one naming a website that does not exist, and one from an origin a recording
+    /// website does not accept. Telling them apart would tell anybody which site identifiers are
+    /// real.
+    /// </summary>
+    [Fact]
+    public async Task Every_Other_Page_View_Is_Told_Nothing_And_Alike()
+    {
+        var silent = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var recording = await RecordingPressesAsync();
+        using var client = stack.CreateClient();
+
+        HttpResponseMessage[] answers =
+        [
+            await PostAsync(client, Report(silent.Id, $"https://{silent.Domain}/a"), silent.Domain),
+            await PostAsync(client, Report(Guid.NewGuid(), "https://example.com/a"), "example.com"),
+            await PostAsync(client, Report(recording.Id, $"https://{recording.Domain}/a"), "attacker.test"),
+        ];
+
+        foreach (var answer in answers)
+        {
+            answer.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            (await answer.Content.ReadAsStringAsync(Cancellation.Token)).Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// A beacon cannot read its reply, and a browser that blocks a body sent back to one says so in
+    /// the console of the page that sent it, which is the customer's. A page view sent that way is
+    /// told nothing even from a website that records presses, and is stored all the same.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_View_Sent_In_A_Mode_Whose_Reply_Cannot_Be_Read_Is_Told_Nothing()
+    {
+        var site = await RecordingPressesAsync();
+        using var client = stack.CreateClient();
+        var report = Report(site.Id, $"https://{site.Domain}/posts/hello");
+
+        var beacon = await PostAsync(client, report, site.Domain, fetchMode: "no-cors");
+        var asked = await PostAsync(client, report, site.Domain, fetchMode: "cors");
+
+        beacon.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await beacon.Content.ReadAsStringAsync(Cancellation.Token)).Should().BeEmpty();
+        asked.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await StoredCountAsync(site.Id)).Should().Be(2);
+    }
+
+    /// <summary>
+    /// Some browsers send a report from a page that keeps private where its requests come from as
+    /// coming from nowhere. That stays refused, even for a report naming the website's own page:
+    /// accepted, any page could have its visitors' browsers file reports under any website just by
+    /// asking for that privacy, or by running in a sandboxed frame.
+    /// </summary>
+    [Fact]
+    public async Task A_Report_From_Nowhere_Is_Refused_Whatever_Page_It_Names()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        using var client = stack.CreateClient();
+
+        var response = await SendAsync(client, Report(site.Id, $"https://{site.Domain}/posts/hello"), "null");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await StoredCountAsync(site.Id)).Should().Be(0);
+    }
+
+    /// <summary>
+    /// Only a page view is answered. Every page sends one first, and the tracker listens from its
+    /// answer onwards, so answering anything else would only say the same thing again.
+    /// </summary>
+    [Fact]
+    public async Task Only_A_Page_View_Is_Told_Whether_Presses_Are_Recorded()
+    {
+        var site = await RecordingPressesAsync();
+        using var client = stack.CreateClient();
+
+        var report = Report(site.Id, $"https://{site.Domain}/posts/hello");
+        report["kind"] = "engagement";
+        report["engagedMs"] = 15_000;
+
+        var response = await PostAsync(client, report, site.Domain);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await StoredCountAsync(site.Id)).Should().Be(1);
+    }
+
+    /// <summary>
+    /// A malformed body is answered plainly, because it is a mistake by whoever is writing an
+    /// integration and telling them nothing helps nobody.
     /// </summary>
     [Fact]
     public async Task A_Body_That_Is_Not_A_Report_Is_Answered_Plainly()
@@ -467,17 +574,31 @@ public sealed class CollectEndpointTests(AnalyticsStackFixture stack)
             ["viewportHeight"] = 900,
         };
 
-    private static async Task<HttpResponseMessage> PostAsync(
+    private static Task<HttpResponseMessage> PostAsync(
         HttpClient client,
         Dictionary<string, object?> report,
-        string origin)
+        string origin,
+        string? fetchMode = null) =>
+        SendAsync(client, report, $"https://{origin}", fetchMode);
+
+    /// <summary>Posts a report with exactly this origin header, and the fetch mode a browser would declare.</summary>
+    private static async Task<HttpResponseMessage> SendAsync(
+        HttpClient client,
+        Dictionary<string, object?> report,
+        string originHeader,
+        string? fetchMode = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, Collect)
         {
             Content = JsonContent.Create(report),
         };
 
-        request.Headers.Add(HeaderNames.Origin, $"https://{origin}");
+        request.Headers.Add(HeaderNames.Origin, originHeader);
+
+        if (fetchMode is not null)
+        {
+            request.Headers.Add("Sec-Fetch-Mode", fetchMode);
+        }
 
         return await client.SendAsync(request, Cancellation.Token);
     }

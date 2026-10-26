@@ -17,9 +17,11 @@ interface Page {
   readonly sent: Sent[];
   /** Whatever was handed to the transport, so its type can be checked as well as its content. */
   readonly bodies: unknown[];
+  /** How many of the collector's replies the beacon has read. */
+  readonly repliesRead: () => number;
   /** Starts the beacon, as the tag on a page would. */
   readonly open: (settings?: { readonly correlationId?: string }) => void;
-  /** Makes the browser's own transport refuse, which is what a full queue looks like. */
+  /** Makes the browser's beacon refuse, which is what a full queue looks like. */
   readonly refuseTransport: () => void;
   /** Undoes everything the beacon hooked. */
   readonly close: () => void;
@@ -43,16 +45,44 @@ const SITE = '0199c8f4-6c1e-7a3b-9d21-5f0b8e2a4c77';
 const COLLECTOR = 'https://analytics.example.com/collect';
 
 /**
+ * What the collector says to the first page view: that the website records presses, nothing at
+ * all, some other reply with this status and body, or — the collector being out of reach — no
+ * reply.
+ */
+export type Answer =
+  | 'presses'
+  | 'nothing'
+  | 'unreachable'
+  | { readonly status: number; readonly body: string };
+
+/** The browser a page is opened in. */
+export interface Browser {
+  /**
+   * Whether a request the page sends can outlive the page. Every browser the beacon is built for
+   * has a beacon; only the newer ones can keep any other request alive.
+   */
+  readonly keepsRequestsAlive?: boolean;
+}
+
+/**
  * Opens a page the beacon can be run on.
  *
  * Only one of these may be open at a time: it replaces what the document does when something is
  * listened for, and a second one wrapping the first has no way back out again.
+ *
+ * @param answer What the collector says to a page view. Unless a test asks otherwise it says
+ * nothing, which is what every website is told until somebody switches recording on.
+ * @param browser The browser the page is opened in: unless a test says otherwise, a current one.
  */
-export function openPage(): Page {
+export function openPage(
+  answer: Answer = 'nothing',
+  { keepsRequestsAlive = true }: Browser = {},
+): Page {
   const sent: Sent[] = [];
   const bodies: unknown[] = [];
   const hooked: Hook[] = [];
   let accepted = true;
+  let read = 0;
 
   function record(body: unknown) {
     bodies.push(body);
@@ -75,11 +105,34 @@ export function openPage(): Page {
     vi.fn((_url: string, init?: RequestInit) => {
       record(init?.body);
 
-      return Promise.resolve(new Response(null, { status: 204 }));
+      if (answer === 'unreachable') {
+        return Promise.reject(new TypeError('Failed to fetch'));
+      }
+
+      // The collector says something only to a page view, and only a request sent in the mode
+      // whose reply can be read gets to read it.
+      const reply =
+        init?.mode === 'cors' && kindOf(init.body) === 'pageview'
+          ? replyFor(answer)
+          : new Response(null, { status: 204 });
+      const readBody = reply.json.bind(reply);
+
+      reply.json = () => {
+        read += 1;
+
+        return readBody();
+      };
+
+      return Promise.resolve(reply);
     }),
   );
 
   Object.defineProperty(navigator, 'sendBeacon', { value: sendBeacon, configurable: true });
+
+  if (!keepsRequestsAlive) {
+    // A request, as a browser from before one could outlive its page describes it.
+    vi.stubGlobal('Request', { prototype: {} });
+  }
 
   for (const target of [window, document] as EventTarget[]) {
     const original = target.addEventListener.bind(target);
@@ -93,6 +146,7 @@ export function openPage(): Page {
   return {
     sent,
     bodies,
+    repliesRead: () => read,
     open: (settings = {}) => start({ siteId: SITE, endpoint: COLLECTOR, ...settings }),
     refuseTransport: () => {
       accepted = false;
@@ -109,6 +163,24 @@ export function openPage(): Page {
       vi.restoreAllMocks();
     },
   };
+}
+
+/** What kind of report a body is, where it is one at all. */
+function kindOf(body: BodyInit | null | undefined): unknown {
+  return typeof body === 'string' ? (JSON.parse(body) as Sent)['kind'] : undefined;
+}
+
+/** The reply the collector gives a page view, for an answer that is a reply at all. */
+function replyFor(answer: Exclude<Answer, 'unreachable'>): Response {
+  if (answer === 'presses') {
+    return new Response('{"presses":true}', { status: 200 });
+  }
+
+  if (answer === 'nothing') {
+    return new Response(null, { status: 204 });
+  }
+
+  return new Response(answer.body, { status: answer.status });
 }
 
 /**
@@ -142,6 +214,18 @@ export function press(markup: string): void {
   }
 
   pressed.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+}
+
+/**
+ * Lets the collector's reply to the first page view arrive and be read, as a moment passing would.
+ *
+ * Nothing listens for a press until that reply says yes, so a press made before it has been read
+ * is, rightly, never reported.
+ */
+export function replied(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 /** Puts the page in front of somebody, or takes it away, and tells the beacon. */

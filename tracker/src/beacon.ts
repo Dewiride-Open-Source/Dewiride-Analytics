@@ -203,31 +203,62 @@ export function start(settings: Settings): void {
   let gap = FIRST_PROGRESS;
   let progressTimer = 0;
 
-  function send(report: Report): void {
+  // Whether a request this page sends can outlive the page. Where none can, the browser's beacon is
+  // the one way a report sent as the page closes still arrives. Safari 13 says it can, but will not
+  // start a request kept alive while its page is being left for another, which is when a reading's
+  // last report goes; Safari 14 does, and is also the first to have BigInt, which tells them apart.
+  const keptAlive =
+    'keepalive' in Request.prototype &&
+    typeof (window as { BigInt?: unknown }).BigInt === 'function';
+
+  function send(report: Report, ask?: boolean): void {
     const body = JSON.stringify(report);
 
     // A string body is sent as plain text, which is one of the few kinds a browser will post to
     // another address without asking permission first. A typed blob looks like structured data
     // instead, which turns the report into a request that has to be cleared in advance — and if
     // that is refused the report is never sent at all, and the loss is silent.
-    if (navigator.sendBeacon?.(settings.endpoint, body)) {
+    if (!keptAlive && navigator.sendBeacon?.(settings.endpoint, body)) {
       return;
     }
 
-    // Either this browser has no beacon or its queue is full. The reply is of no interest, so it
-    // is asked for in the mode that needs no permission to read one.
-    void fetch(settings.endpoint, {
+    // From a browser that can keep it alive, every report goes this way, and so carries the page's
+    // own origin. A beacon does not always: from a page that keeps private where its requests come
+    // from, some browsers send one as coming from nowhere, and the collector turns away a report it
+    // cannot place — so a page whose first view went one way and the rest another would read as
+    // opened and never read. A browser that cannot sends this way only what its beacon refused.
+    const sending = fetch(settings.endpoint, {
       method: 'POST',
       body,
-      mode: 'no-cors',
+      mode: 'cors',
       credentials: 'omit',
       keepalive: true,
-    }).catch(() => {
-      // Nothing to be done, and nobody to tell: the page belongs to somebody else and its console
-      // is not ours to write in.
     });
+
+    // The reply to the first page view says whether this website records presses, and nothing
+    // listens for a press until it says yes. Anything else — an empty reply, a refusal, no reply
+    // at all — fails to read as yes, and means no.
+    void (ask ? sending.then((reply) => reply.json()).then(listenForPresses) : sending).catch(
+      () => {
+        // Nothing to be done, and nobody to tell: the page belongs to somebody else and its console
+        // is not ours to write in.
+      },
+    );
   }
 
+  function listenForPresses(answer: { readonly presses?: boolean }): void {
+    // Watched as the press travels down to whatever was pressed, so that a page which handles its
+    // own clicks and stops them going any further is still measured.
+    if (answer.presses) {
+      document.addEventListener('click', reportClick, true);
+    }
+  }
+
+  /**
+   * What every report starts from. Each kind adds its own with `Object.assign` rather than spread:
+   * the oldest browsers this is compiled for need spread rewritten into helper routines, and those
+   * cost more of the beacon's size than it has to spare.
+   */
   function base(kind: Report['kind']): Report {
     return { siteId: settings.siteId, kind, url: address, clientTimestamp: Date.now() };
   }
@@ -260,19 +291,18 @@ export function start(settings: Settings): void {
    *
    * Every figure is a running total rather than what has happened since the last report, so a
    * report that never arrives costs nothing and one that arrives twice counts once. That matters
-   * more than it sounds: reports are sent by a transport with no acknowledgement, from a page that
-   * is frequently in the act of being closed.
+   * more than it sounds: a report is sent once and never retried, from a page that is frequently in
+   * the act of being closed.
    */
   function progress(kind: Report['kind']): Report {
     watch();
 
-    return {
-      ...base(kind),
+    return Object.assign(base(kind), {
       engagedMs: attention(),
       scrollDepthPercent: deepest,
       pointerInteraction: pointer,
       keyboardInteraction: keyboard,
-    };
+    });
   }
 
   /**
@@ -309,24 +339,29 @@ export function start(settings: Settings): void {
     gap = FIRST_PROGRESS;
     keepTime();
 
-    send({
-      ...base('pageview'),
-      // The page that was left, without whatever followed its path. A search box puts what was
-      // searched for there, and the page somebody goes on to would otherwise carry it.
-      referrer: cameFrom?.split(/[?#]/)[0] || undefined,
-      // Rounded because a zoomed or scaled display reports a fraction of a pixel, and the store
-      // holds whole ones. Sent as written, the whole report is refused as unreadable and that
-      // reader is never counted.
-      viewportWidth: Math.round(window.innerWidth),
-      viewportHeight: Math.round(window.innerHeight),
-      language: navigator.language || undefined,
-      timezoneOffsetMinutes: -new Date().getTimezoneOffset(),
-      webDriver: navigator.webdriver,
-      // Only the first reading carries it. The identifier belongs to the one page the site's
-      // server handed over; everything reached from it afterwards without a fresh request was
-      // never delivered by anybody, so sending it again would fold several readings into one.
-      correlationId: firstView ? settings.correlationId : undefined,
-    });
+    send(
+      Object.assign(base('pageview'), {
+        // The page that was left, without whatever followed its path. A search box puts what was
+        // searched for there, and the page somebody goes on to would otherwise carry it.
+        referrer: cameFrom?.split(/[?#]/)[0] || undefined,
+        // Rounded because a zoomed or scaled display reports a fraction of a pixel, and the store
+        // holds whole ones. Sent as written, the whole report is refused as unreadable and that
+        // reader is never counted.
+        viewportWidth: Math.round(window.innerWidth),
+        viewportHeight: Math.round(window.innerHeight),
+        language: navigator.language || undefined,
+        timezoneOffsetMinutes: -new Date().getTimezoneOffset(),
+        webDriver: navigator.webdriver,
+        // Only the first reading carries it. The identifier belongs to the one page the site's
+        // server handed over; everything reached from it afterwards without a fresh request was
+        // never delivered by anybody, so sending it again would fold several readings into one.
+        correlationId: firstView ? settings.correlationId : undefined,
+      }),
+      // Only a browser that sends every report the one way is asked. One that cannot would have to
+      // send this page view apart from the rest, where it could be lost with the page, or be the
+      // only report of the page the collector could place.
+      firstView && keptAlive,
+    );
 
     firstView = false;
   }
@@ -398,16 +433,21 @@ export function start(settings: Settings): void {
       return;
     }
 
-    send({
-      ...base('action'),
-      // What the page says the control is, preferring the part it declared for a screen reader:
-      // a site that builds its buttons out of other elements has already written down what they
-      // are, and the element alone would report those as whatever they happen to be made of.
-      element: control.getAttribute('role') || control.tagName.toLowerCase(),
-      ...(at.closest(WRITTEN_IN) || control.querySelector(WRITTEN_IN)
-        ? {}
-        : { label: labelOf(control), ...pointedAt(control) }),
-    });
+    send(
+      Object.assign(
+        base('action'),
+        {
+          // What the page says the control is, preferring the part it declared for a screen
+          // reader: a site that builds its buttons out of other elements has already written down
+          // what they are, and the element alone would report those as whatever they happen to be
+          // made of.
+          element: control.getAttribute('role') || control.tagName.toLowerCase(),
+        },
+        at.closest(WRITTEN_IN) || control.querySelector(WRITTEN_IN)
+          ? {}
+          : Object.assign({ label: labelOf(control) }, pointedAt(control)),
+      ),
+    );
   }
 
   function observe(): void {
@@ -446,10 +486,6 @@ export function start(settings: Settings): void {
       },
       { passive: true, once: true },
     );
-
-    // Watched as the press travels down to whatever was pressed, so that a page which handles
-    // its own clicks and stops them going any further is still measured.
-    document.addEventListener('click', reportClick, true);
 
     window.addEventListener('popstate', navigated);
     window.addEventListener('hashchange', navigated);

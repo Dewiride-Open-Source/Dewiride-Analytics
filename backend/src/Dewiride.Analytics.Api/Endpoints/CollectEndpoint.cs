@@ -21,10 +21,30 @@ namespace Dewiride.Analytics.Api.Endpoints;
 /// and that one address can only send so many reports a minute.
 /// </para>
 /// <para>
-/// The response says nothing. A report that names a site that does not exist gets the same empty
-/// answer as one that is stored, so the endpoint cannot be used to find out which site
-/// identifiers are real. A malformed body is the one exception and answers plainly, because that
-/// is a mistake by whoever is writing an integration and telling them nothing helps nobody.
+/// The response says one thing, and only to a page view that was stored: that its website records
+/// what visitors press, which is what the tracker waits for before it listens for a press at all.
+/// Every other report that is read is answered alike, with nothing — a page view for a website that
+/// does not exist, that is no longer measured, that records no presses or from an origin it does not
+/// accept, and every other report however it fared — so no refusal says which of those it was. A
+/// body that is malformed or too large is answered plainly, because that is a mistake by whoever is
+/// writing an integration and telling them nothing helps nobody, and an address over its allowance
+/// is refused before its report is read; neither says anything about a website.
+/// </para>
+/// <para>
+/// What the yes shows is that a page view was stored: for a website that records presses, that its
+/// account is still measured and that the host the request was judged by — its origin, failing that
+/// its referrer, failing both the host of the page it names — is one the website accepts. It shows
+/// nothing that was hidden before. A stored report is answered only once the store has taken it and
+/// a refused one at once, so how long an answer takes has always said as much of every website; a
+/// host can be confirmed one guess at a time, never listed; and site identifiers are random, so none
+/// is found by guessing.
+/// </para>
+/// <para>
+/// A request whose fetch metadata says it was sent in the mode whose reply cannot be read — a beacon,
+/// or an older tracker's fallback — is answered with nothing even then. Nothing could read the body,
+/// and a browser that blocks it on arrival says so in the console of the page that sent it, which is
+/// the customer's. A request from a browser too old to say how it was sent is answered as any other
+/// is; if it was a beacon, nothing reads that body either.
 /// </para>
 /// </remarks>
 internal static class CollectEndpoint
@@ -34,6 +54,15 @@ internal static class CollectEndpoint
 
     /// <summary>Name of the rate-limiting policy this endpoint runs under.</summary>
     public const string RateLimitPolicyName = "collector";
+
+    /// <summary>The fetch metadata in which a browser says how it sent a request.</summary>
+    private const string FetchModeHeader = "Sec-Fetch-Mode";
+
+    /// <summary>The mode a request is sent in when nothing will read its reply.</summary>
+    private const string Unreadable = "no-cors";
+
+    /// <summary>The one answer the endpoint gives, to a page view from a website recording presses.</summary>
+    private static readonly CollectAnswer PressesRecorded = new(Presses: true);
 
     /// <summary>
     /// Maps the collection endpoint.
@@ -45,14 +74,17 @@ internal static class CollectEndpoint
             .WithName("Collect")
             .WithSummary("Records one observation of activity on a measured site.")
             .WithDescription(
-                "Called by the tracker and by every server-side capture surface. Always answers "
-                + "with an empty response unless the payload itself is malformed.")
+                "Called by the tracker. A page view stored for a website that records presses is "
+                + "answered {\"presses\":true}, unless its Sec-Fetch-Mode header says no-cors; a "
+                + "malformed or oversized report is answered with a problem; anything else with an "
+                + "empty response. An address that sends too many reports in a minute is refused "
+                + "with 429.")
             .RequireCors(CorsPolicyName)
             .RequireRateLimiting(RateLimitPolicyName)
             .AllowAnonymous();
     }
 
-    private static async Task<Results<NoContent, ProblemHttpResult>> HandleAsync(
+    private static async Task<Results<Ok<CollectAnswer>, NoContent, ProblemHttpResult>> HandleAsync(
         HttpContext context,
         EventIngestor ingestor,
         IOptions<CollectorOptions> options,
@@ -96,12 +128,33 @@ internal static class CollectEndpoint
         }
 
         var observation = RequestObservation.From(context, IngestSurface.BrowserTracker);
-        var outcome = await ingestor.IngestAsync(command, observation, cancellationToken).ConfigureAwait(false);
+        var receipt = await ingestor.IngestWithReceiptAsync(command, observation, cancellationToken)
+            .ConfigureAwait(false);
 
-        return outcome == IngestOutcome.Invalid
-            ? Malformed()
+        if (receipt.Outcome == IngestOutcome.Invalid)
+        {
+            return Malformed();
+        }
+
+        // A page view is the first thing every page sends, and the tracker listens for presses from
+        // its answer onwards; no other report is answered, so asking twice tells nobody anything new.
+        return command.Kind == EventKind.PageView && receipt.RecordsPresses && CanReadAnswer(context.Request)
+            ? TypedResults.Ok(PressesRecorded)
             : TypedResults.NoContent();
     }
+
+    /// <summary>
+    /// Whether the page that sent a request can read what it is answered.
+    /// </summary>
+    /// <remarks>
+    /// A browser says in its fetch metadata which mode it sent a request in, and only one sent in
+    /// no-cors mode — a beacon, or an older tracker's fallback — cannot be read. A request that says
+    /// nothing of its mode — from an older browser, a server or a test — is answered as one that can.
+    /// </remarks>
+    /// <param name="request">The request being answered.</param>
+    /// <returns>False only for a request sent in the mode whose reply nothing reads.</returns>
+    private static bool CanReadAnswer(HttpRequest request) =>
+        !string.Equals(request.Headers[FetchModeHeader].ToString(), Unreadable, StringComparison.Ordinal);
 
     /// <summary>
     /// Applies the body limit to this request alone.

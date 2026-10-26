@@ -37,8 +37,10 @@ one address to get right. An installation served under a path keeps that path.
 Anything inside an element carrying **`data-dw-ignore`** is left alone entirely — no press inside
 it is ever reported. That is how you keep a signed-in area, or anything whose controls are named
 after the person using them, out of the measurement without turning anything off elsewhere. Presses
-are only kept at all for a website whose recording has been switched on in the dashboard; for any
-other, the tracker still sends them and the collector drops them where they arrive.
+are listened for only on a website whose recording has been switched on in the dashboard: the
+collector says so in reply to a page's first page view, and until it does — or where it never does
+— no press is sent at all. The answer holds until that page is closed, so a page already open when
+recording is switched off goes on sending presses, and the collector drops them where they arrive.
 
 ## What it reports
 
@@ -62,9 +64,9 @@ because a page built with React keeps a text area's own text in step with what i
 Where a control pointed is the path for a page on the same site and the host alone for anywhere
 else; an address to write to or ring is recorded as having been used and never kept. A press is
 attributed to the nearest thing a person can operate, so one that lands on the page rather than on
-anything in it is not reported at all. The collector keeps presses only for a website whose
-recording has been switched on in the dashboard, and it starts switched off: on pages that show
-visitors their own messages, names or accounts, the words on the buttons and links are theirs.
+anything in it is not reported at all. Presses are sent only from a page told that its website
+records them, and recording starts switched off: on pages that show visitors their own messages,
+names or accounts, the words on the buttons and links are theirs.
 
 Anything not yet measured is **left out** rather than sent as nought. "Nobody touched this page"
 and "we were not watching yet" are different facts and the store keeps them apart.
@@ -101,9 +103,17 @@ would be recorded as having read the front page.
 ## Browsers
 
 Compiled for **Chrome 55, Edge 15, Firefox 53 and Safari 11.1** and newer — the oldest releases
-that both have the transport it uses and can be compiled for. Syntax a browser cannot read fails
-before any check inside the file can run, so a floor set too high does not degrade gracefully; it
-silently stops counting a whole class of visitor.
+that both have a beacon and can be compiled for. Syntax a browser cannot read fails before any
+check inside the file can run, so a floor set too high does not degrade gracefully; it silently
+stops counting a whole class of visitor.
+
+From **Chrome 67, Edge 79, Firefox 133 and Safari 14** every report is sent as a request that can
+outlive the page that sent it, so each carries the page's own origin. A beacon does not always:
+current Firefox and Safari send one from a page whose referrer policy is `no-referrer` or
+`same-origin` as coming from nowhere, and the collector turns away what it cannot place. An older browser still hands
+every report to its beacon, as the only way a report sent as a page closes arrives — Safari 13
+included, which can keep a request alive but will not start one as its page is left for another —
+and is never asked whether its website records presses, so it reports none.
 
 ## Working on it
 

@@ -97,8 +97,28 @@ public sealed partial class EventIngestor(
     /// <param name="command">The untrusted payload.</param>
     /// <param name="context">What the server observed about the request.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The outcome. The endpoint returns the same empty response whatever this is.</returns>
+    /// <returns>What became of the report.</returns>
     public async Task<IngestOutcome> IngestAsync(
+        IngestCommand command,
+        IngestContext context,
+        CancellationToken cancellationToken) =>
+        (await IngestWithReceiptAsync(command, context, cancellationToken).ConfigureAwait(false)).Outcome;
+
+    /// <summary>
+    /// Validates a report, writes it if it is acceptable, and says whether its website records
+    /// what visitors press.
+    /// </summary>
+    /// <remarks>
+    /// The browser's collector passes the answer on, so that the tracker listens for presses only
+    /// on a website that keeps them. It is yes only for a report that was written: a website that
+    /// does not exist, one no longer measured, an origin it does not accept and a website that
+    /// records no presses all answer alike, so no refusal says why it was refused.
+    /// </remarks>
+    /// <param name="command">The untrusted payload.</param>
+    /// <param name="context">What the server observed about the request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>What became of the report, and whether its website records presses.</returns>
+    public async Task<IngestReceipt> IngestWithReceiptAsync(
         IngestCommand command,
         IngestContext context,
         CancellationToken cancellationToken)
@@ -108,25 +128,24 @@ public sealed partial class EventIngestor(
 
         if (!TryParseUrl(command.Url, out var url) || !HasPlausibleMeasurements(command))
         {
-            return IngestOutcome.Invalid;
+            return Refused(IngestOutcome.Invalid);
         }
 
         var site = await siteCatalog.FindAsync(command.SiteId, cancellationToken).ConfigureAwait(false);
         if (site is null)
         {
             Log.UnknownSite(logger, command.SiteId);
-            return IngestOutcome.Rejected;
+            return Refused(IngestOutcome.Rejected);
         }
 
         // Asked before anything is parsed out of the payload, because it is a question about the
         // account rather than about the report: where the answer is no, none of the work below it
-        // is work worth doing. The sender is told nothing either way — a report turned away here
-        // gets the same empty answer as one that was stored — because whoever runs the measured
-        // site learns this from their own dashboard, and nobody else has any business learning it
-        // from the collector.
+        // is work worth doing. A report turned away here is answered as one for a website that
+        // does not exist, and nothing in the answer says why: whoever runs the measured website
+        // learns that from their own dashboard.
         if (!await allowance.AllowsAsync(site, cancellationToken).ConfigureAwait(false))
         {
-            return IngestOutcome.Rejected;
+            return Refused(IngestOutcome.Rejected);
         }
 
         if (!IsOriginPermitted(site, context.RequestOrigin, url.Host, out var candidateHost))
@@ -140,7 +159,7 @@ public sealed partial class EventIngestor(
                 Log.OriginRefused(logger, refusedHost, site.Domain, site.Id);
             }
 
-            return IngestOutcome.Rejected;
+            return Refused(IngestOutcome.Rejected);
         }
 
         // Turned off, so the report is dropped where it arrives rather than stored and filtered
@@ -149,15 +168,18 @@ public sealed partial class EventIngestor(
         // more.
         if (command.Kind == EventKind.Action && !site.CaptureClicks)
         {
-            return IngestOutcome.Rejected;
+            return Refused(IngestOutcome.Rejected);
         }
 
         var receivedAt = timeProvider.GetUtcNow();
         var rawEvent = BuildEvent(command, context, site, url, receivedAt);
 
         await eventSink.WriteAsync(rawEvent, cancellationToken).ConfigureAwait(false);
-        return IngestOutcome.Accepted;
+        return new IngestReceipt(IngestOutcome.Accepted, site.CaptureClicks);
     }
+
+    /// <summary>A report that was not written, which says nothing about its website.</summary>
+    private static IngestReceipt Refused(IngestOutcome outcome) => new(outcome, RecordsPresses: false);
 
     private RawEvent BuildEvent(
         IngestCommand command,
@@ -434,10 +456,10 @@ public sealed partial class EventIngestor(
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Only here. The collector's answer stays byte-for-byte the same whatever it made of a
-    /// request, because telling a caller apart a real site identifier from an invented one is
-    /// exactly what it refuses to do — so the reason is put where the machine's owner can read it
-    /// and the sender cannot.
+    /// Only here. The collector answers every refusal alike, as it answers a report for a website
+    /// that does not exist, because telling a caller why it was turned away would tell it which
+    /// site identifiers are real and which hosts a website accepts — so the reason is put where the
+    /// machine's owner can read it and the sender cannot.
     /// </para>
     /// <para>
     /// Both are written at debug level, and that is a decision rather than an oversight: the

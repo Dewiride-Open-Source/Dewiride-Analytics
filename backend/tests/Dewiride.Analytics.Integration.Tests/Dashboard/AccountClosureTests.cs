@@ -276,6 +276,34 @@ public sealed class AccountClosureTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// On a website that records presses the collector's answer changes when its account closes: a
+    /// page view stored before is told the website records them, and one sent afterwards is told
+    /// nothing, as one for a website that does not exist is. That the website is no longer measured
+    /// is no secret kept by answering alike — how long the answer takes already shows it.
+    /// </summary>
+    [Fact]
+    public async Task A_Website_That_Records_Presses_Stops_Saying_So_The_Moment_Its_Account_Is_Closed()
+    {
+        using var account = await AccountWithOwnerAsync(recordsPresses: true).ConfigureAwait(true);
+        using var client = stack.CreateClient();
+        var report = Report(account.Site.Id, $"https://{account.Site.Domain}/posts/hello");
+
+        using var before = await PostBeaconAsync(client, report, account.Site.Domain).ConfigureAwait(true);
+
+        before.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await before.Content.ReadAsStringAsync(Cancellation.Token).ConfigureAwait(true))
+            .Should().Be("""{"presses":true}""");
+
+        await CloseAsync(account.Owner).ConfigureAwait(true);
+
+        using var after = await PostBeaconAsync(client, report, account.Site.Domain).ConfigureAwait(true);
+
+        after.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await after.Content.ReadAsStringAsync(Cancellation.Token).ConfigureAwait(true)).Should().BeEmpty();
+        (await StoredCountAsync(account.Site.Id).ConfigureAwait(true)).Should().Be(1);
+    }
+
+    /// <summary>
     /// A server key still authorises the reporter — it was issued for the website and has not
     /// been withdrawn — but every observation it reports is turned away, and the count in the
     /// answer says so, which is the one place a reporter's operator can see that it happened.
@@ -731,9 +759,13 @@ public sealed class AccountClosureTests(AnalyticsStackFixture stack)
     /// the tests about what owners receive sign in on a copy of the product whose messages are
     /// kept, while every other test signs in on the stack itself.
     /// </remarks>
-    private async Task<Account> AccountWithOwnerAsync(WebApplicationFactory<Program>? host = null)
+    private async Task<Account> AccountWithOwnerAsync(
+        WebApplicationFactory<Program>? host = null,
+        bool recordsPresses = false)
     {
-        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain()).ConfigureAwait(false);
+        var site = await ControlPlaneSeed
+            .AddSiteAsync(stack, domain: Domain(), configure: created => created.SetClickCapture(recordsPresses))
+            .ConfigureAwait(false);
         var owner = await OwnerAddedAsync(site.OrganizationId).ConfigureAwait(false);
         var browser = await SignedInOnAsync(host ?? stack, owner.Address).ConfigureAwait(false);
 

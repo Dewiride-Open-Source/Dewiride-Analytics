@@ -115,10 +115,11 @@ public sealed record ServerObservation
 /// What became of a batch.
 /// </summary>
 /// <remarks>
-/// This endpoint answers plainly, unlike the browser collector, which says nothing at all. The
-/// difference is that this caller has already proved it holds a key for the site, so there is
-/// nothing left for the answer to disclose — and whoever is writing the reporter needs to know
-/// whether it is working.
+/// This endpoint says what became of every observation, unlike the browser collector, which tells a
+/// page whose page view it stored for a website that records presses only that, and answers every
+/// other report it reads with nothing. The difference is that this caller has already proved it
+/// holds a key for the site, so there is nothing left for the answer to disclose — and whoever is
+/// writing the reporter needs to know whether it is working.
 /// </remarks>
 /// <param name="Accepted">Observations that were stored.</param>
 /// <param name="Rejected">

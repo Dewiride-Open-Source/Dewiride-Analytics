@@ -18,6 +18,7 @@ namespace Dewiride.Analytics.Api.Contracts;
     ReadCommentHandling = JsonCommentHandling.Disallow,
     AllowTrailingCommas = false)]
 [JsonSerializable(typeof(CollectRequest))]
+[JsonSerializable(typeof(CollectAnswer))]
 [JsonSerializable(typeof(ServerCollectRequest))]
 [JsonSerializable(typeof(ServerCollectResponse))]
 [JsonSerializable(typeof(CreateServerKeyRequest))]

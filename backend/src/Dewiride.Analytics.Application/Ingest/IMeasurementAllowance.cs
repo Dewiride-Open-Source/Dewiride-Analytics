@@ -31,9 +31,8 @@ public interface IMeasurementAllowance
     /// <param name="site">The site the report is for, already resolved.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// <see langword="true"/> to store the report. A refusal is silent to the sender: the
-    /// collector's answer is the same either way, because it is the same answer it gives to a site
-    /// that does not exist.
+    /// <see langword="true"/> to store the report. A refusal is answered as a report for a site
+    /// that does not exist is, and says nothing of why.
     /// </returns>
     ValueTask<bool> AllowsAsync(SiteSnapshot site, CancellationToken cancellationToken);
 }

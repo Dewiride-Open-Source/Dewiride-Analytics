@@ -79,8 +79,10 @@ and the [master plan](#master-plan) below it says what does not yet.
   link to. What is kept of a click is the words on the control and where it pointed — nothing is
   ever read out of a text box — and nothing at all about where on the screen they pressed. It
   starts switched off for every website, because on pages that show visitors their own messages,
-  names or accounts the words on the buttons are theirs. Until a browser is told otherwise it still
-  sends each press, and the collector drops it unstored for a website that records none; a
+  names or accounts the words on the buttons are theirs. A page opened on a website that records
+  none sends no presses: the reply to its first page view says whether to listen for one, and any
+  that still arrive — from a page opened before recording was switched off, say — are dropped
+  unstored. Presses are recorded from Chrome 67, Edge 79, Firefox 133 and Safari 14 onwards, and a
   `data-dw-ignore` attribute keeps any part of a page out of it altogether.
 - A tracker you paste into your own site, and an image fallback for readers whose browsers run no
   scripts. The dashboard hands you both lines with your address already filled in.
@@ -296,8 +298,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
   the control; nothing is read out of a text box, and a list is never named by its choices.
 - **Done** · Where a visitor came from is kept only up to its path: what followed it, where a search
   box usually puts what was searched for, is cut.
-- **Not started** · A browser that sends no presses at all for a website that records none — today
-  it sends them, and the collector drops them unstored.
+- **Done** · A page opened on a website that records no presses sends none: the reply to its first
+  page view says whether to listen for one.
 - **Done** · Timestamps from the browser and the server, with drift reconciled.
 - **Not started** · Campaign tags in links (utm and similar).
 - **Not started** · Active time told apart from idle time — today only "on screen" is measured.
@@ -635,9 +637,8 @@ To stop: `docker compose down`. To start over from nothing, including wiping the
 A website only accepts reports from its own address and addresses below it. That check is what
 stops a stranger writing traffic into your numbers — the site identifier is printed in the source
 of every page it measures, so anyone can read one — but it also means a site registered as
-`example.com` discards everything sent from `localhost` while you develop against it, and the
-collector answers exactly as it does for a report it accepted. Nothing is visibly wrong; the
-dashboard simply stays at zero.
+`example.com` discards everything sent from `localhost` while you develop against it, and nothing
+in the collector's answer says so. Nothing is visibly wrong; the dashboard simply stays at zero.
 
 To see why, set `ENGINE_LOG_LEVEL=Debug` in `.env` and restart the engine:
 

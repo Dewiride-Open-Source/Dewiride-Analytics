@@ -62,6 +62,12 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
     /// </summary>
     private DateTimeOffset Yesterday => Now.AddDays(-1);
 
+    /// <summary>
+    /// Midday yesterday, by the clock visitor keys are renewed at — for a visit whose pages are
+    /// left open, which near midnight would be read as still reporting under the next day's key.
+    /// </summary>
+    private DateTimeOffset YesterdayAtNoon => new(Now.UtcDateTime.Date.AddDays(-1).AddHours(12), TimeSpan.Zero);
+
     [Fact]
     public async Task Somebody_Reading_Is_Not_Called_Automation()
     {
@@ -1187,6 +1193,426 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         found.Should().HaveCount(2).And.OnlyContain(visit => visit.Evidence.SentBy == SourceChannel.Direct);
     }
 
+    /// <summary>
+    /// The visit fleets of browsers made on a live installation: one page opened straight, the
+    /// tracker's first account of a page still open at fifteen seconds, and nothing after it — the
+    /// browser was switched off rather than the page closed. It reaches the engine as a page left
+    /// open, and a browser keeping a page open is not called a person.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_Left_Open_And_Never_Said_To_Be_Left_Is_Not_Taken_For_Reading()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = YesterdayAtNoon;
+
+        await WriteAsync(
+            Page(site.Id, "left-open", at, "/posts/hello", Chrome),
+            Progress(site.Id, "left-open", at.AddSeconds(15), "/posts/hello", 15_005));
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.EngagedMs.Should().Be(15_005);
+        found[0].Evidence.LeftOpenMs.Should().Be(15_005);
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.Unknown);
+        visits[0].Verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.LeftOpen);
+        visits[0].Verdict.Supporting.Should().NotContain(signal => signal.Code == SignalCodes.ReadTime);
+    }
+
+    /// <summary>
+    /// A page read for twenty seconds, put behind another tab, and brought back for half a minute
+    /// more before the browser stopped answering: the twenty were said as the page was left, and
+    /// the thirty after them were not.
+    /// </summary>
+    [Fact]
+    public async Task Time_Up_To_The_Last_Time_A_Page_Said_It_Was_Being_Left_Is_Read_And_What_Followed_Is_Left_Open()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = YesterdayAtNoon;
+
+        await WriteAsync(
+            Page(site.Id, "returner", at, "/posts/hello", Chrome),
+            Progress(site.Id, "returner", at.AddSeconds(15), "/posts/hello", 15_000),
+            Left(site.Id, "returner", at.AddSeconds(20), "/posts/hello", 20_000),
+            Progress(site.Id, "returner", at.AddSeconds(80), "/posts/hello", 50_000));
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.EngagedMs.Should().Be(50_000);
+        found[0].Evidence.LeftOpenMs.Should().Be(30_000);
+    }
+
+    /// <summary>
+    /// A page every one of whose readings was said as it was left has nothing left open, and a
+    /// page only something on the site's own server saw has no reading to leave open at all.
+    /// </summary>
+    [Fact]
+    public async Task Nothing_Is_Left_Open_Where_Every_Page_Was_Let_Go_Of_And_Nothing_Where_Nothing_Was_Measured()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "reader", at, "/posts/hello", Chrome),
+            Progress(site.Id, "reader", at.AddSeconds(15), "/posts/hello", 15_000),
+            Left(site.Id, "reader", at.AddSeconds(40), "/posts/hello", 40_000),
+            Probe(site.Id, "unwatched", at, "/posts/hello") with { StatusCode = 200 });
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().HaveCount(2);
+        found.Single(visit => visit.Evidence.SessionKey.StartsWith("reader", StringComparison.Ordinal))
+            .Evidence.LeftOpenMs.Should().Be(0);
+        found.Single(visit => visit.Evidence.SessionKey.StartsWith("unwatched", StringComparison.Ordinal))
+            .Evidence.LeftOpenMs.Should().BeNull();
+    }
+
+    /// <summary>
+    /// What a page opened in a sandbox and hurried through looks like on a live installation: the
+    /// tracker's fifteen-second wait over within two seconds, by the page's own time of day and by
+    /// the time it says it was in front of somebody alike. Whatever else the page did, its timers
+    /// ran ahead of its clocks.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_Whose_Wait_Was_Cut_Short_Is_Something_Automated()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "sandbox", at, "/posts/hello", Chrome) with { ClientTimestamp = at },
+            Progress(site.Id, "sandbox", at.AddSeconds(2), "/posts/hello", 1_800) with
+            {
+                ClientTimestamp = at.AddMilliseconds(1_850),
+                HadPointerInteraction = true,
+                ScrollDepthPercent = 60,
+            },
+            Progress(site.Id, "sandbox", at.AddSeconds(4), "/posts/hello", 3_600) with
+            {
+                ClientTimestamp = at.AddMilliseconds(3_650),
+            },
+            Left(site.Id, "sandbox", at.AddSeconds(25), "/posts/hello", 25_000) with
+            {
+                ClientTimestamp = at.AddSeconds(25),
+                HadPointerInteraction = true,
+                ScrollDepthPercent = 60,
+            });
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.SoonestProgressMs.Should().Be(1_850);
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        visits[0].Verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.WaitCutShort);
+    }
+
+    /// <summary>
+    /// A browser that reports the time a page has been in front of somebody at a fraction of the
+    /// real rate, while its timers keep real time: its first report arrives on time by the page's
+    /// own clock, so the longer of the two readings is the full wait, and it is not taken for a
+    /// wait cut short.
+    /// </summary>
+    [Fact]
+    public async Task A_Browser_Whose_Reading_Clock_Runs_Slow_Is_Not_Taken_For_A_Wait_Cut_Short()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "slow-clock", at, "/posts/hello", Chrome) with { ClientTimestamp = at },
+            Progress(site.Id, "slow-clock", at.AddSeconds(15), "/posts/hello", 8_300) with
+            {
+                ClientTimestamp = at.AddSeconds(15),
+            });
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.SoonestProgressMs.Should().Be(15_000);
+    }
+
+    /// <summary>
+    /// The longer of the two clocks is read, whichever it is: a report the page's time of day puts
+    /// five seconds after the page opened, but which says the page was in front of somebody for
+    /// the whole fifteen, took its wait.
+    /// </summary>
+    [Fact]
+    public async Task The_Longer_Of_A_Reports_Two_Clocks_Is_The_One_Read()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "clock-set-back", at, "/posts/hello", Chrome) with { ClientTimestamp = at },
+            Progress(site.Id, "clock-set-back", at.AddSeconds(15), "/posts/hello", 15_000) with
+            {
+                ClientTimestamp = at.AddSeconds(5),
+            });
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.SoonestProgressMs.Should().Be(15_000);
+    }
+
+    /// <summary>
+    /// Two tabs of one page opened five seconds apart, on a browser whose reading clock runs at
+    /// half the real rate: the first tab's report reaches the collector after the second tab's
+    /// page view and is filed with it. Read against the second tab's opening, both of its clocks
+    /// would look short; it is not read against it, because only the first page at an address in
+    /// a visit is read for how soon its wait was over.
+    /// </summary>
+    [Fact]
+    public async Task A_Report_Is_Never_Read_Against_A_Later_Opening_Of_The_Same_Page()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "two-tabs", at, "/posts/hello", Chrome) with { ClientTimestamp = at },
+            Page(site.Id, "two-tabs", at.AddSeconds(5), "/posts/hello", Chrome) with { ClientTimestamp = at.AddSeconds(5) },
+            Progress(site.Id, "two-tabs", at.AddSeconds(15), "/posts/hello", 7_500) with
+            {
+                ClientTimestamp = at.AddSeconds(15),
+            });
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.SoonestProgressMs.Should().BeNull();
+    }
+
+    /// <summary>
+    /// A report filed with a page but sent, by its own time of day, before that page opened came
+    /// from somewhere else — a tab of the same page from earlier — and is never read against this
+    /// page's opening.
+    /// </summary>
+    [Fact]
+    public async Task A_Report_Sent_Before_The_Page_It_Is_Filed_With_Opened_Is_Not_Read_Against_It()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "earlier-tab", at, "/posts/hello", Chrome) with { ClientTimestamp = at },
+            Progress(site.Id, "earlier-tab", at.AddSeconds(1), "/posts/hello", 1_800) with
+            {
+                ClientTimestamp = at.AddSeconds(-2),
+            });
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.SoonestProgressMs.Should().BeNull();
+    }
+
+    /// <summary>
+    /// A reader jumps to another section of a page, which reports the page being left and arrived
+    /// at again under the same address, and the report of it being left reaches the collector a
+    /// moment after the new arrival. The first stretch of the page is not taken for one left open:
+    /// its leaving was filed with the next.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_Arrived_At_Again_At_The_Same_Address_Is_Not_Taken_For_One_Left_Open()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "sections", at, "/docs/guide", Chrome),
+            Progress(site.Id, "sections", at.AddSeconds(15), "/docs/guide", 15_000),
+            Page(site.Id, "sections", at.AddSeconds(20), "/docs/guide", Chrome),
+            Left(site.Id, "sections", at.AddSeconds(20).AddMilliseconds(80), "/docs/guide", 20_000),
+            Left(site.Id, "sections", at.AddSeconds(30), "/docs/guide", 10_000));
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.LeftOpenMs.Should().Be(0);
+    }
+
+    /// <summary>
+    /// A visitor's key is renewed at midnight, so what a page still open then reports afterwards
+    /// is filed under a key that never arrived at it. A page that reported within a progress
+    /// report's interval of midnight is not taken for one left open; one that fell silent well
+    /// before midnight is.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_Still_Reporting_At_Midnight_Is_Not_Taken_For_One_Left_Open()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var midnight = new DateTimeOffset(Now.UtcDateTime.Date.AddDays(-1), TimeSpan.Zero);
+        var late = midnight.AddSeconds(-60);
+        var early = midnight.AddMinutes(-10);
+
+        await WriteAsync(
+            Page(site.Id, "midnight", late, "/posts/hello", Chrome),
+            Progress(site.Id, "midnight", late.AddSeconds(15), "/posts/hello", 15_000),
+            Progress(site.Id, "midnight", late.AddSeconds(45), "/posts/hello", 45_000),
+            Page(site.Id, "evening", early, "/posts/hello", Chrome),
+            Progress(site.Id, "evening", early.AddSeconds(15), "/posts/hello", 15_000));
+
+        var found = await ReadSessionsAsync(site, midnight.AddDays(-1));
+
+        found.Should().HaveCount(2);
+        found.Single(visit => visit.Evidence.SessionKey.StartsWith("midnight", StringComparison.Ordinal))
+            .Evidence.LeftOpenMs.Should().Be(0);
+        found.Single(visit => visit.Evidence.SessionKey.StartsWith("evening", StringComparison.Ordinal))
+            .Evidence.LeftOpenMs.Should().Be(15_000);
+    }
+
+    /// <summary>
+    /// A page left before its first report of how it was going says nothing about how soon that
+    /// report came, and a report missing either of its readings is never read as nought.
+    /// </summary>
+    [Fact]
+    public async Task A_Wait_Is_Not_Read_Where_Any_Of_Its_Readings_Is_Missing()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "glance", at, "/posts/hello", Chrome) with { ClientTimestamp = at },
+            Left(site.Id, "glance", at.AddSeconds(5), "/posts/hello", 5_000) with { ClientTimestamp = at.AddSeconds(5) },
+            Page(site.Id, "no-time-of-day", at.AddMinutes(1), "/posts/hello", Chrome) with
+            {
+                ClientTimestamp = at.AddMinutes(1),
+            },
+            Progress(site.Id, "no-time-of-day", at.AddMinutes(1).AddSeconds(2), "/posts/hello", 1_800),
+            Page(site.Id, "no-reading", at.AddMinutes(2), "/posts/hello", Chrome) with
+            {
+                ClientTimestamp = at.AddMinutes(2),
+            },
+            Progress(site.Id, "no-reading", at.AddMinutes(2).AddSeconds(2), "/posts/hello", 1_800) with
+            {
+                ClientTimestamp = at.AddMinutes(2).AddSeconds(2),
+                EngagedMs = null,
+            });
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().HaveCount(3).And.OnlyContain(visit => visit.Evidence.SoonestProgressMs == null);
+    }
+
+    /// <summary>
+    /// A page both the site's own server and the tracker reported is one page, and its wait is
+    /// read against the time of day the tracker's page view gave, whichever report opens it.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_Both_The_Server_And_The_Tracker_Saw_Is_Read_Against_The_Trackers_Opening()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Probe(site.Id, "both-halves", at, "/posts/hello") with { StatusCode = 200, UserAgent = Chrome, ClientTimestamp = at },
+            Page(site.Id, "both-halves", at.AddMilliseconds(300), "/posts/hello", Chrome) with
+            {
+                ClientTimestamp = at.AddMilliseconds(300),
+            },
+            Progress(site.Id, "both-halves", at.AddSeconds(2), "/posts/hello", 1_800) with
+            {
+                ClientTimestamp = at.AddMilliseconds(2_300),
+            });
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.SoonestProgressMs.Should().Be(2_000);
+    }
+
+    /// <summary>
+    /// Across a visit's pages: one let go of, one left open, one never reported on and one whose
+    /// wait was cut short. What was left open is the open pages' time, and how soon a wait was over
+    /// is the cut-short page's.
+    /// </summary>
+    [Fact]
+    public async Task Pages_Left_Open_And_Waits_Cut_Short_Are_Read_Across_A_Whole_Visit()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = YesterdayAtNoon;
+
+        await WriteAsync(
+            Page(site.Id, "four-pages", at, "/a", Chrome),
+            Left(site.Id, "four-pages", at.AddSeconds(30), "/a", 30_000),
+            Page(site.Id, "four-pages", at.AddSeconds(31), "/b", Chrome),
+            Progress(site.Id, "four-pages", at.AddSeconds(46), "/b", 15_000),
+            Page(site.Id, "four-pages", at.AddSeconds(60), "/c", Chrome),
+            Page(site.Id, "four-pages", at.AddSeconds(70), "/d", Chrome) with { ClientTimestamp = at.AddSeconds(70) },
+            Progress(site.Id, "four-pages", at.AddSeconds(72), "/d", 1_800) with
+            {
+                ClientTimestamp = at.AddSeconds(70).AddMilliseconds(1_850),
+            });
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.EngagedMs.Should().Be(46_800);
+        found[0].Evidence.LeftOpenMs.Should().Be(16_800);
+        found[0].Evidence.SoonestProgressMs.Should().Be(1_850);
+    }
+
+    /// <summary>
+    /// One report claiming a page was open for as long as a reading can say does not swallow what
+    /// the visit's other pages said as they were left: what was read is the seventy seconds the
+    /// first page said, whatever the second claimed.
+    /// </summary>
+    [Fact]
+    public async Task One_Impossible_Report_Does_Not_Swallow_What_Other_Pages_Said_As_They_Were_Left()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = YesterdayAtNoon;
+
+        await WriteAsync(
+            Page(site.Id, "impossible", at, "/a", Chrome),
+            Left(site.Id, "impossible", at.AddSeconds(70), "/a", 70_000),
+            Page(site.Id, "impossible", at.AddSeconds(71), "/b", Chrome),
+            Progress(site.Id, "impossible", at.AddSeconds(86), "/b", int.MaxValue));
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.EngagedMs.Should().Be(int.MaxValue);
+        (found[0].Evidence.EngagedMs - found[0].Evidence.LeftOpenMs).Should().Be(70_000);
+    }
+
+    /// <summary>
+    /// A reporter on the site's own server keeps a different clock from the tracker's, so a page
+    /// whose opening only the server saw has no time of day the tracker's report can be read
+    /// against — and nothing missing is read as nought.
+    /// </summary>
+    [Fact]
+    public async Task A_Report_Is_Never_Read_Against_A_Time_Of_Day_The_Tracker_Did_Not_Give()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Probe(site.Id, "server-seen", at, "/posts/hello") with { StatusCode = 200, ClientTimestamp = at },
+            Progress(site.Id, "server-seen", at.AddSeconds(2), "/posts/hello", 1_800) with
+            {
+                ClientTimestamp = at.AddSeconds(2),
+            });
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.SoonestProgressMs.Should().BeNull();
+    }
+
     /// <summary>A search engine's results page, as a browser names it.</summary>
     private const string Bing = "https://www.bing.com/search?q=traffic+authenticity";
 
@@ -1349,6 +1775,25 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
 
         return [.. reports];
     }
+
+    /// <summary>
+    /// The tracker's running account of a page still open: how long it has been in front of
+    /// somebody so far, the first screen in view, nothing pressed.
+    /// </summary>
+    private static RawEvent Progress(Guid siteId, string visitor, DateTimeOffset at, string path, int engagedMs) =>
+        Page(siteId, visitor, at, path, Chrome) with
+        {
+            Kind = EventKind.Engagement,
+            EngagedMs = engagedMs,
+            ScrollDepthPercent = 18,
+            HadPointerInteraction = false,
+            HadKeyboardInteraction = false,
+            DeclaredWebDriver = false,
+        };
+
+    /// <summary>The tracker's account of a page as it is left, carrying the whole of its time so far.</summary>
+    private static RawEvent Left(Guid siteId, string visitor, DateTimeOffset at, string path, int engagedMs) =>
+        Progress(siteId, visitor, at, path, engagedMs) with { Kind = EventKind.Exit };
 
     private static RawEvent StillReading(Guid siteId, string visitor, DateTimeOffset opened, DateTimeOffset at) =>
         Page(siteId, visitor, at, "/docs", Chrome) with

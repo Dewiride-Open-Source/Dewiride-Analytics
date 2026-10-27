@@ -84,6 +84,60 @@ public sealed record SessionEvidence
     public int? EngagedMs { get; init; }
 
     /// <summary>
+    /// Of <see cref="EngagedMs"/>, the milliseconds the pages reported without saying they were
+    /// being left.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A tracker reports the time a page has been in front of somebody twice over: while the page
+    /// stays open, so that a browser shut down outright is still measured, and again as the page is
+    /// left — closed, navigated away from, or put behind another tab. Only the second is said by a
+    /// page somebody let go of. Time a page reported after the last time it said it was being left,
+    /// or at all where it never said so, is time a browser kept the page open as far as anything
+    /// heard: what somebody reading does until a laptop is shut on them, what a page does whose
+    /// last report was lost on the way, and what a program does that opens a page, waits and is
+    /// switched off without closing it.
+    /// </para>
+    /// <para>
+    /// Counted only where the reports a page was left with could have been heard. A page whose
+    /// address was arrived at again later in the visit may have had its leaving filed with the
+    /// next arrival, and a page still open at midnight goes on reporting under the next day's key;
+    /// neither is taken for a page left open.
+    /// </para>
+    /// <para>
+    /// Null where nothing could tell: where nothing measured any time at all, and where the visitor
+    /// is still on the site, whose pages are open because they are still there.
+    /// </para>
+    /// </remarks>
+    public int? LeftOpenMs { get; init; }
+
+    /// <summary>
+    /// How soon a page sent its first report of how it was going, in milliseconds, on whichever of
+    /// the two clocks that report carries says longer — the soonest across the session's pages.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The tracker waits fifteen seconds on a page before that report, and waits on the browser's
+    /// own clock. The report gives two accounts of the wait: the time the page says it was in front
+    /// of somebody, and the page's own time of day, read against the time of day its page view gave.
+    /// A browser whose timers keep to its own clocks cannot send it sooner on both; one whose timers
+    /// are hurried past them — a page opened in a sandbox to see what it does, a renderer hurrying
+    /// through a page it was handed — sends it within a second or two. One that moves its clocks
+    /// forward together with its timers reports the whole wait, and is not told apart here.
+    /// </para>
+    /// <para>
+    /// The longer of the two, because either alone can be short in an honest browser. Some report
+    /// the time a page has been in front of somebody at a fraction of the real rate while keeping
+    /// real time otherwise, and a report from one tab can be read against a second tab's page view
+    /// of the same page; neither shortens both at once.
+    /// </para>
+    /// <para>
+    /// Null where no page sent such a report, or where nothing gave the time of day it opened at.
+    /// </para>
+    /// </remarks>
+    public int? SoonestProgressMs { get; init; }
+
+    /// <summary>
     /// Deepest point of any page that came into view, as a percentage of its height. The first
     /// screen counts, so a page that was only shown reports the share of it that screen held.
     /// </summary>

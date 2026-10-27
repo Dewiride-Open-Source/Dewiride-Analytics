@@ -187,6 +187,52 @@ internal static class Visits
         HadKeyboardInteraction = false,
     };
 
+    /// <summary>
+    /// The shape measured in fleets on real traffic: one page opened straight, the tracker ran, the
+    /// page stayed open fifteen seconds and was never said to be left, nothing was pressed or typed,
+    /// and the first screen held a sixth of the page.
+    /// </summary>
+    /// <remarks>
+    /// Named for what it did and never for what it was. Real readers do this too, when a laptop is
+    /// shut on a page; measured, it is almost always a browser switched off from outside.
+    /// </remarks>
+    public static SessionEvidence APageLeftOpen() => new()
+    {
+        SessionKey = "left-open",
+        StartedAt = Noon,
+        EndedAt = Noon.AddSeconds(15),
+        Requests = Pages(1, TimeSpan.Zero),
+        Surfaces = [IngestSurface.BrowserTracker],
+        UserAgent = ChromeOnMac,
+        Language = "en-US",
+        ViewportWidth = 1366,
+        EngagedMs = 15_005,
+        LeftOpenMs = 15_005,
+        SoonestProgressMs = 15_005,
+        MaxScrollDepthPercent = 18,
+        HadPointerInteraction = false,
+        HadKeyboardInteraction = false,
+        DeclaredWebDriver = false,
+    };
+
+    /// <summary>
+    /// Somebody reading one page, whose first report of how it was going came within two seconds
+    /// by both of the clocks it carries.
+    /// </summary>
+    /// <remarks>
+    /// Everything else about it says person — it read, was seen well down the page and pressed the
+    /// pointer — which is the point: all of that happened while its timers ran ahead of its clocks.
+    /// </remarks>
+    public static SessionEvidence APageWhoseWaitWasCutShort() => AReader(pages: 1) with
+    {
+        SessionKey = "wait-cut-short",
+        SoonestProgressMs = 1_800,
+    };
+
+    private const string ChromeOnMac =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
+        + "Chrome/145.0.0.0 Safari/537.36";
+
     /// <summary>What a crawler says when it introduces itself under a name nobody has catalogued.</summary>
     public const string NamelessCrawler = "Mozilla/5.0 (compatible; NobodysBot/1.0; +https://example.com/bot)";
 

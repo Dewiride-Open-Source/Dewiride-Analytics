@@ -7,6 +7,7 @@ WITH
             visitor_key,
             correlation_id,
             server_ts,
+            client_ts,
             kind,
             path,
             status_code,
@@ -62,6 +63,7 @@ WITH
             visitor_key,
             correlation_id,
             server_ts,
+            client_ts,
             kind,
             path,
             status_code,
@@ -208,9 +210,17 @@ WITH
     (
         SELECT
             *,
-            max(engaged_ms) OVER (
-                PARTITION BY visitor_key, visit_ordinal, path, page_ordinal) AS page_engaged_ms
+            max(engaged_ms) OVER page AS page_engaged_ms,
+            maxIf(engaged_ms, kind = 'Exit' AND surface = 'BrowserTracker') OVER page AS page_left_ms,
+            max(server_ts) OVER page AS page_last_at,
+            max(page_ordinal) OVER (PARTITION BY visitor_key, visit_ordinal, path) AS last_page_ordinal,
+            minIf(client_ts, kind = 'PageView' AND surface = 'BrowserTracker') OVER page AS page_opened_on_client,
+            argMinIf(
+                (client_ts, engaged_ms),
+                (server_ts, event_id),
+                kind = 'Engagement' AND surface = 'BrowserTracker') OVER page AS first_progress
         FROM opened
+        WINDOW page AS (PARTITION BY visitor_key, visit_ordinal, path, page_ordinal)
     ),
     visits AS
     (
@@ -228,6 +238,23 @@ WITH
             anyIf(language, language != '') AS language,
             max(viewport_width) AS viewport_width,
             sumIf(page_engaged_ms, opens_page) AS engaged_ms,
+            sumIf(
+                if(
+                    page_ordinal < last_page_ordinal
+                    OR toDate(page_last_at + toIntervalSecond({progress_interval_seconds:Int64})) != toDate(page_last_at),
+                    page_engaged_ms,
+                    least(ifNull(page_left_ms, 0), page_engaged_ms)),
+                opens_page) AS read_ms,
+            minIf(
+                greatest(
+                    toUnixTimestamp64Milli(first_progress.1) - toUnixTimestamp64Milli(page_opened_on_client),
+                    first_progress.2),
+                opens_page
+                AND page_ordinal = 1
+                AND page_opened_on_client IS NOT NULL
+                AND first_progress.1 IS NOT NULL
+                AND first_progress.2 IS NOT NULL
+                AND first_progress.1 >= page_opened_on_client) AS soonest_progress_ms,
             max(scroll_depth_percent) AS max_scroll_depth_percent,
             toUInt32(countIf(had_pointer_interaction != 'Unobserved')) AS pointer_observed,
             toUInt32(countIf(had_pointer_interaction = 'Yes')) AS pointer_seen,
@@ -289,7 +316,9 @@ SELECT
     network_owner,
     if(stamped_operator != '', stamped_operator, ifNull(operator, '')) AS confirmed_operator,
     from_kind,
-    ip_address
+    ip_address,
+    read_ms,
+    soonest_progress_ms
 FROM visits
 LEFT JOIN confirmations USING (session_key)
 ORDER BY started_at, session_key
@@ -304,6 +333,7 @@ longest_visit_seconds = 86400
 max_requests = 1000
 ruleset_major = 4
 ruleset_minor = 2
+progress_interval_seconds = 75
 site_domain = 'blog.example.com'
 second_levels = ['ac', 'co', 'com', 'edu', 'go', 'gob', 'gouv', 'gov', 'govt', 'ne', 'net', 'or', 'org']
 source_keys = ['mail.google.com', 'news.google.com', 'translate.google.com', 'gemini.google.com', 'chat.openai.com', 'copilot.microsoft.com', 'com.google.android.gm', 'google', 'bing', 'yahoo', 'duckduckgo', 'ecosia', 'qwant', 'startpage', 'brave', 'kagi', 'mojeek', 'marginalia', 'searx', 'yandex', 'baidu', 'naver', 'daum', 'seznam', 'sogou', 'ask', 'aol', 'lycos', 'chatgpt', 'openai', 'perplexity', 'claude', 'copilot', 'phind', 'poe', 'facebook', 'instagram', 'threads', 'twitter', 'x', 't', 'linkedin', 'lnkd', 'reddit', 'youtube', 'youtu', 'pinterest', 'tiktok', 'bsky', 'mastodon', 'tumblr', 'vk', 'weibo', 'quora']

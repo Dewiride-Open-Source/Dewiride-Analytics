@@ -282,9 +282,10 @@ public static class EvidenceScorecard
     /// <item><description>a key was pressed, and one more observation that counts agrees: a person;</description></item>
     /// <item><description>another site sent it, the pointer was then pressed or its pages read, and
     /// one more observation that counts agrees: a person;</description></item>
-    /// <item><description>another site sent it and neither happened — under 15 seconds in front of
-    /// somebody in all, however far down a page came into view, or longer with no page seen a
-    /// quarter of the way down: the product cannot tell;</description></item>
+    /// <item><description>another site sent it and neither happened — under 15 seconds in all said as
+    /// its pages were left, however long they stayed open and however far down a page came into
+    /// view, or longer with no page seen a quarter of the way down: the product cannot
+    /// tell;</description></item>
     /// <item><description>it came straight in and no key was pressed: weighed as any other visit,
     /// which leaves it automation.</description></item>
     /// </list>
@@ -296,8 +297,9 @@ public static class EvidenceScorecard
     /// pointing the other way, so a person concluded here is never stated more firmly than some
     /// signs. The second observation is ordinarily the browser having run the tracker at all, so
     /// what this rests on in practice is one key pressed, or an arrival and one press of the
-    /// pointer, or an arrival, 15 seconds in all in front of somebody and one page seen a quarter
-    /// of the way down — and it is described as that rather than as more corroboration than it is.
+    /// pointer, or an arrival, 15 seconds in all said as the pages were left and one page seen a
+    /// quarter of the way down — and it is described as that rather than as more corroboration than
+    /// it is.
     /// </para>
     /// </remarks>
     /// <param name="evidence">What the detectors observed.</param>
@@ -342,8 +344,8 @@ public static class EvidenceScorecard
 
     /// <summary>
     /// Whether the visit was read rather than glanced at: its pages in front of somebody long enough
-    /// in all for the reading to count by itself, and one of them seen at least a quarter of the way
-    /// down.
+    /// in all, by what they said as they were left, for the reading to count by itself, and one of
+    /// them seen at least a quarter of the way down.
     /// </summary>
     /// <remarks>
     /// The depth alone is not enough, because it counts the first screen: a page short enough
@@ -352,7 +354,8 @@ public static class EvidenceScorecard
     /// the depth is what a visit that saw only the first screens of long pages does not reach. Both
     /// are the visit's rather than one page's — the time summed across its pages, the depth the
     /// furthest any of them came into view — so a short page glanced at and a long one left on its
-    /// first screen, 15 seconds between them, count as read.
+    /// first screen, 15 seconds between them said as they were left, count as read. Time a page
+    /// stayed open with no sign of being left counts for nothing here.
     /// </remarks>
     private static bool WasRead(EvidenceSet evidence) =>
         evidence.Has(SignalCodes.Scrolled) && evidence.WeightOf(SignalCodes.ReadTime) >= Substantial;

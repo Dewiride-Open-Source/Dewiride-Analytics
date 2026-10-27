@@ -790,6 +790,10 @@
         "seconds": "Your pages were open in front of somebody for {seconds, plural, one {# second} other {# seconds}}.",
         "minutes": "Your pages were open in front of somebody for about {minutes, plural, one {# minute} other {# minutes}}."
       },
+      "left_open": {
+        "seconds": "Your pages were open for {seconds, plural, one {# second} other {# seconds}} with no sign they were ever closed, so that time isn't counted as reading.",
+        "minutes": "Your pages were open for about {minutes, plural, one {# minute} other {# minutes}} with no sign they were ever closed, so that time isn't counted as reading."
+      },
       "scrolled": "A page was seen {percent}% of the way down.",
       "pointer_used": "A mouse or a finger was used on the page.",
       "keyboard_used": "A key was pressed on the page.",
@@ -805,7 +809,8 @@
     },
     "automation": {
       "declared_web_driver": "The browser said outright that software was driving it.",
-      "no_script_execution": "Something on your side saw the visit and your tracking code never ran."
+      "no_script_execution": "Something on your side saw the visit and your tracking code never ran.",
+      "wait_cut_short": "Its timing didn't add up: your tracking code waits 15 seconds, but by the page's own clock that wait was over in under {seconds, plural, one {# second} other {# seconds}}."
     },
     "browser": {
       "script_executed": "A real browser ran your tracking code.",

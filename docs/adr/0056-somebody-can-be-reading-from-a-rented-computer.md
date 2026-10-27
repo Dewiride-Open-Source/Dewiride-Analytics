@@ -20,6 +20,9 @@
   sent the visit and the pointer was then pressed or its pages read, is what tells them apart.
 - **Follows**: [0055](0055-an-answer-outlives-the-address-it-came-from.md), whose kept answers are
   part of what 10.0 is walked with.
+- **Revised by**: [0059](0059-a-page-left-open-is-not-a-page-read.md). Read means fifteen seconds in
+  front of somebody that the pages said as they were left; a page left open is not read, so one
+  another site sent that was left open is "Couldn't tell" unless something was pressed or typed.
 
 ## Context
 

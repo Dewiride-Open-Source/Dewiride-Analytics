@@ -76,8 +76,30 @@ public static class SignalCodes
     /// <summary>The visitor sent no user agent at all, which an ordinary browser never does.</summary>
     public const string NoUserAgent = "identity.no_user_agent";
 
-    /// <summary>Pages were in front of somebody for a measurable time.</summary>
+    /// <summary>
+    /// Pages were in front of somebody for a measurable time, and were then let go of.
+    /// </summary>
+    /// <remarks>
+    /// Counts only the time each page reported by the last time it said it was being left. Anything
+    /// it reported afterwards, or at all where it never said so, is <see cref="LeftOpen"/>.
+    /// </remarks>
     public const string ReadTime = "engagement.read_time";
+
+    /// <summary>
+    /// Pages stayed open in front of a browser with no sign they were ever left, so that time is
+    /// not counted as reading.
+    /// </summary>
+    /// <remarks>
+    /// A page somebody lets go of says so as it goes — closed, navigated away from, or put behind
+    /// another tab — and measured on real readers almost every one does. A program that opens a
+    /// page, waits and is switched off never does, and its wait is reported only by the tracker's
+    /// running accounts of a page still open. Pointing away from a person and too light to count,
+    /// because a reader whose laptop is shut mid-page leaves one open too, and a report that a page
+    /// was being left can be lost on the way: it is there so a reader of the verdict is told why
+    /// those seconds were not taken for reading. Carries the seconds across all of the visit's
+    /// pages.
+    /// </remarks>
+    public const string LeftOpen = "engagement.left_open";
 
     /// <summary>A page came into view at least a quarter of the way down.</summary>
     /// <remarks>
@@ -113,6 +135,18 @@ public static class SignalCodes
 
     /// <summary>Something in the request path saw the visit, and no script ever ran.</summary>
     public const string NoScriptExecution = "automation.no_script_execution";
+
+    /// <summary>
+    /// The tracker's fifteen-second wait was cut short: by both of the clocks its first report
+    /// carries, it was over sooner than the wait itself.
+    /// </summary>
+    /// <remarks>
+    /// What a page opened in a sandbox to see what it does, or hurried through by a renderer, looks
+    /// like from the inside: its timers run ahead of its own clocks. A page whose clocks are moved
+    /// forward with its timers reports the whole wait and is not caught by this. Carries how many
+    /// whole seconds the wait was over within, and nothing else.
+    /// </remarks>
+    public const string WaitCutShort = "automation.wait_cut_short";
 
     /// <summary>A browser ran the tracker, so the page was rendered by something that executes.</summary>
     public const string ScriptExecuted = "browser.script_executed";

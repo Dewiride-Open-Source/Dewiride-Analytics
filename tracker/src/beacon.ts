@@ -152,7 +152,9 @@ const AWAY = -1;
  * How long a page waits before saying how it is going, in milliseconds.
  *
  * Short enough that a reader who leaves in the first minute is still measured, and long enough
- * that a glance costs one report rather than a stream of them.
+ * that a glance costs one report rather than a stream of them. The detection engine reads a report
+ * that arrives sooner than this, by both of the clocks it carries, as a page whose wait was cut
+ * short — so changing it is a change to the engine too, and a test holds the two together.
  */
 const FIRST_PROGRESS = 15000;
 

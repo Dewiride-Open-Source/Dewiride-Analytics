@@ -129,7 +129,13 @@ export function tonesIn(judged: readonly Judged[]): readonly TonePortion[] {
  */
 const DECLARED_CRAWLER = 'identity.declared_crawler';
 const DECLARED_TOOL = 'identity.declared_tool';
-const READ_TIME = 'engagement.read_time';
+
+/**
+ * The observations that are a length of time: how long pages were read, and how long they stayed
+ * open with no sign of being closed. Each is said in seconds or in minutes, whichever a reader
+ * would use.
+ */
+const TIMED: ReadonlySet<string> = new Set(['engagement.read_time', 'engagement.left_open']);
 
 /**
  * The observation that the address belongs to a company's own crawlers, which is what lets a row
@@ -218,8 +224,8 @@ export function reasonKey(reason: VisitReason): string {
     return `${ARRIVED}.${SENDER_KINDS[reason.values.kind ?? ''] ?? 'link'}`;
   }
 
-  if (reason.code === READ_TIME) {
-    return `${READ_TIME}.${secondsIn(reason) >= LONG_READ_SECONDS ? 'minutes' : 'seconds'}`;
+  if (TIMED.has(reason.code)) {
+    return `${reason.code}.${secondsIn(reason) >= LONG_READ_SECONDS ? 'minutes' : 'seconds'}`;
   }
 
   return reason.code;

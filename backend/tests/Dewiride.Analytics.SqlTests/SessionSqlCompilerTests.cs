@@ -345,6 +345,98 @@ public sealed class SessionSqlCompilerTests
         answer.Should().NotContain("source_site");
     }
 
+    /// <summary>
+    /// A report of a page being left carries the whole of that page's time so far, so what the
+    /// pages said as they were left is the last such report of each — worked out page by page, on
+    /// the same pages the reading is counted over, and from the tracker's reports alone.
+    /// </summary>
+    [Fact]
+    public void What_A_Page_Said_As_It_Was_Left_Is_The_Last_Report_Of_It_Being_Left()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+
+        sql.Should().Contain("maxIf(engaged_ms, kind = 'Exit' AND surface = 'BrowserTracker') OVER page AS page_left_ms");
+        sql.Should().Contain("WINDOW page AS (PARTITION BY visitor_key, visit_ordinal, path, page_ordinal)");
+        Between(sql, "sumIf(", "AS read_ms").Should().Contain("least(ifNull(page_left_ms, 0), page_engaged_ms)");
+    }
+
+    /// <summary>
+    /// Two pages are never taken for pages left open: one whose address was arrived at again later
+    /// in the visit, whose leaving can be filed with the next arrival, and one that reported within
+    /// a progress report's interval of midnight, whose later reports go under the next day's key.
+    /// Both count whole.
+    /// </summary>
+    [Fact]
+    public void A_Page_Whose_Leaving_May_Have_Been_Filed_Elsewhere_Counts_Whole()
+    {
+        var statement = SessionSqlCompiler.Compile(Window());
+        var read = Between(statement.Sql, "sumIf(", "AS read_ms");
+
+        statement.Sql.Should().Contain(
+            "max(page_ordinal) OVER (PARTITION BY visitor_key, visit_ordinal, path) AS last_page_ordinal");
+        statement.Sql.Should().Contain("max(server_ts) OVER page AS page_last_at");
+        read.Should().Contain("page_ordinal < last_page_ordinal");
+        read.Should().Contain(
+            "toDate(page_last_at + toIntervalSecond({progress_interval_seconds:Int64})) != toDate(page_last_at)");
+        statement.Parameters.Should().Contain(parameter =>
+            parameter.Name == "progress_interval_seconds"
+            && (long)parameter.Value == (long)SessionSqlCompiler.ProgressInterval.TotalSeconds);
+    }
+
+    /// <summary>
+    /// The first report of how a page was going is read against the time of day the tracker's own
+    /// page view gave, because a reporter on the site's server keeps a different clock — and only
+    /// where all three readings exist, so nothing missing is ever read as nought.
+    /// </summary>
+    [Fact]
+    public void A_Pages_First_Report_Is_Read_Against_The_Time_Of_Day_The_Trackers_Own_Page_View_Gave()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+        var soonest = Between(sql, "AS read_ms", "AS soonest_progress_ms");
+
+        sql.Should().Contain("minIf(client_ts, kind = 'PageView' AND surface = 'BrowserTracker') OVER page AS page_opened_on_client");
+        Between(sql, "argMinIf(", "AS first_progress")
+            .Should().Contain("(client_ts, engaged_ms)")
+            .And.Contain("(server_ts, event_id)")
+            .And.Contain("kind = 'Engagement' AND surface = 'BrowserTracker'");
+        soonest.Should().Contain("greatest(");
+        soonest.Should().Contain("toUnixTimestamp64Milli(first_progress.1) - toUnixTimestamp64Milli(page_opened_on_client)");
+        soonest.Should().Contain("AND page_opened_on_client IS NOT NULL");
+        soonest.Should().Contain("AND first_progress.1 IS NOT NULL");
+        soonest.Should().Contain("AND first_progress.2 IS NOT NULL");
+    }
+
+    /// <summary>
+    /// Only the first page at an address in a visit is read for how soon its wait was over, and only
+    /// a report sent after that page opened: a report another tab or an earlier page at the same
+    /// address sent cannot be read against this one's opening.
+    /// </summary>
+    [Fact]
+    public void A_Wait_Is_Read_Only_Where_Nothing_Earlier_At_The_Same_Address_Can_Have_Spilled_Into_It()
+    {
+        var soonest = Between(SessionSqlCompiler.Compile(Window()).Sql, "AS read_ms", "AS soonest_progress_ms");
+
+        soonest.Should().Contain("AND page_ordinal = 1");
+        soonest.Should().Contain("AND first_progress.1 >= page_opened_on_client");
+    }
+
+    /// <summary>
+    /// What the two readings are worked out from — the page's own time of day — stays inside the
+    /// statement; only the lengths of time leave it.
+    /// </summary>
+    [Fact]
+    public void Only_Lengths_Of_Time_Leave_The_Statement_And_Never_A_Time_Of_Day()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+        var answer = sql[sql.LastIndexOf("SELECT", StringComparison.Ordinal)..];
+
+        answer.Should().Contain("read_ms");
+        answer.Should().Contain("soonest_progress_ms");
+        answer.Should().NotContain("client_ts");
+        answer.Should().NotContain("first_progress");
+        answer.Should().NotContain("page_last_at");
+    }
+
     /// <summary>The text from one marker to the first occurrence of another after it.</summary>
     /// <param name="sql">The statement.</param>
     /// <param name="from">Where the slice starts.</param>

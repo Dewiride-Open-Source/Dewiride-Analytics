@@ -8,10 +8,12 @@ namespace Dewiride.Analytics.Domain.Telemetry;
 /// <para>
 /// Two timestamps are carried deliberately. <see cref="ServerTimestamp"/> is stamped by the
 /// collector and is the only one any query may order or bucket by.
-/// <see cref="ClientTimestamp"/> is whatever the client claimed and is never trusted — it
-/// exists so that <see cref="ClockSkewMs"/> can be derived, which is itself a
-/// classification feature: automation frequently runs on hosts whose clocks are either
-/// perfectly synchronised or wildly wrong, and both are informative.
+/// <see cref="ClientTimestamp"/> is whatever the client claimed and is never trusted as a time
+/// anything happened. It is read two ways: to derive <see cref="ClockSkewMs"/>, because
+/// automation frequently runs on hosts whose clocks are either perfectly synchronised or wildly
+/// wrong; and within one page, as the time a tracker's report gives against the time its page
+/// view gave, which is one of the two clocks a page's first report of how it was going is read
+/// on when deciding whether its wait was cut short.
 /// </para>
 /// <para>
 /// Field-level privacy notes are on the individual members. The envelope is defined in
@@ -40,8 +42,9 @@ public sealed record RawEvent
     public required DateTimeOffset ServerTimestamp { get; init; }
 
     /// <summary>
-    /// Time the client claimed, if it supplied one. Untrusted; retained only to derive
-    /// <see cref="ClockSkewMs"/>.
+    /// Time the client claimed, if it supplied one. Untrusted as a time anything happened; read to
+    /// derive <see cref="ClockSkewMs"/>, and against the same page's other reports by the same
+    /// client to see how long a page's own clock says passed between them.
     /// </summary>
     public DateTimeOffset? ClientTimestamp { get; init; }
 

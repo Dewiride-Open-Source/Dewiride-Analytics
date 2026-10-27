@@ -87,6 +87,24 @@ describe('choosing an observation a sentence', () => {
     );
   });
 
+  it('says pages left open for a short while in seconds', () => {
+    expect(reasonKey(reason('engagement.left_open', { seconds: '15' }, 20))).toBe(
+      'engagement.left_open.seconds',
+    );
+  });
+
+  it('says pages left open for a long while in minutes', () => {
+    expect(reasonKey(reason('engagement.left_open', { seconds: '1485' }, 20))).toBe(
+      'engagement.left_open.minutes',
+    );
+  });
+
+  it('says a wait cut short in one sentence however long the wait took', () => {
+    expect(reasonKey(reason('automation.wait_cut_short', { seconds: '2' }, 75))).toBe(
+      'automation.wait_cut_short',
+    );
+  });
+
   it('uses the observation itself for everything that reads the same however it happened', () => {
     expect(reasonKey(reason('engagement.pointer_used'))).toBe('engagement.pointer_used');
   });

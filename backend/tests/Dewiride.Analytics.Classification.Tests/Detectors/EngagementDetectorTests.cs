@@ -107,6 +107,115 @@ public sealed class EngagementDetectorTests
             .Should().NotContain(signal => signal.Code == SignalCodes.NoEngagement);
     }
 
+    /// <summary>
+    /// A page somebody let go of says so as it goes. What a page reported after it last said so is
+    /// a browser keeping the page open, and the reading is what came before.
+    /// </summary>
+    [Fact]
+    public void Time_A_Page_Was_Left_Open_Is_Not_Counted_As_Reading()
+    {
+        var found = Detector.Examine(Visits.AReader(engagedMs: 45_000) with { LeftOpenMs = 15_000 });
+
+        found.Single(signal => signal.Code == SignalCodes.ReadTime).Parameters["seconds"].Should().Be("30");
+    }
+
+    [Fact]
+    public void A_Visit_Whose_Every_Second_Was_Left_Open_Has_No_Reading()
+    {
+        var found = Detector.Examine(Visits.APageLeftOpen());
+
+        found.Should().NotContain(signal => signal.Code == SignalCodes.ReadTime);
+    }
+
+    /// <summary>
+    /// The seconds a reader is shown for the visit are never dropped in silence: the verdict says
+    /// they were a page left open, and says it too lightly for it to count against anybody.
+    /// </summary>
+    [Fact]
+    public void A_Page_Left_Open_Is_Said_So_Pointing_Away_From_A_Person_Too_Lightly_To_Count()
+    {
+        var leftOpen = Detector.Examine(Visits.APageLeftOpen()).Single(signal => signal.Code == SignalCodes.LeftOpen);
+
+        leftOpen.Direction.Should().Be(SignalDirection.TowardAutomation);
+        leftOpen.Weight.Should().BeLessThan(25);
+        leftOpen.Parameters.Should().ContainSingle().Which.Should().Be(new KeyValuePair<string, string>("seconds", "15"));
+    }
+
+    /// <summary>
+    /// The seconds said to have been left open are those, not the visit's whole time, and the
+    /// reading beside them is what remains.
+    /// </summary>
+    [Fact]
+    public void Time_Left_Open_Is_Said_Beside_The_Reading_That_Remains()
+    {
+        var found = Detector.Examine(Visits.AReader(engagedMs: 45_000) with { LeftOpenMs = 15_000 });
+
+        found.Single(signal => signal.Code == SignalCodes.LeftOpen).Parameters["seconds"].Should().Be("15");
+        found.Single(signal => signal.Code == SignalCodes.ReadTime).Parameters["seconds"].Should().Be("30");
+    }
+
+    /// <summary>
+    /// A moment left open is not worth a sentence, on the same terms as a moment read.
+    /// </summary>
+    [Theory]
+    [InlineData(1_999, false)]
+    [InlineData(2_000, true)]
+    public void Time_Left_Open_Is_Said_From_Two_Seconds(int leftOpenMs, bool said)
+    {
+        var found = Detector.Examine(Visits.AReader(engagedMs: 45_000) with { LeftOpenMs = leftOpenMs });
+
+        found.Any(signal => signal.Code == SignalCodes.LeftOpen).Should().Be(said);
+    }
+
+    /// <summary>
+    /// Whether a reading counts in full is decided on the time said as the pages were left, not on
+    /// the time they were open.
+    /// </summary>
+    [Fact]
+    public void A_Reading_Counts_In_Full_From_Fifteen_Seconds_Said_As_The_Pages_Were_Left()
+    {
+        var almost = Weight(Visits.AReader(engagedMs: 30_000) with { LeftOpenMs = 15_001 }, SignalCodes.ReadTime);
+        var reached = Weight(Visits.AReader(engagedMs: 30_000) with { LeftOpenMs = 15_000 }, SignalCodes.ReadTime);
+
+        almost.Should().BeLessThan(reached);
+    }
+
+    [Fact]
+    public void A_Reading_Whose_Pages_Were_All_Let_Go_Of_Is_Counted_Whole_And_Nothing_Is_Said_Of_Pages_Left_Open()
+    {
+        var found = Detector.Examine(Visits.AReader(engagedMs: 45_000) with { LeftOpenMs = 0 });
+
+        found.Single(signal => signal.Code == SignalCodes.ReadTime).Parameters["seconds"].Should().Be("45");
+        found.Should().NotContain(signal => signal.Code == SignalCodes.LeftOpen);
+    }
+
+    /// <summary>
+    /// Somebody still on the site has pages open because they are still there. Where nothing could
+    /// say how much was left open, all of the time is reading.
+    /// </summary>
+    [Fact]
+    public void Where_Nothing_Could_Say_What_Was_Left_Open_All_Of_The_Time_Is_Reading()
+    {
+        var found = Detector.Examine(Visits.AReader(engagedMs: 45_000) with { LeftOpenMs = null });
+
+        found.Single(signal => signal.Code == SignalCodes.ReadTime).Parameters["seconds"].Should().Be("45");
+        found.Should().NotContain(signal => signal.Code == SignalCodes.LeftOpen);
+    }
+
+    /// <summary>
+    /// A page kept open in front of a browser is something happening, even where it is not somebody
+    /// reading. Called silence, a reader whose laptop was shut on two pages would be a visit nobody
+    /// was ever at.
+    /// </summary>
+    [Fact]
+    public void Pages_Left_Open_Are_Not_Called_Silence()
+    {
+        var twoPagesLeftOpen = Untouched() with { EngagedMs = 30_000, LeftOpenMs = 30_000 };
+
+        Detector.Examine(twoPagesLeftOpen)
+            .Should().NotContain(signal => signal.Code == SignalCodes.NoEngagement);
+    }
+
     private static SessionEvidence Untouched() =>
         Visits.AReader() with
         {

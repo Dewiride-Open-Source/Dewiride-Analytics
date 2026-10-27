@@ -40,6 +40,7 @@ public sealed class TrafficClassifier(ImmutableArray<IDetector> detectors, Rules
         new NetworkDetector(),
         new ArrivalDetector(),
         new RenderingDetector(),
+        new TimingDetector(),
         new ProbingDetector(),
         new RetrievalDetector(),
         new EngagementDetector(),

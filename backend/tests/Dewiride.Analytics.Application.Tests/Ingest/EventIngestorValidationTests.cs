@@ -87,6 +87,39 @@ public sealed class EventIngestorValidationTests
         outcome.Should().Be(IngestOutcome.Invalid);
     }
 
+    /// <summary>
+    /// A time of day no clock reads is no reading at all, and one past what a date can hold would
+    /// otherwise fail while the report was being built rather than be refused.
+    /// </summary>
+    [Theory]
+    [InlineData(long.MaxValue)]
+    [InlineData(long.MinValue)]
+    [InlineData(10_413_792_000_000)]
+    [InlineData(-2_208_988_800_001)]
+    public async Task Rejects_A_Time_Of_Day_No_Clock_Could_Read(long claimedUnixMs)
+    {
+        var harness = IngestHarness.ForSite();
+        var command = IngestHarness.PageView() with { ClientTimestampUnixMs = claimedUnixMs };
+
+        var outcome = await harness.IngestAsync(command);
+
+        outcome.Should().Be(IngestOutcome.Invalid);
+    }
+
+    [Theory]
+    [InlineData(-2_208_988_800_000)]
+    [InlineData(10_413_791_999_999)]
+    public async Task Accepts_A_Time_Of_Day_At_Either_End_Of_What_Is_Kept(long claimedUnixMs)
+    {
+        var harness = IngestHarness.ForSite();
+        var command = IngestHarness.PageView() with { ClientTimestampUnixMs = claimedUnixMs };
+
+        var outcome = await harness.IngestAsync(command);
+
+        outcome.Should().Be(IngestOutcome.Accepted);
+        harness.Single.ClientTimestamp.Should().Be(DateTimeOffset.FromUnixTimeMilliseconds(claimedUnixMs));
+    }
+
     [Fact]
     public async Task Accepts_A_Scroll_Depth_Of_Exactly_The_Whole_Page()
     {

@@ -436,6 +436,25 @@ public sealed class CollectEndpointTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// A time of day past anything a date can hold is a reading that could not have happened, and is
+    /// answered as one. Failing on it instead would write a stack trace for every attempt — a log
+    /// flood anybody holding a site's public identifier could set off from a shell.
+    /// </summary>
+    [Fact]
+    public async Task A_Time_Of_Day_No_Clock_Could_Read_Is_Answered_Plainly()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        using var client = stack.CreateClient();
+
+        var report = Report(site.Id, $"https://{site.Domain}/posts/hello");
+        report["clientTimestamp"] = long.MaxValue;
+
+        var response = await PostAsync(client, report, site.Domain);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    /// <summary>
     /// An oversized body answers plainly rather than as a fault of ours. Reported as a server
     /// error it would write a stack trace for every attempt, which is a log flood anybody could
     /// set off from a shell.

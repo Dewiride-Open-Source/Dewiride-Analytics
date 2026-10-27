@@ -1,5 +1,6 @@
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Telemetry;
+using Dewiride.Analytics.Domain.Telemetry;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 
 namespace Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
@@ -71,6 +72,27 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
 /// read for the window's own visits — by site and by when each began, and never by the visitor
 /// key, which on a rented network can stand for a whole network's day.
 /// </para>
+/// <para>
+/// Two things are read about how a page's time was kept, both page by page and both from the
+/// tracker's reports alone. How much of the time a page reported was said as it was being left,
+/// because a page let go of says so as it goes and one a program opened, kept waiting and switched
+/// off never does. And how soon a page sent its first report of how it was going, on whichever of
+/// the two clocks that report carries says longer: the time the page says it was in front of
+/// somebody, and the page's own time of day read against the time of day its page view gave. The
+/// tracker waits on the browser's own clock before sending that report, so a browser whose timers
+/// keep to its clocks never sends it sooner on both.
+/// </para>
+/// <para>
+/// A page is a stretch between two arrivals at the same address, cut where the collector received
+/// them, so two things can put a page's reports in the wrong stretch. A report sent as a page is
+/// left can reach the collector after the next arrival at the same address — a reload, a jump to
+/// another section of one page, a second tab — and land in the next stretch; so only the last
+/// stretch of an address in a visit is ever taken for a page left open, and only the first is read
+/// for how soon its wait was over, because nothing earlier can spill into it. And a visitor's key
+/// is renewed at midnight, so whatever a page still open then reports afterwards is filed under a
+/// key that never arrived at it and is not read here; a page that reported within a progress
+/// report's interval of midnight is therefore taken as having been let go of.
+/// </para>
 /// </remarks>
 public static class SessionSqlCompiler
 {
@@ -83,6 +105,18 @@ public static class SessionSqlCompiler
     private const string MaxRequestsParameter = "max_requests";
     private const string RulesetMajorParameter = "ruleset_major";
     private const string RulesetMinorParameter = "ruleset_minor";
+    private const string ProgressIntervalParameter = "progress_interval_seconds";
+
+    /// <summary>
+    /// The longest a page still open in front of somebody goes without reporting, with time for
+    /// the report to arrive.
+    /// </summary>
+    /// <remarks>
+    /// The tracker reports how a page is going at least once a minute while it stays in view; a
+    /// quarter of a minute more covers the report on its way. A page whose last report reached the
+    /// collector within this of midnight may have gone on reporting under the next day's key.
+    /// </remarks>
+    public static readonly TimeSpan ProgressInterval = TimeSpan.FromSeconds(75);
 
     /// <summary>
     /// Column positions in the statement below, so the reader and the statement cannot drift.
@@ -218,7 +252,46 @@ public static class SessionSqlCompiler
         /// </para>
         /// </remarks>
         public const int Address = 22;
+
+        /// <summary>
+        /// Of the milliseconds in <see cref="EngagedMs"/>, those the pages said as they were being
+        /// left.
+        /// </summary>
+        /// <remarks>
+        /// Page by page: what the page reported the last time it said it was being left — a report of
+        /// a page being left carries the whole of that page's time so far, so the last one stands for
+        /// every earlier one — and nothing where it never said so. A page that cannot be taken for one
+        /// left open counts whole: one the same address was arrived at again after in the visit, and
+        /// one that reported within a progress report's interval of midnight. Nought where nothing
+        /// measured any time at all, which <see cref="EngagedMs"/> says by being null.
+        /// </remarks>
+        public const int ReadMs = 23;
+
+        /// <summary>
+        /// How soon, in milliseconds, a page sent its first report of how it was going, on whichever
+        /// of that report's two clocks says longer, the soonest across the visit's pages.
+        /// </summary>
+        /// <remarks>
+        /// Read only for the first page at each address in the visit, and only where the tracker's
+        /// own page view gave the time of day the page opened at, its report gave both readings and
+        /// was sent after the page opened — so nothing missing is ever read as nought, and nothing
+        /// another tab sent is read against this one's opening. A page whose opening only a server
+        /// saw has no time of day to read the report against. Null where no page qualifies.
+        /// </remarks>
+        public const int SoonestProgressMs = 24;
     }
+
+    /// <summary>
+    /// Tests whether a report came from the tracker, spelled from the stored name so the surface
+    /// tested is the one the collector writes.
+    /// </summary>
+    /// <remarks>
+    /// The tracker alone sends reports of how a page is going, and its page view alone gives the
+    /// time of day by the same clock those reports do. A reporter on the site's own server keeps a
+    /// different clock, so its page view is never read against a tracker's report.
+    /// </remarks>
+    private static readonly string FromTheTracker =
+        $"surface = '{StoredNames.SurfaceNames[IngestSurface.BrowserTracker]}'";
 
     /// <summary>
     /// The statement, with the same shape whatever the window, so the store can reuse its plan.
@@ -237,6 +310,7 @@ public static class SessionSqlCompiler
                 "visitor_key",
                 "correlation_id",
                 "server_ts",
+                "client_ts",
                 "kind",
                 "path",
                 "status_code",
@@ -259,9 +333,17 @@ public static class SessionSqlCompiler
             (
                 SELECT
                     *,
-                    max(engaged_ms) OVER (
-                        PARTITION BY visitor_key, visit_ordinal, path, page_ordinal) AS page_engaged_ms
+                    max(engaged_ms) OVER page AS page_engaged_ms,
+                    maxIf(engaged_ms, kind = 'Exit' AND {{FromTheTracker}}) OVER page AS page_left_ms,
+                    max(server_ts) OVER page AS page_last_at,
+                    max(page_ordinal) OVER (PARTITION BY visitor_key, visit_ordinal, path) AS last_page_ordinal,
+                    minIf(client_ts, kind = 'PageView' AND {{FromTheTracker}}) OVER page AS page_opened_on_client,
+                    argMinIf(
+                        (client_ts, engaged_ms),
+                        (server_ts, event_id),
+                        kind = 'Engagement' AND {{FromTheTracker}}) OVER page AS first_progress
                 FROM opened
+                WINDOW page AS (PARTITION BY visitor_key, visit_ordinal, path, page_ordinal)
             ),
             visits AS
             (
@@ -279,6 +361,23 @@ public static class SessionSqlCompiler
                     anyIf(language, language != '') AS language,
                     max(viewport_width) AS viewport_width,
                     sumIf(page_engaged_ms, opens_page) AS engaged_ms,
+                    sumIf(
+                        if(
+                            page_ordinal < last_page_ordinal
+                            OR toDate(page_last_at + toIntervalSecond({progress_interval_seconds:Int64})) != toDate(page_last_at),
+                            page_engaged_ms,
+                            least(ifNull(page_left_ms, 0), page_engaged_ms)),
+                        opens_page) AS read_ms,
+                    minIf(
+                        greatest(
+                            toUnixTimestamp64Milli(first_progress.1) - toUnixTimestamp64Milli(page_opened_on_client),
+                            first_progress.2),
+                        opens_page
+                        AND page_ordinal = 1
+                        AND page_opened_on_client IS NOT NULL
+                        AND first_progress.1 IS NOT NULL
+                        AND first_progress.2 IS NOT NULL
+                        AND first_progress.1 >= page_opened_on_client) AS soonest_progress_ms,
                     max(scroll_depth_percent) AS max_scroll_depth_percent,
                     toUInt32(countIf(had_pointer_interaction != 'Unobserved')) AS pointer_observed,
                     toUInt32(countIf(had_pointer_interaction = 'Yes')) AS pointer_seen,
@@ -340,7 +439,9 @@ public static class SessionSqlCompiler
             network_owner,
             if(stamped_operator != '', stamped_operator, ifNull(operator, '')) AS confirmed_operator,
             from_kind,
-            ip_address
+            ip_address,
+            read_ms,
+            soonest_progress_ms
         FROM visits
         LEFT JOIN confirmations USING (session_key)
         ORDER BY started_at, session_key
@@ -372,6 +473,7 @@ public static class SessionSqlCompiler
                 new QueryParameter(MaxRequestsParameter, (uint)window.MaxRequestsPerSession),
                 new QueryParameter(RulesetMajorParameter, (ushort)window.UnjudgedUnder.Major),
                 new QueryParameter(RulesetMinorParameter, (ushort)window.UnjudgedUnder.Minor),
+                new QueryParameter(ProgressIntervalParameter, (long)ProgressInterval.TotalSeconds),
                 .. SendingSites.Parameters(window.SiteDomain),
             ]);
     }

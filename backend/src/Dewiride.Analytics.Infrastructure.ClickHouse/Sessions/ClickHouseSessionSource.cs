@@ -74,7 +74,9 @@ internal sealed class ClickHouseSessionSource(IClickHouseClient client) : ISessi
         UserAgent = NullIfEmpty(reader.GetString(Column.UserAgent)),
         Language = NullIfEmpty(reader.GetString(Column.Language)),
         ViewportWidth = Reading<int>(reader, Column.ViewportWidth),
-        EngagedMs = Attention(reader),
+        EngagedMs = Milliseconds(reader, Column.EngagedMs),
+        LeftOpenMs = LeftOpen(reader),
+        SoonestProgressMs = Milliseconds(reader, Column.SoonestProgressMs),
         MaxScrollDepthPercent = Reading<byte>(reader, Column.MaxScrollDepthPercent),
         HadPointerInteraction = Watched(reader, Column.PointerObserved, Column.PointerSeen),
         HadKeyboardInteraction = Watched(reader, Column.KeyboardObserved, Column.KeyboardSeen),
@@ -124,21 +126,39 @@ internal sealed class ClickHouseSessionSource(IClickHouseClient client) : ISessi
             : reader.GetFieldValue<uint>(seenColumn) > 0;
 
     /// <summary>
-    /// Totals the time the pages were in front of somebody.
+    /// Reads a length of time the statement worked out from what the tracker reported.
     /// </summary>
     /// <remarks>
     /// Held to what the reading can express rather than trusted. The collector accepts an
     /// implausible engaged time on purpose — a report that does not add up is itself evidence
     /// about what produced it — but a visitor who sends a hundred of them would otherwise overflow
-    /// the total and hand the engine a negative one, which no detector is built to read.
+    /// a total and hand the engine a negative one, which no detector is built to read.
     /// </remarks>
     /// <param name="reader">The open reader.</param>
-    /// <returns>The total, or <see langword="null"/> when nothing measured any.</returns>
-    private static int? Attention(ClickHouseDataReader reader)
+    /// <param name="column">Where the statement put it.</param>
+    /// <returns>The length, or <see langword="null"/> when nothing measured any.</returns>
+    private static int? Milliseconds(ClickHouseDataReader reader, int column)
     {
-        var total = Reading<long>(reader, Column.EngagedMs);
+        var total = Reading<long>(reader, column);
 
         return total is null ? null : (int)Math.Clamp(total.Value, 0, int.MaxValue);
+    }
+
+    /// <summary>
+    /// Works out how much of the time the pages reported they did not say as they were being left.
+    /// </summary>
+    /// <remarks>
+    /// Taken from the total and from what was said as pages were left, each held to what a reading
+    /// can express first. Working it out as the difference of two totals held separately would let
+    /// one impossible report on one page swallow what every other page said as it was left.
+    /// </remarks>
+    /// <param name="reader">The open reader.</param>
+    /// <returns>The time, or <see langword="null"/> when nothing measured any.</returns>
+    private static int? LeftOpen(ClickHouseDataReader reader)
+    {
+        var engaged = Milliseconds(reader, Column.EngagedMs);
+
+        return engaged is null ? null : Math.Max(0, engaged.Value - (Milliseconds(reader, Column.ReadMs) ?? 0));
     }
 
     private static T? Reading<T>(ClickHouseDataReader reader, int column)

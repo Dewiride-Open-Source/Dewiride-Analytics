@@ -25,7 +25,11 @@ public sealed record IngestCommand
     /// <summary>Referring URL, where one was present.</summary>
     public string? Referrer { get; init; }
 
-    /// <summary>Client's claimed time in Unix milliseconds. Never trusted; used to derive clock skew.</summary>
+    /// <summary>
+    /// Client's claimed time in Unix milliseconds. Never trusted as a time anything happened; used
+    /// to derive clock skew, and read against the same page's other reports to see how long the
+    /// page's own clock says passed between them.
+    /// </summary>
     public long? ClientTimestampUnixMs { get; init; }
 
     /// <summary>Viewport width in CSS pixels.</summary>

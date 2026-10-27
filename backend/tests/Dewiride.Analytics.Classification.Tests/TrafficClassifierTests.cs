@@ -99,6 +99,100 @@ public sealed class TrafficClassifierTests
     }
 
     /// <summary>
+    /// The visit fleets of browsers made on real traffic: one page opened straight, fifteen seconds
+    /// on it that the tracker reported only while it stayed open, nothing pressed, the first screen
+    /// a sixth of the page — and the page never said it was being left. A browser kept a page open;
+    /// nothing says anybody read it, so the honest answer is that nothing was settled.
+    /// </summary>
+    [Fact]
+    public void A_Page_Opened_And_Left_Open_With_Nothing_Else_Done_Is_Not_Called_A_Person()
+    {
+        var verdict = Engine.Classify(Visits.APageLeftOpen());
+
+        verdict.Category.Should().Be(TrafficCategory.Unknown);
+        verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.LeftOpen);
+        verdict.Supporting.Should().NotContain(signal => signal.Code == SignalCodes.ReadTime);
+    }
+
+    /// <summary>
+    /// The same fifteen seconds, said by a page as it was left, are somebody reading.
+    /// </summary>
+    [Fact]
+    public void The_Same_Page_Let_Go_Of_After_Fifteen_Seconds_Is_A_Person()
+    {
+        var verdict = Engine.Classify(Visits.APageLeftOpen() with { LeftOpenMs = 0 });
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.ReadTime);
+    }
+
+    /// <summary>
+    /// A reader whose laptop was shut on a page they had read well down is still a person: what
+    /// they did on it counts, and the page left open is shown against the verdict rather than
+    /// taken for reading.
+    /// </summary>
+    [Fact]
+    public void Somebody_Who_Read_Well_Down_A_Page_Left_Open_Is_Still_A_Person_With_It_Shown_Against_Them()
+    {
+        var verdict = Engine.Classify(Visits.AReader(pages: 1, engagedMs: 180_000) with { LeftOpenMs = 180_000 });
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Supporting.Should().NotContain(signal => signal.Code == SignalCodes.ReadTime);
+        verdict.Contradicting.Should().ContainSingle().Which.Code.Should().Be(SignalCodes.LeftOpen);
+    }
+
+    /// <summary>
+    /// Time left open is not reading even where it was all that outweighed something else: a visit
+    /// that asked for three missing pages and said ten of its twenty-five seconds as its pages were
+    /// left is weighed on those ten, as it would have been had it been open only that long.
+    /// </summary>
+    [Fact]
+    public void Time_Left_Open_Does_Not_Outweigh_Anything_Pointing_Toward_Automation()
+    {
+        var visit = Visits.AGlance() with
+        {
+            Requests =
+            [
+                .. Visits.Pages(4, TimeSpan.FromMinutes(10)),
+                .. Visits.Pages(3, TimeSpan.FromMinutes(10), status: 404),
+            ],
+            EngagedMs = 25_000,
+            MaxScrollDepthPercent = 20,
+        };
+
+        Engine.Classify(visit).Category.Should().Be(TrafficCategory.LikelyHuman);
+        Engine.Classify(visit with { LeftOpenMs = 15_000 }).Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+    }
+
+    /// <summary>
+    /// A page whose wait was cut short is automation however much else it did: the reading,
+    /// scrolling and pressing all happened while its timers ran ahead of its clocks.
+    /// </summary>
+    [Fact]
+    public void A_Page_Whose_Wait_Was_Cut_Short_Is_Something_Automated_Whatever_Else_It_Did()
+    {
+        var verdict = Engine.Classify(Visits.APageWhoseWaitWasCutShort() with { HadKeyboardInteraction = true });
+
+        verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.WaitCutShort);
+        verdict.Contradicting.Should().Contain(signal => signal.Code == SignalCodes.KeyboardUsed);
+    }
+
+    /// <summary>
+    /// A reader whose first report took its whole wait on the longer of its two clocks is a reader,
+    /// however short the other clock read.
+    /// </summary>
+    [Fact]
+    public void A_Page_Whose_Wait_Took_Its_Fifteen_Seconds_Is_Not_Taken_For_One_Cut_Short()
+    {
+        var verdict = Engine.Classify(Visits.AReader() with { SoonestProgressMs = 15_000 });
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Supporting.Should().NotContain(signal => signal.Code == SignalCodes.WaitCutShort);
+        verdict.Contradicting.Should().NotContain(signal => signal.Code == SignalCodes.WaitCutShort);
+    }
+
+    /// <summary>
     /// A visitor that introduces itself as a crawler under a name nobody has catalogued is a
     /// crawler, and is said to be one without the name it used being repeated.
     /// </summary>
@@ -447,6 +541,50 @@ public sealed class TrafficClassifierTests
             SentBy = SourceChannel.Search,
             MaxScrollDepthPercent = 50,
             EngagedMs = engagedMs,
+        });
+
+        verdict.Category.Should().Be(expected);
+    }
+
+    /// <summary>
+    /// The same page another site sent over a rented network, seen half way down and with nothing
+    /// pressed, where the fifteen seconds were reported only while the page stayed open: a browser
+    /// kept the page open, which is not the page being read.
+    /// </summary>
+    [Fact]
+    public void A_Page_Another_Site_Sent_To_A_Rented_Network_And_Left_Open_Is_Not_Counted_As_Read()
+    {
+        var verdict = Engine.Classify(Visits.AGlance() with
+        {
+            AutonomousSystem = Visits.MicrosoftNetwork,
+            SentBy = SourceChannel.Search,
+            MaxScrollDepthPercent = 50,
+            EngagedMs = 15_000,
+            LeftOpenMs = 15_000,
+        });
+
+        verdict.Category.Should().Be(TrafficCategory.Unknown);
+    }
+
+    /// <summary>
+    /// The fifteen seconds that make a page read are counted after the time left open is taken
+    /// away, not before: half a minute open with a moment over fifteen seconds of it left open is
+    /// a moment short of a read.
+    /// </summary>
+    [Theory]
+    [InlineData(15_001, TrafficCategory.Unknown)]
+    [InlineData(15_000, TrafficCategory.LikelyHuman)]
+    public void A_Page_Another_Site_Sent_To_A_Rented_Network_Counts_As_Read_From_Fifteen_Seconds_Said_As_It_Was_Left(
+        int leftOpenMs,
+        TrafficCategory expected)
+    {
+        var verdict = Engine.Classify(Visits.AGlance() with
+        {
+            AutonomousSystem = Visits.MicrosoftNetwork,
+            SentBy = SourceChannel.Search,
+            MaxScrollDepthPercent = 50,
+            EngagedMs = 30_000,
+            LeftOpenMs = leftOpenMs,
         });
 
         verdict.Category.Should().Be(expected);

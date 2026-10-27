@@ -19,6 +19,24 @@ public readonly record struct RulesetVersion(int Major, int Minor) : IComparable
     /// <summary>The ruleset currently compiled into this build.</summary>
     /// <remarks>
     /// <para>
+    /// Eleven, because a page left open is not a page read, and a wait cut short is a program's.
+    /// Fleets of browsers measured on real traffic opened one page, waited and were switched off
+    /// without closing it, and the time the tracker reported while the page stayed open was counted
+    /// as somebody reading — enough, with the tracker having run, to call each of them a person.
+    /// Time now counts as reading only up to the last moment a page said it was being left; what it
+    /// reported beyond that, where nothing else can explain the silence, is shown as pages left
+    /// open, pointing the other way and too light to count. And a page whose first report of how it
+    /// was going came sooner, by both of the clocks it carries, than the wait it was sent after is
+    /// automation whatever else it did.
+    /// </para>
+    /// <para>
+    /// Categories move, so this is a major version: what ten called a person on a page left open
+    /// eleven calls a visit it could not tell about — or automation, where something else pointed
+    /// that way and only the reading outweighed it — and what ten called a person or could not tell
+    /// about on a wait cut short eleven calls automation. Verdicts are kept per ruleset, so every
+    /// earlier answer stays on record and history is re-judged rather than rewritten.
+    /// </para>
+    /// <para>
     /// Ten, because a rented computer is not, on its own, a program. A visit over a network whose
     /// business is renting computers was automation whatever it did, because the network outweighed
     /// anything a reader does. The visits measured on Microsoft's network that a search sent read,
@@ -126,7 +144,7 @@ public readonly record struct RulesetVersion(int Major, int Minor) : IComparable
     /// something that will never be reconstructed again.
     /// </para>
     /// </remarks>
-    public static RulesetVersion Current => new(10, 0);
+    public static RulesetVersion Current => new(11, 0);
 
     /// <summary>Compares two ruleset versions by major then minor component.</summary>
     /// <param name="other">The version to compare against.</param>

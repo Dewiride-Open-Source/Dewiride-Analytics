@@ -77,6 +77,22 @@ public sealed partial class EventIngestor(
     private const byte MaxScrollDepthPercent = 100;
 
     /// <summary>
+    /// The earliest time of day a client may claim, in Unix milliseconds: the start of 1900.
+    /// </summary>
+    /// <remarks>
+    /// With <see cref="LatestClientTimestampMs"/>, the range the store keeps a time to the
+    /// millisecond in. Nothing that keeps time reads a year outside it, so a claim beyond either end
+    /// is no clock at all — and one beyond what a date can hold would otherwise fail while the
+    /// report is being built.
+    /// </remarks>
+    private const long EarliestClientTimestampMs = -2_208_988_800_000;
+
+    /// <summary>
+    /// The latest time of day a client may claim, in Unix milliseconds: the last moment of 2299.
+    /// </summary>
+    private const long LatestClientTimestampMs = 10_413_791_999_999;
+
+    /// <summary>
     /// Longest host written to the log. Past this the value is not a hostname somebody has
     /// misconfigured, and there is nothing to be learnt from the rest of it.
     /// </summary>
@@ -273,7 +289,8 @@ public sealed partial class EventIngestor(
         IsNonNegative(command.ViewportWidth)
         && IsNonNegative(command.ViewportHeight)
         && IsNonNegative(command.EngagedMs)
-        && command.ScrollDepthPercent is null or <= MaxScrollDepthPercent;
+        && command.ScrollDepthPercent is null or <= MaxScrollDepthPercent
+        && command.ClientTimestampUnixMs is null or (>= EarliestClientTimestampMs and <= LatestClientTimestampMs);
 
     private static bool IsNonNegative(int? value) => value is null or >= 0;
 

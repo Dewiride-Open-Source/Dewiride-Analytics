@@ -19,6 +19,11 @@
   visit and the pointer was then pressed or its pages read, is what tells them apart. 0056 also
   records that how far down a page was seen counts the first screen, so on any other network a page
   short enough, opened and left with the tracker running, is a person.
+- **Revised by**: [0059](0059-a-page-left-open-is-not-a-page-read.md). Somebody who read for fifteen
+  seconds is still substantial by themselves, but the fifteen seconds count only where the page said
+  it was being left: fleets of browsers opened a page, waited and were switched off, and their time
+  was a page left open. A page whose wait was cut short — its timers run ahead of its own clocks —
+  is automation whatever else it did.
 
 ## Context
 

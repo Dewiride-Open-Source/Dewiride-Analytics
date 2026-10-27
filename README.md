@@ -178,16 +178,20 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
 - **Done** · Declared automation flag; no script run; no language declared; probing for missing
   and sensitive paths.
 - **Done** · Running a script is never taken as proof of a person.
+- **Done** · Time on a page counts as reading only once the page has been closed or left; time on
+  pages with no sign they were ever closed is shown as such and is not taken for somebody reading.
+- **Done** · A page whose tracking code's 15-second wait is over early by the page's own clock is
+  called automation.
 
 **2.2 Weak spot to close**
 
 - **Not started** · A headless browser with an ordinary Chrome name, its automation flag hidden, on
   an unlisted network, that runs the script on a page a quarter of which fits on its first screen —
   or scrolls a quarter of the way down a longer one — is judged "A person · some signs" today, and
-  "A person · strong signs" once the page has stayed on screen for two seconds.
+  "A person · strong signs" once the page has stayed on screen for two seconds and then been closed.
 - **Not started** · On a rented network a program is judged "A person · some signs" if it presses one
   key, or makes up a link from another site and then clicks once, or stays 15 seconds on pages one
-  of which is short enough to be seen a quarter of the way down.
+  of which is short enough to be seen a quarter of the way down, and then closes them.
 
 **2.3 Timing**
 

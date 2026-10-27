@@ -196,3 +196,25 @@ automation; and rules on the browser's version, its window or its time zone.
 **Rolling back** to 10.0 leaves the 11.0 verdicts on record beside the 10.0 ones. Reads take the
 newest ruleset each visit has, so a visit judged under 11.0 keeps that verdict, and one judged only
 after going back is judged under 10.0 until 11.0 returns and reaches it.
+
+**Measured after release.** By 16:01 UTC on 2026-10-27 the 11.0 walk had read every website past
+13:43 UTC, when the simulation was read. The newest 10.0 and 11.0 verdicts of the 3,935 visits that
+began in the thirty days before that moment and that the tracker reported on — the simulation's
+window — were then compared visit by visit. Every one has both.
+
+- The two rules moved exactly as many visits as simulated, group for group. 37 people became
+  something the product could not tell (`Unknown · Weak`), each with time left open: 30 that came
+  straight in on a computer and 7 that another site sent. 64 people and 7 visits the product could
+  not tell about became automation (`SuspiciousAutomation · Moderate`): phones that came straight
+  in, every one with its wait cut short. All 14 of the operator's 800 × 600 visits and 7 of the 8 at
+  1366 × 1366 are now something the product could not tell; every other person on Chrome on macOS
+  who came straight in, not over a rented network, is still a person. Nothing that was automation
+  changed category.
+- People went from 2,305 to 2,206 rather than from 2,301 to 2,200. The four more at the start are
+  verdicts 10.0 wrote between the simulation and the release. Two visits the product could not tell
+  about became people, and not by these rules. 10.0 judged each on its opening page view alone; its
+  one further report arrived after that verdict — twelve and a half hours after the page was opened
+  in the visit another site sent, an hour and a half in the one that came straight in — and neither
+  was judged again while 10.0 ran. 11.0's walk read each whole: the one another site sent had its
+  page seen at least a quarter of the way down (`LikelyHuman · Moderate`), and the one that came
+  straight in had that and reading too (`LikelyHuman · Strong`).

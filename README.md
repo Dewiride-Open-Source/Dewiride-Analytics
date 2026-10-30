@@ -336,6 +336,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
 
 - **Done** · Nothing is read out of a text box: no form contents, keystrokes or recordings.
 - **Done** · Raw address dropped after 72 hours; visitor key rotated daily.
+- **Done** · Each day's visitor key is ready before the day begins, so somebody arriving in the
+  first hour after midnight UTC is counted like everybody else.
 - **Done** · Towns named as estimates; only the three low-entropy browser hints read.
 - **Not started** · Per-website option to keep query strings — exists in the engine, nothing can
   switch it on.

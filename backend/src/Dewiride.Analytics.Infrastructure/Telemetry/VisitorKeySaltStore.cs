@@ -8,13 +8,23 @@ using Microsoft.Extensions.Logging;
 namespace Dewiride.Analytics.Infrastructure.Telemetry;
 
 /// <summary>
-/// Holds the current and previous day's visitor-key salts in memory, and rotates them.
+/// Holds the previous, current and next day's visitor-key salts in memory, and rotates them.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The ingest path derives a visitor key on every request and cannot afford a database round trip
-/// to fetch a salt, so the salts are cached here and refreshed out of band. Only two days are ever
-/// held: anything older is deleted from the database by <see cref="RotateAsync"/>, which is what
-/// makes historical keys unrecoverable.
+/// to fetch a salt, so the salts are cached here and refreshed out of band. Nothing older than the
+/// previous day is ever held: anything older is deleted from the database by
+/// <see cref="RotateAsync"/>, which is what makes historical keys unrecoverable.
+/// </para>
+/// <para>
+/// The next day's salt is made a day early. A day's first reports arrive the instant it begins,
+/// and a refresh run out of band is due whenever its schedule says rather than at midnight — so a
+/// salt made only once its day had started would leave every report before the next run without a
+/// key, and a report without a key is nobody: no visit, no verdict, nobody on the screen of who is
+/// here. Made ahead, it is cached many runs before it is needed. It says nothing about anybody
+/// until its day begins, since no key is derived from it before then.
+/// </para>
 /// </remarks>
 /// <param name="scopeFactory">Creates the scope used to reach the control-plane database.</param>
 /// <param name="timeProvider">Source of the current day.</param>
@@ -25,7 +35,14 @@ public sealed partial class VisitorKeySaltStore(
     ILogger<VisitorKeySaltStore> logger)
 {
     private const int SaltLengthBytes = 32;
+
+    /// <summary>
+    /// The days a salt is kept for, counting back from today: today's and the day before's.
+    /// </summary>
     private const int DaysRetained = 2;
+
+    /// <summary>The days a salt is made ahead of, counting on from today: tomorrow's.</summary>
+    private const int DaysAhead = 1;
 
     private ImmutableDictionary<DateOnly, byte[]> _salts = ImmutableDictionary<DateOnly, byte[]>.Empty;
 
@@ -42,7 +59,8 @@ public sealed partial class VisitorKeySaltStore(
         _salts.TryGetValue(day, out var salt) ? salt : ReadOnlySpan<byte>.Empty;
 
     /// <summary>
-    /// Ensures the current day's salt exists, prunes expired salts, and refreshes the cache.
+    /// Ensures the current and next day's salts exist, prunes expired salts, and refreshes the
+    /// cache.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task RotateAsync(CancellationToken cancellationToken)
@@ -69,14 +87,22 @@ public sealed partial class VisitorKeySaltStore(
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        if (!current.Exists(salt => salt.Day == today))
-        {
-            var created = new VisitorKeySalt(today, RandomNumberGenerator.GetBytes(SaltLengthBytes));
-            database.Add(created);
-            await database.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            current.Add(created);
+        var created = Enumerable.Range(0, DaysAhead + 1)
+            .Select(offset => today.AddDays(offset))
+            .Where(day => !current.Exists(salt => salt.Day == day))
+            .Select(day => new VisitorKeySalt(day, RandomNumberGenerator.GetBytes(SaltLengthBytes)))
+            .ToList();
 
-            Log.GeneratedSalt(logger, today);
+        if (created.Count > 0)
+        {
+            database.AddRange(created);
+            await database.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            current.AddRange(created);
+
+            foreach (var salt in created)
+            {
+                Log.GeneratedSalt(logger, salt.Day);
+            }
         }
 
         _salts = current.ToImmutableDictionary(salt => salt.Day, salt => salt.Salt);

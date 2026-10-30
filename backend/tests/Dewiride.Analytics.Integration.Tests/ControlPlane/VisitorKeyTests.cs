@@ -2,6 +2,8 @@ using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Infrastructure.Telemetry;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Dewiride.Analytics.Integration.Tests.ControlPlane;
 
@@ -106,6 +108,72 @@ public sealed class VisitorKeyTests(AnalyticsStackFixture stack)
         await stack.Services.GetRequiredService<VisitorKeySaltStore>().RotateAsync(Cancellation.Token);
 
         factory.Derive(site, Address, UserAgent, today).Should().Be(before);
+    }
+
+    /// <summary>
+    /// A day's first reports arrive the instant it begins. A salt made only by whatever ran next
+    /// after midnight would leave every one of them without a key — nobody, counted nowhere. A
+    /// rotation the evening before has already made the next day's.
+    /// </summary>
+    [Fact]
+    public async Task The_Next_Day_Has_A_Key_The_Moment_It_Begins()
+    {
+        var evening = new DateTimeOffset(2026, 3, 14, 23, 30, 0, TimeSpan.Zero);
+        var factory = new RotatingSaltVisitorKeyFactory(await RotatedAtAsync(evening));
+
+        var key = factory.Derive(
+            Guid.NewGuid(), Address, UserAgent, evening.AddMinutes(30).AddMilliseconds(1));
+
+        key.Should().NotBeNullOrEmpty();
+    }
+
+    /// <summary>
+    /// The salt made ahead is the one its day is keyed by from its first instant to its last. The
+    /// first rotation of the new day finds it rather than making another, so a visitor keyed a
+    /// minute after midnight is the same visitor once that rotation has run.
+    /// </summary>
+    [Fact]
+    public async Task The_Salt_Made_Ahead_Is_The_One_Its_Day_Uses()
+    {
+        var evening = new DateTimeOffset(2026, 4, 18, 23, 30, 0, TimeSpan.Zero);
+        var site = Guid.NewGuid();
+        var justAfterMidnight = evening.AddMinutes(31);
+
+        var before = new RotatingSaltVisitorKeyFactory(await RotatedAtAsync(evening))
+            .Derive(site, Address, UserAgent, justAfterMidnight);
+        var after = new RotatingSaltVisitorKeyFactory(await RotatedAtAsync(evening.AddHours(1)))
+            .Derive(site, Address, UserAgent, justAfterMidnight);
+
+        after.Should().NotBeNull().And.Be(before);
+    }
+
+    /// <summary>
+    /// A salt is made one day ahead and no further, so nothing that could key a visitor exists
+    /// long before it is about to be needed.
+    /// </summary>
+    [Fact]
+    public async Task No_Salt_Is_Made_For_The_Day_After_Tomorrow()
+    {
+        var morning = new DateTimeOffset(2026, 5, 22, 9, 0, 0, TimeSpan.Zero);
+        var factory = new RotatingSaltVisitorKeyFactory(await RotatedAtAsync(morning));
+
+        factory.Derive(Guid.NewGuid(), Address, UserAgent, morning.AddDays(2)).Should().BeNull();
+    }
+
+    /// <summary>
+    /// A store of its own on a clock of its own, rotated once. Its days lie months in the past, so
+    /// its clearing out of older salts reaches nothing the rest of the stack keys visitors by.
+    /// </summary>
+    private async Task<VisitorKeySaltStore> RotatedAtAsync(DateTimeOffset at)
+    {
+        var store = new VisitorKeySaltStore(
+            stack.Services.GetRequiredService<IServiceScopeFactory>(),
+            new FakeTimeProvider(at),
+            NullLogger<VisitorKeySaltStore>.Instance);
+
+        await store.RotateAsync(Cancellation.Token);
+
+        return store;
     }
 
     private async Task<(IVisitorKeyFactory Factory, DateTimeOffset Today)> ReadyAsync()

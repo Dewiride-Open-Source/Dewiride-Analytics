@@ -8,7 +8,9 @@ namespace Dewiride.Analytics.Infrastructure.Telemetry;
 /// </summary>
 /// <remarks>
 /// Runs at startup and hourly rather than at midnight, so that a process started at any time has a
-/// usable salt immediately and a long-running process cannot end up holding only yesterday's.
+/// usable salt immediately. Every run also makes the next day's salt, so a long-running process
+/// holds it hours before midnight, wherever in the hour its runs happen to fall — and a run that
+/// fails is followed by many more before the salt is needed.
 /// </remarks>
 /// <param name="saltStore">The store to rotate.</param>
 /// <param name="timeProvider">Source of the delay timer.</param>

@@ -13,11 +13,11 @@ namespace Dewiride.Analytics.Integration.Tests.Telemetry;
 /// </summary>
 /// <remarks>
 /// These readings answer a screen that renews itself every few seconds, so what they get wrong is
-/// wrong in front of somebody watching. Five properties matter more than the rest and each has a
+/// wrong in front of somebody watching. Six properties matter more than the rest and each has a
 /// test here: one visitor is one row however many surfaces saw them, somebody who has gone is gone,
-/// how busy a site is does not shrink to the length of the list an answer had room for, every
-/// visitor counted stands on exactly one of the pages listed, and nobody is said to have come
-/// straight here unless the window saw them arrive.
+/// a page left open keeps nobody here, how busy a site is does not shrink to the length of the list
+/// an answer had room for, every visitor counted stands on exactly one of the pages listed, and
+/// nobody is said to have come straight here unless the window saw them arrive.
 /// </remarks>
 /// <param name="stack">The running stack.</param>
 [Collection(SharedStackDefinition.Name)]
@@ -268,21 +268,72 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// Somebody reading a page they opened before the window began has sent nothing but progress
-    /// reports inside it. A progress report says nothing about how its page was reached, so the
-    /// window did not see them arrive.
+    /// A page left on a screen reports every minute for as long as it stays there. Somebody whose
+    /// only news inside the window is that opened their page before it, and a list that counted them
+    /// would hold them at the top, active a moment ago, all night — and on into the next day under a
+    /// key no visit is ever made of. They are not here until they open another page.
     /// </summary>
     [Fact]
-    public async Task Somebody_Only_Reading_Was_Not_Seen_Arriving()
+    public async Task A_Page_Left_Open_Keeps_Nobody_Here_However_Recently_It_Reported()
     {
         var siteId = Guid.NewGuid();
 
-        await WriteAsync(Engaged(siteId, Now.AddMinutes(-5), "reader", "/long-read"));
+        await WriteAsync(
+        [
+            FromBrowser(siteId, Now.AddMinutes(-45), "left-open", "/long-read"),
+            .. Enumerable.Range(1, 44).Select(minute =>
+                Engaged(siteId, Now.AddMinutes(-45 + minute), "left-open", "/long-read")),
+        ]);
+
+        var here = await WhoIsHere(siteId);
+        var pages = await WhatIsBeingRead(siteId);
+
+        here.VisitorsSeen.Should().Be(0);
+        here.Visitors.Should().BeEmpty();
+        pages.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A departure is sent from the page being left, so it is news of a page somebody already had.
+    /// Leaving a page opened before the window — a tab dismissed at last, or put behind another — is
+    /// not somebody arriving, and lists nobody.
+    /// </summary>
+    [Fact]
+    public async Task Leaving_A_Page_Opened_Before_The_Window_Lists_Nobody()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            FromBrowser(siteId, Now.AddMinutes(-50), "dismissed", "/long-read"),
+            Left(siteId, Now.AddMinutes(-2), "dismissed", "/long-read"));
 
         var here = await WhoIsHere(siteId);
 
-        here.Visitors.Should().ContainSingle();
-        here.Visitors[0].SeenArriving.Should().BeFalse();
+        here.VisitorsSeen.Should().Be(0);
+        here.Visitors.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Somebody who opened a page is here however long ago inside the window they did it, and a page
+    /// left open beside them is counted nowhere: not in the figure, not on a page, and not at the top
+    /// of the list for having reported last.
+    /// </summary>
+    [Fact]
+    public async Task Somebody_Who_Opened_A_Page_Is_Counted_And_A_Page_Left_Open_Beside_Them_Is_Not()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            FromServer(siteId, Now.AddMinutes(-20), "reader", "/posts/hello"),
+            Engaged(siteId, Now.AddMinutes(-1), "left-open", "/long-read"));
+
+        var here = await WhoIsHere(siteId);
+        var pages = await WhatIsBeingRead(siteId);
+
+        here.VisitorsSeen.Should().Be(1);
+        here.Visitors.Select(visitor => visitor.VisitorKey).Should().Equal("reader");
+        pages.Select(page => page.Path).Should().Equal("/posts/hello");
+        pages.Sum(page => page.Visitors).Should().Be(here.VisitorsSeen);
     }
 
     /// <summary>
@@ -557,16 +608,18 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// Somebody who arrived before the window opened and is still reading has sent nothing but
-    /// progress reports inside it. They are counted by the reading of who is here, so they stand on
-    /// a page in the list of pages too, or the two would disagree by one for every long read.
+    /// Somebody who opened a page inside the window and went back to one they had open before it is
+    /// here, and stands on the page they reported from last in both lists — or the two would
+    /// disagree by one for every reader with two tabs.
     /// </summary>
     [Fact]
-    public async Task Somebody_Only_Reading_A_Page_Is_On_It_In_Both_Lists()
+    public async Task Somebody_Back_On_A_Page_They_Opened_Earlier_Is_On_It_In_Both_Lists()
     {
         var siteId = Guid.NewGuid();
 
-        await WriteAsync(Engaged(siteId, Now.AddMinutes(-5), "reader", "/long-read"));
+        await WriteAsync(
+            FromBrowser(siteId, Now.AddMinutes(-9), "reader", "/pricing"),
+            Engaged(siteId, Now.AddMinutes(-2), "reader", "/long-read"));
 
         var here = await WhoIsHere(siteId);
         var pages = await WhatIsBeingRead(siteId);
@@ -937,6 +990,9 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
 
     private static RawEvent Engaged(Guid siteId, DateTimeOffset at, string? visitorKey, string path) =>
         Observed(siteId, at, visitorKey, path, EventKind.Engagement, IngestSurface.BrowserTracker, null);
+
+    private static RawEvent Left(Guid siteId, DateTimeOffset at, string? visitorKey, string path) =>
+        Observed(siteId, at, visitorKey, path, EventKind.Exit, IngestSurface.BrowserTracker, null);
 
     /// <summary>The image a page with no script running asks for, which names no referrer.</summary>
     private static RawEvent FromImage(Guid siteId, DateTimeOffset at, string? visitorKey, string path) =>

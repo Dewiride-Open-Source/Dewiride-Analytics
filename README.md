@@ -538,6 +538,9 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
   mid-read.
 - **Done** · Each row says on its first line how the visitor arrived: the site that sent them,
   "Came straight here", or "Arrived earlier" where the half hour did not see them arrive.
+- **Done** · A page left open keeps nobody on the list: a visitor is shown while a page they opened
+  is inside the half hour, so a tab left on a screen overnight does not appear as active every
+  minute, and everybody listed has opened a page that belongs to a visit.
 - **Not started** · Similar visits active — 3.5.
 
 **8.5 Question-led entry points**

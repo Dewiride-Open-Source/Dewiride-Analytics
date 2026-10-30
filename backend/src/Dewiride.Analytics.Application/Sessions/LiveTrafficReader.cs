@@ -12,11 +12,12 @@ namespace Dewiride.Analytics.Application.Sessions;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The join between the store, which knows who has reported in the last half hour, and the engine,
-/// which knows what a visitor looks like. It is the third thing in this project that puts those two
-/// together, and the only one that keeps nothing: a verdict is reached once, when a visit is over,
-/// and this reads a stretch of minutes that is still running. Nothing here is written, nothing here
-/// supersedes anything, and nothing here is counted into any total the rest of the product reports.
+/// The join between the store, which knows who has opened a page in the last half hour, and the
+/// engine, which knows what a visitor looks like. It is the third thing in this project that puts
+/// those two together, and the only one that keeps nothing: a verdict is reached once, when a visit
+/// is over, and this reads a stretch of minutes that is still running. Nothing here is written,
+/// nothing here supersedes anything, and nothing here is counted into any total the rest of the
+/// product reports.
 /// </para>
 /// <para>
 /// What it may say about a visitor is decided by <see cref="SettledIdentity"/> and is deliberately

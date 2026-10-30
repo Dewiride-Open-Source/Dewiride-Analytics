@@ -585,7 +585,7 @@
     "caption": "Who has been on {site} in the last half hour.",
     "count": {
       "label": "Visitors",
-      "note": "Anyone the site has heard from in the last half hour.",
+      "note": "Anyone who opened a page in the last half hour.",
       "quiet": "Nobody has done anything in the last few minutes."
     },
     "named": {

@@ -12,6 +12,9 @@
 - **Revised by**: [0039](0039-what-is-being-read-is-where-the-visitors-are.md), which counts the
   pages being read as visitors by the page each is on, so they add up to the headline, and reads a
   trail under the reading its row came from rather than under a fresh present moment.
+- **Revised by**: [0061](0061-a-page-left-open-keeps-nobody-on-the-live-screen.md), under which a
+  visitor is here while a page they opened is inside the stretch, so a page left open on a screen
+  no longer keeps somebody on the list.
 
 ## Context
 

@@ -34,7 +34,10 @@ interface LiveVisitorsProps {
 }
 
 /**
- * Everybody who has been on the website in the last half hour, most recently active first.
+ * Everybody who opened a page on the website in the last half hour, most recently active first.
+ *
+ * Opened one, rather than merely reported: a page left on a screen goes on reporting for as long as
+ * it stays there, and the engine leaves a visitor whose only news is that off this list.
  *
  * Each row can be opened onto the pages that visitor has been through, for the same reason every
  * verdict on the journeys screen can be taken apart: a product whose proposition is that a

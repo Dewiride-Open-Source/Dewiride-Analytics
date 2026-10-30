@@ -960,9 +960,15 @@ public sealed record SiteVisitFacetsQuery : AnalyticsQuery
 /// page belongs to the visit that page was arrived at in however long the silence before it — so a
 /// tab dismissed the next morning reopens a visit hours after its reader left, and a reader with an
 /// old tab open has two visits running at once. Either would be counted as somebody who is here.
-/// Asking instead which visitors reported in the last few minutes has none of that: it is one row
-/// per visitor, it is exactly the question a reader is asking, and it needs no visit boundaries to
-/// answer.
+/// Asking instead which visitors opened a page in the last few minutes has none of that: it is one
+/// row per visitor, it is exactly the question a reader is asking, and it needs no visit boundaries
+/// to answer.
+/// </para>
+/// <para>
+/// Opened a page, and not merely reported something. A page left on a screen reports for as long as
+/// it stays there — through the night, and on under the next day's key, where no visit is ever made
+/// of it — and somebody whose only news is that is somebody who was here. What a visitor who did
+/// open one reported about a page opened earlier still counts for them.
 /// </para>
 /// <para>
 /// Nothing is read from outside the window, which is what separates this from every other

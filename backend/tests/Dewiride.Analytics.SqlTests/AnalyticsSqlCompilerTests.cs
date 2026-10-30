@@ -1017,6 +1017,30 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     /// <summary>
+    /// A page left on a screen reports for as long as it stays there, and once the day changes its
+    /// reports arrive under a key no visit is ever made of. Somebody is here only while the window
+    /// holds a page they opened — decided of the visitor, before anybody is counted or placed, and
+    /// on the same terms in the list of who is here and the pages they are on, or the two would
+    /// disagree by one for every page left open.
+    /// </summary>
+    [Fact]
+    public void Somebody_Is_Here_Only_While_The_Window_Holds_A_Page_They_Opened()
+    {
+        var rows = AnalyticsSqlCompiler.Compile(Scope(), LiveVisitors());
+        var pages = AnalyticsSqlCompiler.Compile(Scope(), new SiteLivePagesQuery(HalfHour(), 10));
+
+        foreach (var statement in new[] { rows, pages })
+        {
+            var start = statement.Sql.IndexOf("gathered AS", StringComparison.Ordinal);
+            var end = statement.Sql.IndexOf("FROM gathered", StringComparison.Ordinal);
+            var gathered = statement.Sql[start..end];
+
+            gathered.Should().Contain("GROUP BY visitor_key");
+            gathered.Should().Contain("HAVING countIf(kind = 'PageView') > 0");
+        }
+    }
+
+    /// <summary>
     /// Each visitor stands on one page and the pages count visitors, so across every page they add
     /// up to the visitors seen. Counting deliveries, or keeping a page only where something was
     /// delivered, would break the sum in a way no test of the figures alone would catch.

@@ -8,6 +8,7 @@ WITH
             visitor_key,
             correlation_id,
             server_ts,
+            kind,
             path
         FROM events
         WHERE site_id = {site_id:UUID}
@@ -50,6 +51,7 @@ WITH
         FROM identified
         WHERE visitor_key != ''
         GROUP BY visitor_key
+        HAVING countIf(kind = 'PageView') > 0
     )
 SELECT
     current_path AS path,

@@ -20,10 +20,15 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// minutes: a report outside it is not part of that description, whatever it says about a page
 /// somebody is still on. Two things follow. The reading is a prefix of the primary key and touches
 /// nothing else, which is what makes it cheap enough to ask over and over. And a page arrived at
-/// before the window opened still counts, because the visitor was on it — and how they reached the
-/// site is then known only as far as the window says. A site that sent them is named wherever a
-/// page in the window names one; that none was named is said only where the window saw them
-/// arrive, which <see cref="SeenArriving"/> decides.
+/// before the window opened still counts for a visitor the window holds opening another, because
+/// they were on it — and how they reached the site is then known only as far as the window says. A
+/// site that sent them is named wherever a page in the window names one; that none was named is
+/// said only where the window saw them arrive, which <see cref="SeenArriving"/> decides.
+/// </para>
+/// <para>
+/// Who is here at all is somebody the window holds opening a page, which
+/// <see cref="OpenedAPage"/> settles once for every statement that counts visitors, so the list of
+/// who is here and the pages they are on cannot disagree about whom they hold.
 /// </para>
 /// <para>
 /// A page a visitor was on is counted once here, however many reports described it and however many
@@ -69,6 +74,32 @@ internal static class LiveActivity
     /// single impossibly busy visitor at the top of the list.
     /// </remarks>
     public const string EveryVisitor = VisitGrouping.EveryVisitor;
+
+    /// <summary>
+    /// Whether the window holds a page the visitor opened, which is what makes them somebody here.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A progress report and a departure are accounts of a page somebody already had, sent from the
+    /// page itself, and a page left on a screen goes on sending them for as long as it stays there:
+    /// one a minute through the evening, the night and on into the next day. Counted as somebody
+    /// here, it would sit at the top of the list, active a moment ago, every minute of that. And
+    /// once the day or the network it came over changes, its reports arrive under a key with no
+    /// arrival behind it, which no visit is ever made of — so it would stay on the list as a visitor
+    /// the finished visits never mention, waiting for a verdict that is never coming.
+    /// </para>
+    /// <para>
+    /// So a visitor is somebody here while a page they opened is inside the window, and what they
+    /// reported about a page opened before it counts for them once they are. Nothing is taken from
+    /// what a finished visit is judged on: this decides only whom the list of who is here holds.
+    /// The cost is a reader who stays on one page for longer than the window without opening
+    /// another, who leaves the list until they do.
+    /// </para>
+    /// <para>
+    /// A condition on a selection grouped by visitor and carrying <c>kind</c>.
+    /// </para>
+    /// </remarks>
+    public const string OpenedAPage = "countIf(kind = 'PageView') > 0";
 
     /// <summary>
     /// The page a visitor is on: the one their most recent report named.

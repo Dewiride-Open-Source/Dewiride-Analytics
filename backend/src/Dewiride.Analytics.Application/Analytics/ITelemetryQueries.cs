@@ -231,8 +231,8 @@ public interface ITelemetryQueries
     /// <param name="query">The stretch of minutes, and how many pages to carry back.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// The pages, and how many visitors stand on each. Every visitor the stretch holds stands on
-    /// exactly one of them, so across every page they add up to the visitors seen.
+    /// The pages, and how many visitors stand on each. Every visitor the reading of who is here
+    /// lists stands on exactly one of them, so across every page they add up to the visitors seen.
     /// </returns>
     Task<IReadOnlyList<LivePage>> GetSiteLivePagesAsync(
         TenantScope scope,
@@ -907,7 +907,7 @@ public readonly record struct VisitPress(
 /// reading that had room for a hundred of two hundred visitors still says two hundred rather than
 /// quietly reporting the size of its own answer.
 /// </remarks>
-/// <param name="VisitorsSeen">How many visitors reported during the window.</param>
+/// <param name="VisitorsSeen">How many visitors opened a page during the window.</param>
 /// <param name="Visitors">The visitors, the one most recently active first.</param>
 public sealed record LiveVisitors(int VisitorsSeen, ImmutableArray<LiveVisitor> Visitors)
 {

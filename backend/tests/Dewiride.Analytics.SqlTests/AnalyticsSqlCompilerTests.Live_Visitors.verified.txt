@@ -193,6 +193,7 @@ WITH
             toUInt32(count() OVER ()) AS visitors_seen
         FROM present
         GROUP BY visitor_key
+        HAVING countIf(kind = 'PageView') > 0
     )
 SELECT
     visitor_key,

@@ -956,8 +956,14 @@ public static class AnalyticsSqlCompiler
     /// One row per visitor and none per visit. What a reader is asking is who is on the site, and a
     /// visit is a poor answer to that: a departure reported when a tab is finally dismissed reopens
     /// a visit whose reader left hours ago, and a reader with an old tab open has two of them
-    /// running at once. Neither is somebody who is here. Which visitors reported in the last few
-    /// minutes has no such trouble, and needs no visit boundaries to settle.
+    /// running at once. Neither is somebody who is here. Which visitors opened a page in the last
+    /// few minutes has no such trouble, and needs no visit boundaries to settle.
+    /// </para>
+    /// <para>
+    /// Opened a page, rather than reported anything at all: a page left on a screen goes on
+    /// reporting for as long as it stays there, and somebody whose only news is that is somebody
+    /// who was here. <see cref="LiveActivity.OpenedAPage"/> says why at length, and is the same
+    /// condition the pages being read are counted under.
     /// </para>
     /// <para>
     /// Every visitor is carried back with both accounts of themselves at once: the closed set the
@@ -980,9 +986,9 @@ public static class AnalyticsSqlCompiler
     /// screen of who is here has no use for any of it.
     /// </para>
     /// <para>
-    /// How many visitors there were is counted over every group the window produced rather than over
-    /// the rows that fitted, so a busy site says how busy it is instead of describing the size of
-    /// its own answer.
+    /// How many visitors there were is counted over every visitor the window holds opening a page
+    /// rather than over the rows that fitted, so a busy site says how busy it is instead of
+    /// describing the size of its own answer.
     /// </para>
     /// </remarks>
     private static CompiledStatement CompileSiteLiveVisitors(TenantScope scope, SiteLiveVisitorsQuery query)
@@ -1059,6 +1065,7 @@ public static class AnalyticsSqlCompiler
                         toUInt32(count() OVER ()) AS visitors_seen
                     FROM present
                     GROUP BY visitor_key
+                    HAVING {{LiveActivity.OpenedAPage}}
                 )
             SELECT
                 visitor_key,
@@ -1171,11 +1178,12 @@ public static class AnalyticsSqlCompiler
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Every visitor the window holds stands on one page — the page their most recent report named,
-    /// which is the page printed beside their row — and the pages are counted by how many visitors
-    /// stand on each. Gathered from the same population as the reading of who is here, on the same
-    /// terms, so the visitors across every page add up to the visitors seen; a list cut short at
-    /// its cap falls short of that figure by exactly the visitors on the pages it left out.
+    /// Every visitor the reading of who is here lists stands on one page — the page their most
+    /// recent report named, which is the page printed beside their row — and the pages are counted
+    /// by how many visitors stand on each. Gathered from the same population as that reading, on
+    /// the same terms and under the same condition for being here at all, so the visitors across
+    /// every page add up to the visitors seen; a list cut short at its cap falls short of that
+    /// figure by exactly the visitors on the pages it left out.
     /// </para>
     /// <para>
     /// A report carrying no visitor key names nobody to place, and takes no part. How often pages
@@ -1192,6 +1200,7 @@ public static class AnalyticsSqlCompiler
                     "visitor_key",
                     "correlation_id",
                     "server_ts",
+                    "kind",
                     "path")}},
                 {{ReconciledEvents.Reconciliation}},
                 gathered AS
@@ -1202,6 +1211,7 @@ public static class AnalyticsSqlCompiler
                     FROM identified
                     WHERE {{LiveActivity.EveryVisitor}}
                     GROUP BY visitor_key
+                    HAVING {{LiveActivity.OpenedAPage}}
                 )
             SELECT
                 current_path AS path,

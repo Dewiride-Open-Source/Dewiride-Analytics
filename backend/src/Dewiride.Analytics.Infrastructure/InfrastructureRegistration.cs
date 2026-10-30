@@ -1,5 +1,6 @@
 using Dewiride.Analytics.Application.Abstractions;
 using Dewiride.Analytics.Application.Accounts;
+using Dewiride.Analytics.Application.Ingest;
 using Dewiride.Analytics.Application.Notifications;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Sites;
@@ -10,6 +11,7 @@ using Dewiride.Analytics.Infrastructure.Classification;
 using Dewiride.Analytics.Infrastructure.Crawlers;
 using Dewiride.Analytics.Infrastructure.Health;
 using Dewiride.Analytics.Infrastructure.Identity;
+using Dewiride.Analytics.Infrastructure.Ingest;
 using Dewiride.Analytics.Infrastructure.Network;
 using Dewiride.Analytics.Infrastructure.Notifications;
 using Dewiride.Analytics.Infrastructure.Persistence;
@@ -121,6 +123,14 @@ public static class InfrastructureRegistration
         builder.Services.AddSingleton<VisitorKeySaltStore>();
         builder.Services.AddSingleton<IVisitorKeyFactory, RotatingSaltVisitorKeyFactory>();
         builder.Services.AddHostedService<VisitorKeySaltRotationService>();
+
+        // One memory for the process. A visitor is held for as long as a visit lasts, which is the
+        // judging engine's own measure of when one is over, so a visit turned away at the door and a
+        // visit judged later end at the same moment.
+        builder.Services.AddSingleton<IIgnoredVisitors>(services => new MemoryIgnoredVisitors(
+            services.GetRequiredService<IOptions<ClassificationOptions>>().Value.IdleTimeout,
+            MemoryIgnoredVisitors.MostRemembered,
+            services.GetRequiredService<TimeProvider>()));
 
         builder.Services.AddSingleton<ClosedAccountPurge>();
         builder.Services.AddHostedService<ClosedAccountPurgeService>();

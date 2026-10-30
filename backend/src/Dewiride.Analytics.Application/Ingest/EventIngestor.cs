@@ -19,6 +19,7 @@ namespace Dewiride.Analytics.Application.Ingest;
 /// <param name="visitorKeyFactory">Derives the daily-rotated visitor key.</param>
 /// <param name="networkLookup">Resolves where the visitor's address is and whose network it is on.</param>
 /// <param name="crawlerAddresses">Recognises an address a company vouches for as its own crawlers'.</param>
+/// <param name="ignoredSenders">The websites whose visitors this installation does not keep.</param>
 /// <param name="eventSink">Durable storage for accepted events.</param>
 /// <param name="timeProvider">Source of the authoritative server timestamp.</param>
 /// <param name="logger">Records why a report was turned away, for the operator alone.</param>
@@ -28,6 +29,7 @@ public sealed partial class EventIngestor(
     IVisitorKeyFactory visitorKeyFactory,
     INetworkLookup networkLookup,
     ICrawlerAddressDirectory crawlerAddresses,
+    IgnoredSenders ignoredSenders,
     IEventSink eventSink,
     TimeProvider timeProvider,
     ILogger<EventIngestor> logger)
@@ -188,7 +190,33 @@ public sealed partial class EventIngestor(
         }
 
         var receivedAt = timeProvider.GetUtcNow();
-        var rawEvent = BuildEvent(command, context, site, url, receivedAt);
+        var referrer = Truncate(PathOnly(command.Referrer), MaxReferrerLength);
+
+        // Resolved here rather than by a later job, because the address it is resolved from is
+        // erased 72 hours after this row is written. An attribute missed on the way in cannot be
+        // recovered afterwards: there would be nothing left to recover it from. It also has to be
+        // known before the visitor key below, which on a rented network is derived from the
+        // network rather than from the address.
+        var network = networkLookup.Resolve(context.IpAddress);
+        var visitorKey = visitorKeyFactory.Derive(
+            site.Id,
+            VisitorConnection.Identifying(context.IpAddress, network.AutonomousSystem),
+            context.UserAgent,
+            receivedAt);
+
+        // Dropped where it arrives, and so is everything its visitor sends until the visit is over.
+        // Stored and left for the engine to judge, a visit would already be on the screen that shows
+        // who is here now — and the screen's first line says where somebody came from, which is
+        // exactly what a program naming one website in every visit it makes is there to put in
+        // front of whoever reads it.
+        if (ignoredSenders.TurnsAway(site.Id, SenderOf(referrer, site), visitorKey))
+        {
+            Log.SenderIgnored(logger, site.Id);
+            return Refused(IngestOutcome.Rejected);
+        }
+
+        var derived = new Derived(receivedAt, referrer, network, visitorKey);
+        var rawEvent = BuildEvent(command, context, site, url, derived);
 
         await eventSink.WriteAsync(rawEvent, cancellationToken).ConfigureAwait(false);
         return new IngestReceipt(IngestOutcome.Accepted, site.CaptureClicks);
@@ -197,27 +225,46 @@ public sealed partial class EventIngestor(
     /// <summary>A report that was not written, which says nothing about its website.</summary>
     private static IngestReceipt Refused(IngestOutcome outcome) => new(outcome, RecordsPresses: false);
 
+    /// <summary>
+    /// The website a report says its page was reached from, or nothing where it names none or the
+    /// page was reached from the website itself.
+    /// </summary>
+    /// <remarks>
+    /// A page view is what names one; the rest of what a page sends names none and belongs to the
+    /// visit its page view began. A page reached from the website's own pages is never a sender's,
+    /// whatever a list says, because a website listing its own address would otherwise turn away
+    /// every visitor who went on to a second page.
+    /// </remarks>
+    /// <param name="referrer">Where the report says the page was reached from, as it is stored.</param>
+    /// <param name="site">The website the report is for.</param>
+    /// <returns>The sender's host, in the ASCII form a browser sends it, or nothing.</returns>
+    private static string? SenderOf(string? referrer, SiteSnapshot site)
+    {
+        if (!Uri.TryCreate(referrer, UriKind.Absolute, out var parsed))
+        {
+            return null;
+        }
+
+        var host = parsed.IdnHost.ToLowerInvariant();
+
+        return IsPublishedAt(site, host.TrimEnd('.')) ? null : host;
+    }
+
     private RawEvent BuildEvent(
         IngestCommand command,
         IngestContext context,
         SiteSnapshot site,
         Uri url,
-        DateTimeOffset receivedAt)
+        Derived derived)
     {
+        var (receivedAt, referrer, network, visitorKey) = derived;
         var clientTimestamp = ToTimestamp(command.ClientTimestampUnixMs);
-        var referrer = Truncate(PathOnly(command.Referrer), MaxReferrerLength);
 
         // Only a report about an operated control may describe one. Anything else claiming to is
         // a caller filling in fields that do not belong to what it says it is reporting, and the
         // claim is dropped rather than stored beside a page view nobody would expect to carry it.
         var operated = command.Kind == EventKind.Action;
 
-        // Resolved here rather than by a later job, because the address it is resolved from is
-        // erased 72 hours after this row is written. An attribute missed on the way in cannot be
-        // recovered afterwards: there would be nothing left to recover it from. It also has to be
-        // known before the visitor key below, which on a rented network is derived from the
-        // network rather than from the address.
-        var network = networkLookup.Resolve(context.IpAddress);
         var client = ClientProfiler.Profile(context.UserAgent, context.Hints);
 
         // The only thing recorded here that the sender could not have written for itself, and the
@@ -235,11 +282,7 @@ public sealed partial class EventIngestor(
             ServerTimestamp = receivedAt,
             ClientTimestamp = clientTimestamp,
             ClockSkewMs = CalculateClockSkewMs(clientTimestamp, receivedAt),
-            VisitorKey = visitorKeyFactory.Derive(
-                site.Id,
-                VisitorConnection.Identifying(context.IpAddress, network.AutonomousSystem),
-                context.UserAgent,
-                receivedAt),
+            VisitorKey = visitorKey,
             Host = url.Host,
             Path = url.AbsolutePath,
             QueryString = site.RetainQueryStrings ? NullIfEmpty(url.Query) : null,
@@ -317,18 +360,20 @@ public sealed partial class EventIngestor(
         var judged = NormalizeHost(requestOrigin) ?? NormalizeHost(urlHost);
         candidate = judged;
 
-        if (judged is null)
-        {
-            return false;
-        }
-
-        if (site.AllowedOrigins.Length > 0)
-        {
-            return site.AllowedOrigins.Any(allowed => HostMatches(judged, allowed));
-        }
-
-        return HostMatches(judged, site.Domain);
+        return judged is not null && IsPublishedAt(site, judged);
     }
+
+    /// <summary>
+    /// Whether a host is one of the addresses a site is published at: those it permits, or its own
+    /// hostname and the addresses below it where it names none.
+    /// </summary>
+    /// <param name="site">The site.</param>
+    /// <param name="host">The host, in lower case.</param>
+    /// <returns>Whether the site is published at it.</returns>
+    private static bool IsPublishedAt(SiteSnapshot site, string host) =>
+        site.AllowedOrigins.Length > 0
+            ? site.AllowedOrigins.Any(allowed => HostMatches(host, allowed))
+            : HostMatches(host, site.Domain);
 
     /// <summary>
     /// Renders a host safe to write to a log.
@@ -469,6 +514,19 @@ public sealed partial class EventIngestor(
     private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 
     /// <summary>
+    /// What the collector works out about a report before deciding whether to keep it.
+    /// </summary>
+    /// <param name="ReceivedAt">The instant the report arrived, by the server's clock.</param>
+    /// <param name="Referrer">Where the report says its page was reached from, as it is stored.</param>
+    /// <param name="Network">Where the address is and whose network it is on.</param>
+    /// <param name="VisitorKey">The visitor, or nothing where no key could be derived.</param>
+    private readonly record struct Derived(
+        DateTimeOffset ReceivedAt,
+        string? Referrer,
+        NetworkAttributes Network,
+        string? VisitorKey);
+
+    /// <summary>
     /// Why a report was turned away, written for whoever runs the installation.
     /// </summary>
     /// <remarks>
@@ -479,11 +537,15 @@ public sealed partial class EventIngestor(
     /// machine's owner can read it and the sender cannot.
     /// </para>
     /// <para>
-    /// Both are written at debug level, and that is a decision rather than an oversight: the
+    /// All are written at debug level, and that is a decision rather than an oversight: the
     /// address is public and unauthenticated, so anything logged for every refused request is a
     /// log file whose size is chosen by whoever is scanning the internet that day. They are here
     /// to be turned on for the ten minutes it takes to find out why a freshly installed snippet
-    /// is reporting nothing.
+    /// is reporting nothing, or why a visit that was expected never arrived.
+    /// </para>
+    /// <para>
+    /// None names the website a turned-away visit said it came from. It is written by whoever sent
+    /// the report, and the operator who listed it already knows which websites are listed.
     /// </para>
     /// </remarks>
     private static partial class Log
@@ -504,5 +566,12 @@ public sealed partial class EventIngestor(
             string candidate,
             string domain,
             Guid siteId);
+
+        [LoggerMessage(
+            EventId = 4103,
+            Level = LogLevel.Debug,
+            Message = "Report refused: it belongs to a visit to site {SiteId} from a website this "
+                + "installation does not keep visits from.")]
+        public static partial void SenderIgnored(ILogger logger, Guid siteId);
     }
 }

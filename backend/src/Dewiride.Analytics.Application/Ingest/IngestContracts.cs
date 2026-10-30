@@ -124,9 +124,10 @@ public enum IngestOutcome
     Accepted = 0,
 
     /// <summary>
-    /// No such site, or the request did not come from an origin the site permits. Deliberately
-    /// one outcome: reporting them separately would let anyone probe which site identifiers are
-    /// real.
+    /// No such site, a site no longer measured, a request from an origin the site does not permit,
+    /// a press on a website that records none, or a report from a visit the installation does not
+    /// keep because of the website it came from. Deliberately one outcome: reporting them
+    /// separately would let anyone probe which site identifiers are real.
     /// </summary>
     Rejected = 1,
 

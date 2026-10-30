@@ -9,12 +9,14 @@ using Dewiride.Analytics.Api.Endpoints;
 using Dewiride.Analytics.Api.Ingest;
 using Dewiride.Analytics.Extensibility;
 using Dewiride.Analytics.Application.Dashboard;
+using Dewiride.Analytics.Application.Ingest;
 using Dewiride.Analytics.Application.Persistence;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Infrastructure.Notifications;
 using Dewiride.Analytics.Infrastructure.Tenancy;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.Options;
 
 namespace Dewiride.Analytics.Api.Composition;
 
@@ -39,7 +41,17 @@ internal static class ApiRegistration
         builder.Services.AddOptions<CollectorOptions>()
             .Bind(builder.Configuration.GetSection(CollectorOptions.SectionName))
             .ValidateDataAnnotations()
+            .Validate(
+                settings => settings.IgnoredSenders.All(IgnoredSenders.IsHostName),
+                $"{CollectorOptions.SectionName}:IgnoredSenders must list host names of two labels or "
+                + "more, such as spam.example: no scheme, port, path or wildcard.")
             .ValidateOnStart();
+
+        // Built once from the settings validated above, and consulted by every collection point.
+        // Changing the list is a restart, as changing any other collector setting is.
+        builder.Services.AddSingleton(services => new IgnoredSenders(
+            services.GetRequiredService<IOptions<CollectorOptions>>().Value.IgnoredSenders,
+            services.GetRequiredService<IIgnoredVisitors>()));
 
         builder.Services.AddOptions<ClassificationOptions>()
             .Bind(builder.Configuration.GetSection(ClassificationOptions.SectionName))

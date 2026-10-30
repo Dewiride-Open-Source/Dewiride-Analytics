@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Dewiride.Analytics.Api.Configuration;
 
 /// <summary>
-/// Limits applied to the public collection endpoint.
+/// Limits applied to the public collection endpoint, and the websites whose visitors it turns away.
 /// </summary>
 /// <remarks>
 /// The collector takes writes from anyone who knows a site identifier, and a site identifier is
@@ -62,4 +62,22 @@ public sealed class CollectorOptions
     /// </remarks>
     [Range(1, 1000000)]
     public int ServerBatchesPerMinutePerAddress { get; init; } = 600;
+
+    /// <summary>
+    /// Websites whose visitors this installation does not keep.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Host names, each standing for itself and every address below it, so <c>example.org</c>
+    /// covers <c>www.example.org</c>. A report saying its page was reached from one is turned away
+    /// as it arrives, with everything its visitor sends until the visit is over, by every collection
+    /// point alike: nothing of the visit is stored, judged, counted or shown.
+    /// </para>
+    /// <para>
+    /// For senders an operator has decided are not worth measuring, such as a campaign whose
+    /// programs name one website in every visit they make. A person who follows a real link from a
+    /// listed website is turned away too. Empty unless configured.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> IgnoredSenders { get; init; } = [];
 }

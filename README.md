@@ -326,6 +326,9 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
 - **Done** · Activity grouped into visits: start, pages in order, landing page, exit page, time on
   each page, referrer, source kind, place, network, device, verdict, strength, reasons.
 - **Done** · A browser report and a server report of the same page counted once.
+- **Done** · An installation's own list of websites whose visits are turned away as they arrive —
+  nothing of such a visit is stored, judged, counted or shown.
+- **Not started** · The same list for each website, kept in its settings.
 - **Partly done** · End time and duration are computed but shown nowhere.
 - **Not started** · Recognising visits that look alike or machine-made — Phase 3.
 
@@ -695,6 +698,29 @@ It has to be reachable from the stack's own network: another container on it
 (`http://mysite:3000`), or an address on the machine itself
 (`http://host.docker.internal:8080`). Leave it empty, which is the ordinary case, and the root
 simply leads to the dashboard.
+
+### Turning away visits from a website
+
+Some traffic is not worth measuring at all — a campaign whose programs name one website as where
+every visit came from, so that its address appears on your screens. List that website and the
+engine drops such a visit as it arrives, along with everything its visitor sends until the visit is
+over: nothing of it is stored, judged, counted or shown. A person who follows a real link from a
+listed website is dropped too, so list only what you are sure of.
+
+Each entry is a host name and covers every address below it, so `spam.example` also covers
+`www.spam.example`. Put the list in a `compose.override.yaml` beside `compose.yaml`, which Compose
+reads with it, and run `docker compose up --wait`:
+
+```yaml
+services:
+  api:
+    environment:
+      Dewiride__Collector__IgnoredSenders__0: spam.example
+      Dewiride__Collector__IgnoredSenders__1: another.example
+```
+
+The engine refuses to start with an entry that is not a host name, rather than starting with one
+nothing could match. Visits already stored stay as they are.
 
 ### Copying it somewhere safe
 

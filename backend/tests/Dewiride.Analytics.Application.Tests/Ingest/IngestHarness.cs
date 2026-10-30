@@ -37,10 +37,16 @@ internal sealed class IngestHarness
     private readonly IVisitorKeyFactory _visitorKeys = Substitute.For<IVisitorKeyFactory>();
     private readonly INetworkLookup _network = Substitute.For<INetworkLookup>();
     private readonly ICrawlerAddressDirectory _crawlers = Substitute.For<ICrawlerAddressDirectory>();
+    private readonly RememberedVisitors _visitors = new();
     private readonly RecordingSink _sink = new();
     private readonly FakeLogger<EventIngestor> _logger = new();
 
-    private IngestHarness(SiteSnapshot? site, string? visitorKey, NetworkAttributes network, bool measuring)
+    private IngestHarness(
+        SiteSnapshot? site,
+        string? visitorKey,
+        NetworkAttributes network,
+        bool measuring,
+        IReadOnlyList<string> ignoredSenders)
     {
         _catalog.FindAsync(SiteId, Arg.Any<CancellationToken>()).Returns(site);
         _visitorKeys
@@ -63,10 +69,20 @@ internal sealed class IngestHarness
             _visitorKeys,
             _network,
             _crawlers,
+            new IgnoredSenders(ignoredSenders, _visitors),
             _sink,
             new FakeTimeProvider(Now),
             _logger);
     }
+
+    /// <summary>
+    /// The visitors whose visit is being turned away, as the ingestor asked for them to be held.
+    /// </summary>
+    /// <remarks>
+    /// Held for ever here. How long a visitor is held is the memory's own business, and is pinned
+    /// against the memory itself.
+    /// </remarks>
+    public IReadOnlyCollection<(Guid Site, string Visitor)> Remembered => _visitors.Held;
 
     /// <summary>
     /// Makes every address this harness ingests one the named company publishes for its crawlers.
@@ -125,23 +141,34 @@ internal sealed class IngestHarness
         NetworkAttributes? network = null,
         bool measuring = true) =>
         new(
-            new SiteSnapshot
-            {
-                Id = SiteId,
-                OrganizationId = OrganizationId,
-                Domain = domain,
-                RetainQueryStrings = retainQueryStrings,
-                CaptureClicks = captureClicks,
-                AllowedOrigins = allowedOrigins?.ToImmutableArray() ?? [],
-            },
+            Site(domain, retainQueryStrings, captureClicks, allowedOrigins),
             visitorKey,
             network ?? Somewhere,
-            measuring);
+            measuring,
+            ignoredSenders: []);
+
+    /// <summary>
+    /// Builds a harness for an installation that does not keep visits from some websites.
+    /// </summary>
+    /// <param name="senders">The websites, as the installation was configured with them.</param>
+    /// <param name="allowedOrigins">Origins the site permits, or empty for its own domain only.</param>
+    /// <param name="visitorKey">The key the visitor-key factory returns.</param>
+    /// <returns>The harness.</returns>
+    public static IngestHarness Ignoring(
+        IReadOnlyList<string> senders,
+        IEnumerable<string>? allowedOrigins = null,
+        string? visitorKey = "9f2a1c4e8b6d0a3f") =>
+        new(
+            Site("example.com", retainQueryStrings: false, captureClicks: true, allowedOrigins),
+            visitorKey,
+            Somewhere,
+            measuring: true,
+            senders);
 
     /// <summary>Builds a harness whose site catalog resolves nothing.</summary>
     /// <returns>The harness.</returns>
     public static IngestHarness WithNoSuchSite() =>
-        new(site: null, visitorKey: null, network: NetworkAttributes.Unresolved, measuring: true);
+        new(site: null, visitorKey: null, network: NetworkAttributes.Unresolved, measuring: true, ignoredSenders: []);
 
     /// <summary>Runs one ingest.</summary>
     /// <param name="command">The report.</param>
@@ -200,6 +227,33 @@ internal sealed class IngestHarness
     {
         public ValueTask<bool> AllowsAsync(SiteSnapshot site, CancellationToken cancellationToken) =>
             ValueTask.FromResult(measuring);
+    }
+
+    private static SiteSnapshot Site(
+        string domain,
+        bool retainQueryStrings,
+        bool captureClicks,
+        IEnumerable<string>? allowedOrigins) =>
+        new()
+        {
+            Id = SiteId,
+            OrganizationId = OrganizationId,
+            Domain = domain,
+            RetainQueryStrings = retainQueryStrings,
+            CaptureClicks = captureClicks,
+            AllowedOrigins = allowedOrigins?.ToImmutableArray() ?? [],
+        };
+
+    /// <summary>A memory of turned-away visitors that never forgets one.</summary>
+    private sealed class RememberedVisitors : IIgnoredVisitors
+    {
+        private readonly HashSet<(Guid Site, string Visitor)> _held = [];
+
+        public IReadOnlyCollection<(Guid Site, string Visitor)> Held => _held;
+
+        public void Remember(Guid siteId, string visitorKey) => _held.Add((siteId, visitorKey));
+
+        public bool Recalls(Guid siteId, string visitorKey) => _held.Contains((siteId, visitorKey));
     }
 
     private sealed class RecordingSink : IEventSink

@@ -159,8 +159,10 @@ became of the batch. The caller has already proved it holds a key for the site, 
 left for the answer to disclose, and whoever is writing the reporter needs to know whether it works.
 
 `rejected` counts observations that were malformed, that named a page on a hostname the site does
-not cover, or that arrived while the account the website belongs to was closed. The rest of the
-batch is still stored.
+not cover, that arrived while the account the website belongs to was closed, or that belonged to a
+visit from a website the installation does not keep visits from (`Dewiride:Collector:IgnoredSenders`:
+the visit whose referrer named it, and what its visitor sends until the visit is over). The rest of
+the batch is still stored.
 
 | Status | Meaning                                                                   |
 | ------ | ------------------------------------------------------------------------- |

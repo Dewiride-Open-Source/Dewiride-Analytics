@@ -263,7 +263,7 @@ public sealed class NameConfirmationTests(AnalyticsStackFixture stack)
             services.GetRequiredService<IOptions<ClassificationOptions>>(),
             NullLogger<SessionClassifier>.Instance);
 
-        await classifier.CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt.AddDays(-2)), Cancellation.Token)
+        await classifier.CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt.AddDays(-2), site.TimeZoneId), Cancellation.Token)
             .ConfigureAwait(false);
     }
 
@@ -288,7 +288,7 @@ public sealed class NameConfirmationTests(AnalyticsStackFixture stack)
     private async Task<IReadOnlyList<JudgedSession>> VisitsAsync(Site site) =>
         (await stack.Services.GetRequiredService<ITelemetryQueries>()
             .GetJudgedSessionsAsync(
-                new TenantScope(site.Id, site.OrganizationId, SiteRole.Viewer, site.TimeZoneId),
+                new TenantScope(site.Id, site.OrganizationId, SiteRole.Viewer, site.TimeZoneId, site.CreatedAt),
                 new JudgedSessionsQuery(
                     new TimeRange(Now.AddDays(-2), Now.AddMinutes(1)),
                     TimeSpan.FromMinutes(30),

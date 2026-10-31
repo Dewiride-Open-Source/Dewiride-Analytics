@@ -19,6 +19,15 @@ namespace Dewiride.Analytics.Integration.Tests.Telemetry;
 [Collection(SharedStackDefinition.Name)]
 public sealed class TelemetryQueryTests(AnalyticsStackFixture stack)
 {
+    /// <summary>A zone with no offset and no changes, where a website's Monday is UTC's.</summary>
+    private const string Utc = "Etc/UTC";
+
+    /// <summary>A zone that changes its clocks twice a year, an hour each way, at one in the morning UTC.</summary>
+    private const string London = "Europe/London";
+
+    /// <summary>A zone that never changes its clocks, half an hour off the hour from UTC.</summary>
+    private const string Kolkata = "Asia/Kolkata";
+
     private static readonly DateTimeOffset Midnight = new(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
 
     [Fact]
@@ -182,15 +191,335 @@ public sealed class TelemetryQueryTests(AnalyticsStackFixture stack)
         series[1].Value.Should().Be(1);
     }
 
+    /// <summary>
+    /// A week begins at midnight on Monday where the website is. In Kolkata that is half past six
+    /// on Sunday evening in UTC and in Kathmandu a quarter past six, so two reports minutes apart
+    /// either side of it belong to two different weeks.
+    /// </summary>
+    /// <param name="timeZoneId">Where the website is.</param>
+    /// <param name="hour">The hour of Sunday evening, in UTC, its week begins at.</param>
+    /// <param name="minute">The minute past that hour.</param>
+    [Theory]
+    [InlineData(Kolkata, 18, 30)]
+    [InlineData("Asia/Kathmandu", 18, 15)]
+    public async Task A_Week_Begins_On_Monday_Where_The_Website_Is(string timeZoneId, int hour, int minute)
+    {
+        var siteId = Guid.NewGuid();
+        var calendar = new ZoneCalendar(timeZoneId);
+        var monday = ZoneCalendar.MondayOf(calendar.DateOf(Now)).AddDays(-7);
+        var begins = calendar.MidnightOn(monday);
+
+        await WriteAsync(
+            PageView(siteId, begins.AddMinutes(-5), "visitor-a"),
+            PageView(siteId, begins.AddMinutes(5), "visitor-b"));
+
+        var series = await Queries.GetTimeSeriesAsync(
+            Scope(siteId, timeZoneId),
+            new TimeSeriesQuery(
+                new TimeRange(begins.AddHours(-1), begins.AddHours(1)),
+                TimeGranularity.Week,
+                TimeSeriesMetric.PageViews),
+            Cancellation.Token);
+
+        series.Select(point => point.BucketStart).Should().Equal(calendar.MidnightOn(monday.AddDays(-7)), begins);
+        series.Select(point => point.Value).Should().Equal(1, 1);
+        begins.UtcDateTime.DayOfWeek.Should().Be(DayOfWeek.Sunday);
+        begins.UtcDateTime.TimeOfDay.Should().Be(new TimeSpan(hour, minute, 0));
+    }
+
+    /// <summary>
+    /// A week is named after its Monday even when the window opens later in it, and counts only
+    /// what the window holds: a report from before the window opened is not in the week, however
+    /// much of the week the window leaves out.
+    /// </summary>
+    [Fact]
+    public async Task The_First_Week_Holds_Only_What_The_Window_Holds()
+    {
+        var siteId = Guid.NewGuid();
+        var calendar = new ZoneCalendar(Utc);
+        var monday = calendar.MidnightOn(ZoneCalendar.MondayOf(calendar.DateOf(Now)).AddDays(-14));
+        var wednesday = monday.AddDays(2);
+
+        await WriteAsync(
+            PageView(siteId, monday.AddHours(12), "visitor-a"),
+            PageView(siteId, wednesday.AddHours(12), "visitor-b"),
+            PageView(siteId, wednesday.AddDays(1).AddHours(12), "visitor-c"));
+
+        var series = await Queries.GetTimeSeriesAsync(
+            Scope(siteId),
+            new TimeSeriesQuery(new TimeRange(wednesday, monday.AddDays(7)), TimeGranularity.Week, TimeSeriesMetric.PageViews),
+            Cancellation.Token);
+
+        series.Should().ContainSingle();
+        series[0].BucketStart.Should().Be(monday);
+        series[0].Value.Should().Be(2);
+    }
+
+    /// <summary>
+    /// A month begins at midnight on the first where the website is, on whichever side of a change
+    /// of the clocks that midnight falls: two reports an hour apart either side of it belong to two
+    /// months, each named by its own first midnight. Placed at the latest month to begin on a new
+    /// offset, which is a spring month in one half of the year and an autumn one in the other.
+    /// </summary>
+    [Fact]
+    public async Task A_Month_Begins_At_Midnight_On_The_First_Either_Side_Of_A_Clock_Change()
+    {
+        var siteId = Guid.NewGuid();
+        var london = new ZoneCalendar(London);
+        var month = london.LatestMonthBeginningOnANewOffset(Now.AddHours(-1));
+        var begins = london.MidnightOn(month);
+
+        await WriteAsync(
+            PageView(siteId, begins.AddMinutes(-30), "visitor-a"),
+            PageView(siteId, begins.AddMinutes(30), "visitor-b"));
+
+        var series = await Queries.GetTimeSeriesAsync(
+            Scope(siteId, London),
+            new TimeSeriesQuery(
+                new TimeRange(begins.AddHours(-1), begins.AddHours(1)),
+                TimeGranularity.Month,
+                TimeSeriesMetric.PageViews),
+            Cancellation.Token);
+
+        series.Select(point => point.BucketStart).Should().Equal(london.MidnightOn(month.AddMonths(-1)), begins);
+        series.Select(point => point.Value).Should().Equal(1, 1);
+    }
+
+    /// <summary>
+    /// A week nothing happened in is a week the store invents, and only an invented one shows
+    /// whether it steps on the website's calendar: stepping seven times twenty-four hours from the
+    /// Monday before the clocks change lands an hour either side of the Monday after it. The window
+    /// reaches across the last two changes, so one goes forward and one goes back whenever this
+    /// runs; the weeks around the earlier change hold nothing at all, because it can be too long ago
+    /// for the store to keep reports from.
+    /// </summary>
+    [Fact]
+    public async Task A_Week_Nobody_Visited_After_The_Clocks_Change_Still_Begins_At_Midnight_On_Monday()
+    {
+        var siteId = Guid.NewGuid();
+        var london = new ZoneCalendar(London);
+        var latest = london.LatestClockChange(Now.AddDays(-35));
+        var first = ZoneCalendar.MondayOf(london.DateOf(london.LatestClockChange(latest.AddHours(-1))));
+        var changed = ZoneCalendar.MondayOf(london.DateOf(latest));
+        var weeks = ((changed.DayNumber - first.DayNumber) / 7) + 3;
+
+        // A report in the week the clocks last changed, before they did, and one two weeks later,
+        // so the week straight after the change sits empty between two that are not.
+        await WriteAsync(
+            PageView(siteId, london.MidnightOn(changed.AddDays(1)).AddHours(12), "visitor-a"),
+            PageView(siteId, london.MidnightOn(changed.AddDays(16)).AddHours(12), "visitor-b"));
+
+        var series = await Queries.GetTimeSeriesAsync(
+            Scope(siteId, London),
+            new TimeSeriesQuery(
+                new TimeRange(london.MidnightOn(first), london.MidnightOn(first.AddDays(7 * weeks))),
+                TimeGranularity.Week,
+                TimeSeriesMetric.PageViews),
+            Cancellation.Token);
+
+        var begins = series.Select(point => point.BucketStart).ToArray();
+
+        begins.Should().HaveCount(weeks).And.OnlyHaveUniqueItems();
+        begins.Should().OnlyContain(start =>
+            london.IsMidnight(start) && london.DateOf(start).DayOfWeek == DayOfWeek.Monday);
+        begins.Should().Equal(Enumerable.Range(0, weeks).Select(week => london.MidnightOn(first.AddDays(7 * week))));
+        series.Select(point => point.Value).Should().Equal(
+            Enumerable.Range(0, weeks).Select(week => week == weeks - 3 || week == weeks - 1 ? 1L : 0L));
+    }
+
+    /// <summary>
+    /// A month nothing happened in begins at midnight on the first even when the clocks changed in
+    /// the month before it. The window reaches from the month of the earlier of the last two
+    /// changes to the month after the latest, so both directions of change are stepped across into
+    /// an empty month, with months that hold reports on either side of the empty ones between.
+    /// </summary>
+    [Fact]
+    public async Task A_Month_Nobody_Visited_After_The_Clocks_Change_Still_Begins_At_Midnight_On_The_First()
+    {
+        var siteId = Guid.NewGuid();
+        var london = new ZoneCalendar(London);
+        var latest = london.LatestClockChange(Now.AddDays(-35));
+        var first = ZoneCalendar.FirstOf(london.DateOf(london.LatestClockChange(latest.AddHours(-1))));
+        var changed = ZoneCalendar.FirstOf(london.DateOf(latest));
+        var months = MonthsFrom(first, changed) + 2;
+
+        // The earlier change can be too long ago for the store to keep reports from, so the first
+        // report waits three months after it; the second is early in the month of the latest change.
+        await WriteAsync(
+            PageView(siteId, london.MidnightOn(first.AddMonths(3).AddDays(9)).AddHours(12), "visitor-a"),
+            PageView(siteId, london.MidnightOn(changed.AddDays(9)).AddHours(12), "visitor-b"));
+
+        var series = await Queries.GetTimeSeriesAsync(
+            Scope(siteId, London),
+            new TimeSeriesQuery(
+                new TimeRange(london.MidnightOn(first), london.MidnightOn(first.AddMonths(months))),
+                TimeGranularity.Month,
+                TimeSeriesMetric.PageViews),
+            Cancellation.Token);
+
+        var begins = series.Select(point => point.BucketStart).ToArray();
+
+        begins.Should().HaveCount(months).And.OnlyHaveUniqueItems();
+        begins.Should().OnlyContain(start => london.IsMidnight(start) && london.DateOf(start).Day == 1);
+        begins.Should().Equal(Enumerable.Range(0, months).Select(month => london.MidnightOn(first.AddMonths(month))));
+        series.Select(point => point.Value).Should().Equal(
+            Enumerable.Range(0, months).Select(month => month == 3 || month == months - 2 ? 1L : 0L));
+    }
+
+    /// <summary>
+    /// Kolkata never changes its clocks, but its months still begin at half past six in the evening
+    /// of the last day of the month before in UTC, and the months are of different lengths: a fill
+    /// stepping a month at a time on UTC's calendar would carry the thirtieth into a month that
+    /// begins on the thirty-first, and draw an empty month from the wrong evening.
+    /// </summary>
+    [Fact]
+    public async Task A_Month_Nobody_Visited_Still_Begins_At_Midnight_On_The_First_Where_The_Website_Is()
+    {
+        const int months = 6;
+
+        var siteId = Guid.NewGuid();
+        var kolkata = new ZoneCalendar(Kolkata);
+        var first = ZoneCalendar.FirstOf(kolkata.DateOf(Now)).AddMonths(-months);
+
+        await WriteAsync(
+            PageView(siteId, kolkata.MidnightOn(first.AddDays(9)).AddHours(12), "visitor-a"),
+            PageView(siteId, kolkata.MidnightOn(first.AddMonths(2).AddDays(9)).AddHours(12), "visitor-b"));
+
+        var series = await Queries.GetTimeSeriesAsync(
+            Scope(siteId, Kolkata),
+            new TimeSeriesQuery(
+                new TimeRange(kolkata.MidnightOn(first), kolkata.MidnightOn(first.AddMonths(months))),
+                TimeGranularity.Month,
+                TimeSeriesMetric.PageViews),
+            Cancellation.Token);
+
+        var begins = series.Select(point => point.BucketStart).ToArray();
+
+        begins.Should().HaveCount(months).And.OnlyHaveUniqueItems();
+        begins.Should().OnlyContain(start => kolkata.IsMidnight(start) && kolkata.DateOf(start).Day == 1);
+        begins.Should().Equal(Enumerable.Range(0, months).Select(month => kolkata.MidnightOn(first.AddMonths(month))));
+        series.Select(point => point.Value).Should().Equal(1, 0, 1, 0, 0, 0);
+    }
+
+    /// <summary>
+    /// The day the clocks change is twenty-three or twenty-five hours long and still one day, and the
+    /// days either side of it that nothing happened in still begin at midnight.
+    /// </summary>
+    [Fact]
+    public async Task A_Day_Nobody_Visited_After_The_Clocks_Change_Still_Begins_At_Midnight()
+    {
+        var siteId = Guid.NewGuid();
+        var london = new ZoneCalendar(London);
+        var changed = london.DateOf(london.LatestClockChange(Now.AddDays(-35)));
+        var first = changed.AddDays(-2);
+
+        await WriteAsync(
+            PageView(siteId, london.MidnightOn(first).AddHours(12), "visitor-a"),
+            PageView(siteId, london.MidnightOn(changed.AddDays(2)).AddHours(12), "visitor-b"));
+
+        var series = await Queries.GetTimeSeriesAsync(
+            Scope(siteId, London),
+            new TimeSeriesQuery(
+                new TimeRange(london.MidnightOn(first), london.MidnightOn(changed.AddDays(3))),
+                TimeGranularity.Day,
+                TimeSeriesMetric.PageViews),
+            Cancellation.Token);
+
+        var begins = series.Select(point => point.BucketStart).ToArray();
+
+        begins.Should().HaveCount(5).And.OnlyHaveUniqueItems();
+        begins.Should().OnlyContain(start => london.IsMidnight(start));
+        begins.Should().Equal(Enumerable.Range(0, 5).Select(day => london.MidnightOn(first.AddDays(day))));
+        series.Select(point => point.Value).Should().Equal(1, 0, 0, 0, 1);
+    }
+
+    /// <summary>
+    /// Where the clocks go forward at midnight, as Santiago's and Cairo's do, the day they change
+    /// on has no midnight and begins at one in the morning. It is still one day, and every day after
+    /// it still begins where its own midnight is, whether or not anything happened in it: stepping
+    /// from the instants rather than the dates would draw each later day an hour early, beside the
+    /// day it is, and the series would grow a bucket a day. Placed around the latest such day at
+    /// least four days back, so the days after it have all happened.
+    /// </summary>
+    [Fact]
+    public async Task A_Day_The_Clocks_Begin_After_Midnight_Is_Still_One_Day_And_So_Is_Every_Day_After_It()
+    {
+        var siteId = Guid.NewGuid();
+        var (calendar, skipped) = ZoneCalendar.LatestDayWithoutAMidnight(Now.AddDays(-4));
+        DateOnly[] days = [.. Enumerable.Range(-3, 7).Select(skipped.AddDays)];
+
+        // One report on the day the clocks skip midnight and one two days later, so a counted day
+        // sits on either side of a day only the fill names.
+        await WriteAsync(
+            PageView(siteId, calendar.FirstInstantOn(skipped).AddHours(12), "visitor-a"),
+            PageView(siteId, calendar.FirstInstantOn(skipped.AddDays(2)).AddHours(12), "visitor-b"));
+
+        var series = await Queries.GetTimeSeriesAsync(
+            Scope(siteId, calendar.TimeZoneId),
+            new TimeSeriesQuery(
+                new TimeRange(calendar.FirstInstantOn(days[0]), calendar.FirstInstantOn(skipped.AddDays(4))),
+                TimeGranularity.Day,
+                TimeSeriesMetric.PageViews),
+            Cancellation.Token);
+
+        series.Select(point => point.BucketStart).Should().Equal(days.Select(calendar.FirstInstantOn));
+        series.Select(point => point.Value).Should().Equal(0, 0, 0, 1, 0, 1, 0);
+    }
+
+    /// <summary>
+    /// A visitor key covers one UTC day, and a bucket counts each key once. Away from UTC one key's
+    /// day spans two of the website's own, so somebody who reads late one evening in Kolkata and
+    /// again just after midnight is one visitor in the week and one in each of the two days: the
+    /// week holds fewer visitors than its days added up, and a week's figure is never their sum.
+    /// </summary>
+    [Fact]
+    public async Task A_Week_Can_Hold_Fewer_Visitors_Than_Its_Days_Added_Up()
+    {
+        var siteId = Guid.NewGuid();
+        var kolkata = new ZoneCalendar(Kolkata);
+        var monday = ZoneCalendar.MondayOf(kolkata.DateOf(Now)).AddDays(-14);
+        var thursday = kolkata.MidnightOn(monday.AddDays(3));
+        var week = new TimeRange(kolkata.MidnightOn(monday), kolkata.MidnightOn(monday.AddDays(7)));
+
+        // Eleven on Wednesday night and one on Thursday morning in Kolkata are both Wednesday in
+        // UTC, so both reports carry the key that day was given.
+        await WriteAsync(
+            PageView(siteId, thursday.AddHours(-1), "visitor-a"),
+            PageView(siteId, thursday.AddHours(1), "visitor-a"));
+
+        var days = await Queries.GetTimeSeriesAsync(
+            Scope(siteId, Kolkata),
+            new TimeSeriesQuery(week, TimeGranularity.Day, TimeSeriesMetric.Visitors),
+            Cancellation.Token);
+        var weeks = await Queries.GetTimeSeriesAsync(
+            Scope(siteId, Kolkata),
+            new TimeSeriesQuery(week, TimeGranularity.Week, TimeSeriesMetric.Visitors),
+            Cancellation.Token);
+
+        thursday.UtcDateTime.AddHours(-1).Date.Should().Be(thursday.UtcDateTime.AddHours(1).Date);
+        days.Sum(point => point.Value).Should().Be(2);
+        weeks.Should().ContainSingle().Which.Value.Should().Be(1);
+    }
+
     private ITelemetryQueries Queries => stack.Services.GetRequiredService<ITelemetryQueries>();
+
+    /// <summary>The moment the test runs, which every relative date here is placed from.</summary>
+    private DateTimeOffset Now => stack.Services.GetRequiredService<TimeProvider>().GetUtcNow();
 
     private Task WriteAsync(params RawEvent[] events) =>
         stack.Services.GetRequiredService<IEventSink>().WriteBatchAsync(events, Cancellation.Token);
 
+    /// <summary>How many whole months one first of the month is after another.</summary>
+    /// <param name="earlier">The earlier first of the month.</param>
+    /// <param name="later">The later one.</param>
+    /// <returns>The number of months between them.</returns>
+    private static int MonthsFrom(DateOnly earlier, DateOnly later) =>
+        ((later.Year - earlier.Year) * 12) + later.Month - earlier.Month;
+
     private static TimeRange Day() => new(Midnight, Midnight.AddDays(1));
 
     private static TenantScope Scope(Guid siteId, string timeZoneId = "Etc/UTC") =>
-        new(siteId, Guid.NewGuid(), SiteRole.Viewer, timeZoneId);
+        new(siteId, Guid.NewGuid(), SiteRole.Viewer, timeZoneId, DateTimeOffset.UnixEpoch);
 
     private static RawEvent PageView(Guid siteId, DateTimeOffset at, string? visitorKey) =>
         Event(siteId, at, visitorKey, EventKind.PageView);

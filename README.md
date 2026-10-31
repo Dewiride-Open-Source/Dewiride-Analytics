@@ -19,7 +19,9 @@ Two rules shape everything here:
   recordings, no cookie banners to click through. Raw addresses are dropped after 72 hours, and
   the key that tells one visitor's activity from another's is worked out with a secret that
   changes every day, so once an address is gone there is no key that joins a reader's activity
-  from one day to the next — and no screen or figure ever tries to.
+  from one day to the next — and no screen or figure ever tries to. Every report of a visit is
+  deleted after twelve months; what is kept after that is each month's totals, until the website
+  is removed.
 
 ## Where this is today
 
@@ -37,8 +39,15 @@ and the [master plan](#master-plan) below it says what does not yet.
   website. Removing a website deletes everything ever measured for it and nothing brings it back,
   so it asks you to type the website's address before it will go ahead. Anyone who can change a
   website's settings can rename it; removing one is the owner's alone.
-- A dashboard showing page views, daily visitors, a daily traffic graph whose days can be pressed
-  to look at one on its own, and the pages a period's traffic went to, for a website you own. A
+- A dashboard showing page views, daily visitors, a traffic graph drawn by the day, the week or the
+  month whose bars can be pressed to look at the days they cover, and the pages a period's traffic
+  went to, for a website you own. "All time" shows the figures and the graph, by the month or the
+  year, back to the first month the website was measured — or, on an installation that first runs
+  this release more than about eleven months after that, the first month it could still count —
+  long after the reports of those months are gone; the lists beneath it cover the last twelve
+  months, which is as far back as anything about a single visit is kept. Nothing is ever compared
+  with days that are no longer kept, so a period whose earlier stretch reaches back past twelve
+  months shows no rise or fall at all. A
   site running both the tracker and its own server's reports is counted once per page delivered
   rather than once per report, so running the product properly does not double what it tells you.
   Traffic arriving through a pool of rented addresses is counted as the one operator it is, rather
@@ -115,8 +124,9 @@ and the [master plan](#master-plan) below it says what does not yet.
   ends a visit.
 - Every figure on the overview and the whole User journey list can be kept to the visits judged to
   be people, with one switch beside the period. It is the same arithmetic over fewer visits, so the
-  cards, the graph and every list add up to each other, and the choice travels in the address with
-  the period so a link opens on exactly what was being looked at.
+  cards, the graph and every list add up to each other — under "All time" the cards and the graph
+  do, and the lists beneath them cover the last twelve months — and the choice travels in the
+  address with the period so a link opens on exactly what was being looked at.
 
 - Two ways of establishing that a crawler really is whose crawler it says it is, which between
   them are the only basis on which a visit is ever reported as confirmed. Most companies publish a
@@ -135,7 +145,7 @@ and the [master plan](#master-plan) below it says what does not yet.
 ## Master plan
 
 Every capability the product is meant to have, phase by phase, in the order the work is picked
-up. Each line is marked with one of four states. Last reviewed 2026-09-21.
+up. Each line is marked with one of four states. Last reviewed 2026-10-30.
 
 - **Done** — shipped and visible on the dashboard, or collected on every capture surface.
 - **Partly done** — a real piece ships; the line says what is still missing.
@@ -144,7 +154,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
 
 ### Phase 1 — Public statements
 
-- **Done** · README: retention is 12 months, not unlimited.
+- **Done** · README: every report of a visit is kept for 12 months; each website's monthly totals
+  until the website is removed.
 - **Done** · README: a page counts as read only when its arrival reached us.
 - **Done** · README: multi-customer analysis is planned, not present.
 - **Done** · README: the daily key does not recognise a returning reader.
@@ -388,8 +399,11 @@ up. Each line is marked with one of four states. Last reviewed 2026-09-21.
 
 **5.6 Trends**
 
-- **Done** · Totals and people only over time; change against the period before; the earlier
-  period as a dashed line; days that can be pressed.
+- **Done** · Totals and people only over time, by days, weeks (Monday to Sunday) or months; change
+  against the period before; the earlier period as a dashed line, lined up week for week or month
+  for month; bars that can be pressed to look at the days they cover.
+- **Done** · All time: the headline figures and the graph by months or years, back to the first
+  month kept.
 - **Partly done** · The "Who came" chart stacks four tones over time; AI and search are folded
   into Machinery.
 - **Not started** · AI crawlers and search crawlers as lines of their own.
@@ -807,8 +821,9 @@ somebody to embed.
 
 Self-hosting is not a crippled tier. The full detection engine, every screen that shows or
 judges your traffic, and unlimited websites and traffic are free, and every edition keeps twelve
-months of traffic and verdicts. What the hosted service adds today is the running of it: an
-account anyone can create, plans and billing. Analysis that only exists because it sees many
+months of traffic and verdicts, and each website's monthly totals until the website is removed.
+What the hosted service adds today is the running of it: an account anyone can create, plans and
+billing. Analysis that only exists because it sees many
 customers' traffic at once — which no single installation could produce for itself — is planned
 for that edition and not yet built. The commercial part lives in its own repository and is not
 required to build or run anything here.

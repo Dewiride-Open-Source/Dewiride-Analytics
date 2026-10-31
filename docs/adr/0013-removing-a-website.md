@@ -6,6 +6,9 @@
 - **Revised by**: [0053](0053-a-time-zone-is-called-by-the-name-it-goes-by-now.md), which offers,
   shows and saves every zone under the name it goes by now, so a place a browser calls by an
   earlier name is one choice rather than two.
+- **Extended by**: [0064](0064-a-month-outlives-the-reports-it-was-counted-from.md), which keeps each
+  website's totals for each finished month after its reports are gone. Removing the website removes
+  them with everything else, and nothing else ever deletes them.
 
 ## Context
 

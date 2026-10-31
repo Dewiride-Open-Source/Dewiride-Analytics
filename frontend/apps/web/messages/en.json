@@ -151,8 +151,11 @@
         "last-90-days": "Last 90 days",
         "this-month": "This month",
         "last-month": "Last month",
-        "this-year": "This year"
+        "this-year": "This year",
+        "all-time": "All time"
       },
+      "since": "Since {date}",
+      "sinceFirst": "Since the first visit",
       "chosen": "Your dates",
       "choose": "Choose dates…",
       "chooser": {
@@ -165,7 +168,8 @@
         "problems": {
           "backwards": "The last day comes before the first one.",
           "future": "That day hasn't happened yet.",
-          "too-long": "Pick a stretch of a year or less."
+          "too-long": "Pick a stretch of a year or less{allTime, select, further {, or choose All time} other {}}.",
+          "too-old": "Visits are kept for {months, plural, one {# month} other {# months}}. Pick days on or after {date}{allTime, select, further {, or choose All time} other {}}."
         }
       }
     },
@@ -230,6 +234,23 @@
         "chosen": "the {days, plural, one {day} other {# days}} before"
       }
     },
+    "allTime": {
+      "lists": "The lists below cover the last 12 months.",
+      "quiet": {
+        "title": "Nothing in the last 12 months",
+        "body": "The lists cover the last 12 months, and nothing has reached {site} in that time.",
+        "people": {
+          "nobodyYet": {
+            "title": "No people yet",
+            "body": "The lists cover the last 12 months, and so far none of the visits to {site} in that time has been judged to be a person."
+          },
+          "unjudged": {
+            "title": "Nothing judged yet",
+            "body": "The lists cover the last 12 months, and none of the visits to {site} in that time has been judged yet."
+          }
+        }
+      }
+    },
     "chart": {
       "title": "Traffic",
       "view": {
@@ -243,42 +264,82 @@
         "columns": "Columns",
         "area": "Area"
       },
+      "by": {
+        "label": "Show the chart by",
+        "day": "By day",
+        "week": "By week",
+        "month": "By month",
+        "year": "By year",
+        "moves": "{cut} · {period}",
+        "moved": "Period changed to {period}."
+      },
+      "cutShort": {
+        "week": "Weeks the period cuts short are drawn fainter.",
+        "month": "Months the period cuts short are drawn fainter.",
+        "year": "Years the period cuts short are drawn fainter."
+      },
       "activity": {
         "pageViews": "Page views",
         "visitors": "Daily visitors",
         "visitorsByHour": "Visitors",
         "summary": "Page views and visitors for {site} over the chosen period.",
-        "days": "Days run midnight to midnight in {zone}.",
-        "hours": "Times are the clock in {zone}."
+        "cut": {
+          "hour": "Times are the clock in {zone}.",
+          "day": "Days run midnight to midnight in {zone}.",
+          "week": "Weeks run Monday to Sunday in {zone}, and somebody who comes back on another day counts again.",
+          "month": "Months follow the calendar in {zone}, and somebody who comes back on another day counts again.",
+          "year": "Years follow the calendar in {zone}, and somebody who comes back on another day counts again."
+        }
       },
       "table": "Show these figures as a table",
-      "columnDay": "Day",
-      "columnHour": "Time",
+      "notCounted": "Not counted",
+      "notFullyJudged": "Not fully judged",
+      "uncounted": "{count, plural, one {{months} wasn't counted and is} other {{months} weren't counted and are}} left out of these figures.",
+      "unsettled": "{count, plural, one {{months} wasn't fully judged and is} other {{months} weren't fully judged and are}} left out of these figures.",
+      "leavesOut": "leaves out {months}",
+      "column": {
+        "hour": "Time",
+        "day": "Day",
+        "week": "Week",
+        "month": "Month",
+        "year": "Year"
+      },
       "drill": {
-        "row": "{bucket}, look at this day"
+        "row": "{bucket}, look at this day",
+        "rows": "{bucket}, look at these days"
       },
       "who": {
         "summary": "Who and what visited {site} over the chosen period.",
-        "days": "Visits that have finished, by day in {zone}.",
-        "hours": "Visits that have finished, by the clock in {zone}.",
+        "cut": {
+          "hour": "Visits that have finished, by the clock in {zone}.",
+          "day": "Visits that have finished, by day in {zone}.",
+          "week": "Visits that have finished, by week in {zone}, Monday to Sunday.",
+          "month": "Visits that have finished, by month in {zone}.",
+          "year": "Visits that have finished, by year in {zone}."
+        },
         "judging": "The newest are still being judged.",
         "judgingAll": "This whole period is still being judged.",
         "stillJudging": "still being judged",
         "total": "All visits",
         "none": "No visits have been judged in this period yet.",
         "noneAction": "See how much was read",
-        "against": "The dashed line is {days}."
+        "against": "The dashed line is {days}{cut, select, week {, lined up week for week} month {, lined up month for month} other {}}."
       },
       "against": {
         "action": "Compare",
         "label": "Compare with the period before",
         "measure": "{name} before",
-        "lines": "The dashed lines are {days}."
+        "lines": "The dashed lines are {days}{cut, select, week {, lined up week for week} month {, lined up month for month} other {}}."
       },
       "people": {
         "summary": "Visits judged to be people on {site} over the chosen period.",
-        "days": "Finished visits judged to be people, by day in {zone}.",
-        "hours": "Finished visits judged to be people, by the clock in {zone}.",
+        "cut": {
+          "hour": "Finished visits judged to be people, by the clock in {zone}.",
+          "day": "Finished visits judged to be people, by day in {zone}.",
+          "week": "Finished visits judged to be people, by week in {zone}, Monday to Sunday.",
+          "month": "Finished visits judged to be people, by month in {zone}.",
+          "year": "Finished visits judged to be people, by year in {zone}."
+        },
         "judging": "The newest are still being judged.",
         "judgingAll": "This whole period is still being judged.",
         "none": "No visits in this period were judged to be people.",
@@ -287,8 +348,13 @@
           "visitors": "Daily visitors judged to be people",
           "visitorsByHour": "Visitors judged to be people",
           "summary": "Page views and visitors among people on {site} over the chosen period.",
-          "days": "Days run midnight to midnight in {zone}.",
-          "hours": "Times are the clock in {zone}."
+          "cut": {
+            "hour": "Times are the clock in {zone}.",
+            "day": "Days run midnight to midnight in {zone}.",
+            "week": "Weeks run Monday to Sunday in {zone}, and somebody who comes back on another day counts again.",
+            "month": "Months follow the calendar in {zone}, and somebody who comes back on another day counts again.",
+            "year": "Years follow the calendar in {zone}, and somebody who comes back on another day counts again."
+          }
         }
       }
     },
@@ -639,6 +705,7 @@
     "title": "User journey",
     "caption": "Everyone and everything that visited {site}, newest first. Open one to see the pages it went to, what it did there, and what it was judged on.",
     "captionPeople": "The visits to {site} judged to be people, newest first. Open one to see the pages it went to, what it did there, and what it was judged on.",
+    "keptOnly": "The list covers the last 12 months, as far back as visits are kept.",
     "filters": {
       "title": "Narrow this down",
       "clear": "Clear",

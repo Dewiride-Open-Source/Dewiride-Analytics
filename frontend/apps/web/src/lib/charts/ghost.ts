@@ -21,8 +21,8 @@ const FADED = 0.6;
 export interface Ghost {
   /** What it is called, already marked as the earlier period's. */
   readonly name: string;
-  /** What it counted, bucket by bucket. */
-  readonly values: readonly number[];
+  /** What it counted, bucket by bucket, or nothing for a bucket never counted. */
+  readonly values: readonly (number | null)[];
   /** The colour the same measure is drawn in for the period being read. */
   readonly colour: string;
   /** How many buckets the period being read has. */

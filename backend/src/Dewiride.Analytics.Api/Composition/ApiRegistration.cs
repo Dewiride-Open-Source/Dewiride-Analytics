@@ -8,6 +8,7 @@ using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Api.Endpoints;
 using Dewiride.Analytics.Api.Ingest;
 using Dewiride.Analytics.Extensibility;
+using Dewiride.Analytics.Application.Consolidation;
 using Dewiride.Analytics.Application.Dashboard;
 using Dewiride.Analytics.Application.Ingest;
 using Dewiride.Analytics.Application.Persistence;
@@ -55,6 +56,11 @@ internal static class ApiRegistration
 
         builder.Services.AddOptions<ClassificationOptions>()
             .Bind(builder.Configuration.GetSection(ClassificationOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        builder.Services.AddOptions<ConsolidationOptions>()
+            .Bind(builder.Configuration.GetSection(ConsolidationOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
 

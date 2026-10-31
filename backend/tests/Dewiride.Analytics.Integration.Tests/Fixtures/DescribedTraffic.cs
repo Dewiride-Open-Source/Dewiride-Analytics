@@ -151,7 +151,7 @@ internal static class DescribedTraffic
         await using var scope = stack.Services.CreateAsyncScope();
 
         await scope.ServiceProvider.GetRequiredService<SessionClassifier>()
-            .CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt.AddDays(-2)), Cancellation.Token)
+            .CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt.AddDays(-2), site.TimeZoneId), Cancellation.Token)
             .ConfigureAwait(false);
     }
 

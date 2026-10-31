@@ -90,6 +90,9 @@ function Repointed({ first, second }: RepointedProps) {
 const POINTER = '[&_canvas]:cursor-pointer';
 const ARROW = '[&_canvas]:cursor-default';
 
+/** The hand a surface shows over a category only while the pointer is over one it can press. */
+const POINTER_WHERE_PRESSABLE = 'data-[pressing=true]:[&_canvas]:cursor-pointer';
+
 describe('the charting surface', () => {
   it('registers only the pieces the product draws with', () => {
     expect(echarts.registered).toStrictEqual([
@@ -281,5 +284,80 @@ describe('a chart that can be pressed', () => {
     expect(containPixel).not.toHaveBeenCalled();
     expect(first).not.toHaveBeenCalled();
     expect(getByRole('img')).toHaveClass(ARROW);
+  });
+});
+
+/**
+ * All time reaches back past the days a website holds one by one, and a month older than them has
+ * nothing narrower to open on. Only some of its categories can be pressed, and the surface says
+ * which with the pointer as well as with what a press does.
+ */
+describe('a chart only some of whose categories can be pressed', () => {
+  /** Every category from the third along. */
+  const FROM_THE_THIRD = (index: number) => index >= 2;
+
+  it('presses a category it allows', () => {
+    const picked = vi.fn();
+    const { getByRole } = renderScreen(
+      <Chart option={EMPTY} label="Anything" onPick={picked} pressable={FROM_THE_THIRD} />,
+    );
+
+    fireEvent.click(getByRole('img'), { clientX: 120, clientY: 40 });
+
+    expect(picked).toHaveBeenCalledWith(2);
+  });
+
+  it('does nothing on a category it turns down', () => {
+    convertFromPixel.mockReturnValue(1);
+    const picked = vi.fn();
+    const { getByRole } = renderScreen(
+      <Chart option={EMPTY} label="Anything" onPick={picked} pressable={FROM_THE_THIRD} />,
+    );
+
+    fireEvent.click(getByRole('img'), { clientX: 60, clientY: 40 });
+
+    expect(picked).not.toHaveBeenCalled();
+  });
+
+  /** A hand over a month that cannot be opened is a promise the picture cannot keep. */
+  it('shows a pointer only over a category a press means something on', () => {
+    const { getByRole } = renderScreen(
+      <Chart option={EMPTY} label="Anything" onPick={vi.fn()} pressable={FROM_THE_THIRD} />,
+    );
+    const surface = getByRole('img');
+
+    expect(surface).toHaveClass(ARROW);
+    expect(surface).toHaveClass(POINTER_WHERE_PRESSABLE);
+
+    convertFromPixel.mockReturnValue(1);
+    fireEvent.mouseMove(surface, { clientX: 60, clientY: 40 });
+
+    expect(surface).toHaveAttribute('data-pressing', 'false');
+
+    convertFromPixel.mockReturnValue(2);
+    fireEvent.mouseMove(surface, { clientX: 120, clientY: 40 });
+
+    expect(surface).toHaveAttribute('data-pressing', 'true');
+  });
+
+  it('shows no pointer outside the plot', () => {
+    containPixel.mockReturnValue(false);
+    const { getByRole } = renderScreen(
+      <Chart option={EMPTY} label="Anything" onPick={vi.fn()} pressable={FROM_THE_THIRD} />,
+    );
+
+    fireEvent.mouseMove(getByRole('img'), { clientX: 3, clientY: 40 });
+
+    expect(getByRole('img')).toHaveAttribute('data-pressing', 'false');
+  });
+
+  /** Where every category can be pressed there is nothing to follow, and the hand is always there. */
+  it('follows the pointer only where some categories cannot be pressed', () => {
+    const { getByRole } = renderScreen(<Chart option={EMPTY} label="Anything" onPick={vi.fn()} />);
+
+    fireEvent.mouseMove(getByRole('img'), { clientX: 120, clientY: 40 });
+
+    expect(getByRole('img')).not.toHaveAttribute('data-pressing');
+    expect(getByRole('img')).toHaveClass(POINTER);
   });
 });

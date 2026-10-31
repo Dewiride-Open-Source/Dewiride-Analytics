@@ -53,6 +53,20 @@ internal static class AdvisoryLocks
     public const int AccountClosureNamespace = 0x44_57_43_4C;
 
     /// <summary>
+    /// Pair-key namespace for deleting a website's telemetry and for writing what is kept of it,
+    /// keyed per website.
+    /// </summary>
+    /// <remarks>
+    /// A website's kept months never expire, so a month written after the website's telemetry was
+    /// deleted, and before the website itself was, would stay for ever with nothing able to read or
+    /// remove it. Removal takes this lock before it deletes anything and holds it until the website
+    /// is gone; writing a kept month takes it before asking whether the website still exists and
+    /// holds it until the write is done. Whichever comes second therefore sees what the first left:
+    /// a write that comes first is deleted by the removal, and one that comes second finds no website.
+    /// </remarks>
+    public const int SiteTelemetryNamespace = 0x44_57_53_54;
+
+    /// <summary>
     /// Takes a single-key lock for the rest of the open transaction.
     /// </summary>
     /// <param name="database">Control-plane database, with a transaction open.</param>

@@ -1,0 +1,72 @@
+﻿--- statement ---
+WITH
+    windowed AS
+    (
+        SELECT kind, surface, path, visitor_key, correlation_id, server_ts
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    ),
+    echoed AS
+    (
+        SELECT
+            minIf(visitor_key, surface IN ('BrowserTracker', 'NoScriptPixel')) AS browser_key,
+            minIf(visitor_key, surface NOT IN ('BrowserTracker', 'NoScriptPixel')) AS reported_key
+        FROM windowed
+        WHERE correlation_id != ''
+          AND visitor_key != ''
+        GROUP BY correlation_id
+        HAVING browser_key != ''
+           AND reported_key != ''
+    ),
+    linked AS
+    (
+        SELECT
+            reported_key,
+            min(browser_key) AS browser_key
+        FROM echoed
+        GROUP BY reported_key
+    ),
+    identified AS
+    (
+        SELECT
+            windowed.* EXCEPT (visitor_key),
+            if(linked.browser_key != '' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'), linked.browser_key, windowed.visitor_key) AS visitor_key
+        FROM windowed
+        LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
+    )
+SELECT
+    toDateTime(calendar_bucket, {time_zone:String}) AS bucket,
+    value
+FROM
+(
+    SELECT
+        calendar_bucket,
+        toInt64(sum(page_views)) AS value
+    FROM
+    (
+        SELECT
+            toStartOfMonth(toDate(server_ts, {time_zone:String})) AS calendar_bucket,
+            visitor_key,
+            greatest(
+                countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),
+                countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) AS delivered,
+            if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
+        FROM identified
+        GROUP BY calendar_bucket, visitor_key, path
+    )
+    GROUP BY calendar_bucket
+    ORDER BY calendar_bucket
+    WITH FILL
+        FROM toStartOfMonth(toDate(fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC'), {time_zone:String}))
+        TO toStartOfMonth(toDate(fromUnixTimestamp64Milli({to_ms:Int64} - 1, 'UTC'), {time_zone:String})) + INTERVAL 1 MONTH
+        STEP INTERVAL 1 MONTH
+)
+ORDER BY bucket
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777593600000
+to_ms = 1778198400000
+time_zone = 'Europe/London'

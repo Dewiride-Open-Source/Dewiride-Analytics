@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { bandsIn, peopleIn, stillJudgingFrom, totalsIn } from '@/lib/analytics/traffic-series';
-import type { TrafficSeries } from '@/lib/api/schemas';
+import {
+  bandsIn,
+  judgedNoneOf,
+  peopleIn,
+  stillJudgingFrom,
+  totalsIn,
+} from '@/lib/analytics/traffic-series';
+import type { TrafficPicture, TrafficSeries } from '@/lib/api/schemas';
 
 const BUCKETS = [
   '2026-08-11T00:00:00+00:00',
@@ -85,6 +91,38 @@ describe('what a bucket held altogether', () => {
   });
 });
 
+/**
+ * A month of all time that was never counted is nothing in every category, and stays nothing in
+ * everything worked out from it: a month nobody counted is not a month nobody came in.
+ */
+describe('a month never counted', () => {
+  const RECORD: TrafficPicture = {
+    from: BUCKETS[0] ?? '',
+    to: '2026-08-14T00:00:00+00:00',
+    granularity: 'month',
+    completeTo: '2026-08-14T00:00:00+00:00',
+    buckets: BUCKETS,
+    missing: ['2026-08'],
+    unjudged: [],
+    groups: [
+      { category: 'likely-human', sessions: [3, null, 2], pageViews: [9, null, 4] },
+      { category: 'known-ai-crawler', sessions: [1, null, 0], pageViews: [1, null, 0] },
+    ],
+  };
+
+  it('is nothing in every band', () => {
+    expect(bandsIn(RECORD)).toStrictEqual([
+      { tone: 'people', visits: [3, null, 2] },
+      { tone: 'automation', visits: [1, null, 0] },
+    ]);
+  });
+
+  it('is nothing in the whole, and among the people', () => {
+    expect(totalsIn(RECORD)).toStrictEqual([4, null, 2]);
+    expect(peopleIn(RECORD)).toStrictEqual([3, null, 2]);
+  });
+});
+
 describe('the visits judged to be people', () => {
   it('counts only the visits judged to be people', () => {
     const series = judged([
@@ -148,5 +186,59 @@ describe('the buckets that have not finished being judged', () => {
     };
 
     expect(stillJudgingFrom(bucketed)).toBe(2);
+  });
+});
+
+/**
+ * Judging that has reached none of a period is a different fact from a period whose newest bucket
+ * is still filling: a period with one bucket under way has had everything judged but its last half
+ * hour.
+ */
+describe('a period not one bucket of which has settled', () => {
+  /** Where the picture is three days long, how far judging has reached into it, and what it says. */
+  const settledIn = (completeTo: string) => {
+    const answer = judged([], completeTo);
+
+    return judgedNoneOf(answer, answer.buckets.length, stillJudgingFrom(answer));
+  };
+
+  it('is one whose answer is complete to no later than where it opens', () => {
+    expect(settledIn(BUCKETS[0] ?? '')).toBe(true);
+    expect(settledIn('2026-08-10T23:30:00+00:00')).toBe(true);
+  });
+
+  /**
+   * Judging stalled six hours into the first of three days has settled none of them, which the
+   * line under the picture says of the whole period rather than of "the newest" (0054).
+   */
+  it('is one whose judging stopped inside its first bucket', () => {
+    expect(settledIn('2026-08-11T06:00:00+00:00')).toBe(true);
+  });
+
+  it('is not one whose first bucket has settled', () => {
+    expect(settledIn('2026-08-12T00:00:00+00:00')).toBe(false);
+    expect(settledIn('2026-08-13T06:00:00+00:00')).toBe(false);
+  });
+
+  /** All time's first month: one bucket, still running, judged to half an hour ago. */
+  it('is not a period whose only bucket is still running and judged most of the way', () => {
+    const month = {
+      from: '2026-10-11T18:30:00.000Z',
+      to: '2026-10-30T10:00:00.000Z',
+      completeTo: '2026-10-30T09:30:00.000Z',
+      buckets: ['2026-09-30T18:30:00.000Z'],
+    };
+
+    expect(stillJudgingFrom(month)).toBe(0);
+    expect(judgedNoneOf(month, 1, 0)).toBe(false);
+  });
+
+  it('is a period of one bucket that judging has reached none of', () => {
+    const month = {
+      from: '2026-10-11T18:30:00.000Z',
+      completeTo: '2026-10-11T18:30:00.000Z',
+    };
+
+    expect(judgedNoneOf(month, 1, 0)).toBe(true);
   });
 });

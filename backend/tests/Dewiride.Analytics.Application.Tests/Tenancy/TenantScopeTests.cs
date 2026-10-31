@@ -14,16 +14,18 @@ public sealed class TenantScopeTests
     /// site rather than one a caller chose.
     /// </summary>
     [Fact]
-    public void Carries_The_Site_Its_Owner_And_The_Zone_Its_Days_Are_Cut_In()
+    public void Carries_The_Site_Its_Owner_The_Zone_Its_Days_Are_Cut_In_And_When_It_Was_Added()
     {
         var siteId = Guid.Parse("0197c0de-0000-7000-8000-000000000010");
         var organizationId = Guid.Parse("0197c0de-0000-7000-8000-000000000011");
+        var addedAt = new DateTimeOffset(2026, 8, 18, 9, 30, 0, TimeSpan.Zero);
 
-        var scope = new TenantScope(siteId, organizationId, SiteRole.Editor, "Asia/Kolkata");
+        var scope = new TenantScope(siteId, organizationId, SiteRole.Editor, "Asia/Kolkata", addedAt);
 
         scope.SiteId.Should().Be(siteId);
         scope.OrganizationId.Should().Be(organizationId);
         scope.Role.Should().Be(SiteRole.Editor);
         scope.TimeZoneId.Should().Be("Asia/Kolkata");
+        scope.AddedAt.Should().Be(addedAt);
     }
 }

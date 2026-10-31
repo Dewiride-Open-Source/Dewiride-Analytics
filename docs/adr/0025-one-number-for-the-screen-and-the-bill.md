@@ -4,6 +4,8 @@
 - **Date**: 2026-08-20
 - **Supersedes**: nothing. Adds no telemetry column and widens no retention envelope.
 - **Applies to**: both editions. The count is open-source; what anybody is charged for it is not.
+- **Followed by**: [0064](0064-a-month-outlives-the-reports-it-was-counted-from.md), whose kept months
+  are counted by the same arithmetic as the dashboard's figure for the same month.
 
 ## Context
 

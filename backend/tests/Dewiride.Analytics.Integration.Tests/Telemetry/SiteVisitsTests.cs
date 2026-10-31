@@ -888,7 +888,7 @@ public sealed class SiteVisitsTests(AnalyticsStackFixture stack)
         new(IdleTimeout, settledBefore ?? Midnight.AddDays(2));
 
     private static TenantScope Scope(Guid siteId) =>
-        new(siteId, Guid.NewGuid(), SiteRole.Viewer, "Etc/UTC");
+        new(siteId, Guid.NewGuid(), SiteRole.Viewer, "Etc/UTC", DateTimeOffset.UnixEpoch);
 
     /// <summary>A page being delivered.</summary>
     private static RawEvent Asked(

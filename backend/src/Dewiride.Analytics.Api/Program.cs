@@ -26,6 +26,7 @@ var edition = builder.AddEdition();
 
 builder.Services.AddHostedService<SchemaMigrationService>();
 builder.Services.AddHostedService<ClassificationWorker>();
+builder.Services.AddHostedService<ConsolidationWorker>();
 
 var app = builder.Build();
 
@@ -51,6 +52,7 @@ app.MapInvitations();
 app.MapOrganization();
 app.MapClosure();
 app.MapSites();
+app.MapKeptHistory();
 app.MapServerKeys();
 app.MapSiteSettings();
 app.MapHealth();

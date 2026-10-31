@@ -2,7 +2,7 @@
 
 import { Funnel, ScanSearch } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { SiteScreen } from '@/components/chrome/site-screen';
 import { PeriodPicker } from '@/components/dashboard/period-picker';
 import { PopulationSwitch } from '@/components/dashboard/population-switch';
@@ -22,12 +22,12 @@ import {
   withoutConclusions,
 } from '@/lib/analytics/journeys';
 import type { Population } from '@/lib/analytics/people-only';
-import { type Period, windowFor, writePeriod } from '@/lib/analytics/period';
+import { isAllTime, type Period, spanFor, windowFor, writePeriod } from '@/lib/analytics/period';
 import { useJourneyFilters } from '@/lib/analytics/use-journey-filters';
 import { usePeopleOnly } from '@/lib/analytics/use-people-only';
 import { usePeriod } from '@/lib/analytics/use-period';
 import type { Site, Visits } from '@/lib/api/schemas';
-import { useFacets, useTraffic, useVisits } from '@/lib/queries/sites';
+import { useAllTime, useFacets, useTraffic, useVisits } from '@/lib/queries/sites';
 
 /**
  * Everyone and everything that visited a website, one at a time.
@@ -108,10 +108,51 @@ function SiteJourneys({ site }: { readonly site: Site }) {
 
   // Resolved once per period rather than on every render: the window is part of the name each
   // answer is cached under, and one that moved with the clock would never find a cached answer.
-  const window = useMemo(
-    () => windowFor(period, site.timeZoneId, new Date()),
-    [period, site.timeZoneId],
-  );
+  // The days it covers are worked out from the same moment, so the two never stand a day apart.
+  const { window, span } = useMemo(() => {
+    const resolvedAt = new Date();
+
+    return {
+      window: windowFor(period, site.timeZoneId, resolvedAt),
+      span: spanFor(period, site.timeZoneId, resolvedAt),
+    };
+  }, [period, site.timeZoneId]);
+
+  // Under all time, where the website's record begins. The overview's all time reaches back to its
+  // first month, from what is kept of each month, while a visit is listed here only as long as the
+  // visit itself is kept — so the list says it covers less only where the record reaches back past
+  // the days still kept. A website first measured since has both over the same days. Asked under
+  // the name the overview asks it, so arriving from there asks nothing, and asked as soon as
+  // somebody reaches for the period, so all time chosen next finds it waiting. Under all time the
+  // list waits for the first answer this screen sees settle, so the sentence and the rows it
+  // qualifies arrive together and nothing already on the screen is pushed down by a sentence arriving
+  // late — and only for that one: a record asked again, after a refusal or a lost connection, never
+  // takes the rows somebody is reading off the screen, nor closes the visits they opened. Settled is
+  // an answer, or a refusal with nothing more being asked; a refusal this screen is about to ask
+  // again — one left from before it opened, or landing as it opens — is not an answer it saw, so it
+  // still waits for its own.
+  const allTime = isAllTime(period);
+  const [reaching, setReaching] = useState(false);
+  const reach = useCallback(() => setReaching(true), []);
+  const asking = allTime || reaching;
+  const record = useAllTime(site.id, site.timeZoneId, 'everybody', asking);
+  const firstDay = record.data?.firstDay ?? null;
+  const keptOnly = allTime && firstDay !== null && firstDay < span.first;
+  // What was seen settle is one record: one website's, read in its zone. Another website chosen, or
+  // the same one moved to another zone, is a record this screen has not yet seen settle.
+  const watched = `${site.id}/${site.timeZoneId}`;
+  const [seen, setSeen] = useState({ watched, settled: false });
+  const settledNow =
+    record.data !== undefined || (record.isError && record.fetchStatus !== 'fetching');
+
+  if (seen.watched !== watched) {
+    setSeen({ watched, settled: false });
+  } else if (asking && !seen.settled && settledNow) {
+    setSeen({ watched, settled: true });
+  }
+
+  const recordIn =
+    !allTime || record.data !== undefined || (seen.watched === watched && seen.settled);
 
   const traffic = useTraffic(site.id, window);
   const visits = useVisits(site.id, window, perPage, offset, narrowing);
@@ -127,7 +168,8 @@ function SiteJourneys({ site }: { readonly site: Site }) {
   const refusal = visits.error ?? traffic.error;
   // A list on its way stands in as its shape; a refused one is not on its way, and a shape pulsing
   // under the notice would promise an answer that is not coming.
-  const waiting = visits.data === undefined && !visits.isError;
+  const rows = visits.data !== undefined && recordIn ? visits.data : undefined;
+  const waiting = rows === undefined && !visits.isError;
 
   return (
     <div className="flex flex-col gap-6">
@@ -144,7 +186,12 @@ function SiteJourneys({ site }: { readonly site: Site }) {
         {/* Aligned by their tops, as on the overview: the period carries a second line. */}
         <div className="flex flex-wrap items-start gap-3">
           <PopulationSwitch peopleOnly={peopleOnly} onChange={showOnlyPeople} />
-          <PeriodPicker value={period} onChange={choose} timeZoneId={site.timeZoneId} />
+          <PeriodPicker
+            value={period}
+            onChange={choose}
+            timeZoneId={site.timeZoneId}
+            onReach={reach}
+          />
         </div>
       </header>
 
@@ -169,10 +216,15 @@ function SiteJourneys({ site }: { readonly site: Site }) {
 
       {waiting ? <ListWaiting /> : null}
 
-      {visits.data === undefined ? null : (
+      {/* Said once, where the list begins, as the overview says it where its lists begin. */}
+      {rows !== undefined && keptOnly ? (
+        <p className="-mb-3 max-w-2xl text-sm text-foreground-muted">{t('keptOnly')}</p>
+      ) : null}
+
+      {rows === undefined ? null : (
         <Listing
           site={site}
-          answer={visits.data}
+          answer={rows}
           narrowed={isNarrowed(shown)}
           peopleOnly={peopleOnly && !nothingJudged}
           onClear={() => narrow(EVERY_JOURNEY)}

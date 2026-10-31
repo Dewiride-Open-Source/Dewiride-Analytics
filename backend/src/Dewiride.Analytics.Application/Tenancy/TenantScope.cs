@@ -39,11 +39,22 @@ public sealed record TenantScope
     /// </remarks>
     public string TimeZoneId { get; }
 
-    internal TenantScope(Guid siteId, Guid organizationId, SiteRole role, string timeZoneId)
+    /// <summary>
+    /// When the site was added: the earliest any report of it can have arrived.
+    /// </summary>
+    /// <remarks>
+    /// It travels with the scope for the reason the zone does: reading where a site's record begins
+    /// needs it, and the value that reaches the reading is then always the one stored against the
+    /// site.
+    /// </remarks>
+    public DateTimeOffset AddedAt { get; }
+
+    internal TenantScope(Guid siteId, Guid organizationId, SiteRole role, string timeZoneId, DateTimeOffset addedAt)
     {
         SiteId = siteId;
         OrganizationId = organizationId;
         Role = role;
         TimeZoneId = timeZoneId;
+        AddedAt = addedAt;
     }
 }

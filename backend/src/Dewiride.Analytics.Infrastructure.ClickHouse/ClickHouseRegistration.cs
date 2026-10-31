@@ -2,6 +2,7 @@ using ClickHouse.Driver;
 using ClickHouse.Driver.ADO;
 using Dewiride.Analytics.Application.Abstractions;
 using Dewiride.Analytics.Application.Analytics;
+using Dewiride.Analytics.Application.Consolidation;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
@@ -56,6 +57,26 @@ public static class ClickHouseRegistration
     internal static readonly TimeSpan LongestSchemaStatement = TimeSpan.FromHours(1);
 
     /// <summary>
+    /// Name of the HTTP client a finished month is counted over.
+    /// </summary>
+    internal const string ConsolidationHttpClientName = "dewiride-telemetry-consolidation";
+
+    /// <summary>
+    /// Key the telemetry client a finished month is counted through is registered under.
+    /// </summary>
+    internal const string ConsolidationClientKey = "telemetry-consolidation";
+
+    /// <summary>
+    /// How long one statement counting a month may run before the engine gives up on it.
+    /// </summary>
+    /// <remarks>
+    /// A month of a busy website is a month of reports read on the one thread the statement asks
+    /// for, and the store is told to stop at ten minutes; the client waits a little longer than that,
+    /// so it is the store that ends a statement and says why, rather than the client hanging up on it.
+    /// </remarks>
+    internal static readonly TimeSpan LongestConsolidationStatement = TimeSpan.FromMinutes(15);
+
+    /// <summary>
     /// Adds the telemetry store client, the migration runner, the event sink and the query reader.
     /// </summary>
     /// <param name="builder">The host application builder.</param>
@@ -73,6 +94,8 @@ public static class ClickHouseRegistration
         AddStoreHttpClient(builder.Services, HttpClientName);
         AddStoreHttpClient(builder.Services, SchemaHttpClientName)
             .ConfigureHttpClient(http => http.Timeout = LongestSchemaStatement);
+        AddStoreHttpClient(builder.Services, ConsolidationHttpClientName)
+            .ConfigureHttpClient(http => http.Timeout = LongestConsolidationStatement);
 
         // Registered by whichever component needs it first, so that each is self-sufficient and
         // a test can still substitute a controlled clock for the whole host.
@@ -94,9 +117,19 @@ public static class ClickHouseRegistration
             provider.GetRequiredService<TimeProvider>(),
             provider.GetRequiredService<ILogger<ClickHouseMigrationRunner>>()));
         builder.Services.AddSingleton<IEventSink, ClickHouseEventSink>();
+        builder.Services.AddSingleton<KeepingOrigin>();
         builder.Services.AddSingleton<ITelemetryQueries, ClickHouseTelemetryQueries>();
         builder.Services.AddSingleton<ITelemetryPurge, ClickHouseTelemetryPurge>();
         builder.Services.AddSingleton<ISiteVolume, ClickHouseSiteVolume>();
+
+        // Counting a month gets a client of its own for the same reason the migrations do: what it
+        // is allowed is decided for it alone rather than for every question a screen asks.
+        builder.Services.AddKeyedSingleton<IClickHouseClient>(
+            ConsolidationClientKey,
+            (provider, _) => CreateClient(provider, connectionString, ConsolidationHttpClientName));
+        builder.Services.AddSingleton<IMonthConsolidation>(provider => new ClickHouseMonthConsolidation(
+            provider.GetRequiredKeyedService<IClickHouseClient>(ConsolidationClientKey),
+            provider.GetRequiredService<KeepingOrigin>()));
         builder.Services.AddSingleton<ISessionSource, ClickHouseSessionSource>();
         builder.Services.AddSingleton<IClassificationStore, ClickHouseClassificationStore>();
         builder.Services.AddSingleton<INameConfirmationStore, ClickHouseNameConfirmationStore>();

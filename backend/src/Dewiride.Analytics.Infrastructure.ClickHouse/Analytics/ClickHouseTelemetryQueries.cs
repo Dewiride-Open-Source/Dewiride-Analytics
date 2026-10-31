@@ -17,7 +17,8 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// Reads the telemetry store through the compiled analytics vocabulary.
 /// </summary>
 /// <param name="client">Telemetry store client.</param>
-internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITelemetryQueries
+/// <param name="origin">When this installation began keeping months.</param>
+internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client, KeepingOrigin origin) : ITelemetryQueries
 {
     /// <inheritdoc />
     public async Task<OverviewResult> GetOverviewAsync(
@@ -997,6 +998,69 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client) : ITe
     private static T? Measured<T>(ClickHouseDataReader reader, int column)
         where T : struct =>
         reader.IsDBNull(column) ? null : reader.GetFieldValue<T>(column);
+
+    /// <inheritdoc />
+    public async Task<KeptMonths> GetKeptMonthsAsync(
+        TenantScope scope,
+        KeptMonthsQuery query,
+        CancellationToken cancellationToken)
+    {
+        var months = ImmutableArray.CreateBuilder<RecordedMonth>();
+        DateOnly? firstReportDay = null;
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            firstReportDay = KeptRows.DayOrNothing(reader, KeptRows.FirstReportDay);
+            months.Add(new RecordedMonth(
+                KeptRows.Day(reader, KeptRows.Month),
+                reader.GetDateTimeOffset(KeptRows.Begins),
+                reader.GetDateTimeOffset(KeptRows.YearBegins),
+                reader.GetDateTimeOffset(KeptRows.Ends),
+                KeptRows.WasKept(reader) ? KeptOf(reader) : null));
+        }
+
+        return new KeptMonths(firstReportDay, months.DrainToImmutable())
+        {
+            KeepingSince = await origin.SinceAsync(cancellationToken).ConfigureAwait(false),
+        };
+    }
+
+    /// <summary>
+    /// What was kept of one month, from the columns a question about a website's months reads.
+    /// </summary>
+    /// <param name="reader">The reader, on the month's row.</param>
+    /// <returns>The kept figures.</returns>
+    private static KeptFigures KeptOf(ClickHouseDataReader reader)
+    {
+        var at = KeptRows.FirstKept;
+        var categories = reader.GetFieldValue<string[]>(at + 10);
+        var visits = reader.GetFieldValue<ulong[]>(at + 11);
+        var pageViews = reader.GetFieldValue<ulong[]>(at + 12);
+
+        return new KeptFigures(
+            new TimeRange(reader.GetDateTimeOffset(at), reader.GetDateTimeOffset(at + 1)),
+            KeptRows.DayOrNothing(reader, at + 2),
+            reader.GetByte(at + 3),
+            new MonthFigures(
+                (long)reader.GetFieldValue<ulong>(at + 4),
+                (long)reader.GetFieldValue<ulong>(at + 5),
+                KeptRows.DayOrNothing(reader, at + 6),
+                (long)reader.GetFieldValue<ulong>(at + 7),
+                Signed(reader.GetFieldValue<ulong[]>(at + 8)),
+                Signed(reader.GetFieldValue<ulong[]>(at + 9))),
+            [
+                .. categories.Select((name, index) =>
+                    new VerdictTally(StoredNames.Categories[name], (long)visits[index], (long)pageViews[index])),
+            ],
+            reader.GetDateTimeOffset(at + 13));
+    }
+
+    private static ImmutableArray<long> Signed(ulong[] values) => [.. values.Select(value => (long)value)];
 
     private async Task<ClickHouseDataReader> ExecuteAsync(
         CompiledStatement statement,

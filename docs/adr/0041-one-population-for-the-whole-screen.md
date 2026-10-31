@@ -24,6 +24,11 @@
   records settled.
 - **Followed by**: [0042](0042-a-day-in-the-picture-is-a-period.md), which makes the picture a
   way of choosing what the whole screen is about, as this record made the population one.
+- **Extended by**: [0063](0063-the-picture-is-drawn-by-the-day-the-week-or-the-month.md), which cuts
+  the picture by the week or the month, washes a week or a month still being judged exactly as this
+  record washes a day, and quietens the same way a week or a month the period cuts short.
+- **Followed by**: [0064](0064-a-month-outlives-the-reports-it-was-counted-from.md), which keeps each
+  month's figures for both populations, on one row and from one count.
 
 ## Context
 

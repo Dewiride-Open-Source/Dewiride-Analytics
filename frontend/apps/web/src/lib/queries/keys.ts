@@ -1,6 +1,6 @@
 import { type JourneyFilters, narrowingParams } from '@/lib/analytics/journeys';
 import type { Population } from '@/lib/analytics/people-only';
-import type { AnalyticsWindow, Granularity } from '@/lib/analytics/period';
+import type { AllTimeGranularity, AnalyticsWindow, Granularity } from '@/lib/analytics/period';
 import type {
   ActionGrouping,
   EngagementRanking,
@@ -63,6 +63,48 @@ export function seriesKey(
     population,
     granularity,
   ] as const;
+}
+
+/**
+ * A website's totals across all time, for one population.
+ *
+ * No window in the name, because all time has none: it is every month the engine holds, and the
+ * same question asked a minute later is the same question with a newer answer. The website's zone
+ * is in it, because the engine cuts every month — and names the first day — where the website is
+ * now, and the screen reads them there: an answer cut in a zone the website has left is an answer to
+ * a different question.
+ */
+export function allTimeKey(siteId: string, timeZoneId: string, population: Population) {
+  return ['sites', siteId, 'all-time', timeZoneId, population] as const;
+}
+
+/** One measure across all time, at one size of bucket, for one population, in the website's zone. */
+export function allTimeSeriesKey(
+  siteId: string,
+  timeZoneId: string,
+  metric: SeriesMetric,
+  granularity: AllTimeGranularity,
+  population: Population,
+) {
+  return [
+    'sites',
+    siteId,
+    'all-time',
+    timeZoneId,
+    'series',
+    metric,
+    granularity,
+    population,
+  ] as const;
+}
+
+/** What generated a website's traffic across all time, at one size of bucket, in its zone. */
+export function allTimeTrafficKey(
+  siteId: string,
+  timeZoneId: string,
+  granularity: AllTimeGranularity,
+) {
+  return ['sites', siteId, 'all-time', timeZoneId, 'traffic', granularity] as const;
 }
 
 export function pagesKey(

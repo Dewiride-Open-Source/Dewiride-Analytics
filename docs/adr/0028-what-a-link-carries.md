@@ -8,6 +8,9 @@
   browser, and an address that says nothing is given it on first paint.
 - **Extended by**: [0042](0042-a-day-in-the-picture-is-a-period.md), which lets a day pressed on
   the picture be written as the period, in the spelling this record already gives a chosen stretch.
+- **Extended by**: [0063](0063-the-picture-is-drawn-by-the-day-the-week-or-the-month.md), which adds
+  how finely the picture is cut to what an address carries, as `by`, and pulls a stretch older than
+  the days still kept forward into them rather than opening it on noughts.
 
 ## Context
 

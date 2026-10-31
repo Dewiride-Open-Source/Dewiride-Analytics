@@ -9,12 +9,15 @@ import {
 } from '@tanstack/react-query';
 import { EVERY_JOURNEY, type JourneyFilters } from '@/lib/analytics/journeys';
 import type { Population } from '@/lib/analytics/people-only';
-import type { AnalyticsWindow, Granularity } from '@/lib/analytics/period';
+import type { AllTimeGranularity, AnalyticsWindow, Granularity } from '@/lib/analytics/period';
 import type { NewSite } from '@/lib/api/endpoints';
 import {
   addSite,
   listSites,
   readActions,
+  readAllTime,
+  readAllTimeSeries,
+  readAllTimeTraffic,
   readDevices,
   readEngagement,
   readFacets,
@@ -46,6 +49,9 @@ import type {
 } from '@/lib/api/schemas';
 import {
   actionsKey,
+  allTimeKey,
+  allTimeSeriesKey,
+  allTimeTrafficKey,
   devicesKey,
   engagementKey,
   facetsKey,
@@ -75,6 +81,14 @@ const FRESH_FOR = 30_000;
 const JUDGED_FRESH_FOR = 120_000;
 
 /**
+ * The same, for answers across all time.
+ *
+ * A minute. Most of all time is months already counted, and only the running month moves; a total
+ * of years moves by a reader's visit far less than a week's does.
+ */
+const ALL_TIME_FRESH_FOR = 60_000;
+
+/**
  * How often a screen about the present moment asks again.
  *
  * Ten seconds. Slower and somebody watching their site being swept sees it in stills; faster and
@@ -101,11 +115,21 @@ export function useSites(enabled = true) {
   });
 }
 
-/** Headline totals for one website over a period, for one population. */
-export function useOverview(siteId: string, window: AnalyticsWindow, population: Population) {
+/**
+ * Headline totals for one website over a period, for one population.
+ *
+ * @param enabled Whether to ask at all.
+ */
+export function useOverview(
+  siteId: string,
+  window: AnalyticsWindow,
+  population: Population,
+  enabled = true,
+) {
   return useQuery({
     queryKey: overviewKey(siteId, window, population),
     queryFn: () => readOverview(siteId, window, population),
+    enabled,
     retry: false,
     staleTime: FRESH_FOR,
   });
@@ -133,6 +157,80 @@ export function useSeries(
     enabled,
     retry: false,
     staleTime: FRESH_FOR,
+  });
+}
+
+/**
+ * A website's totals across its whole record, for one population.
+ *
+ * Asked under all time; on the overview, on a shorter period wherever the ways of cutting its
+ * picture are listed, since where the record begins says whether its years can be offered from
+ * there; and on any period once somebody reaches for the period — on the overview because its
+ * chooser decides its offer of all time on it and all time chosen next is drawn from it, and on
+ * User journey so that the list under all time chosen next finds it waiting. Under everybody it is
+ * the same question all time's cards ask, filed under the same name, so every one of those places
+ * shares one answer.
+ *
+ * The zone is asked about by name only: the engine answers in the zone it holds for the website, and
+ * the name keeps an answer from one zone from being read in another.
+ *
+ * @param enabled Whether to ask at all.
+ */
+export function useAllTime(
+  siteId: string,
+  timeZoneId: string,
+  population: Population,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: allTimeKey(siteId, timeZoneId, population),
+    queryFn: () => readAllTime(siteId, population),
+    enabled,
+    retry: false,
+    staleTime: ALL_TIME_FRESH_FOR,
+  });
+}
+
+/**
+ * One measure across all time, month by month or year by year, asked only while it is drawn.
+ *
+ * @param enabled Whether to ask at all.
+ */
+export function useAllTimeSeries(
+  siteId: string,
+  timeZoneId: string,
+  metric: SeriesMetric,
+  granularity: AllTimeGranularity,
+  population: Population,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: allTimeSeriesKey(siteId, timeZoneId, metric, granularity, population),
+    queryFn: () => readAllTimeSeries(siteId, metric, granularity, population),
+    enabled,
+    retry: false,
+    staleTime: ALL_TIME_FRESH_FOR,
+  });
+}
+
+/**
+ * What generated a website's traffic across all time, asked only while it is drawn, and held current
+ * for as long as any answer counted from verdicts.
+ *
+ * @param enabled Whether to ask at all.
+ */
+export function useAllTimeTraffic(
+  siteId: string,
+  timeZoneId: string,
+  granularity: AllTimeGranularity,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: allTimeTrafficKey(siteId, timeZoneId, granularity),
+    queryFn: () => readAllTimeTraffic(siteId, granularity),
+    enabled,
+    retry: false,
+    staleTime: JUDGED_FRESH_FOR,
   });
 }
 

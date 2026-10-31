@@ -203,6 +203,9 @@ public sealed class SiteDirectory(
             return new SiteRemoval(SiteRemovalOutcome.OnlyOne);
         }
 
+        await AdvisoryLocks
+            .TakeAsync(database, AdvisoryLocks.SiteTelemetryNamespace, siteId, cancellationToken)
+            .ConfigureAwait(false);
         await telemetry.PurgeSiteAsync(siteId, cancellationToken).ConfigureAwait(false);
 
         database.Sites.Remove(site);

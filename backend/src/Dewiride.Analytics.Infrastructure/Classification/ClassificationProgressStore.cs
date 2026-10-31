@@ -114,6 +114,17 @@ public sealed class ClassificationProgressStore(ControlPlaneDbContext database, 
                         : progress.ClassifiedThrough),
                 cancellationToken);
 
+    /// <inheritdoc />
+    public async Task<DateTimeOffset?> JudgedThroughAsync(
+        Guid siteId,
+        RulesetVersion ruleset,
+        CancellationToken cancellationToken)
+    {
+        var bookmark = await FindAsync(siteId, ruleset, cancellationToken).ConfigureAwait(false);
+
+        return bookmark?.ClassifiedThrough;
+    }
+
     /// <summary>
     /// Reads one bookmark as the classifier works from it.
     /// </summary>

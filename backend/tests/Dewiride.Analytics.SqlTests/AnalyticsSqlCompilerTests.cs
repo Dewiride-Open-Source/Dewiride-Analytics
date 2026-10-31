@@ -15,13 +15,25 @@ namespace Dewiride.Analytics.SqlTests;
 /// Approves the statements the analytics compiler produces.
 /// </summary>
 /// <remarks>
-/// One of the two compilers that between them write every statement this product sends, and this
+/// One of the three compilers that between them write every statement this product sends, and this
 /// suite is what makes a change to it visible: the approved statement sits beside the test, and
 /// altering the compiler fails the build until somebody has read the new statement and moved the
 /// received file over the approved one.
 /// </remarks>
 public sealed partial class AnalyticsSqlCompilerTests
 {
+    /// <summary>The instant a series counted from activity cuts its buckets from: when each report arrived.</summary>
+    private const string ReportArrived = "server_ts";
+
+    /// <summary>The instant a series counted from verdicts cuts its buckets from: when each visit began.</summary>
+    private const string VisitBegan = "argMax(started_at, (ruleset_major, ruleset_minor, classified_at))";
+
+    /// <summary>The first instant of the window a statement is asked over.</summary>
+    private const string WindowOpens = "fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')";
+
+    /// <summary>The last instant of that window, a millisecond before its exclusive end.</summary>
+    private const string WindowLastInstant = "fromUnixTimestamp64Milli({to_ms:Int64} - 1, 'UTC')";
+
     private static readonly Guid SiteId = Guid.Parse("0197c0de-0000-7000-8000-000000000001");
     private static readonly Guid SecondSiteId = Guid.Parse("0197c0de-0000-7000-8000-000000000002");
     private static readonly Guid OrganizationId = Guid.Parse("0197c0de-0000-7000-8000-0000000000ff");
@@ -43,6 +55,14 @@ public sealed partial class AnalyticsSqlCompilerTests
 
     /// <summary>The free-text narrowings a hostile value is proved to reach the store as a value.</summary>
     private static readonly string[] FreeTextNarrowings = ["towns", "browsers", "entry_pages"];
+
+    /// <summary>What a kept month holds once for everybody and once for the people it held.</summary>
+    private static readonly string[] KeptForEachPopulation =
+        ["page_views", "visitors", "best_day", "best_day_page_views", "page_views_by_weekday", "page_views_by_hour"];
+
+    /// <summary>What a kept month holds once, whoever a question is about.</summary>
+    private static readonly string[] KeptForBoth =
+        ["begins_at", "ends_at", "first_day", "days_measured", "verdict_categories", "verdict_visits", "verdict_page_views", "judged_to"];
 
     /// <summary>
     /// How each of the eight facts about a visit is settled, exactly as the opened visit settles
@@ -82,6 +102,93 @@ public sealed partial class AnalyticsSqlCompilerTests
         var statement = AnalyticsSqlCompiler.Compile(Scope(), new OverviewQuery(Window()));
 
         Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Kept_Months()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new KeptMonthsQuery(To));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Kept_Months_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new KeptMonthsQuery(To) { Population = Population.People });
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    /// <summary>
+    /// Two engines can count one month twice, and the store replaces one row with the other only
+    /// when it next merges. A month is read as its newest count, whatever has been merged so far.
+    /// </summary>
+    [Fact]
+    public void A_Kept_Month_Is_Read_As_Its_Newest_Count()
+    {
+        foreach (var statement in EveryQuestionAboutKeptMonths())
+        {
+            statement.Sql.Should().Contain("ORDER BY month, counted_at DESC");
+            statement.Sql.Should().Contain("LIMIT 1 BY month");
+        }
+    }
+
+    /// <summary>
+    /// The people a kept month held are kept beside everybody, from the same count, so a question
+    /// about them reads no verdict. The only report it reads is the oldest one still held, which says
+    /// where the record begins where nothing was kept of its first month.
+    /// </summary>
+    [Fact]
+    public void A_Question_About_Kept_Months_Reads_No_Verdict_And_No_Report_But_The_Oldest()
+    {
+        foreach (var statement in EveryQuestionAboutKeptMonths())
+        {
+            statement.Sql.Should().NotContain("session_classifications");
+            statement.Parameters.Should().NotContain(parameter => parameter.Name == "longest_visit_seconds");
+            ActivityRead().Matches(statement.Sql).Should().ContainSingle();
+            OldestReport().IsMatch(statement.Sql).Should().BeTrue();
+        }
+    }
+
+    /// <summary>
+    /// Asked about people, the same months are read from the columns kept for them; everything that
+    /// is not about who came — the stretch counted, the first day, the days measured, the verdicts —
+    /// is read the same either way.
+    /// </summary>
+    [Fact]
+    public void Kept_Months_Of_People_Read_The_Columns_Kept_For_People()
+    {
+        var everybody = AnalyticsSqlCompiler.Compile(Scope(), new KeptMonthsQuery(To));
+        var people = AnalyticsSqlCompiler.Compile(Scope(), new KeptMonthsQuery(To) { Population = Population.People });
+
+        foreach (var figure in KeptForEachPopulation)
+        {
+            KeptRead(everybody.Sql, figure).Should().Be(figure);
+            KeptRead(people.Sql, figure).Should().Be($"people_{figure}");
+        }
+
+        foreach (var shared in KeptForBoth)
+        {
+            KeptRead(everybody.Sql, shared).Should().Be(shared);
+            KeptRead(people.Sql, shared).Should().Be(shared);
+        }
+    }
+
+    /// <summary>
+    /// A month of the record begins where the dashboard's series of reports begins the same month,
+    /// so a month read from what was kept and the same month counted from its reports meet at one
+    /// instant.
+    /// </summary>
+    [Fact]
+    public void A_Kept_Month_Begins_Where_The_Pictures_Month_Begins()
+    {
+        var series = Compile(TimeGranularity.Month, TimeSeriesMetric.PageViews);
+        var beginning = NamedBucket().Match(series.Sql).Groups["beginning"].Value
+            .Replace("calendar_bucket", "calendar_month", StringComparison.Ordinal);
+
+        AnalyticsSqlCompiler.Compile(Scope(), new KeptMonthsQuery(To)).Sql
+            .Should().Contain($"{beginning} AS begins");
     }
 
     [Fact]
@@ -165,6 +272,38 @@ public sealed partial class AnalyticsSqlCompilerTests
     public void Visitors_By_Day()
     {
         var statement = Compile(TimeGranularity.Day, TimeSeriesMetric.Visitors);
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Page_Views_By_Week()
+    {
+        var statement = Compile(TimeGranularity.Week, TimeSeriesMetric.PageViews);
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Page_Views_By_Month()
+    {
+        var statement = Compile(TimeGranularity.Month, TimeSeriesMetric.PageViews);
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Visitors_By_Week()
+    {
+        var statement = Compile(TimeGranularity.Week, TimeSeriesMetric.Visitors);
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Visitors_By_Month()
+    {
+        var statement = Compile(TimeGranularity.Month, TimeSeriesMetric.Visitors);
 
         Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
@@ -506,6 +645,19 @@ public sealed partial class AnalyticsSqlCompilerTests
         var statement = AnalyticsSqlCompiler.Compile(
             Scope(),
             new TimeSeriesQuery(Window(), TimeGranularity.Day, TimeSeriesMetric.PageViews)
+            {
+                Population = Population.People,
+            });
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Page_Views_By_Month_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new TimeSeriesQuery(Window(), TimeGranularity.Month, TimeSeriesMetric.PageViews)
             {
                 Population = Population.People,
             });
@@ -1130,6 +1282,161 @@ public sealed partial class AnalyticsSqlCompilerTests
     }
 
     [Fact]
+    public void Traffic_Series_By_Week()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new TrafficSeriesQuery(Window(), TimeGranularity.Week));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Traffic_Series_By_Month()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new TrafficSeriesQuery(Window(), TimeGranularity.Month));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    /// <summary>
+    /// Every bucket a series hands back is cut where the website is, and so is every bucket its
+    /// fill invents: both ends of the fill are named by the expression that names the counted
+    /// buckets, so a bucket nothing happened in is one the store could have counted something in.
+    /// Named any other way, an empty week would be drawn at a different hour from the weeks either
+    /// side of it, or beside a second copy of one of them.
+    /// </summary>
+    [Fact]
+    public void Every_Bucket_Is_Cut_And_Filled_Where_The_Website_Is()
+    {
+        foreach (var granularity in Enum.GetValues<TimeGranularity>())
+        {
+            foreach (var (statement, cutFrom) in SeriesCutInto(granularity))
+            {
+                var counted = CalendarBucket().Match(statement.Sql);
+                var fill = Fill().Match(statement.Sql);
+
+                counted.Success.Should().BeTrue("{0} buckets are counted", granularity);
+                fill.Success.Should().BeTrue("{0} buckets are filled", granularity);
+
+                var cut = counted.Groups["cut"].Value;
+
+                cut.Should().Contain(cutFrom).And.Contain("{time_zone:String}");
+                fill.Groups["first"].Value.Should().Be(cut.Replace(cutFrom, WindowOpens, StringComparison.Ordinal));
+                fill.Groups["last"].Value.Should().Be(cut.Replace(cutFrom, WindowLastInstant, StringComparison.Ordinal));
+                statement.Parameters.Should().ContainSingle(parameter => parameter.Name == "time_zone")
+                    .Which.Value.Should().Be("Europe/London");
+            }
+        }
+    }
+
+    /// <summary>
+    /// A week runs Monday to Sunday, as ISO 8601 has it, and is found from the date where the
+    /// website is rather than the date in UTC — which in Kolkata is still Sunday for the first five
+    /// and a half hours of Monday.
+    /// </summary>
+    [Fact]
+    public void A_Week_Begins_On_A_Monday()
+    {
+        foreach (var (statement, cutFrom) in SeriesCutInto(TimeGranularity.Week))
+        {
+            statement.Sql.Should().Contain($"toMonday(toDate({cutFrom}, {{time_zone:String}}))");
+            statement.Sql.Should().NotContain("toStartOfWeek(");
+        }
+    }
+
+    /// <summary>
+    /// A series fills its buckets by the names the website's calendar gives them — a day, a week
+    /// or a month by the local date it begins on — and puts each at the instant it begins only once
+    /// the fill is done, outside it, by the one conversion counted and invented buckets share.
+    /// Filled as instants instead, a day whose midnight the clocks skip would step every bucket
+    /// after it an hour away from where the store begins a counted one, and each later day would
+    /// come back twice.
+    /// </summary>
+    /// <remarks>
+    /// What a bucket is named by is pinned exactly, because a name that is already an instant would
+    /// pass every other assertion here: a conversion of an instant to an instant changes nothing,
+    /// and the fill would step instants again.
+    /// </remarks>
+    /// <param name="granularity">How wide each bucket is.</param>
+    /// <param name="named">
+    /// What a bucket is named by before it is filled, with <c>{cutFrom}</c> standing for the instant
+    /// it is cut from: a local date for a day, a week or a month, and the top of an hour for an hour.
+    /// </param>
+    /// <param name="beginning">The instant a bucket is put at, as the statement writes it.</param>
+    [Theory]
+    [InlineData(TimeGranularity.Hour, "toStartOfHour({cutFrom}, {time_zone:String})", "calendar_bucket")]
+    [InlineData(
+        TimeGranularity.Day,
+        "toDate({cutFrom}, {time_zone:String})",
+        "toDateTime(calendar_bucket, {time_zone:String})")]
+    [InlineData(
+        TimeGranularity.Week,
+        "toMonday(toDate({cutFrom}, {time_zone:String}))",
+        "toDateTime(calendar_bucket, {time_zone:String})")]
+    [InlineData(
+        TimeGranularity.Month,
+        "toStartOfMonth(toDate({cutFrom}, {time_zone:String}))",
+        "toDateTime(calendar_bucket, {time_zone:String})")]
+    public void A_Bucket_Is_Put_At_The_Instant_It_Begins_Only_Once_It_Is_Filled(
+        TimeGranularity granularity,
+        string named,
+        string beginning)
+    {
+        foreach (var (statement, cutFrom) in SeriesCutInto(granularity))
+        {
+            var fill = Fill().Match(statement.Sql);
+            var filledBy = fill.Groups["order"].Value;
+
+            CalendarBucket().Match(statement.Sql).Groups["cut"].Value
+                .Should().Be(named.Replace("{cutFrom}", cutFrom, StringComparison.Ordinal));
+            filledBy.Should().EndWith("calendar_bucket");
+            fill.Groups["then"].Value.Should().Be(filledBy.Replace("calendar_bucket", "bucket", StringComparison.Ordinal));
+            NamedBucket().Match(statement.Sql).Groups["beginning"].Value.Should().Be(beginning);
+        }
+    }
+
+    /// <summary>
+    /// The fill steps by one bucket of the calendar rather than by a number of seconds, and reaches
+    /// past its last bucket by the same step — so a month of any length steps to the first of the
+    /// next one, and a day or a week across a change of the clocks to the next local date.
+    /// </summary>
+    [Fact]
+    public void A_Fill_Steps_By_The_Calendar()
+    {
+        foreach (var granularity in Enum.GetValues<TimeGranularity>())
+        {
+            var oneBucket = $"INTERVAL 1 {granularity.ToString().ToUpperInvariant()}";
+
+            foreach (var (statement, _) in SeriesCutInto(granularity))
+            {
+                var fill = Fill().Match(statement.Sql);
+
+                fill.Groups["step"].Value.Should().Be(oneBucket);
+                fill.Groups["reach"].Value.Should().Be(oneBucket);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A bucket size the compiler was not taught gets no statement, on the same terms as a question
+    /// it was not taught: there is no default it could fall back on that would still be a calendar.
+    /// </summary>
+    [Fact]
+    public void A_Bucket_Size_The_Compiler_Was_Not_Taught_Gets_No_Statement()
+    {
+        const TimeGranularity untaught = (TimeGranularity)7;
+
+        var series = () => Compile(untaught, TimeSeriesMetric.PageViews);
+        var traffic = () => AnalyticsSqlCompiler.Compile(Scope(), new TrafficSeriesQuery(Window(), untaught));
+
+        series.Should().Throw<ArgumentOutOfRangeException>();
+        traffic.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
     public void Judged_Sessions()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), Judged(50, 100));
@@ -1651,8 +1958,8 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// — the site and both ends of the window — is bound rather than written in.
     /// </summary>
     [Theory]
-    [InlineData(TimeGranularity.Day, "toStartOfDay")]
-    [InlineData(TimeGranularity.Hour, "toStartOfHour")]
+    [InlineData(TimeGranularity.Day, "toDate(argMax(started_at")]
+    [InlineData(TimeGranularity.Hour, "toStartOfHour(argMax(started_at")]
     public void A_Series_Names_The_Site_And_The_Window_Rather_Than_Writing_Them_In(
         TimeGranularity granularity,
         string bucket)
@@ -2270,7 +2577,7 @@ public sealed partial class AnalyticsSqlCompilerTests
     public void A_Time_Zone_Is_Bound_Rather_Than_Written_Into_The_Statement()
     {
         const string hostile = "Etc/UTC') OR 1=1 --";
-        var scope = new TenantScope(SiteId, OrganizationId, SiteRole.Viewer, hostile);
+        var scope = new TenantScope(SiteId, OrganizationId, SiteRole.Viewer, hostile, DateTimeOffset.UnixEpoch);
 
         var statement = AnalyticsSqlCompiler.Compile(
             scope,
@@ -2829,7 +3136,7 @@ public sealed partial class AnalyticsSqlCompilerTests
         AnalyticsSqlCompiler.Compile(Scope(), new TimeSeriesQuery(Window(), granularity, metric));
 
     private static TenantScope Scope() =>
-        new(SiteId, OrganizationId, SiteRole.Viewer, "Europe/London");
+        new(SiteId, OrganizationId, SiteRole.Viewer, "Europe/London", DateTimeOffset.UnixEpoch);
 
     private static TimeRange Window() => new(From, To);
 
@@ -2879,6 +3186,26 @@ public sealed partial class AnalyticsSqlCompilerTests
 
     /// <summary>What each detail of the standard window's judged visits held.</summary>
     private static SiteVisitFacetsQuery Facets() => new(Window(), IdleTimeout, "example.com");
+
+    /// <summary>The question about a website's kept months, asked of both populations.</summary>
+    /// <returns>The two statements.</returns>
+    private static CompiledStatement[] EveryQuestionAboutKeptMonths() =>
+    [
+        AnalyticsSqlCompiler.Compile(Scope(), new KeptMonthsQuery(To)),
+        AnalyticsSqlCompiler.Compile(Scope(), new KeptMonthsQuery(To) { Population = Population.People }),
+    ];
+
+    /// <summary>
+    /// Which stored column a question about kept months reads a figure from.
+    /// </summary>
+    /// <param name="sql">The statement.</param>
+    /// <param name="name">What the figure comes back as.</param>
+    /// <returns>The stored column.</returns>
+    private static string KeptRead(string sql, string name) =>
+        sql.Split('\n')
+            .Select(line => line.Trim())
+            .Single(line => line.EndsWith($" AS kept_{name},", StringComparison.Ordinal))
+            .Split(' ')[0];
 
     /// <summary>
     /// One question of each of the twelve shapes that may be asked about a population.
@@ -2936,12 +3263,55 @@ public sealed partial class AnalyticsSqlCompilerTests
     private static CompiledStatement[] EveryShapeOfStatement() =>
     [
         Compile(TimeGranularity.Hour, TimeSeriesMetric.Visitors),
+        Compile(TimeGranularity.Week, TimeSeriesMetric.PageViews),
+        Compile(TimeGranularity.Month, TimeSeriesMetric.Visitors),
         AnalyticsSqlCompiler.Compile(Scope(), new TrafficSeriesQuery(Window(), TimeGranularity.Day)),
+        AnalyticsSqlCompiler.Compile(Scope(), new TrafficSeriesQuery(Window(), TimeGranularity.Week)),
+        AnalyticsSqlCompiler.Compile(Scope(), new TrafficSeriesQuery(Window(), TimeGranularity.Month)),
         AnalyticsSqlCompiler.Compile(Scope(), Judged(50, 100)),
         AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail()),
         AnalyticsSqlCompiler.Compile(Scope(), Facets()),
+        .. EveryQuestionAboutKeptMonths(),
         .. EveryStatementAbout(Population.People),
     ];
+
+    /// <summary>
+    /// Both series cut into buckets of one size, each beside the instant its buckets are cut from:
+    /// when a report arrived, for the series counted from activity, and when a visit began by its
+    /// newest verdict, for the series counted from verdicts.
+    /// </summary>
+    /// <param name="granularity">How wide each bucket is.</param>
+    /// <returns>The two statements.</returns>
+    private static (CompiledStatement Statement, string CutFrom)[] SeriesCutInto(TimeGranularity granularity) =>
+    [
+        (Compile(granularity, TimeSeriesMetric.PageViews), ReportArrived),
+        (AnalyticsSqlCompiler.Compile(Scope(), new TrafficSeriesQuery(Window(), granularity)), VisitBegan),
+    ];
+
+    /// <summary>Finds what a series names its counted buckets by on the website's calendar.</summary>
+    /// <returns>The pattern.</returns>
+    [GeneratedRegex(@"^\s*(?<cut>\S.*) AS calendar_bucket,?$", RegexOptions.Multiline)]
+    private static partial Regex CalendarBucket();
+
+    /// <summary>Finds the instant a series puts each of its buckets at.</summary>
+    /// <returns>The pattern.</returns>
+    [GeneratedRegex(@"^\s*(?<beginning>\S.*) AS bucket,?$", RegexOptions.Multiline)]
+    private static partial Regex NamedBucket();
+
+    /// <summary>
+    /// Finds the fill a series is counted with: what it orders and fills by, the bucket it begins
+    /// with, the bucket it ends with, how far past that bucket it reaches and the step it takes — and,
+    /// once the query the fill closes is done, what the series is ordered by.
+    /// </summary>
+    /// <remarks>
+    /// The fill has to be indented and followed by the close of its query, so a statement that
+    /// filled the outermost query would not be found at all.
+    /// </remarks>
+    /// <returns>The pattern.</returns>
+    [GeneratedRegex(
+        @"^(?<indent> +)ORDER BY (?<order>.+)\n\k<indent>WITH FILL\n\k<indent>    FROM (?<first>.+)\n\k<indent>    TO (?<last>.+) \+ (?<reach>INTERVAL 1 \w+)\n\k<indent>    STEP (?<step>INTERVAL 1 \w+)\n\)\nORDER BY (?<then>.+)$",
+        RegexOptions.Multiline)]
+    private static partial Regex Fill();
 
     /// <summary>Finds every placeholder a statement names.</summary>
     /// <returns>The pattern.</returns>
@@ -2952,6 +3322,11 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// <returns>The pattern.</returns>
     [GeneratedRegex(@"\bFROM events\b")]
     private static partial Regex ActivityRead();
+
+    /// <summary>Finds the read of a website's oldest report still held, and of nothing after it.</summary>
+    /// <returns>The pattern.</returns>
+    [GeneratedRegex(@"FROM events\s+WHERE site_id = \{site_id:UUID\}\s+AND server_ts < fromUnixTimestamp64Milli\(\{to_ms:Int64\}, 'UTC'\)\s+ORDER BY server_ts\s+LIMIT 1\n")]
+    private static partial Regex OldestReport();
 
     /// <summary>
     /// Finds every detail an answer offers.

@@ -61,6 +61,7 @@ public sealed class MembershipTenantScopeProvider(
             {
                 site.OrganizationId,
                 site.TimeZoneId,
+                site.CreatedAt,
                 Granted = database.SiteMemberships
                     .Where(membership => membership.SiteId == site.Id && membership.UserId == userId.Value)
                     .Select(membership => (SiteRole?)membership.Role)
@@ -83,7 +84,7 @@ public sealed class MembershipTenantScopeProvider(
 
         return role is null
             ? null
-            : new TenantScope(siteId, found.OrganizationId, role.Value, found.TimeZoneId);
+            : new TenantScope(siteId, found.OrganizationId, role.Value, found.TimeZoneId, found.CreatedAt);
     }
 }
 

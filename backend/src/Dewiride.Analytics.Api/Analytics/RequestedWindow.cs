@@ -38,6 +38,19 @@ internal static class RequestedWindow
     public static readonly TimeSpan LongestByHour = TimeSpan.FromDays(31);
 
     /// <summary>
+    /// Longest window a series may be cut into buckets of one size over.
+    /// </summary>
+    /// <remarks>
+    /// Only hours are held to a month. A year of hours is thousands of points, while a year of
+    /// days, weeks or months is few enough for a chart to show every one of them, so those may be
+    /// asked for across the longest window any question may cover.
+    /// </remarks>
+    /// <param name="granularity">How wide each bucket is.</param>
+    /// <returns>The longest window.</returns>
+    public static TimeSpan LongestFor(TimeGranularity granularity) =>
+        granularity == TimeGranularity.Hour ? LongestByHour : Longest;
+
+    /// <summary>
     /// Resolves the window, filling in whichever end was left out.
     /// </summary>
     /// <param name="from">Inclusive start the caller asked for, if any.</param>

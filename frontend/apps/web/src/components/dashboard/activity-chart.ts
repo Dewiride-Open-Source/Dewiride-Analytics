@@ -1,14 +1,21 @@
 import { color, type EChartsCoreOption } from 'echarts/core';
+import type { Granularity } from '@/lib/analytics/period';
 import type { Drawing } from '@/lib/charts/drawing';
-import { chartFrame } from '@/lib/charts/frame';
+import { chartFrame, type FigureWriter } from '@/lib/charts/frame';
 import { ghostSeries } from '@/lib/charts/ghost';
 import type { ChartPalette } from '@/lib/charts/palette';
-import { quietened, washOver } from '@/lib/charts/wash';
+import { type Quiet, quietened, UNQUIETENED, washOver } from '@/lib/charts/wash';
 
 /** One thing counted across a period, named in the reader's own language. */
 export interface Measure {
   readonly name: string;
-  readonly values: readonly number[];
+  /**
+   * What it counted in each bucket, or nothing for a month of all time left out — never counted,
+   * or kept before its visits were all judged, which leaves it out of every figure resting on a
+   * verdict: who came, for everybody as well, and how much the people read — which a line leaves a
+   * gap at, and a run of columns leaves empty.
+   */
+  readonly values: readonly (number | null)[];
 }
 
 /** Two measures of how much of a website was read over a period, ready to be drawn. */
@@ -17,14 +24,19 @@ export interface ActivityChart {
   readonly labels: readonly string[];
   /** What each bucket is called in full, over the card a hover opens. */
   readonly titles: readonly string[];
+  /** How the period is cut, which for years names every bucket along the axis. */
+  readonly granularity: Granularity;
   /** The two measures, in the order they are keyed and tabled. */
   readonly measures: readonly [Measure, Measure];
+  /** How the card a hover opens writes a figure of either measure. */
+  readonly figure: FigureWriter;
   readonly drawing: Drawing;
   /**
-   * The first bucket still being judged, or nothing when every figure is settled — which
-   * everything recorded as it happened always is.
+   * The buckets drawn quietly: a week or a month the period cuts short, at either end, and those
+   * at the end still being judged — which everything recorded as it happened never is. Nothing is
+   * quietened where this is left out.
    */
-  readonly stillJudging?: number | null;
+  readonly quiet?: Quiet;
   /** The same two measures over the period before, where that is drawn behind this one. */
   readonly earlier?: readonly [Measure, Measure];
 }
@@ -32,14 +44,16 @@ export interface ActivityChart {
 /** Two measures across a period, each in the chart's own colour for it. */
 export function activityOption(chart: ActivityChart, palette: ChartPalette): EChartsCoreOption {
   const columns = chart.drawing === 'columns';
-  const stillJudging = chart.stillJudging ?? null;
-  const wash = columns ? undefined : washOver(chart.labels, stillJudging, palette);
+  const quiet = chart.quiet ?? UNQUIETENED;
+  const wash = columns ? undefined : washOver(chart.labels, quiet, palette);
 
   return {
-    ...chartFrame(palette, chart.labels, columns, chart.titles),
+    ...chartFrame(palette, chart.labels, columns, chart.titles, {
+      every: chart.granularity === 'year',
+    }),
     series: [
-      measure(chart.measures[0], palette.series[0], chart.drawing, stillJudging),
-      measure(chart.measures[1], palette.series[1], chart.drawing, stillJudging),
+      measure(chart.measures[0], palette.series[0], chart, quiet),
+      measure(chart.measures[1], palette.series[1], chart, quiet),
       ...(wash ? [wash] : []),
       ...ghosts(chart, palette),
     ],
@@ -85,28 +99,33 @@ function curve(drawing: Drawing): number | false {
 /**
  * One measure drawn across the period, in whichever style was asked for.
  *
- * Drawn as columns, each bucket still being judged is faded on its own; drawn as a line or an
- * area, the wash the option lays over the tail does the quietening instead.
+ * Drawn as columns, each quietened bucket is faded on its own; drawn as a line or an area, the
+ * wash the option lays over the ends does the quietening instead. Either way the card a hover opens
+ * writes its figures as the chart says.
  */
 function measure(
   one: Measure,
   colour: string,
-  drawing: Drawing,
-  stillJudging: number | null,
+  { drawing, figure }: ActivityChart,
+  quiet: Quiet,
 ): Record<string, unknown> {
+  const tooltip = { valueFormatter: figure };
+
   if (drawing === 'columns') {
     return {
       name: one.name,
       type: 'bar',
-      data: quietened(one.values, stillJudging),
+      data: quietened(one.values, quiet),
       itemStyle: { color: colour, borderRadius: [2, 2, 0, 0] },
       barMaxWidth: 22,
+      tooltip,
     };
   }
 
   return {
     name: one.name,
     type: 'line',
+    tooltip,
     data: [...one.values],
     smooth: CURVE,
     symbol: 'circle',

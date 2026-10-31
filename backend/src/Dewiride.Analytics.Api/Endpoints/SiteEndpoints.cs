@@ -11,6 +11,7 @@ using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Extensibility;
 using Dewiride.Analytics.Infrastructure.Tenancy;
+using static Dewiride.Analytics.Api.Analytics.QueryVocabulary;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -134,9 +135,6 @@ internal static class SiteEndpoints
     private const string UnreachedSourceKind =
         "Narrow to the kinds of source this product reports, or leave it out for all of them.";
 
-    /// <summary>What is said when a question is asked about a population this product cannot separate.</summary>
-    private const string UnknownPopulation = "Ask about everybody, or only about people.";
-
     /// <summary>
     /// What each role is called on the wire.
     /// </summary>
@@ -151,27 +149,6 @@ internal static class SiteEndpoints
             [SiteRole.Editor] = "editor",
             [SiteRole.Owner] = "owner",
         }.ToFrozenDictionary();
-
-    private static readonly FrozenDictionary<string, TimeSeriesMetric> Metrics =
-        new Dictionary<string, TimeSeriesMetric>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["pageviews"] = TimeSeriesMetric.PageViews,
-            ["visitors"] = TimeSeriesMetric.Visitors,
-        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Who an answer may be about, by the word used on the wire.
-    /// </summary>
-    /// <remarks>
-    /// Written out for the same reason the place groupings are, and refused here before the
-    /// compiler is reached for the same reason. One word: everybody is what a question means when
-    /// nobody is named, and is never spelled.
-    /// </remarks>
-    private static readonly FrozenDictionary<string, Population> Populations =
-        new Dictionary<string, Population>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["people"] = Population.People,
-        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// What a place list may be grouped by, by the word used on the wire.
@@ -278,26 +255,6 @@ internal static class SiteEndpoints
 
     private static readonly FrozenDictionary<VisitPosition, string> PositionNames =
         Positions.ToFrozenDictionary(entry => entry.Value, entry => entry.Key);
-
-    private static readonly FrozenDictionary<string, TimeGranularity> Granularities =
-        new Dictionary<string, TimeGranularity>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["hour"] = TimeGranularity.Hour,
-            ["day"] = TimeGranularity.Day,
-        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// The spelling each measure is reported back under.
-    /// </summary>
-    /// <remarks>
-    /// The answer names what it counted rather than repeating the caller's own spelling, so a
-    /// request for <c>PageViews</c> and one for <c>pageviews</c> produce identical documents.
-    /// </remarks>
-    private static readonly FrozenDictionary<TimeSeriesMetric, string> MetricNames =
-        Metrics.ToFrozenDictionary(entry => entry.Value, entry => entry.Key);
-
-    private static readonly FrozenDictionary<TimeGranularity, string> GranularityNames =
-        Granularities.ToFrozenDictionary(entry => entry.Value, entry => entry.Key);
 
     /// <summary>
     /// Maps the site listing and the two questions the first screen asks.
@@ -1160,51 +1117,6 @@ internal static class SiteEndpoints
     private static VisitBoundaries Boundaries(ClassificationOptions settings, TimeProvider clock) =>
         new(settings.IdleTimeout, clock.GetUtcNow() - settings.IdleTimeout);
 
-    /// <summary>
-    /// Where a series counted from verdicts stops being complete.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The earlier of two instants. Nothing that began within an idle timeout of the present can be
-    /// known to be over — the instant the visit-shaped answers stop counting at — so nothing after
-    /// it has a verdict yet. Nor does anything past where judging has actually reached, which falls
-    /// behind the first whenever the engine has been stopped, is working through a backlog, or has
-    /// not started on the site at all; a series that called those stretches complete would draw the
-    /// verdicts it is still waiting for as traffic that never came.
-    /// </para>
-    /// <para>
-    /// Read before the series it qualifies, never after. The engine stores a pass's verdicts before
-    /// it moves its bookmark past them, so a bookmark read first can only be behind what a series
-    /// read afterwards holds — which washes a bucket that had in fact settled — whereas read second
-    /// it can be ahead of it, and call a stretch complete whose verdicts the series never saw.
-    /// </para>
-    /// </remarks>
-    /// <param name="scope">The site being read.</param>
-    /// <param name="range">
-    /// The window being read, whose start is the answer for a site judging has not started on.
-    /// </param>
-    /// <param name="progress">Where judging has reached.</param>
-    /// <param name="settings">The engine's own idle timeout.</param>
-    /// <param name="clock">The present moment.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The instant.</returns>
-    private static async Task<DateTimeOffset> JudgedUpToAsync(
-        TenantScope scope,
-        TimeRange range,
-        IClassificationProgressStore progress,
-        ClassificationOptions settings,
-        TimeProvider clock,
-        CancellationToken cancellationToken)
-    {
-        var settled = Boundaries(settings, clock).SettledBefore;
-        var caughtUp = await progress
-                .CaughtUpToAsync(scope.SiteId, RulesetVersion.Current, cancellationToken)
-                .ConfigureAwait(false)
-            ?? range.From;
-
-        return caughtUp < settled ? caughtUp : settled;
-    }
-
     private static async Task<Results<Ok<TrafficResponse>, NotFound, ProblemHttpResult>> TrafficAsync(
         [AsParameters] JudgedParameters parameters,
         ITenantScopeProvider scopes,
@@ -1260,17 +1172,13 @@ internal static class SiteEndpoints
     {
         if (!Granularities.TryGetValue(parameters.Granularity ?? string.Empty, out var granularity))
         {
-            return Unusable("Ask for buckets of either an hour or a day.");
+            return Unusable(UnknownGranularity);
         }
-
-        var longest = granularity == TimeGranularity.Hour
-            ? RequestedWindow.LongestByHour
-            : RequestedWindow.Longest;
 
         if (!RequestedWindow.TryResolve(
                 parameters.From,
                 parameters.To,
-                longest,
+                RequestedWindow.LongestFor(granularity),
                 clock,
                 out var range,
                 out var refusal))
@@ -2082,22 +1990,18 @@ internal static class SiteEndpoints
     {
         if (!Metrics.TryGetValue(parameters.Metric ?? string.Empty, out var metric))
         {
-            return Unusable("Ask for either page views or visitors.");
+            return Unusable(UnknownMetric);
         }
 
         if (!Granularities.TryGetValue(parameters.Granularity ?? string.Empty, out var granularity))
         {
-            return Unusable("Ask for buckets of either an hour or a day.");
+            return Unusable(UnknownGranularity);
         }
-
-        var longest = granularity == TimeGranularity.Hour
-            ? RequestedWindow.LongestByHour
-            : RequestedWindow.Longest;
 
         if (!RequestedWindow.TryResolve(
                 parameters.From,
                 parameters.To,
-                longest,
+                RequestedWindow.LongestFor(granularity),
                 clock,
                 out var range,
                 out var refusal))
@@ -2224,35 +2128,6 @@ internal static class SiteEndpoints
 
         return true;
     }
-
-    /// <summary>
-    /// Reads who a question is asked about.
-    /// </summary>
-    /// <remarks>
-    /// Nothing named is everybody, which is what every question means until somebody is named.
-    /// Called before the site is resolved on the same terms as every other check here, so a word
-    /// naming no population is refused identically whether or not the site exists.
-    /// </remarks>
-    /// <param name="asked">What the caller supplied, or nothing.</param>
-    /// <param name="population">Who it names, where it names anyone this product can separate.</param>
-    /// <returns><see langword="true"/> when the request can be answered as asked.</returns>
-    private static bool TryReadPopulation(string? asked, out Population population)
-    {
-        if (string.IsNullOrEmpty(asked))
-        {
-            population = Population.Everybody;
-
-            return true;
-        }
-
-        return Populations.TryGetValue(asked, out population);
-    }
-
-    private static ProblemHttpResult Unusable(string? detail) =>
-        TypedResults.Problem(
-            title: "That request could not be answered as asked.",
-            detail: detail,
-            statusCode: StatusCodes.Status400BadRequest);
 }
 
 /// <summary>
@@ -2292,7 +2167,10 @@ internal readonly record struct JudgedParameters(
 /// </summary>
 /// <param name="SiteId">The site to count over.</param>
 /// <param name="Metric">Either <c>pageviews</c> or <c>visitors</c>.</param>
-/// <param name="Granularity">Either <c>hour</c> or <c>day</c>.</param>
+/// <param name="Granularity">
+/// <c>hour</c>, <c>day</c>, <c>week</c> or <c>month</c>. Hours are cut over a period of up to 31
+/// days, and everything else over a period of up to 400.
+/// </param>
 /// <param name="From">Inclusive start of the period. Defaults to a week before the end.</param>
 /// <param name="To">Exclusive end of the period. Defaults to now.</param>
 /// <param name="Only">
@@ -2311,7 +2189,10 @@ internal readonly record struct SeriesParameters(
 /// What the traffic series endpoint reads from the path and the query string.
 /// </summary>
 /// <param name="SiteId">The site to count over.</param>
-/// <param name="Granularity">Either <c>hour</c> or <c>day</c>.</param>
+/// <param name="Granularity">
+/// <c>hour</c>, <c>day</c>, <c>week</c> or <c>month</c>. Hours are cut over a period of up to 31
+/// days, and everything else over a period of up to 400.
+/// </param>
 /// <param name="From">Inclusive start of the period. Defaults to a week before the end.</param>
 /// <param name="To">Exclusive end of the period. Defaults to now.</param>
 internal readonly record struct TrafficSeriesParameters(

@@ -82,6 +82,18 @@ internal static class ReconciledEvents
     public static string ReconciliationPerSite { get; } = Reconciling("site_id");
 
     /// <summary>
+    /// Daily visitors: each visitor key once, and none for the activity that carries no key.
+    /// </summary>
+    /// <remarks>
+    /// A surface that could not derive a key observed nothing about who was there, and counting all
+    /// of that activity together would invent one busy phantom. A key covers one UTC day, so over a
+    /// longer stretch this counts somebody once for every day they came. Written once because the
+    /// headline totals, the series and the months kept after their reports have to count the same
+    /// visitors, and a test holds the version of the kept months' arithmetic to this text.
+    /// </remarks>
+    public const string Visitors = "toInt64(uniqExactIf(visitor_key, visitor_key != ''))";
+
+    /// <summary>
     /// Pages delivered, for a grouping already narrowed to one visitor and one page.
     /// </summary>
     /// <param name="indent">

@@ -204,6 +204,7 @@ describe('the bar across the top', () => {
     ['?period=yesterday', '?period=yesterday'],
     ['?period=yesterday&only=people', '?period=yesterday&only=people'],
     ['?only=people', '?only=people'],
+    ['?period=all-time', '?period=all-time'],
   ])(
     'hands what is being looked at (%s) between the screens about a stretch of days, and to no other',
     async (at, carried) => {

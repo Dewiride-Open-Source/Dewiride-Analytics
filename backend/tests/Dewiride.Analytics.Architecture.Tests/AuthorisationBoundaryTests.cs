@@ -1,6 +1,8 @@
 using System.Reflection;
 using Dewiride.Analytics.Application.Analytics;
+using Dewiride.Analytics.Application.Consolidation;
 using Dewiride.Analytics.Application.Tenancy;
+using NetArchTest.Rules;
 
 namespace Dewiride.Analytics.Architecture.Tests;
 
@@ -15,6 +17,9 @@ namespace Dewiride.Analytics.Architecture.Tests;
 [Trait("Category", "AuthorisationBoundary")]
 public sealed class AuthorisationBoundaryTests
 {
+    /// <summary>Where every endpoint that answers a request is declared.</summary>
+    private const string AnsweringRequests = "Dewiride.Analytics.Api.Endpoints";
+
     /// <summary>
     /// A scope is proof that membership was checked. If any caller holding a site identifier could
     /// construct one, the type would document an intention rather than enforce a rule.
@@ -54,6 +59,33 @@ public sealed class AuthorisationBoundaryTests
     public void Every_Question_In_The_Vocabulary_Is_A_Leaf()
     {
         Questions().Should().OnlyContain(question => question.IsSealed);
+    }
+
+    /// <summary>
+    /// Counting a website's months and metering what it delivered work on websites the control plane
+    /// hands them, with no proof that anybody may read those websites. A request that could reach
+    /// either would read a website by the identifier in its address, which is printed in the page
+    /// source of every page that website measures — so nothing that answers a request may depend on
+    /// them, and everything a person reads goes through a question that demands a scope.
+    /// </summary>
+    [Fact]
+    public void Nothing_Answering_A_Request_Counts_For_The_System()
+    {
+        var result = Types.InAssembly(Product.Assembly(Product.Api))
+            .That()
+            .ResideInNamespace(AnsweringRequests)
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                typeof(IMonthConsolidation).FullName,
+                typeof(MonthlyConsolidation).FullName,
+                typeof(ISiteVolume).FullName)
+            .GetResult();
+
+        var offenders = result.FailingTypes?.Select(type => type.FullName) ?? [];
+
+        result.IsSuccessful.Should().BeTrue(
+            "nothing answering a request may count for the system, but these types do: {0}",
+            string.Join(", ", offenders));
     }
 
     [Fact]

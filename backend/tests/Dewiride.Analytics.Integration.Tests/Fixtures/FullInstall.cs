@@ -65,6 +65,7 @@ internal sealed class FullInstall : WebApplicationFactory<Program>
 
         builder.UseSetting(TestSettings.SignInAllowance, TestSettings.NoPracticalLimit);
         builder.UseSetting(TestSettings.BackgroundJudging, "false");
+        builder.UseSetting(TestSettings.BackgroundConsolidation, "false");
 
         // Runs after the product has registered its own, so this is the one that answers.
         builder.ConfigureTestServices(services => services.AddSingleton<ISiteAllowance, NoRoom>());

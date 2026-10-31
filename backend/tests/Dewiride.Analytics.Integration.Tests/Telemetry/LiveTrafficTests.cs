@@ -937,7 +937,7 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
         stack.Services.GetRequiredService<IEventSink>().WriteBatchAsync(events, Cancellation.Token);
 
     private static TenantScope Scope(Guid siteId) =>
-        new(siteId, Guid.NewGuid(), SiteRole.Viewer, "Etc/UTC");
+        new(siteId, Guid.NewGuid(), SiteRole.Viewer, "Etc/UTC", DateTimeOffset.UnixEpoch);
 
     private static RawEvent Vouched(RawEvent observed, string operatorName) =>
         observed with { ConfirmedOperator = operatorName };

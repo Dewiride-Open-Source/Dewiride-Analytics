@@ -74,6 +74,20 @@ public interface IClassificationProgressStore
     /// The instant, or <see langword="null"/> where judging has never started on the site.
     /// </returns>
     Task<DateTimeOffset?> CaughtUpToAsync(Guid siteId, RulesetVersion running, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// How far one set of rules has judged a site, without starting a bookmark where it has none.
+    /// </summary>
+    /// <remarks>
+    /// Every visit that began before the instant has a verdict from these rules. What a site's history
+    /// was judged by is decided visit by visit by the newest rules to reach it, so this is what says
+    /// whether rules that have just replaced older ones have finished judging a stretch again.
+    /// </remarks>
+    /// <param name="siteId">The site.</param>
+    /// <param name="ruleset">The rules.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The instant, or <see langword="null"/> where these rules have not started on the site.</returns>
+    Task<DateTimeOffset?> JudgedThroughAsync(Guid siteId, RulesetVersion ruleset, CancellationToken cancellationToken);
 }
 
 /// <summary>

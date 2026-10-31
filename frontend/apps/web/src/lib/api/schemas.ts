@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ALL_TIME_GRANULARITIES, GRANULARITIES } from '@/lib/analytics/period';
 
 /**
  * The shapes the engine answers with.
@@ -119,6 +120,14 @@ export const overviewSchema = z.object({
 });
 
 /**
+ * How finely a period was cut into buckets, said back by the engine as it was asked.
+ *
+ * One set for every answer cut into buckets, and the same set the dashboard asks with, so every way
+ * of cutting the dashboard can ask for is a way an answer can be read back in.
+ */
+export const granularitySchema = z.enum(GRANULARITIES);
+
+/**
  * One measure counted in buckets across a period.
  *
  * Counting is complete up to `completeTo`. Asked of everybody that is the end of the period; asked
@@ -129,9 +138,82 @@ export const seriesSchema = z.object({
   from: timestamp,
   to: timestamp,
   metric: z.enum(['pageviews', 'visitors']),
-  granularity: z.enum(['hour', 'day']),
+  granularity: granularitySchema,
   completeTo: timestamp,
   points: z.array(z.object({ bucketStart: timestamp, value: z.number().int() })),
+});
+
+/**
+ * A calendar day on the website's own calendar, written the way a period names one: `2026-08-19`.
+ */
+const calendarDay = z.iso.date();
+
+/** A calendar month on the website's own calendar: `2026-08`. */
+const calendarMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
+
+/**
+ * How finely all time was cut, said back by the engine as it was asked: by the month or the year,
+ * and never finer.
+ */
+export const allTimeGranularitySchema = z.enum(ALL_TIME_GRANULARITIES);
+
+/**
+ * A figure counted for a bucket of all time, or nothing for a month left out.
+ *
+ * A month is counted from its visits while they are still kept, and a month nobody counted in time
+ * cannot be counted afterwards; a figure counted from verdicts also leaves out a month kept before
+ * its visits were all judged that can no longer be counted again. Nothing is that month's honest
+ * answer: nought would be a claim that nobody came.
+ */
+const counted = z.number().int().nullable();
+
+/**
+ * The months of the record an answer leaves out, each list oldest first and each month in one of
+ * them: `missing` those never counted — never kept, and no longer countable — and `unjudged` those
+ * kept before judging had finished with them, which can no longer be counted again. Only an answer
+ * resting on verdicts — the people's figures, or who came — ever names one `unjudged`; everybody's
+ * figures name none, since none of them rests on a verdict. Each answer says this for itself, from
+ * its own reading, so a picture is never told why it has no figure by another answer read at
+ * another moment.
+ */
+const leftOut = {
+  missing: z.array(calendarMonth),
+  unjudged: z.array(calendarMonth),
+};
+
+/**
+ * A website's whole record, from its first month kept, or still held, to the month running now: its
+ * finished months from the totals kept of each, and the months not kept yet counted from their
+ * visits, so it is never behind a period read from the visits themselves.
+ *
+ * `firstDay` is the first day of the record — the day of the website's first visit where that is
+ * known, otherwise the first of its first month — and nothing where nothing of the website is held.
+ * `missing` and `unjudged` name the months the totals leave out, and why. `detailFrom` is where the
+ * days held visit by visit begin.
+ */
+export const allTimeSchema = z.object({
+  from: timestamp.nullable(),
+  to: timestamp,
+  firstDay: calendarDay.nullable(),
+  detailFrom: timestamp,
+  pageViews: z.number().int(),
+  visitors: z.number().int(),
+  completeTo: timestamp,
+  ...leftOut,
+});
+
+/**
+ * One measure across a website's whole record, month by month or year by year, oldest first, with
+ * the months it leaves out and why.
+ */
+export const allTimeSeriesSchema = z.object({
+  from: timestamp,
+  to: timestamp,
+  metric: z.enum(['pageviews', 'visitors']),
+  granularity: allTimeGranularitySchema,
+  completeTo: timestamp,
+  points: z.array(z.object({ bucketStart: timestamp, value: counted })),
+  ...leftOut,
 });
 
 /** One page and how much of a period's traffic went to it. */
@@ -567,10 +649,33 @@ export const trafficCategorySeriesSchema = z.object({
 export const trafficSeriesSchema = z.object({
   from: timestamp,
   to: timestamp,
-  granularity: z.enum(['hour', 'day']),
+  granularity: granularitySchema,
   completeTo: timestamp,
   buckets: z.array(timestamp),
   groups: z.array(trafficCategorySeriesSchema),
+});
+
+/**
+ * What generated a website's traffic across its whole record, month by month or year by year.
+ *
+ * The same table as a period's, save that a month left out — never counted, or kept before its
+ * visits were all judged — is nothing in every category rather than a count of nought, for everybody
+ * as much as for the people, since every figure in it rests on a verdict.
+ */
+export const allTimeTrafficSchema = z.object({
+  from: timestamp,
+  to: timestamp,
+  granularity: allTimeGranularitySchema,
+  completeTo: timestamp,
+  buckets: z.array(timestamp),
+  groups: z.array(
+    z.object({
+      category: trafficCategorySchema,
+      sessions: z.array(counted),
+      pageViews: z.array(counted),
+    }),
+  ),
+  ...leftOut,
 });
 
 /**
@@ -770,6 +875,9 @@ export type Site = z.infer<typeof siteSchema>;
 export type Overview = z.infer<typeof overviewSchema>;
 export type Series = z.infer<typeof seriesSchema>;
 export type SeriesMetric = Series['metric'];
+export type AllTime = z.infer<typeof allTimeSchema>;
+export type AllTimeSeries = z.infer<typeof allTimeSeriesSchema>;
+export type AllTimeTraffic = z.infer<typeof allTimeTrafficSchema>;
 export type SitePage = z.infer<typeof sitePageSchema>;
 export type Pages = z.infer<typeof pagesSchema>;
 export type LocationGrouping = z.infer<typeof locationGroupingSchema>;
@@ -810,6 +918,12 @@ export type SignalDirection = z.infer<typeof signalDirectionSchema>;
 export type TrafficGroup = z.infer<typeof trafficGroupSchema>;
 export type Traffic = z.infer<typeof trafficSchema>;
 export type TrafficSeries = z.infer<typeof trafficSeriesSchema>;
+
+/**
+ * Who came, as either answer carries it: a period's, every bucket of which was counted, or all
+ * time's, any month of which may not have been.
+ */
+export type TrafficPicture = TrafficSeries | AllTimeTraffic;
 export type VisitReason = z.infer<typeof visitReasonSchema>;
 export type Visit = z.infer<typeof visitSchema>;
 export type Visits = z.infer<typeof visitsSchema>;

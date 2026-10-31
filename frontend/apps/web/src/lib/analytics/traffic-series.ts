@@ -1,5 +1,5 @@
 import { CATEGORY_TONES, TONE_ORDER, type VerdictTone } from '@/lib/analytics/verdicts';
-import type { TrafficSeries } from '@/lib/api/schemas';
+import type { TrafficPicture } from '@/lib/api/schemas';
 
 /**
  * Turning what the engine counted into what a chart draws.
@@ -8,12 +8,17 @@ import type { TrafficSeries } from '@/lib/api/schemas';
  * verdict actually is and two of them that share a colour never share a name. A chart is glanced
  * at rather than read, so it draws the four tones those categories fall into — and the list under
  * the chart below still names every category exactly.
+ *
+ * A month of all time left out — never counted, or kept before its visits were all judged — is
+ * nothing rather than nought in every category, and stays nothing in every figure worked out from
+ * it: a gap in the drawing, not a month nobody came.
  */
 
 /** One tone's visits across every bucket of a period, in the order the buckets are named. */
 export interface TrafficBand {
   readonly tone: VerdictTone;
-  readonly visits: readonly number[];
+  /** What it counted in each bucket, or nothing for a month left out. */
+  readonly visits: readonly (number | null)[];
 }
 
 /**
@@ -22,15 +27,15 @@ export interface TrafficBand {
  * A tone the period never held is left out rather than drawn flat along the axis, so a website
  * nobody has ever scraped carries no red band and no mention of one.
  */
-export function bandsIn(series: TrafficSeries): readonly TrafficBand[] {
-  const counted = new Map<VerdictTone, number[]>();
+export function bandsIn(series: TrafficPicture): readonly TrafficBand[] {
+  const counted = new Map<VerdictTone, (number | null)[]>();
 
   for (const group of series.groups) {
     const tone = CATEGORY_TONES[group.category];
-    const running = counted.get(tone) ?? series.buckets.map(() => 0);
+    const running = counted.get(tone) ?? series.buckets.map((): number | null => 0);
 
     group.sessions.forEach((visits, at) => {
-      running[at] = (running[at] ?? 0) + visits;
+      running[at] = added(figureAt(running, at), visits);
     });
 
     counted.set(tone, running);
@@ -76,6 +81,38 @@ export function stillJudgingFrom(series: Bucketed): number | null {
   return null;
 }
 
+/** What any answer says of where its period opens and how far it is complete. */
+export interface Reached {
+  /** Where the period opens. */
+  readonly from: string;
+  /** The instant the answer is complete up to. */
+  readonly completeTo: string;
+}
+
+/**
+ * Whether not one bucket of a period has settled, which is when the line under its picture says the
+ * whole period is still being judged: its first bucket is still being judged.
+ *
+ * A period of one bucket is the exception. Its bucket runs to now, so it is never settled while the
+ * period is under way — a website's all time through its first month has had everything judged up
+ * to the last half hour, and calling all of it still being judged would say none of it could be
+ * read yet. It counts as judged none of only where judging has not reached where it opens, which is
+ * where an engine stopped or still working through a backlog leaves it.
+ *
+ * @param answer Where the period opens and how far its answer is complete.
+ * @param buckets How many buckets its picture has.
+ * @param stillJudging The first bucket still being judged, or nothing where every one has settled.
+ */
+export function judgedNoneOf(
+  answer: Reached,
+  buckets: number,
+  stillJudging: number | null,
+): boolean {
+  return (
+    stillJudging === 0 && (buckets > 1 || Date.parse(answer.completeTo) <= Date.parse(answer.from))
+  );
+}
+
 /**
  * How many visits each bucket held, whatever generated them.
  *
@@ -83,7 +120,7 @@ export function stillJudgingFrom(series: Bucketed): number | null {
  * wanted as a run of figures in its own right: it is what the table states beside each bucket,
  * and what an earlier period is drawn as when one is set behind this one.
  */
-export function totalsIn(series: TrafficSeries): readonly number[] {
+export function totalsIn(series: TrafficPicture): readonly (number | null)[] {
   return summed(series.buckets, series.groups, (group) => group.sessions);
 }
 
@@ -93,7 +130,7 @@ export function totalsIn(series: TrafficSeries): readonly number[] {
  * Nought in a bucket nobody was judged a person in, so an earlier period with no people draws as
  * none rather than as missing.
  */
-export function peopleIn(series: TrafficSeries): readonly number[] {
+export function peopleIn(series: TrafficPicture): readonly (number | null)[] {
   return summed(
     series.buckets,
     series.groups.filter((group) => CATEGORY_TONES[group.category] === 'people'),
@@ -102,15 +139,33 @@ export function peopleIn(series: TrafficSeries): readonly number[] {
 }
 
 /** One of the groups the engine answers with: a category and what it counted, bucket by bucket. */
-type CategoryGroup = TrafficSeries['groups'][number];
+type CategoryGroup = TrafficPicture['groups'][number];
 
 /** One figure per bucket, added up across the groups from whichever run each of them carries. */
 function summed(
   buckets: readonly string[],
   groups: readonly CategoryGroup[],
-  counted: (group: CategoryGroup) => readonly number[],
-): readonly number[] {
+  counted: (group: CategoryGroup) => readonly (number | null)[],
+): readonly (number | null)[] {
   return buckets.map((_, bucket) =>
-    groups.reduce((running, group) => running + (counted(group)[bucket] ?? 0), 0),
+    groups.reduce<number | null>(
+      (running, group) => added(running, figureAt(counted(group), bucket)),
+      0,
+    ),
   );
+}
+
+/** Two figures for one bucket added together, or nothing where either is left out. */
+function added(one: number | null, other: number | null): number | null {
+  return one === null || other === null ? null : one + other;
+}
+
+/**
+ * The figure a run holds for one bucket: nought where the run does not reach that far, and nothing
+ * where the bucket is left out.
+ */
+function figureAt(run: readonly (number | null)[], bucket: number): number | null {
+  const figure = run[bucket];
+
+  return figure === undefined ? 0 : figure;
 }

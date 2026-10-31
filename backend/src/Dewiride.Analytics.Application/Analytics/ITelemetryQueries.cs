@@ -172,6 +172,18 @@ public interface ITelemetryQueries
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Returns a website's whole record, month by month, with what was kept of each finished month.
+    /// </summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The moment to read the record at, and who the kept figures are about.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The record.</returns>
+    Task<KeptMonths> GetKeptMonthsAsync(
+        TenantScope scope,
+        KeptMonthsQuery query,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Returns individual judged visits, each with the evidence behind its verdict and what the
     /// visit itself was.
     /// </summary>
@@ -997,3 +1009,55 @@ public readonly record struct LiveMinute(DateTimeOffset Start, long PageViews);
 /// How many visitors are on it — each visitor counted once, on the one page they are on.
 /// </param>
 public readonly record struct LivePage(string Path, long Visitors);
+
+/// <summary>
+/// A website's whole record, month by month.
+/// </summary>
+/// <param name="FirstReportDay">
+/// The day the oldest report still held arrived on, on the website's calendar, or nothing where none
+/// is held.
+/// </param>
+/// <param name="Months">
+/// Every month from the first the website has a record of to the one running now, oldest first.
+/// Empty where nothing of the website is held: never measured, or measured only in months that went
+/// before any of them was kept.
+/// </param>
+public sealed record KeptMonths(DateOnly? FirstReportDay, ImmutableArray<RecordedMonth> Months)
+{
+    /// <summary>
+    /// When this installation began keeping months, or nothing where that is not known.
+    /// </summary>
+    public DateTimeOffset? KeepingSince { get; init; }
+}
+
+/// <summary>
+/// One month of a website's record.
+/// </summary>
+/// <param name="Month">The first of the month, on the website's calendar.</param>
+/// <param name="Begins">The month's first instant, where the website is now.</param>
+/// <param name="YearBegins">The first instant of the month's year, where the website is now.</param>
+/// <param name="Ends">The first instant after the month, where the website is now.</param>
+/// <param name="Kept">What was kept of it, or nothing where it never was.</param>
+public sealed record RecordedMonth(
+    DateOnly Month,
+    DateTimeOffset Begins,
+    DateTimeOffset YearBegins,
+    DateTimeOffset Ends,
+    KeptFigures? Kept);
+
+/// <summary>
+/// What was kept of one finished month, for the population asked about.
+/// </summary>
+/// <param name="Counted">The stretch the month was counted over, in the zone it was counted in.</param>
+/// <param name="FirstDay">The website's first recorded day, where it fell in this month.</param>
+/// <param name="DaysMeasured">How many of the month's days the website was measured on.</param>
+/// <param name="Figures">The month's totals.</param>
+/// <param name="Verdicts">How many visits of each kind began in the month.</param>
+/// <param name="JudgedTo">How far judging had reached when it was counted, no further than the month.</param>
+public sealed record KeptFigures(
+    TimeRange Counted,
+    DateOnly? FirstDay,
+    int DaysMeasured,
+    MonthFigures Figures,
+    ImmutableArray<VerdictTally> Verdicts,
+    DateTimeOffset JudgedTo);

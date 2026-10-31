@@ -275,7 +275,7 @@ internal sealed class JudgingHarness
                 _clock,
                 Options.Create(Settings),
                 NullLogger<SessionClassifier>.Instance)
-            .CatchUpAsync(new SiteRegistration(SiteId, SiteDomain, AddedAt), CancellationToken.None);
+            .CatchUpAsync(new SiteRegistration(SiteId, SiteDomain, AddedAt, "UTC"), CancellationToken.None);
 
     /// <summary>Notes the window asked for, and lets the clock run on while it is read.</summary>
     /// <param name="window">The window the classifier asked for.</param>

@@ -378,5 +378,5 @@ public sealed class LiveTrafficReaderTests
         evidence.AutonomousSystem);
 
     private static TenantScope Scope() =>
-        new(SiteId, OrganizationId, SiteRole.Viewer, "Europe/London");
+        new(SiteId, OrganizationId, SiteRole.Viewer, "Europe/London", DateTimeOffset.UnixEpoch);
 }

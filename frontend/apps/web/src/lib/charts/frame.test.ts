@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chartFrame, LAYERS } from '@/lib/charts/frame';
+import { chartFrame, figureWriter, LAYERS } from '@/lib/charts/frame';
 import { PALETTE } from '@/test/drawing';
 
 /** The depth the charting engine draws a column at, where the series says nothing of its own. */
@@ -98,5 +98,70 @@ describe('the card a hover opens', () => {
 
     expect(z).toBe(LAYERS.pointerLine);
     expect(Math.max(...Object.values(LAYERS))).toBe(LAYERS.pointerLine);
+  });
+});
+
+/**
+ * A picture of years holds only a handful of buckets, each a year of a website's history. On a
+ * phone the engine would otherwise name as many as fit, and leave the one whole year between two
+ * years cut short unnamed.
+ */
+describe('the names along the axis', () => {
+  const YEARS = ['Aug – Dec 2024', '2025', 'Jan – Oct 2026'] as const;
+
+  it('names every bucket where every one is wanted, and still always names the last', () => {
+    const { axisLabel } = chartFrame(PALETTE, YEARS, false, YEARS, { every: true }).xAxis;
+
+    expect(typeof axisLabel.interval).toBe('function');
+    expect(
+      YEARS.map((label, at) =>
+        (axisLabel.interval as (at: number, label: string) => boolean)(at, label),
+      ),
+    ).toStrictEqual([true, true, true]);
+    expect(axisLabel.showMaxLabel).toBe(true);
+    expect(axisLabel.alignMaxLabel).toBe('right');
+  });
+
+  /** Ending at the middle of its column, the last name would reach back over the year before it. */
+  it('centres the last name on its own column where every bucket is named', () => {
+    const { axisLabel } = chartFrame(PALETTE, YEARS, true, YEARS, { every: true }).xAxis;
+
+    expect(axisLabel.alignMaxLabel).toBe('center');
+  });
+
+  /**
+   * The engine keeps an axis setting it was given until another replaces it, so a picture of months
+   * drawn after one of years states that it names as many as fit.
+   */
+  it('names as many as fit otherwise, and says so', () => {
+    const { axisLabel } = chartFrame(PALETTE, TWICE, true, TITLES).xAxis;
+
+    expect(axisLabel.interval).toBe('auto');
+    expect(axisLabel.alignMaxLabel).toBe('right');
+  });
+});
+
+/**
+ * The engine writes a dash for a figure it was handed nothing for, which reads as a figure of its
+ * own. A bucket with no figure is called what the table calls it, which says why, by its place.
+ */
+describe('a figure in the card a hover opens', () => {
+  const figure = figureWriter(
+    (value) => value.toLocaleString('en'),
+    (at) => (at === 2 ? 'Not fully judged' : 'Not counted'),
+  );
+
+  it('is written the way the reader writes a number', () => {
+    expect(figure(12840, 0)).toBe('12,840');
+    expect(figure(0, 2)).toBe('0');
+  });
+
+  it('is called what its bucket is called where it has no figure', () => {
+    expect(figure(undefined, 1)).toBe('Not counted');
+    expect(figure(null, 2)).toBe('Not fully judged');
+  });
+
+  it('is called what an unknown bucket is called where the engine does not say which it is', () => {
+    expect(figure(null)).toBe('Not counted');
   });
 });

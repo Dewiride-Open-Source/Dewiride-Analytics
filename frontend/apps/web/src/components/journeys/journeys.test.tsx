@@ -1,9 +1,11 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import type { QueryClient } from '@tanstack/react-query';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { OnUrlUpdateFunction } from 'nuqs/adapters/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Journeys } from '@/components/journeys/journeys';
 import { DETAIL_DIMENSIONS } from '@/lib/analytics/journeys';
+import { allTimeKey } from '@/lib/queries/keys';
 import { engineDoing, engineStopped, respondWith, type Sent } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
 import messages from '../../../messages/en.json';
@@ -206,6 +208,31 @@ const HELD = {
   ],
 };
 
+/** Where the record of a website measured for years begins, long before the days still kept. */
+const MEASURED_FOR_YEARS = '2020-03-14';
+
+/** A day a month ago, which is inside the days still kept whenever the test runs. */
+const A_MONTH_AGO = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * The website's record as the engine answers it: begun on the day given, or never begun.
+ *
+ * Only where it begins is read on this screen, so its figures are any that would pass.
+ */
+function recordSince(firstDay: string | null) {
+  return {
+    from: firstDay === null ? null : `${firstDay}T00:00:00+05:30`,
+    to: TO,
+    firstDay,
+    detailFrom: FROM,
+    pageViews: 0,
+    visitors: 0,
+    completeTo: TO,
+    missing: [],
+    unjudged: [],
+  };
+}
+
 /**
  * Answers every question the screen asks, in whichever order they arrive.
  *
@@ -219,8 +246,13 @@ function engineWith(
   groups: readonly unknown[],
   visits: readonly unknown[],
   journeys: { asked: number } = { asked: 0 },
+  firstDay: string | null = MEASURED_FOR_YEARS,
 ) {
   return engineDoing(async (path) => {
+    if (path.includes('/all-time')) {
+      return respondWith(200, recordSince(firstDay));
+    }
+
     if (path.includes('/journey')) {
       journeys.asked += 1;
 
@@ -322,6 +354,17 @@ async function open(filter: string) {
   await userEvent.click(screen.getByRole('button', { name: filter }));
 }
 
+/** Waits until the website's record has been answered, and the screen told of it. */
+async function recordAnswered(cache: QueryClient) {
+  await waitFor(() =>
+    expect(cache.getQueryState(allTimeKey(SITE.id, SITE.timeZoneId, 'everybody'))?.status).toBe(
+      'success',
+    ),
+  );
+  // The cache tells the screen on a timer of its own, a step after the answer is in.
+  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+}
+
 function show(at?: string, watchingAddress?: OnUrlUpdateFunction) {
   return renderScreen(<Journeys />, { searchParams: at, watchingAddress });
 }
@@ -356,6 +399,376 @@ describe('the user journey screen', () => {
     show('?period=yesterday');
 
     expect(await screen.findByRole('combobox', { name: 'Period' })).toHaveValue('yesterday');
+  });
+
+  /**
+   * All time reaches back to a website's first month on the overview, from what is kept of each
+   * month. A visit is listed only while the visit itself is kept, and the screen says so once.
+   */
+  it('says the list covers the last 12 months under all time', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show('?period=all-time');
+
+    expect(
+      await screen.findByText(
+        'The list covers the last 12 months, as far back as visits are kept.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * The sentence qualifies the list, so it arrives with the rows and where they begin: a sentence
+   * arriving late in the header would push down everything already on the screen.
+   */
+  it('says the list covers the last 12 months together with the rows, above them', async () => {
+    const engine = engineWith(GROUPS, [READER]);
+    const answering = globalThis.fetch as unknown as (
+      path: string,
+      init: RequestInit,
+    ) => Promise<Response>;
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    engineDoing(async (path, init) => {
+      if (path.includes('/all-time')) {
+        await released;
+      }
+
+      return answering(path, init);
+    });
+
+    show('?period=all-time');
+
+    await waitFor(() => expect(listed(engine.all()).length).toBeGreaterThan(0));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(screen.queryByText('3 pages')).not.toBeInTheDocument();
+    expect(screen.queryByText(/as far back as visits are kept/)).not.toBeInTheDocument();
+
+    release();
+
+    const row = await screen.findByText('3 pages');
+    const sentence = screen.getByText(
+      'The list covers the last 12 months, as far back as visits are kept.',
+    );
+
+    expect(sentence.closest('header')).toBeNull();
+    expect(sentence.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  /**
+   * The list waits for the record's first answer and no other: asked again after a refusal, when
+   * the connection comes back, the record never takes the rows somebody is reading off the screen,
+   * nor closes the visit they opened.
+   */
+  it('keeps the rows and the visit opened while a refused record is asked again', async () => {
+    engineWith(GROUPS, [READER]);
+
+    const answering = globalThis.fetch as unknown as (
+      path: string,
+      init: RequestInit,
+    ) => Promise<Response>;
+    let asked = 0;
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    engineDoing(async (path, init) => {
+      if (path.includes('/all-time')) {
+        asked += 1;
+
+        if (asked === 1) {
+          return respondWith(500, { status: 500, title: 'The engine is having trouble.' });
+        }
+
+        await released;
+      }
+
+      return answering(path, init);
+    });
+
+    show('?period=all-time');
+
+    await userEvent.click(await screen.findByText('3 pages'));
+
+    const opened = (await rowSaying('3 pages')).closest('details');
+
+    expect(opened).toHaveAttribute('open');
+
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+      window.dispatchEvent(new Event('online'));
+    });
+
+    await waitFor(() => expect(asked).toBe(2));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(opened).toBeInTheDocument();
+    expect(opened).toHaveAttribute('open');
+
+    release();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(opened).toBeInTheDocument();
+    expect(screen.getByText('3 pages')).toBeInTheDocument();
+  });
+
+  /**
+   * A refusal left from before the screen opened — on the overview, which reads the same record — is
+   * not an answer this screen saw: it waits for its own, so the sentence and the rows still arrive
+   * together.
+   */
+  it('waits for its own answer where a refusal was left from before it opened', async () => {
+    const engine = engineWith(GROUPS, [READER]);
+    const answering = globalThis.fetch as unknown as (
+      path: string,
+      init: RequestInit,
+    ) => Promise<Response>;
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    engineDoing(async (path, init) => {
+      if (path.includes('/all-time')) {
+        await released;
+      }
+
+      return answering(path, init);
+    });
+
+    const { cache, rerender } = renderScreen(<></>, { searchParams: '?period=all-time' });
+
+    await cache.prefetchQuery({
+      queryKey: allTimeKey(SITE.id, SITE.timeZoneId, 'everybody'),
+      queryFn: () => Promise.reject(new Error('The engine is having trouble.')),
+    });
+
+    expect(cache.getQueryState(allTimeKey(SITE.id, SITE.timeZoneId, 'everybody'))?.status).toBe(
+      'error',
+    );
+
+    rerender(<Journeys />);
+
+    await waitFor(() => expect(listed(engine.all()).length).toBeGreaterThan(0));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(screen.queryByText('3 pages')).not.toBeInTheDocument();
+
+    release();
+
+    const row = await screen.findByText('3 pages');
+    const sentence = screen.getByText(
+      'The list covers the last 12 months, as far back as visits are kept.',
+    );
+
+    expect(sentence.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  /**
+   * The overview's own question for the record is still on its way as User journey opens, and its
+   * refusal lands as the screen subscribes — after its first render read the question in flight.
+   * That is not an answer this screen saw settle: it asks again, and waits for that answer.
+   */
+  it('waits for its own answer where a refusal lands as it opens', async () => {
+    const engine = engineWith(GROUPS, [READER]);
+    const answering = globalThis.fetch as unknown as (
+      path: string,
+      init: RequestInit,
+    ) => Promise<Response>;
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    engineDoing(async (path, init) => {
+      if (path.includes('/all-time')) {
+        await released;
+      }
+
+      return answering(path, init);
+    });
+
+    const { cache, rerender } = renderScreen(<></>, { searchParams: '?period=all-time' });
+    const record = allTimeKey(SITE.id, SITE.timeZoneId, 'everybody');
+
+    void cache.prefetchQuery({ queryKey: record, queryFn: () => new Promise<never>(() => {}) });
+
+    const stopWatching = cache.getQueryCache().subscribe((event) => {
+      if (
+        event.type !== 'observerAdded' ||
+        JSON.stringify(event.query.queryKey) !== JSON.stringify(record)
+      ) {
+        return;
+      }
+
+      stopWatching();
+
+      const refusal = new Error('The engine is having trouble.');
+
+      event.query.setState({
+        ...event.query.state,
+        status: 'error',
+        error: refusal,
+        errorUpdateCount: event.query.state.errorUpdateCount + 1,
+        errorUpdatedAt: Date.now(),
+        fetchStatus: 'idle',
+        fetchFailureCount: 1,
+        fetchFailureReason: refusal,
+      });
+    });
+
+    rerender(<Journeys />);
+
+    await waitFor(() => expect(listed(engine.all()).length).toBeGreaterThan(0));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(screen.queryByText('3 pages')).not.toBeInTheDocument();
+
+    release();
+
+    const row = await screen.findByText('3 pages');
+    const sentence = screen.getByText(
+      'The list covers the last 12 months, as far back as visits are kept.',
+    );
+
+    expect(sentence.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  /**
+   * What this screen saw settle is one website's record. Another website chosen has a record it has
+   * not yet seen settle, so that website's rows and the sentence still arrive together.
+   */
+  it('waits again for the record of another website chosen', async () => {
+    const second = {
+      ...SITE,
+      id: '01a013fa-49d6-77be-b65d-20ec86e9df99',
+      domain: 'second.example',
+      displayName: 'Second Blog',
+    };
+
+    engineWith(GROUPS, [READER]);
+
+    const answering = globalThis.fetch as unknown as (
+      path: string,
+      init: RequestInit,
+    ) => Promise<Response>;
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const engine = engineDoing(async (path, init) => {
+      if (path.split('?')[0] === '/api/sites') {
+        return respondWith(200, [SITE, second]);
+      }
+
+      if (path.includes(second.id) && path.includes('/all-time')) {
+        await released;
+      }
+
+      if (path.includes(second.id) && /\/visits\?/.test(path)) {
+        return respondWith(200, sliceOf(path, [CRAWLER]));
+      }
+
+      return answering(path, init);
+    });
+
+    show('?period=all-time');
+
+    expect(await screen.findByText('3 pages')).toBeInTheDocument();
+    expect(
+      screen.getByText('The list covers the last 12 months, as far back as visits are kept.'),
+    ).toBeInTheDocument();
+
+    window.localStorage.setItem('dewiride.chosen-site', second.id);
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'dewiride.chosen-site' }));
+    });
+
+    await waitFor(() =>
+      expect(
+        engine.all().some(({ path }) => path.includes(second.id) && /\/visits\?/.test(path)),
+      ).toBe(true),
+    );
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(screen.queryByText('3 pages')).not.toBeInTheDocument();
+    expect(screen.queryByText('64 pages')).not.toBeInTheDocument();
+
+    release();
+
+    const row = await screen.findByText('64 pages');
+    const sentence = screen.getByText(
+      'The list covers the last 12 months, as far back as visits are kept.',
+    );
+
+    expect(sentence.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  /** First measured inside the days still kept, the overview's all time and the list are one. */
+  it('says nothing about the last 12 months under all time for a website first measured since', async () => {
+    engineWith(GROUPS, [READER], undefined, A_MONTH_AGO);
+
+    const { cache } = show('?period=all-time');
+
+    await screen.findByText('3 pages');
+    await recordAnswered(cache);
+
+    expect(screen.queryByText(/as far back as visits are kept/)).not.toBeInTheDocument();
+  });
+
+  it('says nothing about the last 12 months under all time for a website never measured', async () => {
+    engineWith(GROUPS, [READER], undefined, null);
+
+    const { cache } = show('?period=all-time');
+
+    await screen.findByText('3 pages');
+    await recordAnswered(cache);
+
+    expect(screen.queryByText(/as far back as visits are kept/)).not.toBeInTheDocument();
+  });
+
+  it('says nothing about how far back the list reaches under any other period', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show('?period=this-year');
+
+    await screen.findByText('3 pages');
+
+    expect(screen.queryByText(/as far back as visits are kept/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * All time here lists the visits still kept and no further back, so somebody reaching for older
+   * days is told the first day that works and is not sent somewhere that cannot show them.
+   */
+  it('offers no way back past the days still kept when older ones are chosen', async () => {
+    engineWith(GROUPS, [READER]);
+
+    show();
+
+    await userEvent.selectOptions(
+      await screen.findByRole('combobox', { name: 'Period' }),
+      'choose',
+    );
+
+    const panel = await screen.findByRole('dialog');
+    const first = within(panel).getByLabelText('First day');
+
+    await userEvent.clear(first);
+    await userEvent.type(first, '2020-01-01');
+
+    const refusal = within(panel).getByRole('alert');
+
+    expect(refusal).toHaveTextContent(
+      /^Visits are kept for 12 months\. Pick days on or after .+\.$/,
+    );
+    expect(refusal).not.toHaveTextContent(/All time/);
   });
 
   it('says nothing has been judged rather than showing an empty list', async () => {

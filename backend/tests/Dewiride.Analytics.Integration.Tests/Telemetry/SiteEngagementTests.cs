@@ -363,7 +363,7 @@ public sealed class SiteEngagementTests(AnalyticsStackFixture stack)
         stack.Services.GetRequiredService<IEventSink>().WriteBatchAsync(events, Cancellation.Token);
 
     private static TenantScope Scope(Guid siteId) =>
-        new(siteId, Guid.NewGuid(), SiteRole.Viewer, "Etc/UTC");
+        new(siteId, Guid.NewGuid(), SiteRole.Viewer, "Etc/UTC", DateTimeOffset.UnixEpoch);
 
     /// <summary>A page being delivered, which measures nothing yet.</summary>
     private static RawEvent Opened(

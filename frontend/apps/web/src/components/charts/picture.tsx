@@ -19,13 +19,15 @@ interface PictureProps {
   readonly label: string;
   /** Told which bucket along the bottom was pressed, where pressing one means something. */
   readonly onPick?: (index: number) => void;
+  /** Which buckets a press means something on, where only some of them can be pressed. */
+  readonly pressable?: (index: number) => boolean;
 }
 
 /** A drawing, at the height every drawing in the product keeps. */
-export function Picture({ option, label, onPick }: PictureProps) {
+export function Picture({ option, label, onPick, pressable }: PictureProps) {
   return (
     <div className={BOX}>
-      <Chart option={option} label={label} onPick={onPick} />
+      <Chart option={option} label={label} onPick={onPick} pressable={pressable} />
     </div>
   );
 }

@@ -846,7 +846,7 @@ public sealed class ClosedAccountPurgeTests(AnalyticsStackFixture stack)
 
         await work.ServiceProvider
             .GetRequiredService<SessionClassifier>()
-            .CatchUpAsync(new SiteRegistration(siteId, domain, Now.AddDays(-2)), Cancellation.Token);
+            .CatchUpAsync(new SiteRegistration(siteId, domain, Now.AddDays(-2), "UTC"), Cancellation.Token);
     }
 
     /// <summary>Starts the bookmark the engine keeps for a website.</summary>

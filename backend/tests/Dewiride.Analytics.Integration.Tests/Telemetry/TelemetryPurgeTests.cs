@@ -125,6 +125,27 @@ public sealed class TelemetryPurgeTests(AnalyticsStackFixture stack)
         (await KeptCountAsync(staying)).Should().Be(1);
     }
 
+    /// <summary>
+    /// A website's kept months never expire, so removing the website is the only thing that ever
+    /// deletes them — and it deletes those of that website alone.
+    /// </summary>
+    [Fact]
+    public async Task The_Months_Kept_For_A_Site_Go_With_It_And_Nobody_Elses_Do()
+    {
+        var calendar = new ZoneCalendar("Etc/UTC");
+        var month = ZoneCalendar.FirstOf(calendar.DateOf(Yesterday)).AddMonths(-2);
+        var going = await ControlPlaneSeed.AddSiteAsync(stack, domain: $"{Guid.NewGuid():n}.example.com");
+        var staying = await ControlPlaneSeed.AddSiteAsync(stack, domain: $"{Guid.NewGuid():n}.example.com");
+
+        await KeptRecord.KeepAsync(stack, KeptRecord.Counted(going, calendar, month, 10));
+        await KeptRecord.KeepAsync(stack, KeptRecord.Counted(staying, calendar, month, 10));
+
+        await PurgeAsync(going.Id);
+
+        (await KeptRecord.WrittenAsync(stack, going.Id)).Should().Be(0);
+        (await KeptRecord.WrittenAsync(stack, staying.Id)).Should().Be(1);
+    }
+
     private DateTimeOffset Yesterday =>
         stack.Services.GetRequiredService<TimeProvider>().GetUtcNow().AddDays(-1);
 

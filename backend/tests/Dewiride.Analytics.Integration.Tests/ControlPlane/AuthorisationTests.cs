@@ -20,7 +20,7 @@ namespace Dewiride.Analytics.Integration.Tests.ControlPlane;
 public sealed class AuthorisationTests(AnalyticsStackFixture stack)
 {
     [Fact]
-    public async Task A_Member_Is_Given_A_Scope_Carrying_Their_Role_And_The_Site_Time_Zone()
+    public async Task A_Member_Is_Given_A_Scope_Carrying_Their_Role_The_Site_Time_Zone_And_When_It_Was_Added()
     {
         var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: "scoped.example", timeZoneId: "Asia/Kolkata");
         var (_, user) = await ControlPlaneSeed.AddAccountAsync(stack, Address(), Passwords.Acceptable);
@@ -33,6 +33,8 @@ public sealed class AuthorisationTests(AnalyticsStackFixture stack)
         scope.OrganizationId.Should().Be(site.OrganizationId);
         scope.Role.Should().Be(SiteRole.Editor);
         scope.TimeZoneId.Should().Be("Asia/Kolkata");
+        // PostgreSQL keeps an instant to the microsecond; the website seeded in memory carries finer.
+        scope.AddedAt.Should().BeCloseTo(site.CreatedAt, TimeSpan.FromMilliseconds(1));
     }
 
     [Fact]

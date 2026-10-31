@@ -68,6 +68,63 @@ public sealed class SiteRosterTests(AnalyticsStackFixture stack)
         (await ListAsync()).Should().NotContain(entry => entry.Id == site.Id);
     }
 
+    /// <summary>
+    /// The background work reads every website's calendar in the website's own zone, so the roster
+    /// carries it rather than leaving each piece of work to look it up.
+    /// </summary>
+    [Fact]
+    public async Task The_Roster_Carries_Each_Websites_Time_Zone()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain(), timeZoneId: "Asia/Kathmandu");
+
+        (await ListAsync()).Should().ContainSingle(entry => entry.Id == site.Id)
+            .Which.TimeZoneId.Should().Be("Asia/Kathmandu");
+    }
+
+    /// <summary>
+    /// A website of a closed account still exists until the closure is carried out, so what is kept
+    /// of it is still written, and deleted with it then. A website that no longer exists has nothing
+    /// written about it at all: the work is never run.
+    /// </summary>
+    [Fact]
+    public async Task Work_Is_Done_For_A_Website_Of_A_Closed_Account_And_Never_For_A_Removed_One()
+    {
+        var closed = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var removed = Guid.NewGuid();
+        var (_, owner) = await ControlPlaneSeed.AddAccountAsync(stack, $"{Guid.NewGuid():n}@example.com", Passwords.Acceptable);
+
+        await using (var work = stack.Services.CreateAsyncScope())
+        {
+            var database = work.ServiceProvider.GetRequiredService<ControlPlaneDbContext>();
+            var organization = await database.Organizations
+                .SingleAsync(candidate => candidate.Id == closed.OrganizationId, Cancellation.Token);
+
+            organization.Close(owner.Id, closed.CreatedAt);
+            await database.SaveChangesAsync(Cancellation.Token);
+        }
+
+        var done = new List<Guid>();
+
+        await using var scope = stack.Services.CreateAsyncScope();
+        var roster = scope.ServiceProvider.GetRequiredService<ISiteRoster>();
+
+        var forClosed = await roster.WhileItExistsAsync(closed.Id, DoneFor(done, closed.Id), Cancellation.Token);
+        var forRemoved = await roster.WhileItExistsAsync(removed, DoneFor(done, removed), Cancellation.Token);
+
+        forClosed.Should().BeTrue();
+        forRemoved.Should().BeFalse();
+        done.Should().Equal(closed.Id);
+    }
+
+    /// <summary>Work that only records which website it was done for.</summary>
+    private static Func<CancellationToken, Task> DoneFor(List<Guid> done, Guid siteId) =>
+        _ =>
+        {
+            done.Add(siteId);
+
+            return Task.CompletedTask;
+        };
+
     private static string Domain() => $"{Guid.NewGuid():n}.example.com";
 
     private async Task<IReadOnlyList<SiteRegistration>> ListAsync()

@@ -314,7 +314,7 @@ public sealed class SiteLocationsTests(AnalyticsStackFixture stack)
         stack.Services.GetRequiredService<IEventSink>().WriteBatchAsync(events, Cancellation.Token);
 
     private static TenantScope Scope(Guid siteId) =>
-        new(siteId, Guid.NewGuid(), SiteRole.Viewer, "Etc/UTC");
+        new(siteId, Guid.NewGuid(), SiteRole.Viewer, "Etc/UTC", DateTimeOffset.UnixEpoch);
 
     private static RawEvent InCountry(
         Guid siteId,

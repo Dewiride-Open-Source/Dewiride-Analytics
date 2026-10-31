@@ -39,10 +39,19 @@ public sealed record OverviewResponse(
 /// <summary>
 /// One metric counted in buckets across a window.
 /// </summary>
+/// <remarks>
+/// Every bucket is cut where the website is and named by where it begins on that calendar, so the
+/// first and last buckets can reach outside the window — a window opening on a Wednesday has a first
+/// week beginning on the Monday before — and each counts only what the window holds. Visitors are
+/// counted once per bucket under each visitor key, and a key covers one UTC day, so away from UTC a
+/// week or a month can hold fewer visitors than its days added up.
+/// </remarks>
 /// <param name="From">Inclusive start of the window.</param>
 /// <param name="To">Exclusive end of the window.</param>
 /// <param name="Metric">Which metric was counted.</param>
-/// <param name="Granularity">How wide each bucket is.</param>
+/// <param name="Granularity">
+/// How wide each bucket is: <c>hour</c>, <c>day</c>, <c>week</c> (Monday to Sunday) or <c>month</c>.
+/// </param>
 /// <param name="CompleteTo">
 /// The instant the answer is complete up to. Counted for everybody it is the end of the window,
 /// because every report counts as it arrives; counted for people it is the instant judging has
@@ -63,7 +72,11 @@ public sealed record SeriesResponse(
 /// <summary>
 /// One bucket of a series.
 /// </summary>
-/// <param name="BucketStart">Inclusive start of the bucket.</param>
+/// <param name="BucketStart">
+/// Inclusive start of the bucket where the website is: the top of an hour, or the start of a day, of
+/// a Monday or of the first of a month — its midnight, or the first instant the clocks show that day
+/// where they skip midnight. The first bucket of a window can begin before the window does.
+/// </param>
 /// <param name="Value">The metric's value inside it.</param>
 public readonly record struct SeriesPoint(DateTimeOffset BucketStart, long Value);
 
@@ -360,7 +373,9 @@ public sealed record TrafficGroup(string Category, string Strength, long Session
 /// </remarks>
 /// <param name="From">Inclusive start of the window.</param>
 /// <param name="To">Exclusive end of the window.</param>
-/// <param name="Granularity">How wide each bucket is: <c>hour</c> or <c>day</c>.</param>
+/// <param name="Granularity">
+/// How wide each bucket is: <c>hour</c>, <c>day</c>, <c>week</c> (Monday to Sunday) or <c>month</c>.
+/// </param>
 /// <param name="CompleteTo">
 /// The instant judging has finished up to. A visit is judged once it has been silent long enough to
 /// have ended, so buckets reaching past this hold fewer visits than they eventually will — which a
@@ -368,7 +383,12 @@ public sealed record TrafficGroup(string Category, string Strength, long Session
 /// timeout behind the present at the closest, and further behind wherever the engine is stopped or
 /// still working through a backlog.
 /// </param>
-/// <param name="Buckets">Where each bucket begins, oldest first.</param>
+/// <param name="Buckets">
+/// Where each bucket begins, oldest first, where the website is: the top of an hour, or the start of
+/// a day, of a Monday or of the first of a month — its midnight, or the first instant the clocks show
+/// that day where they skip midnight. The first bucket can begin before the window does, and every
+/// bucket counts only the visits that began inside the window.
+/// </param>
 /// <param name="Groups">One entry per category the window held.</param>
 public sealed record TrafficSeriesResponse(
     DateTimeOffset From,
@@ -901,3 +921,137 @@ public sealed record LiveTrailResponse(
     string Visitor,
     DateTimeOffset At,
     IReadOnlyList<VisitJourneyStep> Steps);
+
+/// <summary>
+/// A website's headline totals across its whole record: every month from the first one kept or still
+/// held to the one running now.
+/// </summary>
+/// <remarks>
+/// Every finished month is read from the totals kept for it, which outlive the reports they were
+/// counted from; the month running now, and any month not kept yet, is counted from its reports
+/// by the same arithmetic. So the record is never behind the periods counted from reports alone,
+/// and reaches back further than the twelve months a report is kept.
+/// </remarks>
+/// <param name="From">
+/// The first instant of the record's first month, or nothing where nothing of the website is held:
+/// never measured, or measured only in months that went before any of them was kept.
+/// </param>
+/// <param name="To">The moment the record was read at.</param>
+/// <param name="FirstDay">
+/// The first day of the website's record, as <c>yyyy-MM-dd</c> on its own calendar: the day of its
+/// first visit where that is known, otherwise the first of its first month; nothing where nothing of
+/// the website is held.
+/// </param>
+/// <param name="DetailFrom">
+/// The first instant of the first day the website still holds in full. A period, or a bucket, from
+/// here on can be opened in detail; before it only the kept totals remain.
+/// </param>
+/// <param name="PageViews">Pages delivered, across every month with a figure.</param>
+/// <param name="Visitors">
+/// Daily visitors, across every month with a figure: each visitor counted once for every day their
+/// key covers, as the overview counts a period, and summed month by month.
+/// </param>
+/// <param name="CompleteTo">
+/// The instant the totals are complete up to. For everybody the moment they were read at; for people
+/// the instant judging has finished up to across the months still held.
+/// </param>
+/// <param name="Missing">
+/// The months of the record, as <c>yyyy-MM</c>, the totals leave out because they were never
+/// counted: nothing was kept of them and their reports may already have begun to go. A month before
+/// the first one kept is part of the record only while a report of it is still held. Empty almost
+/// always.
+/// </param>
+/// <param name="Unjudged">
+/// Asked about people, the months of the record the totals leave out because they were kept before
+/// judging had finished with them and can no longer be counted again: their figures for everybody
+/// stand, but how many of their visits were people was never settled. Empty for everybody.
+/// </param>
+public sealed record AllTimeResponse(
+    DateTimeOffset? From,
+    DateTimeOffset To,
+    string? FirstDay,
+    DateTimeOffset DetailFrom,
+    long PageViews,
+    long Visitors,
+    DateTimeOffset CompleteTo,
+    IReadOnlyList<string> Missing,
+    IReadOnlyList<string> Unjudged);
+
+/// <summary>
+/// One measure across a website's whole record, month by month or year by year.
+/// </summary>
+/// <param name="From">The first bucket's start, or <paramref name="To"/> where there is none.</param>
+/// <param name="To">The moment the record was read at.</param>
+/// <param name="Metric">Which measure was counted.</param>
+/// <param name="Granularity">How wide each bucket is: <c>month</c> or <c>year</c>.</param>
+/// <param name="CompleteTo">The instant the answer is complete up to, as <see cref="AllTimeResponse"/> says.</param>
+/// <param name="Points">
+/// Every bucket from the record's first to the one running now, oldest first. A month nothing can be
+/// said of has no value; a year adds up the months it has values for.
+/// </param>
+/// <param name="Missing">
+/// The months, as <c>yyyy-MM</c>, the points leave out because they were never counted, on the terms
+/// <see cref="AllTimeResponse"/> gives.
+/// </param>
+/// <param name="Unjudged">
+/// Asked about people, the months the points leave out because they were kept before judging had
+/// finished with them and can no longer be counted again. Empty for everybody.
+/// </param>
+public sealed record AllTimeSeriesResponse(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    string Metric,
+    string Granularity,
+    DateTimeOffset CompleteTo,
+    IReadOnlyList<AllTimeSeriesPoint> Points,
+    IReadOnlyList<string> Missing,
+    IReadOnlyList<string> Unjudged);
+
+/// <summary>
+/// One bucket of a website's whole record.
+/// </summary>
+/// <param name="BucketStart">
+/// Where the bucket begins on the website's calendar: the first instant of the first of a month, or
+/// of the first of January.
+/// </param>
+/// <param name="Value">The measure inside it, or nothing where it cannot be said.</param>
+public readonly record struct AllTimeSeriesPoint(DateTimeOffset BucketStart, long? Value);
+
+/// <summary>
+/// How many visits of each kind a website's whole record holds, month by month or year by year.
+/// </summary>
+/// <param name="From">The first bucket's start, or <paramref name="To"/> where there is none.</param>
+/// <param name="To">The moment the record was read at.</param>
+/// <param name="Granularity">How wide each bucket is: <c>month</c> or <c>year</c>.</param>
+/// <param name="CompleteTo">The instant judging has finished up to across the months still held.</param>
+/// <param name="Buckets">Where each bucket begins, oldest first.</param>
+/// <param name="Groups">One entry per kind of visit the record holds.</param>
+/// <param name="Missing">
+/// The months of the record, as <c>yyyy-MM</c>, nothing can be said of who came in because they were
+/// never counted: never kept and no longer countable. Each is without a count in every group.
+/// </param>
+/// <param name="Unjudged">
+/// The months nothing can be said of who came in because they were kept before judging had finished
+/// with them and can no longer be counted again. Each is without a count in every group, though its
+/// figures for everybody stand.
+/// </param>
+public sealed record AllTimeTrafficSeriesResponse(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    string Granularity,
+    DateTimeOffset CompleteTo,
+    IReadOnlyList<DateTimeOffset> Buckets,
+    IReadOnlyList<AllTimeCategorySeries> Groups,
+    IReadOnlyList<string> Missing,
+    IReadOnlyList<string> Unjudged);
+
+/// <summary>
+/// One kind of visit across a website's whole record.
+/// </summary>
+/// <param name="Category">What generated these visits.</param>
+/// <param name="Sessions">How many visits began in each bucket, or nothing where it cannot be said.</param>
+/// <param name="PageViews">How many pages they asked for in each bucket, or nothing where it cannot be said.</param>
+public sealed record AllTimeCategorySeries(
+    string Category,
+    IReadOnlyList<long?> Sessions,
+    IReadOnlyList<long?> PageViews);

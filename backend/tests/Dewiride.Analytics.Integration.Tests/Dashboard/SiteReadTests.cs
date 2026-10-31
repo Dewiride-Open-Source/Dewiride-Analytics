@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Sites;
@@ -84,6 +86,93 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
             series.Granularity.Should().Be("day");
             series.Points.Should().NotBeEmpty();
             series.Points.Should().BeInAscendingOrder(point => point.BucketStart);
+        }
+    }
+
+    /// <summary>
+    /// A measure can be read a week or a month at a time, and the answer names the size it was cut
+    /// into in the product's own spelling rather than the caller's.
+    /// </summary>
+    /// <param name="asked">The size as the caller wrote it.</param>
+    /// <param name="answered">The size as the answer names it.</param>
+    [Theory]
+    [InlineData("week", "week")]
+    [InlineData("Month", "month")]
+    public async Task A_Series_Is_Answered_In_Weekly_And_Monthly_Buckets(string asked, string answered)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync(
+                $"/api/sites/{site.Id}/series?metric=visitors&granularity={asked}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var series = await response.Content.ReadFromJsonAsync<SeriesResponse>(Cancellation.Token);
+
+            series.Should().NotBeNull();
+            series.Granularity.Should().Be(answered);
+            series.Points.Should().NotBeEmpty();
+            series.Points.Should().BeInAscendingOrder(point => point.BucketStart);
+        }
+    }
+
+    /// <summary>
+    /// Only hours are held to a month. Days, weeks and months can be read across a period several
+    /// times as long, which is what a chart of a quarter or a year drawn a week or a month at a time
+    /// asks for.
+    /// </summary>
+    /// <param name="granularity">The size each bucket is cut into.</param>
+    [Theory]
+    [InlineData("day")]
+    [InlineData("week")]
+    [InlineData("month")]
+    public async Task A_Series_Of_Days_Weeks_Or_Months_Can_Cover_More_Than_A_Month(string granularity)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+        var now = stack.Services.GetRequiredService<TimeProvider>().GetUtcNow();
+
+        using (browser)
+        {
+            var response = await browser.GetAsync(
+                $"/api/sites/{site.Id}/series?metric=pageviews&granularity={granularity}"
+                + $"&from={Written(now.AddDays(-180))}&to={Written(now)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var series = await response.Content.ReadFromJsonAsync<SeriesResponse>(Cancellation.Token);
+
+            series.Should().NotBeNull();
+            series.Granularity.Should().Be(granularity);
+        }
+    }
+
+    /// <summary>
+    /// Asked for a size it does not cut, the answer says which sizes it does, so whoever wrote the
+    /// address can put it right without reading the product's source.
+    /// </summary>
+    /// <param name="question">A series asked for in buckets a fortnight wide.</param>
+    [Theory]
+    [InlineData("series?metric=pageviews&granularity=fortnight")]
+    [InlineData("traffic/series?granularity=fortnight")]
+    public async Task A_Bucket_Size_This_Product_Does_Not_Cut_Is_Refused_By_Naming_The_Ones_It_Does(string question)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/{question}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+            using var refusal = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Cancellation.Token));
+
+            refusal.RootElement.GetProperty("detail").GetString()
+                .Should().Be("Ask for buckets of an hour, a day, a week or a month.");
         }
     }
 
@@ -706,6 +795,8 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
     [InlineData("metric=pageviews&granularity=fortnight")]
     [InlineData("metric=pageviews&granularity=hour&from=2020-01-01T00:00:00Z&to=2024-01-01T00:00:00Z")]
     [InlineData("metric=pageviews&granularity=day&from=2020-01-01T00:00:00Z&to=2024-01-01T00:00:00Z")]
+    [InlineData("metric=pageviews&granularity=week&from=2020-01-01T00:00:00Z&to=2024-01-01T00:00:00Z")]
+    [InlineData("metric=pageviews&granularity=month&from=2020-01-01T00:00:00Z&to=2024-01-01T00:00:00Z")]
     [InlineData("metric=pageviews&granularity=day&from=2024-01-02T00:00:00Z&to=2024-01-01T00:00:00Z")]
     public async Task A_Question_That_Cannot_Be_Answered_As_Asked_Is_Refused(string query)
     {
@@ -728,6 +819,8 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
     [Theory]
     [InlineData("overview?only=people")]
     [InlineData("series?metric=pageviews&granularity=day&only=people")]
+    [InlineData("series?metric=visitors&granularity=week&only=people")]
+    [InlineData("series?metric=pageviews&granularity=month&only=people")]
     [InlineData("pages?only=people")]
     [InlineData("actions?only=people")]
     [InlineData("locations?only=people")]
@@ -860,7 +953,7 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
         await using var scope = stack.Services.CreateAsyncScope();
 
         await scope.ServiceProvider.GetRequiredService<SessionClassifier>()
-            .CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt), Cancellation.Token);
+            .CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt, site.TimeZoneId), Cancellation.Token);
     }
 
     /// <summary>
@@ -912,6 +1005,12 @@ public sealed class SiteReadTests(AnalyticsStackFixture stack)
 
         return series;
     }
+
+    /// <summary>An instant written the way a window in an address carries it.</summary>
+    /// <param name="at">The moment.</param>
+    /// <returns>The moment, ready to be put in a query string.</returns>
+    private static string Written(DateTimeOffset at) =>
+        Uri.EscapeDataString(at.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
 
     private static string Domain() => $"read-{Guid.NewGuid():n}.example";
 }

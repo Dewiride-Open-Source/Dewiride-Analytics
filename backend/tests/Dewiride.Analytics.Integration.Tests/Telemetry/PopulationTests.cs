@@ -506,7 +506,7 @@ public sealed class PopulationTests(AnalyticsStackFixture stack)
     private VisitBoundaries Boundaries() => new(TimeSpan.FromMinutes(30), Now.AddMinutes(-30));
 
     private static TenantScope Scope(Site site) =>
-        new(site.Id, site.OrganizationId, SiteRole.Viewer, site.TimeZoneId);
+        new(site.Id, site.OrganizationId, SiteRole.Viewer, site.TimeZoneId, site.CreatedAt);
 
     private static string Domain() => $"{Guid.NewGuid():n}.example.com";
 

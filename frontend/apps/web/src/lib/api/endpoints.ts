@@ -1,11 +1,17 @@
 import { EVERY_JOURNEY, type JourneyFilters, narrowingParams } from '@/lib/analytics/journeys';
 import { type Population, withPopulation } from '@/lib/analytics/people-only';
-import type { AnalyticsWindow, Granularity } from '@/lib/analytics/period';
+import type { AllTimeGranularity, AnalyticsWindow, Granularity } from '@/lib/analytics/period';
 import { discardResource, readResource, submitResource } from './client';
 import {
   type ActionGrouping,
   type Actions,
+  type AllTime,
+  type AllTimeSeries,
+  type AllTimeTraffic,
   actionsSchema,
+  allTimeSchema,
+  allTimeSeriesSchema,
+  allTimeTrafficSchema,
   type Devices,
   devicesSchema,
   type Engagement,
@@ -173,6 +179,48 @@ export function readSeries(
   return readResource(
     `${siteAddress(siteId)}/series?${asked}&${asking(window, population)}`,
     seriesSchema,
+  );
+}
+
+/**
+ * A website's whole record, for one population: its headline totals across it, where it begins,
+ * and the months it leaves out and why.
+ *
+ * No window. All time is every month the engine holds, and the engine decides which those are.
+ */
+export function readAllTime(siteId: string, population: Population): Promise<AllTime> {
+  const asked = withPopulation(new URLSearchParams(), population).toString();
+
+  return readResource(
+    `${siteAddress(siteId)}/all-time${asked.length === 0 ? '' : `?${asked}`}`,
+    allTimeSchema,
+  );
+}
+
+/** One measure across all time, month by month or year by year, for one population. */
+export function readAllTimeSeries(
+  siteId: string,
+  metric: SeriesMetric,
+  granularity: AllTimeGranularity,
+  population: Population,
+): Promise<AllTimeSeries> {
+  const asked = withPopulation(new URLSearchParams({ metric, granularity }), population);
+
+  return readResource(`${siteAddress(siteId)}/all-time/series?${asked}`, allTimeSeriesSchema);
+}
+
+/**
+ * What generated a website's traffic across all time, month by month or year by year.
+ *
+ * Asked of no population, as a period's is: a verdict already says who each visit was.
+ */
+export function readAllTimeTraffic(
+  siteId: string,
+  granularity: AllTimeGranularity,
+): Promise<AllTimeTraffic> {
+  return readResource(
+    `${siteAddress(siteId)}/all-time/traffic/series?${new URLSearchParams({ granularity })}`,
+    allTimeTrafficSchema,
   );
 }
 

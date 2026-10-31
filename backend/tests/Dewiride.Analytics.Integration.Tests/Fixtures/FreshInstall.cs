@@ -111,6 +111,7 @@ internal sealed class FreshInstall : WebApplicationFactory<Program>
             _telemetry);
 
         builder.UseSetting(TestSettings.SignInAllowance, TestSettings.NoPracticalLimit);
+        builder.UseSetting(TestSettings.BackgroundConsolidation, "false");
     }
 
     /// <summary>

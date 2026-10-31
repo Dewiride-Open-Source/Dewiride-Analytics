@@ -1,7 +1,6 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
 using Dewiride.Analytics.Application.Analytics;
-using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Classification.Identity;
@@ -20,10 +19,10 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// from an authorisation decision rather than from the request.
 /// </para>
 /// <para>
-/// One of the two compilers in this project, and the only one reachable from a request. The other
-/// rebuilds visits for the detection engine, which works on a site it was handed rather than on
-/// one a caller named; between them they write all the SQL this product sends, under the same
-/// rule.
+/// One of the three compilers in this project, and the only one reachable from a request. The
+/// other two work on a site they were handed rather than on one a caller named: one rebuilds visits
+/// for the detection engine, and <see cref="ConsolidationSqlCompiler"/> counts a website's finished
+/// months for keeping. Between them they write all the SQL this product sends, under the same rule.
 /// </para>
 /// <para>
 /// That matters more here than in most applications. This product's own data is written by
@@ -32,25 +31,24 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// lets the rest of the system treat them as ordinary data.
 /// </para>
 /// <para>
-/// Twelve of the questions may be asked of people alone. Each then has two shapes chosen by what
-/// was asked, on the terms the visit list's two shapes were chosen: the everybody shape reads no
-/// verdict and binds nothing for one, and the people shape is that statement with the two
-/// expressions <see cref="JudgedPeople"/> writes placed after the settled identity and its first
-/// aggregation reading from them.
+/// Twelve of the questions that read activity may be asked of people alone. Each then has two
+/// shapes chosen by what was asked, on the terms the visit list's two shapes were chosen: the
+/// everybody shape reads no verdict and binds nothing for one, and the people shape is that
+/// statement with the two expressions <see cref="JudgedPeople"/> writes placed after the settled
+/// identity and its first aggregation reading from them. One more, a website's kept months, is
+/// asked of people by reading the figures kept for them beside everybody's.
 /// </para>
 /// </remarks>
 public static class AnalyticsSqlCompiler
 {
-    private const string SiteIdParameter = "site_id";
     private const string SiteIdsParameter = "site_ids";
-    private const string FromParameter = "from_ms";
-    private const string ToParameter = "to_ms";
-    private const string TimeZoneParameter = "time_zone";
+    private const string FromParameter = StatementBindings.From;
+    private const string ToParameter = StatementBindings.To;
+    private const string TimeZoneParameter = StatementBindings.TimeZone;
     private const string LimitParameter = "limit";
     private const string OffsetParameter = "offset";
     private const string IdleParameter = "idle_seconds";
     private const string SettledParameter = "settled_ms";
-    private const string LongestVisitParameter = "longest_visit_seconds";
     private const string VisitorKeyParameter = "visitor_key";
     private const string HostingNumbersParameter = "hosting_numbers";
     private const string HostingNamesParameter = "hosting_names";
@@ -70,29 +68,6 @@ public static class AnalyticsSqlCompiler
     private const string MaxRequestsParameter = "max_requests";
 
     /// <summary>
-    /// Bucket function per granularity. Bucketing runs in the site's own time zone, so the
-    /// boundaries are the ones its owner experiences rather than UTC's.
-    /// </summary>
-    private static readonly FrozenDictionary<TimeGranularity, string> BucketFunctions =
-        new Dictionary<TimeGranularity, string>
-        {
-            [TimeGranularity.Hour] = "toStartOfHour",
-            [TimeGranularity.Day] = "toStartOfDay",
-        }.ToFrozenDictionary();
-
-    /// <summary>
-    /// Gap-filling step per granularity. Expressed as a calendar interval rather than a fixed
-    /// number of seconds so that a day which is not twenty-four hours long still produces
-    /// exactly one bucket.
-    /// </summary>
-    private static readonly FrozenDictionary<TimeGranularity, string> StepIntervals =
-        new Dictionary<TimeGranularity, string>
-        {
-            [TimeGranularity.Hour] = "INTERVAL 1 HOUR",
-            [TimeGranularity.Day] = "INTERVAL 1 DAY",
-        }.ToFrozenDictionary();
-
-    /// <summary>
     /// Aggregate per metric, over one visitor's activity on one page. Visitors excludes activity
     /// carrying no visitor key: a surface that could not derive one has not observed an anonymous
     /// visitor, it has observed nothing about who was there, and counting those together would
@@ -102,7 +77,21 @@ public static class AnalyticsSqlCompiler
         new Dictionary<TimeSeriesMetric, string>
         {
             [TimeSeriesMetric.PageViews] = "toInt64(sum(page_views))",
-            [TimeSeriesMetric.Visitors] = "toInt64(uniqExactIf(visitor_key, visitor_key != ''))",
+            [TimeSeriesMetric.Visitors] = ReconciledEvents.Visitors,
+        }.ToFrozenDictionary();
+
+    /// <summary>
+    /// Which kept columns a question about a website's months reads, by who it is about.
+    /// </summary>
+    /// <remarks>
+    /// A fixed table, on the terms <see cref="PlaceColumns"/> is: the population chooses between two
+    /// lists written here, never a column a caller named.
+    /// </remarks>
+    private static readonly FrozenDictionary<Population, KeptColumn[]> KeptFigureColumns =
+        new Dictionary<Population, KeptColumn[]>
+        {
+            [Population.Everybody] = KeptFiguresOf(string.Empty),
+            [Population.People] = KeptFiguresOf("people_"),
         }.ToFrozenDictionary();
 
     /// <summary>
@@ -664,8 +653,61 @@ public static class AnalyticsSqlCompiler
             ?? CompileFromVisits(scope, query)
             ?? CompileFromVerdicts(scope, query)
             ?? CompileFromNow(scope, query)
+            ?? CompileFromKept(scope, query)
             ?? throw new NotSupportedException($"No statement is defined for {query.GetType().Name}.");
     }
+
+    /// <summary>
+    /// Compiles a question about what was kept of a website's months, or nothing where it is not one.
+    /// </summary>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement, or <see langword="null"/> where this is not one of these questions.</returns>
+    private static CompiledStatement? CompileFromKept(TenantScope scope, AnalyticsQuery query) =>
+        query is KeptMonthsQuery kept ? CompileKeptMonths(scope, kept) : null;
+
+    /// <summary>
+    /// Reads a website's whole record, month by month, with what was kept of each finished month.
+    /// </summary>
+    /// <remarks>
+    /// The figures for the people a month held are kept beside everybody's, on the same row and from
+    /// the same count, so asking about people reads other columns rather than other rows — and reads
+    /// no verdict and no report but the oldest, which only says where the record begins.
+    /// </remarks>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement and its bound values.</returns>
+    private static CompiledStatement CompileKeptMonths(TenantScope scope, KeptMonthsQuery query) =>
+        new(
+            KeptCalendar.Statement(KeptFigureColumns[query.Population]),
+            [
+                new QueryParameter(StatementBindings.SiteId, scope.SiteId),
+                new QueryParameter(ToParameter, query.Range.To.ToUnixTimeMilliseconds()),
+                new QueryParameter(TimeZoneParameter, scope.TimeZoneId),
+            ]);
+
+    /// <summary>
+    /// What is read of a kept month, by who the question is about, in the order it comes back.
+    /// </summary>
+    /// <param name="prefix">What the columns kept for that population begin with, written here.</param>
+    /// <returns>The columns.</returns>
+    private static KeptColumn[] KeptFiguresOf(string prefix) =>
+    [
+        new("begins_at", "begins_at"),
+        new("ends_at", "ends_at"),
+        new("first_day", "first_day"),
+        new("days_measured", "days_measured"),
+        new($"{prefix}page_views", "page_views"),
+        new($"{prefix}visitors", "visitors"),
+        new($"{prefix}best_day", "best_day"),
+        new($"{prefix}best_day_page_views", "best_day_page_views"),
+        new($"{prefix}page_views_by_weekday", "page_views_by_weekday"),
+        new($"{prefix}page_views_by_hour", "page_views_by_hour"),
+        new("verdict_categories", "verdict_categories"),
+        new("verdict_visits", "verdict_visits"),
+        new("verdict_page_views", "verdict_page_views"),
+        new("judged_to", "judged_to"),
+    ];
 
     /// <summary>
     /// Compiles the count of what a set of sites delivered over a window.
@@ -1778,40 +1820,41 @@ public static class AnalyticsSqlCompiler
     /// </remarks>
     private static CompiledStatement CompileTrafficSeries(TenantScope scope, TrafficSeriesQuery query)
     {
-        var bucket = BucketFunctions[query.Granularity];
-        var step = StepIntervals[query.Granularity];
+        var holding = CalendarBuckets.Holding(
+            query.Granularity,
+            "argMax(started_at, (ruleset_major, ruleset_minor, classified_at))");
 
-        // The upper fill bound is derived from one millisecond before the exclusive end of the
-        // window, for the reason CompileTimeSeries gives: bounding it on the end instant itself
-        // appends an empty bucket whenever a window ends exactly on a boundary, and truncates the
-        // final partial bucket whenever it does not.
         var sql = $$"""
             SELECT
                 category,
-                bucket,
-                toInt64(count()) AS sessions,
-                toInt64(sum(page_count)) AS page_views
+                {{CalendarBuckets.BeginningOf(query.Granularity, "calendar_bucket")}} AS bucket,
+                sessions,
+                page_views
             FROM
             (
                 SELECT
-                    session_key,
-                    argMax(category, (ruleset_major, ruleset_minor, classified_at)) AS category,
-                    argMax(page_count, (ruleset_major, ruleset_minor, classified_at)) AS page_count,
-                    {{bucket}}(
-                        argMax(started_at, (ruleset_major, ruleset_minor, classified_at)),
-                        {time_zone:String}) AS bucket
-                FROM session_classifications
-                WHERE site_id = {site_id:UUID}
-                  AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-                  AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
-                GROUP BY session_key
+                    category,
+                    calendar_bucket,
+                    toInt64(count()) AS sessions,
+                    toInt64(sum(page_count)) AS page_views
+                FROM
+                (
+                    SELECT
+                        session_key,
+                        argMax(category, (ruleset_major, ruleset_minor, classified_at)) AS category,
+                        argMax(page_count, (ruleset_major, ruleset_minor, classified_at)) AS page_count,
+                        {{holding}} AS calendar_bucket
+                    FROM session_classifications
+                    WHERE site_id = {site_id:UUID}
+                      AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+                      AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+                    GROUP BY session_key
+                )
+                GROUP BY category, calendar_bucket
+                ORDER BY category, calendar_bucket
+                {{FilledBuckets(query.Granularity, 4)}}
             )
-            GROUP BY category, bucket
             ORDER BY category, bucket
-            WITH FILL
-                FROM {{bucket}}(fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC'), {time_zone:String})
-                TO {{bucket}}(fromUnixTimestamp64Milli({to_ms:Int64} - 1, 'UTC'), {time_zone:String}) + {{step}}
-                STEP {{step}}
             """;
 
         return new CompiledStatement(
@@ -2089,7 +2132,7 @@ public static class AnalyticsSqlCompiler
                 {{ReconciledEvents.Reconciliation}}{{kept.Following}}
             SELECT
                 toInt64(sum(page_views)) AS page_views,
-                toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS visitors,
+                {{ReconciledEvents.Visitors}} AS visitors,
                 toInt64(sum(reports)) AS events
             FROM
             (
@@ -2644,15 +2687,10 @@ public static class AnalyticsSqlCompiler
     /// </remarks>
     private static CompiledStatement CompileTimeSeries(TenantScope scope, TimeSeriesQuery query)
     {
-        var bucket = BucketFunctions[query.Granularity];
-        var step = StepIntervals[query.Granularity];
+        var holding = CalendarBuckets.Holding(query.Granularity, "server_ts");
         var metric = MetricExpressions[query.Metric];
         var kept = JudgedPeople.Among(ReconciledEvents.Identified, query.Population);
 
-        // The upper fill bound is derived from one millisecond before the exclusive end of the
-        // window, so the series stops at the last bucket that could hold data. Bounding it on the
-        // end instant itself would append an empty bucket whenever a window ends exactly on a
-        // boundary, and truncate the final partial bucket whenever it does not.
         var sql = $$"""
             WITH
                 windowed AS
@@ -2665,23 +2703,27 @@ public static class AnalyticsSqlCompiler
                 ),
                 {{ReconciledEvents.Reconciliation}}{{kept.Following}}
             SELECT
-                bucket,
-                {{metric}} AS value
+                {{CalendarBuckets.BeginningOf(query.Granularity, "calendar_bucket")}} AS bucket,
+                value
             FROM
             (
                 SELECT
-                    {{bucket}}(server_ts, {time_zone:String}) AS bucket,
-                    visitor_key,
-                    {{ReconciledEvents.DeliveredPageViews(8)}}
-                FROM {{kept.Source}}
-                GROUP BY bucket, visitor_key, path
+                    calendar_bucket,
+                    {{metric}} AS value
+                FROM
+                (
+                    SELECT
+                        {{holding}} AS calendar_bucket,
+                        visitor_key,
+                        {{ReconciledEvents.DeliveredPageViews(12)}}
+                    FROM {{kept.Source}}
+                    GROUP BY calendar_bucket, visitor_key, path
+                )
+                GROUP BY calendar_bucket
+                ORDER BY calendar_bucket
+                {{FilledBuckets(query.Granularity, 4)}}
             )
-            GROUP BY bucket
             ORDER BY bucket
-            WITH FILL
-                FROM {{bucket}}(fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC'), {time_zone:String})
-                TO {{bucket}}(fromUnixTimestamp64Milli({to_ms:Int64} - 1, 'UTC'), {time_zone:String}) + {{step}}
-                STEP {{step}}
             """;
 
         return new CompiledStatement(
@@ -2693,12 +2735,47 @@ public static class AnalyticsSqlCompiler
             ]);
     }
 
+    /// <summary>
+    /// The fill a series ends in, which hands back every bucket of its window whether or not
+    /// anything happened in it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A chart with holes in it is a chart every consumer repairs in the browser, each slightly
+    /// differently. Bounded by the bucket the window opens in and the bucket holding its last
+    /// instant, one millisecond before its exclusive end, so the series stops at the last bucket
+    /// that could hold data: bounding it on the end instant itself would append an empty bucket
+    /// whenever a window ends exactly on a boundary, and leave out the final partial bucket whenever
+    /// it does not.
+    /// </para>
+    /// <para>
+    /// Both bounds are named exactly as the counted buckets are, and the fill steps by those names —
+    /// the website's local dates, or its hours — so every bucket it invents is one the store could
+    /// have counted. The series puts each bucket at the instant it begins only afterwards, outside
+    /// the fill; <see cref="CalendarBuckets"/> says why that order is what holds across a change of
+    /// the clocks.
+    /// </para>
+    /// </remarks>
+    /// <param name="granularity">How wide each bucket is.</param>
+    /// <param name="indent">How far the clause is indented, so its lines line up under the first.</param>
+    /// <returns>The clause, to follow an ordering that ends on the bucket as the calendar names it.</returns>
+    private static string FilledBuckets(TimeGranularity granularity, int indent)
+    {
+        var pad = new string(' ', indent);
+        var first = CalendarBuckets.Holding(granularity, "fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')");
+        var last = CalendarBuckets.Holding(granularity, "fromUnixTimestamp64Milli({to_ms:Int64} - 1, 'UTC')");
+        var step = CalendarBuckets.Step(granularity);
+
+        return $"""
+            WITH FILL
+            {pad}    FROM {first}
+            {pad}    TO {last} + {step}
+            {pad}    STEP {step}
+            """;
+    }
+
     private static QueryParameter[] WindowParameters(TenantScope scope, TimeRange range) =>
-    [
-        new(SiteIdParameter, scope.SiteId),
-        new(FromParameter, range.From.ToUnixTimeMilliseconds()),
-        new(ToParameter, range.To.ToUnixTimeMilliseconds()),
-    ];
+        StatementBindings.Window(scope.SiteId, range);
 
     /// <summary>
     /// The catalogue of hosting networks, bound only where a statement names it.
@@ -2746,30 +2823,13 @@ public static class AnalyticsSqlCompiler
         new QueryParameter(SettledParameter, boundaries.SettledBefore.ToUnixTimeMilliseconds()),
     ];
 
-    /// <summary>
-    /// How far either side of a period a statement has to read to see whole the visits that cross
-    /// its edges.
-    /// </summary>
-    /// <remarks>
-    /// Bound rather than written into the statement so that it reads as what it is — a length of
-    /// time — beside the timeout it sits next to. Unlike that timeout it is not a setting: it
-    /// follows from how a visitor key is built, and <see cref="VisitorKeys.LongestVisit"/> is where
-    /// that is explained.
-    /// </remarks>
+    /// <summary>How far either side of a period a statement reads; see <see cref="StatementBindings.LongestVisit"/>.</summary>
     /// <returns>The value.</returns>
-    private static QueryParameter LongestVisit() =>
-        new(LongestVisitParameter, (long)VisitorKeys.LongestVisit.TotalSeconds);
+    private static QueryParameter LongestVisit() => StatementBindings.LongestVisit();
 
-    /// <summary>
-    /// How far before the window verdicts are read, bound only where a statement reads them.
-    /// </summary>
-    /// <remarks>
-    /// Conditional on the same terms as <see cref="CatalogueOfNetworks"/>: a statement asked about
-    /// everybody names no verdict, and a value bound to a placeholder no statement names is a
-    /// narrowing that silently does nothing.
-    /// </remarks>
+    /// <summary>How far before the window verdicts are read; see <see cref="StatementBindings.Population"/>.</summary>
     /// <param name="population">Who the statement is asked about.</param>
     /// <returns>The value, or nothing.</returns>
     private static QueryParameter[] PopulationParameters(Population population) =>
-        population == Population.People ? [LongestVisit()] : [];
+        StatementBindings.Population(population);
 }

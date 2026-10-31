@@ -1,0 +1,91 @@
+﻿--- statement ---
+WITH
+    kept AS
+    (
+        SELECT
+            month AS kept_month,
+            begins_at AS kept_begins_at,
+            ends_at AS kept_ends_at,
+            first_day AS kept_first_day,
+            days_measured AS kept_days_measured,
+            page_views AS kept_page_views,
+            visitors AS kept_visitors,
+            best_day AS kept_best_day,
+            best_day_page_views AS kept_best_day_page_views,
+            page_views_by_weekday AS kept_page_views_by_weekday,
+            page_views_by_hour AS kept_page_views_by_hour,
+            verdict_categories AS kept_verdict_categories,
+            verdict_visits AS kept_verdict_visits,
+            verdict_page_views AS kept_verdict_page_views,
+            judged_to AS kept_judged_to,
+            1 AS counted
+        FROM consolidated_months
+        WHERE site_id = {site_id:UUID}
+          AND month <= toStartOfMonth(toDate(fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC'), {time_zone:String}))
+        ORDER BY month, counted_at DESC
+        LIMIT 1 BY month
+    ),
+    reported AS
+    (
+        SELECT toDate(server_ts, {time_zone:String}) AS reported_day
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+        ORDER BY server_ts
+        LIMIT 1
+    ),
+    reach AS
+    (
+        SELECT
+            (SELECT minOrNull(kept_month) FROM kept) AS first_kept,
+            (SELECT anyOrNull(reported_day) FROM reported) AS first_report_day,
+            toStartOfMonth(first_report_day) AS first_reported,
+            toStartOfMonth(toDate(fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC'), {time_zone:String})) AS running_month
+    ),
+    calendar AS
+    (
+        SELECT
+            arrayJoin(arrayMap(
+                step -> addMonths(first_month, step),
+                range(toUInt32(dateDiff('month', first_month, running_month) + 1)))) AS calendar_month,
+            first_report_day
+        FROM
+        (
+            SELECT
+                assumeNotNull(coalesce(least(first_kept, first_reported), first_kept, first_reported)) AS first_month,
+                running_month,
+                first_report_day
+            FROM reach
+            WHERE first_kept IS NOT NULL
+               OR first_report_day IS NOT NULL
+        )
+    )
+SELECT
+    calendar_month AS month,
+    toDateTime(calendar_month, {time_zone:String}) AS begins,
+    toDateTime(toStartOfYear(calendar_month), {time_zone:String}) AS year_begins,
+    toDateTime(addMonths(calendar_month, 1), {time_zone:String}) AS ends,
+    first_report_day,
+    counted,
+    kept_begins_at AS begins_at,
+    kept_ends_at AS ends_at,
+    kept_first_day AS first_day,
+    kept_days_measured AS days_measured,
+    kept_page_views AS page_views,
+    kept_visitors AS visitors,
+    kept_best_day AS best_day,
+    kept_best_day_page_views AS best_day_page_views,
+    kept_page_views_by_weekday AS page_views_by_weekday,
+    kept_page_views_by_hour AS page_views_by_hour,
+    kept_verdict_categories AS verdict_categories,
+    kept_verdict_visits AS verdict_visits,
+    kept_verdict_page_views AS verdict_page_views,
+    kept_judged_to AS judged_to
+FROM calendar
+LEFT JOIN kept ON calendar.calendar_month = kept.kept_month
+ORDER BY month
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+to_ms = 1778198400000
+time_zone = 'Europe/London'

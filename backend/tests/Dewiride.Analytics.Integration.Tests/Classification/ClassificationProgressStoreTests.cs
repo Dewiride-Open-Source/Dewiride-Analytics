@@ -229,6 +229,37 @@ public sealed class ClassificationProgressStoreTests(AnalyticsStackFixture stack
 
     private static string Domain() => $"{Guid.NewGuid():n}.example.com";
 
+    /// <summary>
+    /// How far one set of rules has judged a site is read without starting a bookmark: counting a
+    /// month asks it of every website on every run, and a question that wrote a bookmark for rules
+    /// that have never run would make them look as though they had begun.
+    /// </summary>
+    [Fact]
+    public async Task How_Far_One_Ruleset_Has_Judged_Is_Read_Without_Starting_A_Bookmark()
+    {
+        var siteId = await StartedAsync();
+        await AdvanceAsync(siteId, Start.AddHours(2), Start.AddHours(6));
+
+        (await JudgedThroughAsync(siteId, RulesetVersion.Current)).Should().Be(Start.AddHours(2));
+        (await JudgedThroughAsync(siteId, Earlier)).Should().BeNull();
+        (await JudgedThroughAsync(siteId, Earlier)).Should().BeNull();
+
+        await using var scope = stack.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>();
+
+        (await database.ClassificationProgress.CountAsync(progress => progress.SiteId == siteId, Cancellation.Token))
+            .Should().Be(1);
+    }
+
+    private async Task<DateTimeOffset?> JudgedThroughAsync(Guid siteId, RulesetVersion ruleset)
+    {
+        await using var scope = stack.Services.CreateAsyncScope();
+
+        return await scope.ServiceProvider.GetRequiredService<IClassificationProgressStore>()
+            .JudgedThroughAsync(siteId, ruleset, Cancellation.Token)
+            .ConfigureAwait(false);
+    }
+
     /// <summary>Adds a site and starts its bookmark under the rules being run.</summary>
     private async Task<Guid> StartedAsync()
     {

@@ -1,3 +1,4 @@
+using Dewiride.Analytics.Application.Consolidation;
 using Dewiride.Analytics.Application.Dashboard;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Infrastructure.Crawlers;
@@ -34,6 +35,15 @@ internal static class TestSettings
     /// </remarks>
     public static readonly string BackgroundJudging =
         $"{ClassificationOptions.SectionName}:{nameof(ClassificationOptions.Enabled)}";
+
+    /// <summary>Whether the engine counts and keeps each website's finished months on a timer.</summary>
+    /// <remarks>
+    /// Switched off in every host, on the same terms as judging: a run on its own schedule would
+    /// write kept months in the middle of the tests checking what counting produces, and on a host
+    /// that is never asked about kept months it would only be reading the store for nothing.
+    /// </remarks>
+    public static readonly string BackgroundConsolidation =
+        $"{ConsolidationOptions.SectionName}:{nameof(ConsolidationOptions.Enabled)}";
 
     /// <summary>Whether the engine asks a name server whose crawler an address belongs to.</summary>
     /// <remarks>

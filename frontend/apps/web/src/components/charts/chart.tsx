@@ -52,6 +52,14 @@ interface ChartProps {
    * offering this also offers the same action somewhere a keyboard can reach it.
    */
   readonly onPick?: (index: number) => void;
+  /**
+   * Which categories a press means something on, where only some of them can be pressed.
+   *
+   * Decides both what a press does and what the pointer says over each category: a press on one it
+   * turns down is no press at all, and the hand shows only over the ones it allows. Every category
+   * can be pressed where this is left out.
+   */
+  readonly pressable?: (index: number) => boolean;
 }
 
 /**
@@ -60,7 +68,7 @@ interface ChartProps {
  * Every chart goes through here so that theming, resizing, disposal and the reduced-motion
  * setting are decided once instead of per screen.
  */
-export function Chart({ option, label, className, onPick }: ChartProps) {
+export function Chart({ option, label, className, onPick, pressable }: ChartProps) {
   const holder = useRef<HTMLDivElement>(null);
   const drawn = useRef<EChartsType | null>(null);
   const { resolvedTheme } = useTheme();
@@ -130,7 +138,7 @@ export function Chart({ option, label, className, onPick }: ChartProps) {
     const pick = (event: MouseEvent) => {
       const index = pickedIndex(drawn.current, node, event);
 
-      if (index !== null) {
+      if (index !== null && (pressable?.(index) ?? true)) {
         onPick(index);
       }
     };
@@ -138,7 +146,32 @@ export function Chart({ option, label, className, onPick }: ChartProps) {
     node.addEventListener('click', pick);
 
     return () => node.removeEventListener('click', pick);
-  }, [onPick]);
+  }, [onPick, pressable]);
+
+  // Where only some categories can be pressed, whether the one under the pointer is among them is
+  // settled as the pointer moves and written onto the surface, for the canvas's own cursor to read.
+  // Written rather than held as the screen's state: the pointer moves far too often for every move
+  // to redraw the screen around it.
+  useEffect(() => {
+    const node = holder.current;
+
+    if (!node || !onPick || !pressable) {
+      return;
+    }
+
+    const point = (event: MouseEvent) => {
+      const index = pickedIndex(drawn.current, node, event);
+
+      node.dataset.pressing = String(index !== null && pressable(index));
+    };
+
+    node.addEventListener('mousemove', point);
+
+    return () => {
+      node.removeEventListener('mousemove', point);
+      node.removeAttribute('data-pressing');
+    };
+  }, [onPick, pressable]);
 
   // The cursor is the surface's to decide, and it means one thing: a hand says a press does
   // something. The charting engine offers a hand of its own over every column, dot and slice,
@@ -150,13 +183,27 @@ export function Chart({ option, label, className, onPick }: ChartProps) {
       ref={holder}
       role="img"
       aria-label={label}
-      className={cn(
-        'h-full w-full',
-        onPick ? '[&_canvas]:cursor-pointer' : '[&_canvas]:cursor-default',
-        className,
-      )}
+      className={cn('h-full w-full', cursorOver(onPick, pressable), className)}
     />
   );
+}
+
+/**
+ * The cursor over the drawing: a hand wherever a press does something, and the arrow everywhere
+ * else — over the whole of a drawing nothing on which can be pressed, and over the categories of
+ * one that turns a press on them down.
+ */
+function cursorOver(
+  onPick: ((index: number) => void) | undefined,
+  pressable: ((index: number) => boolean) | undefined,
+): string {
+  if (!onPick) {
+    return '[&_canvas]:cursor-default';
+  }
+
+  return pressable
+    ? '[&_canvas]:cursor-default data-[pressing=true]:[&_canvas]:cursor-pointer'
+    : '[&_canvas]:cursor-pointer';
 }
 
 /**

@@ -42,7 +42,8 @@ internal sealed class ClickHouseTelemetryPurge(IClickHouseClient client) : ITele
     /// missing from here would leave a removed site's rows behind with nothing left to name them
     /// by, since every read is scoped through a site that no longer exists.
     /// </remarks>
-    private static readonly string[] SiteScopedTables = ["events", "session_classifications", "name_confirmations"];
+    private static readonly string[] SiteScopedTables =
+        ["events", "session_classifications", "name_confirmations", "consolidated_months"];
 
     /// <inheritdoc />
     public async Task PurgeSiteAsync(Guid siteId, CancellationToken cancellationToken)

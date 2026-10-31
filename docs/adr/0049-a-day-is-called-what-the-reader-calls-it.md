@@ -18,6 +18,9 @@
   they were measured against yesterday — a pressed yesterday's cards read "the day before" either
   way. Every other day is pressed, written, named, remembered and compared as 0042 decided, and
   its first consequence — that a pressed day and a chosen day are the same period — holds.
+- **Revised by**: [0063](0063-the-picture-is-drawn-by-the-day-the-week-or-the-month.md), which names
+  a chosen stretch that is exactly this month, last month or this year by that period too, by the
+  same rule and after it: a single day is still named first.
 
 ## Context
 

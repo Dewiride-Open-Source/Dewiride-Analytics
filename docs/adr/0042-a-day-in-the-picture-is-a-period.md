@@ -14,6 +14,13 @@
   day that is today or yesterday where the website is by the period the list already offers for
   it rather than as a stretch of one day, remembers it and words its cards by that name, and names
   a single day chosen in the chooser the same way.
+- **Revised by**: [0063](0063-the-picture-is-drawn-by-the-day-the-week-or-the-month.md), which lets
+  the picture be cut by the week or the month: a press on such a bucket narrows the period to the
+  days the bucket covers rather than to one day, and its row in the table reads "{bucket}, look at
+  these days". A bucket of one day is pressed exactly as this record decided.
+- **Revised by**: [0064](0064-a-month-outlives-the-reports-it-was-counted-from.md): under All time the
+  cards and the picture cover the whole record, and the lists beneath them its last twelve months,
+  which the screen says above them.
 
 ## Context
 

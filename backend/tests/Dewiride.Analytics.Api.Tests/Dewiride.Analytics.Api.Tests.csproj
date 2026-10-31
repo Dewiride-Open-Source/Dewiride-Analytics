@@ -2,7 +2,8 @@
 
   <!--
     Unit tests over the host's own composition — the settings it reads before anything is built,
-    and what it refuses to start on. No container, no network and no vault.
+    what it refuses to start on, and the background work it runs on a timer. No container, no
+    network and no vault.
 
     The suite that boots against real servers cannot cover this: everything here is about an
     engine that declines to boot, which that suite can only observe as a fixture failing to come
@@ -16,6 +17,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Dewiride.Analytics.Api\Dewiride.Analytics.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.Testing" />
   </ItemGroup>
 
   <ItemGroup>

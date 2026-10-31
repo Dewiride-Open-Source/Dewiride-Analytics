@@ -3,10 +3,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Dewiride.Analytics.Api.Contracts;
+using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Classification;
+using Dewiride.Analytics.Classification.Sessions;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Domain.Telemetry;
 using Dewiride.Analytics.Infrastructure.Persistence;
@@ -31,6 +33,9 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     private const string Password = Passwords.Acceptable;
 
     private const string Scanner = "python-requests/2.32.3";
+
+    /// <summary>A zone that changes its clocks twice a year, an hour each way.</summary>
+    private const string London = "Europe/London";
 
     [Fact]
     public async Task A_Member_Sees_What_Generated_Their_Traffic()
@@ -315,6 +320,8 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     [InlineData("traffic/series")]
     [InlineData("traffic/series?granularity=fortnight")]
     [InlineData("traffic/series?granularity=hour&from=2024-01-01T00:00:00Z&to=2024-03-01T00:00:00Z")]
+    [InlineData("traffic/series?granularity=week&from=2020-01-01T00:00:00Z&to=2024-01-01T00:00:00Z")]
+    [InlineData("traffic/series?granularity=month&from=2020-01-01T00:00:00Z&to=2024-01-01T00:00:00Z")]
     public async Task A_Question_That_Cannot_Be_Answered_As_Asked_Is_Refused(string query)
     {
         var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
@@ -355,6 +362,8 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     [Theory]
     [InlineData("day")]
     [InlineData("hour")]
+    [InlineData("week")]
+    [InlineData("month")]
     public async Task Every_Category_Reports_One_Count_Per_Bucket(string granularity)
     {
         var site = await JudgedSiteAsync(visitors: 2);
@@ -379,6 +388,8 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
     [Theory]
     [InlineData("day")]
     [InlineData("hour")]
+    [InlineData("week")]
+    [InlineData("month")]
     public async Task The_Series_Adds_Up_To_The_Breakdown_Of_The_Same_Window(string granularity)
     {
         var site = await JudgedSiteAsync(visitors: 3);
@@ -527,6 +538,104 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
             series.Buckets.Should().NotBeEmpty();
             series.Buckets.Should().OnlyContain(bucket =>
                 bucket.UtcDateTime.TimeOfDay == new TimeSpan(18, 30, 0));
+        }
+    }
+
+    /// <summary>
+    /// Weeks are cut where the website is, on the same terms as days: a week in Kolkata begins at
+    /// midnight on Monday there, which is half past six on Sunday evening in UTC.
+    /// </summary>
+    [Fact]
+    public async Task Weeks_Begin_On_Monday_Where_The_Website_Is()
+    {
+        var site = await JudgedSiteAsync(timeZoneId: "Asia/Kolkata");
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var series = await ReadTrafficSeriesAsync(browser, site.Id, "granularity=week");
+
+            series.Granularity.Should().Be("week");
+            series.Buckets.Should().NotBeEmpty();
+            series.Buckets.Should().OnlyContain(bucket =>
+                bucket.UtcDateTime.DayOfWeek == DayOfWeek.Sunday
+                && bucket.UtcDateTime.TimeOfDay == new TimeSpan(18, 30, 0));
+        }
+    }
+
+    /// <summary>
+    /// A week nobody visited is still a week, and it begins where every other week does even when
+    /// the clocks changed the weekend before it: at midnight on Monday where the website is, not an
+    /// hour either side of it, and never as a second copy of a week beside it. Placed around the
+    /// latest change at least five weeks back, so it never names a date the store has let go of.
+    /// </summary>
+    [Fact]
+    public async Task A_Week_With_No_Visits_After_The_Clocks_Change_Still_Begins_On_Monday()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain(), timeZoneId: London);
+        var london = new ZoneCalendar(London);
+        var now = stack.Services.GetRequiredService<TimeProvider>().GetUtcNow();
+        var changed = ZoneCalendar.MondayOf(london.DateOf(london.LatestClockChange(now.AddDays(-35))));
+        DateTimeOffset[] weeks = [.. Enumerable.Range(0, 3).Select(week => london.MidnightOn(changed.AddDays(7 * week)))];
+
+        // One visit in the week the clocks changed, before they did, and one two weeks later.
+        await JudgedVisitAsync(site.Id, london.MidnightOn(changed.AddDays(1)).AddHours(12));
+        await JudgedVisitAsync(site.Id, london.MidnightOn(changed.AddDays(16)).AddHours(12));
+
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var series = await ReadTrafficSeriesAsync(
+                browser,
+                site.Id,
+                $"granularity=week&from={Written(weeks[0])}&to={Written(weeks[2].AddDays(7))}");
+
+            series.Buckets.Should().HaveCount(3).And.OnlyHaveUniqueItems();
+            series.Buckets.Should().OnlyContain(bucket =>
+                london.IsMidnight(bucket) && london.DateOf(bucket).DayOfWeek == DayOfWeek.Monday);
+            series.Buckets.Should().Equal(weeks);
+            series.Groups.Should().ContainSingle().Which.Sessions.Should().Equal(1, 0, 1);
+        }
+    }
+
+    /// <summary>
+    /// Every kind of visit is counted beside the same days, including where the clocks go forward
+    /// at midnight and the day they change on begins at one in the morning. The days are named once
+    /// for the whole answer and each kind's counts are read against them by position, so a kind
+    /// whose days came back longer, or an hour early, would put its visits on the wrong day of the
+    /// picture. Placed around the latest such day at least four days back.
+    /// </summary>
+    [Fact]
+    public async Task Every_Kind_Of_Visit_Is_Counted_Beside_The_Same_Days_Where_The_Clocks_Skip_Midnight()
+    {
+        var now = stack.Services.GetRequiredService<TimeProvider>().GetUtcNow();
+        var (calendar, skipped) = ZoneCalendar.LatestDayWithoutAMidnight(now.AddDays(-4));
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain(), timeZoneId: calendar.TimeZoneId);
+        DateOnly[] days = [.. Enumerable.Range(-3, 7).Select(skipped.AddDays)];
+
+        // A person the day before the clocks skip midnight, and a scanner the day after it, so each
+        // kind's own fill reaches across the change from a different side.
+        await JudgedVisitAsync(site.Id, calendar.FirstInstantOn(skipped.AddDays(-1)).AddHours(12), TrafficCategory.LikelyHuman);
+        await JudgedVisitAsync(site.Id, calendar.FirstInstantOn(skipped.AddDays(1)).AddHours(12));
+
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var series = await ReadTrafficSeriesAsync(
+                browser,
+                site.Id,
+                $"granularity=day&from={Written(calendar.FirstInstantOn(days[0]))}"
+                + $"&to={Written(calendar.FirstInstantOn(skipped.AddDays(4)))}");
+
+            series.Buckets.Should().Equal(days.Select(calendar.FirstInstantOn));
+            series.Groups.Should().HaveCount(2).And.OnlyContain(group =>
+                group.Sessions.Count == days.Length && group.PageViews.Count == days.Length);
+            series.Groups.Should().ContainSingle(group => group.Category == "likely-human")
+                .Which.Sessions.Should().Equal(0, 0, 1, 0, 0, 0, 0);
+            series.Groups.Should().ContainSingle(group => group.Category == "security-scanner")
+                .Which.Sessions.Should().Equal(0, 0, 0, 0, 1, 0, 0);
         }
     }
 
@@ -809,10 +918,51 @@ public sealed class TrafficReadTests(AnalyticsStackFixture stack)
 
         await using var scope = stack.Services.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<SessionClassifier>()
-            .CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt.AddDays(-2)), Cancellation.Token);
+            .CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt.AddDays(-2), site.TimeZoneId), Cancellation.Token);
 
         return site;
     }
+
+    /// <summary>
+    /// Stores what the engine concluded about one visit, beginning at the given instant: a
+    /// scanner's, unless the visit is said to have been something else.
+    /// </summary>
+    /// <remarks>
+    /// Stored directly rather than reached by running the engine over activity. The series is read
+    /// from verdicts alone, and a visit placed weeks back would otherwise need the engine to walk
+    /// every day since.
+    /// </remarks>
+    /// <param name="siteId">The site.</param>
+    /// <param name="began">When the visit began.</param>
+    /// <param name="category">What the visit was concluded to be.</param>
+    /// <returns>A task that completes once the verdict is stored.</returns>
+    private Task JudgedVisitAsync(
+        Guid siteId,
+        DateTimeOffset began,
+        TrafficCategory category = TrafficCategory.SecurityScanner) =>
+        stack.Services.GetRequiredService<IClassificationStore>().SaveAsync(
+            siteId,
+            [
+                new SessionJudgement(
+                    new SessionEvidence
+                    {
+                        SessionKey = new VisitKey($"intruder-{siteId:n}", began).ToString(),
+                        StartedAt = began,
+                        EndedAt = began.AddSeconds(2),
+                        Requests = [new ObservedRequest(began, "/.env", null)],
+                        Surfaces = [IngestSurface.CloudflareWorker],
+                        UserAgent = Scanner,
+                    },
+                    new ClassificationVerdict
+                    {
+                        Category = category,
+                        Strength = EvidenceStrength.Strong,
+                        Supporting = [],
+                        RulesetVersion = RulesetVersion.Current,
+                    }),
+            ],
+            began.AddMinutes(30),
+            Cancellation.Token);
 
     private static RawEvent Probe(Guid siteId, DateTimeOffset at, string path, int visitor = 0) => new()
     {

@@ -1,7 +1,12 @@
 using ClickHouse.Driver;
 using ClickHouse.Driver.ADO;
 using ClickHouse.Driver.Utility;
+using Dewiride.Analytics.Application.Analytics;
+using Dewiride.Analytics.Application.Consolidation;
+using Dewiride.Analytics.Application.Telemetry;
+using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
+using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Domain.Telemetry;
 using Dewiride.Analytics.Infrastructure.ClickHouse;
 using Dewiride.Analytics.Infrastructure.ClickHouse.Health;
@@ -64,6 +69,35 @@ public sealed class TelemetrySchemaTests(AnalyticsStackFixture stack)
         watched.Services.GetRequiredService<IHttpClientFactory>()
             .CreateClient(ClickHouseRegistration.SchemaHttpClientName).Timeout
             .Should().Be(ClickHouseRegistration.LongestSchemaStatement);
+    }
+
+    /// <summary>
+    /// Counting a finished month reads a month of a website's reports in one statement, on one
+    /// thread. Held to the hundred seconds a question from a screen is given, a month of a busy
+    /// website would fail on every run until its reports expired, and be lost — so counting travels
+    /// over a client of its own, which waits longer than the ten minutes the store is told to stop a
+    /// count at, so that it is the store that ends a statement and says why.
+    /// </summary>
+    [Fact]
+    public async Task Months_Are_Counted_Over_A_Client_Given_Longer_Than_The_Store_Gives_A_Count()
+    {
+        var sent = new Tally();
+
+        using var watched = stack.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddHttpClient(ClickHouseRegistration.ConsolidationHttpClientName)
+                .AddHttpMessageHandler(() => new Counting(sent))));
+
+        var months = watched.Services.GetRequiredService<IMonthConsolidation>();
+        var now = watched.Services.GetRequiredService<TimeProvider>().GetUtcNow();
+        var before = sent.Count;
+
+        await months.SurveyAsync(Guid.NewGuid(), "Asia/Kolkata", now, Cancellation.Token);
+
+        sent.Count.Should().BeGreaterThan(before, "counting a month sends what it sends over its own client");
+        watched.Services.GetRequiredService<IHttpClientFactory>()
+            .CreateClient(ClickHouseRegistration.ConsolidationHttpClientName).Timeout
+            .Should().Be(ClickHouseRegistration.LongestConsolidationStatement)
+            .And.BeGreaterThan(TimeSpan.FromMinutes(10), "the store stops a count at ten minutes, and says why");
     }
 
     [Fact]
@@ -224,6 +258,67 @@ public sealed class TelemetrySchemaTests(AnalyticsStackFixture stack)
         definition.Should().Contain("PARTITION BY toYYYYMM(server_ts)");
         definition.Should().Contain("ORDER BY (site_id, server_ts, event_id)");
         definition.Should().Contain("TTL toDateTime(server_ts) + toIntervalMonth(12)");
+    }
+
+    /// <summary>
+    /// A website's months are kept until the website is removed, even after it stops being measured,
+    /// or until its closed account's records are deleted: one row per website and month, replaced
+    /// whole by its newest count, with no rule that would ever expire it.
+    /// </summary>
+    [Fact]
+    public async Task Kept_Months_Are_One_Row_Per_Month_And_Never_Expire()
+    {
+        var definition = await TableDefinitionAsync("consolidated_months");
+
+        definition.Should().Contain("ENGINE = ReplacingMergeTree(counted_at)");
+        definition.Should().Contain("PARTITION BY toYear(month)");
+        definition.Should().Contain("ORDER BY (site_id, month)");
+        definition.Should().NotContain("TTL");
+    }
+
+    /// <summary>
+    /// Whether a website's oldest report is its first rests on when this installation began keeping
+    /// months, which is when its store gained the table they are kept in. The store records that once,
+    /// when the change is applied, and both the engine's count and the dashboard's record read the
+    /// same moment from it.
+    /// </summary>
+    [Fact]
+    public async Task Keeping_Months_Began_When_The_Store_Gained_Somewhere_To_Keep_Them()
+    {
+        var applied = await TelemetryStore.RowsAsync(
+            Client,
+            "SELECT name, applied_at FROM schema_migrations WHERE version = 14");
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: $"kept-{Guid.NewGuid():n}.example");
+        var now = stack.Services.GetRequiredService<TimeProvider>().GetUtcNow();
+
+        var survey = await stack.Services.GetRequiredService<IMonthConsolidation>()
+            .SurveyAsync(site.Id, site.TimeZoneId, now, Cancellation.Token);
+        var record = await stack.Services.GetRequiredService<ITelemetryQueries>()
+            .GetKeptMonthsAsync(
+                new TenantScope(site.Id, site.OrganizationId, SiteRole.Viewer, site.TimeZoneId, site.CreatedAt),
+                new KeptMonthsQuery(now),
+                Cancellation.Token);
+
+        applied.Should().ContainSingle().Which["name"].Should().Be("months_kept_after_their_reports");
+        var began = new DateTimeOffset(DateTime.SpecifyKind((DateTime)applied[0]["applied_at"]!, DateTimeKind.Utc));
+        survey.KeepingSince.Should().Be(began);
+        record.KeepingSince.Should().Be(began);
+    }
+
+    /// <summary>
+    /// The engine stops counting a month a day before its oldest report could go, reckoned from how
+    /// long it believes a report is kept. That belief is held to every table the count reads, so the
+    /// two cannot drift apart and leave months counted after their reports had begun to expire.
+    /// </summary>
+    [Theory]
+    [InlineData("events")]
+    [InlineData("session_classifications")]
+    [InlineData("name_confirmations")]
+    public async Task The_Months_The_Engine_Assumes_A_Report_Is_Kept_Are_The_Months_The_Store_Keeps_It(string table)
+    {
+        var definition = await TableDefinitionAsync(table);
+
+        definition.Should().Contain($" + toIntervalMonth({Retention.ReportMonths})");
     }
 
     /// <summary>

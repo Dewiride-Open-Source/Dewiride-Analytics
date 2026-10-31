@@ -3,6 +3,9 @@ import { EVERY_JOURNEY } from '@/lib/analytics/journeys';
 import type { Population } from '@/lib/analytics/people-only';
 import {
   readActions,
+  readAllTime,
+  readAllTimeSeries,
+  readAllTimeTraffic,
   readDevices,
   readEngagement,
   readFacets,
@@ -190,6 +193,176 @@ describe('asking the engine what generated a period’s traffic', () => {
     expect(asked.get('granularity')).toBe('hour');
     expect(asked.get('from')).toBe(FROM);
     expect(asked.get('to')).toBe(TO);
+  });
+
+  /** The engine says back how it cut the period, and an answer by the week is read as one. */
+  it('asks for the period cut by the week, and reads the weeks back', async () => {
+    const engine = engineAnswering(200, { ...NOTHING_JUDGED, granularity: 'week' });
+
+    await expect(readTrafficSeries(SITE, PERIOD, 'week')).resolves.toMatchObject({
+      granularity: 'week',
+    });
+    expect(askedIn(engine.first().path).get('granularity')).toBe('week');
+  });
+
+  it('asks for the period cut by the month, and reads the months back', async () => {
+    const engine = engineAnswering(200, { ...NOTHING_JUDGED, granularity: 'month' });
+
+    await expect(readTrafficSeries(SITE, PERIOD, 'month')).resolves.toMatchObject({
+      granularity: 'month',
+    });
+    expect(askedIn(engine.first().path).get('granularity')).toBe('month');
+  });
+});
+
+describe('asking the engine for a measure in buckets', () => {
+  const NOTHING_COUNTED = {
+    from: FROM,
+    to: TO,
+    metric: 'pageviews',
+    completeTo: TO,
+    points: [],
+  };
+
+  it('asks for the period cut by the week', async () => {
+    const engine = engineAnswering(200, { ...NOTHING_COUNTED, granularity: 'week' });
+
+    await expect(readSeries(SITE, 'pageviews', PERIOD, 'everybody', 'week')).resolves.toMatchObject(
+      { granularity: 'week' },
+    );
+
+    const asked = askedIn(engine.first().path);
+
+    expect(addressOf(engine.first().path)).toBe(`/api/sites/${SITE}/series`);
+    expect(asked.get('granularity')).toBe('week');
+    expect(asked.get('metric')).toBe('pageviews');
+  });
+
+  it('asks for the period cut by the month, for the people alone where asked', async () => {
+    const engine = engineAnswering(200, {
+      ...NOTHING_COUNTED,
+      metric: 'visitors',
+      granularity: 'month',
+    });
+
+    await readSeries(SITE, 'visitors', PERIOD, 'people', 'month');
+
+    const asked = askedIn(engine.first().path);
+
+    expect(asked.get('granularity')).toBe('month');
+    expect(asked.get('only')).toBe('people');
+  });
+
+  /** A way of cutting this dashboard never asks for is an answer it cannot draw, and is refused. */
+  it('refuses an answer cut in a way the dashboard never asks for', async () => {
+    engineAnswering(200, { ...NOTHING_COUNTED, granularity: 'fortnight' });
+
+    await expect(readSeries(SITE, 'pageviews', PERIOD, 'everybody', 'week')).rejects.toThrow();
+  });
+});
+
+/**
+ * All time has no window: it is every month the engine holds for a website, and the engine says
+ * which months those are.
+ */
+describe('asking the engine about all time', () => {
+  const NEVER_MEASURED = {
+    from: null,
+    to: TO,
+    firstDay: null,
+    detailFrom: FROM,
+    pageViews: 0,
+    visitors: 0,
+    completeTo: TO,
+    missing: [],
+    unjudged: [],
+  };
+
+  const MONTHS = {
+    from: FROM,
+    to: TO,
+    metric: 'pageviews',
+    granularity: 'month',
+    completeTo: TO,
+    points: [
+      { bucketStart: '2026-06-30T18:30:00+00:00', value: 120 },
+      { bucketStart: '2026-07-31T18:30:00+00:00', value: null },
+    ],
+    missing: ['2026-08'],
+    unjudged: [],
+  };
+
+  it('asks about everybody by saying nothing, with no bare question mark', async () => {
+    const engine = engineAnswering(200, NEVER_MEASURED);
+
+    await readAllTime(SITE, 'everybody');
+
+    expect(engine.first().path).toBe(`/api/sites/${SITE}/all-time`);
+  });
+
+  it('asks about the people by name, and never about a window', async () => {
+    const engine = engineAnswering(200, NEVER_MEASURED);
+
+    await readAllTime(SITE, 'people');
+
+    const asked = askedIn(engine.first().path);
+
+    expect(addressOf(engine.first().path)).toBe(`/api/sites/${SITE}/all-time`);
+    expect([...asked.keys()]).toStrictEqual(['only']);
+    expect(asked.get('only')).toBe('people');
+  });
+
+  /** A month never counted is nothing, and reads back as nothing rather than as nought. */
+  it('asks for a measure by the month, and reads a month never counted as nothing', async () => {
+    const engine = engineAnswering(200, MONTHS);
+
+    await expect(readAllTimeSeries(SITE, 'pageviews', 'month', 'people')).resolves.toMatchObject({
+      points: [{ value: 120 }, { value: null }],
+      missing: ['2026-08'],
+      unjudged: [],
+    });
+
+    const asked = askedIn(engine.first().path);
+
+    expect(addressOf(engine.first().path)).toBe(`/api/sites/${SITE}/all-time/series`);
+    expect(asked.get('metric')).toBe('pageviews');
+    expect(asked.get('granularity')).toBe('month');
+    expect(asked.get('only')).toBe('people');
+    expect(asked.has('from')).toBe(false);
+  });
+
+  it('asks who came by the year, of no population', async () => {
+    const engine = engineAnswering(200, {
+      from: FROM,
+      to: TO,
+      granularity: 'year',
+      completeTo: TO,
+      buckets: ['2025-12-31T18:30:00+00:00'],
+      groups: [{ category: 'likely-human', sessions: [null], pageViews: [null] }],
+      missing: [],
+      unjudged: [],
+    });
+
+    await readAllTimeTraffic(SITE, 'year');
+
+    const asked = askedIn(engine.first().path);
+
+    expect(addressOf(engine.first().path)).toBe(`/api/sites/${SITE}/all-time/traffic/series`);
+    expect([...asked.keys()]).toStrictEqual(['granularity']);
+    expect(asked.get('granularity')).toBe('year');
+  });
+
+  /** All time is never cut finer than a month, so an answer that says it was cannot be drawn. */
+  it('refuses an answer cut finer than a month', async () => {
+    engineAnswering(200, { ...MONTHS, granularity: 'week' });
+
+    await expect(readAllTimeSeries(SITE, 'pageviews', 'month', 'everybody')).rejects.toThrow();
+  });
+
+  it('refuses a month named by anything but its year and its number', async () => {
+    engineAnswering(200, { ...NEVER_MEASURED, missing: ['2026-13'] });
+
+    await expect(readAllTime(SITE, 'everybody')).rejects.toThrow();
   });
 });
 

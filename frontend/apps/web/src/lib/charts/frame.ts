@@ -36,6 +36,31 @@ export const LAYERS = {
  */
 export const UNSETTLED = 0.35;
 
+/**
+ * How the card a hover opens writes one figure of a measure, as the engine hands it over with the
+ * place of its bucket.
+ */
+export type FigureWriter = (value: unknown, at?: number) => string;
+
+/**
+ * Writes a measure's figures in the card a hover opens: in the reader's own way, and a bucket with
+ * no figure in the words the table uses for it, which say why it has none. Left to itself the
+ * engine writes a dash there, which reads as a figure of its own.
+ *
+ * Given to the measures a picture is drawn from and never to the period before, whose buckets past
+ * its own end are nothing because that period had none, not because a month went uncounted.
+ *
+ * @param written How the reader writes a number.
+ * @param nothing What a bucket with no figure is called, by its place — or where the engine does
+ * not say which bucket it is.
+ */
+export function figureWriter(
+  written: (value: number) => string,
+  nothing: (at: number | undefined) => string,
+): FigureWriter {
+  return (value, at) => (typeof value === 'number' ? written(value) : nothing(at));
+}
+
 /** What the engine hands the heading of the card a hover opens. */
 interface Pointed {
   /** The bucket's name as the axis writes it. */
@@ -60,6 +85,19 @@ function heading(titles: readonly string[]): (pointed: Pointed) => string {
   };
 }
 
+/** How the buckets along the axis are named. */
+interface Naming {
+  /**
+   * Whether every bucket is named rather than as many as fit. A picture of years holds only a
+   * handful, each a year of a website's history, and a year left unnamed on a phone is one a reader
+   * cannot place.
+   */
+  readonly every?: boolean;
+}
+
+/** Names every bucket along the axis, handed to the engine where it asks which buckets to name. */
+const EVERY_BUCKET = () => true;
+
 /**
  * The frame both pictures on the overview are drawn inside.
  *
@@ -72,12 +110,14 @@ function heading(titles: readonly string[]): (pointed: Pointed) => string {
  * than at a point on it.
  * @param titles What each bucket is called over the card a hover opens, in the order of the
  * labels; the label itself where left out.
+ * @param naming How the buckets along the axis are named: as many as fit where left out.
  */
 export function chartFrame(
   palette: ChartPalette,
   labels: readonly string[],
   columns: boolean,
   titles: readonly string[] = labels,
+  { every = false }: Naming = {},
 ) {
   const pointer = columns
     ? {
@@ -122,12 +162,19 @@ export function chartFrame(
       // a name that would collide with it gives way. Which buckets are named is settled after the
       // picture is fitted to its labels, so on a phone the last name chosen can otherwise sit a
       // column from the edge and be cut off part-way through — "3:58 PM" drawn as "3:58 P".
+      //
+      // Where every bucket is named, none is left out to make room, and the last name drawn as a
+      // column is centred on it instead: ending at the middle of its column it reaches back over
+      // the one before, and a column's middle is far enough from the edge for the whole name. Both
+      // are stated either way, since the engine keeps a setting of an axis until another replaces
+      // it, and a picture of months drawn after one of years would otherwise name every month.
       axisLabel: {
         color: palette.label,
         fontSize: 11,
         hideOverlap: true,
+        interval: every ? EVERY_BUCKET : ('auto' as const),
         showMaxLabel: true,
-        alignMaxLabel: 'right' as const,
+        alignMaxLabel: every && columns ? ('center' as const) : ('right' as const),
       },
     },
     yAxis: {

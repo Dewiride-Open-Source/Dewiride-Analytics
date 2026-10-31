@@ -233,6 +233,9 @@ public sealed partial class ClosedAccountPurge(
 
             foreach (var siteId in siteIds)
             {
+                await AdvisoryLocks
+                    .TakeAsync(database, AdvisoryLocks.SiteTelemetryNamespace, siteId, cancellationToken)
+                    .ConfigureAwait(false);
                 await telemetry.PurgeSiteAsync(siteId, cancellationToken).ConfigureAwait(false);
             }
 

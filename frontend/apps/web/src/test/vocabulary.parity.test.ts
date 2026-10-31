@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PRESETS } from '@/lib/analytics/period';
+import { CHART_BYS } from '@/lib/analytics/chart-by';
+import { GRANULARITIES, hasEarlier, KEPT_MONTHS, PRESETS } from '@/lib/analytics/period';
 import { reasonKey } from '@/lib/analytics/verdicts';
 import {
   captureSurfaceSchema,
@@ -49,6 +50,25 @@ const DECLARED_IDENTITY = path.join(
 const ARRIVAL = path.join(
   REPOSITORY,
   'backend/src/Dewiride.Analytics.Classification/Detectors/ArrivalDetector.cs',
+);
+
+/**
+ * The tables a period's figures are counted from: the reports of what was read, the verdicts on
+ * who read it, and the names confirmed for the crawlers among them.
+ */
+const COUNTED_FROM = [
+  'backend/migrations/clickhouse/0001_events.sql',
+  'backend/migrations/clickhouse/0003_session_classifications.sql',
+  'backend/migrations/clickhouse/0010_name_confirmations.sql',
+].map((file) => path.join(REPOSITORY, file));
+
+/**
+ * Where the engine states, in its own code, how many months it keeps those reports — the figure it
+ * works out which months it can still count from, and where the days it holds in detail begin.
+ */
+const RETENTION = path.join(
+  REPOSITORY,
+  'backend/src/Dewiride.Analytics.Application/Telemetry/Retention.cs',
 );
 
 /** Every value a declaration in the engine's source assigns. */
@@ -223,11 +243,91 @@ describe('the periods this dashboard offers', () => {
     expect(isWritten(wordsAt(`dashboard.period.presets.${preset}`))).toBe(true);
   });
 
-  it.each(PRESETS)('says in words what %s is measured against', (preset) => {
+  it.each(PRESETS.filter(hasEarlier))('says in words what %s is measured against', (preset) => {
     expect(isWritten(wordsAt(`dashboard.metrics.against.${preset}`))).toBe(true);
+  });
+
+  /** All time has nothing before it, so a sentence naming what it is measured against says nothing true. */
+  it('names no comparison for a period with nothing before it', () => {
+    const measured = [...PRESETS.filter(hasEarlier), 'chosen'].sort();
+
+    expect([...sentencesUnder('dashboard.metrics.against')].sort()).toEqual(measured);
+    expect(PRESETS.filter((preset) => !hasEarlier(preset))).toStrictEqual(['all-time']);
   });
 
   it('names no period it cannot offer', () => {
     expect([...sentencesUnder('dashboard.period.presets')].sort()).toEqual([...PRESETS].sort());
+  });
+});
+
+/**
+ * Every way a picture can be cut needs a name in the list somebody picks it from, a heading for the
+ * first column of its table, and a sentence under each picture saying where its buckets are cut.
+ */
+describe('the ways this dashboard cuts a picture', () => {
+  /** Whatever the list of ways holds besides the ways themselves. */
+  const AROUND_THE_WAYS = ['label', 'moves', 'moved'];
+
+  it.each(CHART_BYS)('has a name for cutting a picture by the %s', (cut) => {
+    expect(isWritten(wordsAt(`dashboard.chart.by.${cut}`))).toBe(true);
+  });
+
+  it('names no way of cutting a picture it cannot offer', () => {
+    const named = sentencesUnder('dashboard.chart.by').filter(
+      (sentence) => !AROUND_THE_WAYS.includes(sentence),
+    );
+
+    expect([...named].sort()).toEqual([...CHART_BYS].sort());
+  });
+
+  it.each(GRANULARITIES)('heads the first column of a picture cut by the %s', (granularity) => {
+    expect(isWritten(wordsAt(`dashboard.chart.column.${granularity}`))).toBe(true);
+  });
+
+  it.each(GRANULARITIES)(
+    'says where a picture cut by the %s is cut, in every picture',
+    (granularity) => {
+      for (const picture of ['activity', 'who', 'people', 'people.activity']) {
+        expect(isWritten(wordsAt(`dashboard.chart.${picture}.cut.${granularity}`))).toBe(true);
+      }
+    },
+  );
+
+  it('writes nothing for a way of cutting a picture that does not exist', () => {
+    for (const group of [
+      'column',
+      'activity.cut',
+      'who.cut',
+      'people.cut',
+      'people.activity.cut',
+    ]) {
+      expect([...sentencesUnder(`dashboard.chart.${group}`)].sort()).toEqual(
+        [...GRANULARITIES].sort(),
+      );
+    }
+  });
+});
+
+/**
+ * The dashboard never reaches back past the days a website still holds, and works out which those
+ * are from how long the engine keeps what a period is counted from. The two are one fact kept in
+ * two languages, so the engine's own schema is read rather than a copy of the number.
+ */
+describe('how long the engine keeps what a period is counted from', () => {
+  it.each(COUNTED_FROM)('keeps %s exactly as long as the dashboard believes', (file) => {
+    const [kept] = declared(file, /^TTL toDateTime\(\w+\) \+ INTERVAL (\d+) MONTH/gm);
+
+    expect(Number(kept)).toBe(KEPT_MONTHS);
+  });
+
+  /**
+   * The engine works out for itself which months it can still count and where the days it holds in
+   * detail begin, from its own figure for how long reports are kept. That figure is the dashboard's
+   * too, or a month the screen offers to open would be a month the engine no longer holds.
+   */
+  it('works out what it still holds from the same number of months as the dashboard', () => {
+    const [kept] = declared(RETENTION, /public const int ReportMonths = (\d+);/g);
+
+    expect(Number(kept)).toBe(KEPT_MONTHS);
   });
 });

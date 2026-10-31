@@ -1655,7 +1655,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         await using var scope = stack.Services.CreateAsyncScope();
 
         return await scope.ServiceProvider.GetRequiredService<SessionClassifier>()
-            .CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt.AddDays(-2)), Cancellation.Token)
+            .CatchUpAsync(new SiteRegistration(site.Id, site.Domain, site.CreatedAt.AddDays(-2), site.TimeZoneId), Cancellation.Token)
             .ConfigureAwait(false);
     }
 
@@ -1715,7 +1715,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
             .GetTrafficBreakdownAsync(Scope(site), new TrafficBreakdownQuery(Window()), Cancellation.Token);
 
     private static TenantScope Scope(Site site) =>
-        new(site.Id, site.OrganizationId, SiteRole.Viewer, site.TimeZoneId);
+        new(site.Id, site.OrganizationId, SiteRole.Viewer, site.TimeZoneId, site.CreatedAt);
 
     private TimeRange Window() =>
         new(Now.AddDays(-2), Now.AddMinutes(1));

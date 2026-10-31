@@ -13,6 +13,9 @@
   remembered by the browser, and an address that says nothing is given it.
 - **Revised by**: [0041](0041-one-population-for-the-whole-screen.md), which makes the population
   the whole screen's rather than the picture's, so the cards and the picture add up.
+- **Extended by**: [0063](0063-the-picture-is-drawn-by-the-day-the-week-or-the-month.md), which
+  remembers how finely the picture is cut as `dewiride.chart-by`, on the same terms as the view and
+  the comparison, and keeps a remembered cut a short period cannot offer for the next long one.
 
 ## Context
 

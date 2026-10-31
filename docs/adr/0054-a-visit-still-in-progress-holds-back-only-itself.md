@@ -14,6 +14,9 @@
 - **Revises**: [0041](0041-one-population-for-the-whole-screen.md), whose series of people is
   complete to "an idle timeout behind the present". That is where judging can have reached at the
   most, not where it has.
+- **Revised by**: [0064](0064-a-month-outlives-the-reports-it-was-counted-from.md). A picture of one
+  bucket runs to the present and never settles, so the whole period is said to be still being judged
+  there only where judging has reached none of it.
 
 ## Context
 

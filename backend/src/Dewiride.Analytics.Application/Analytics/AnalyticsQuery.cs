@@ -67,6 +67,31 @@ public sealed record TimeSeriesQuery(TimeRange Range, TimeGranularity Granularit
 }
 
 /// <summary>Bucket size for a time series.</summary>
+/// <remarks>
+/// <para>
+/// Every bucket is cut on the calendar the website keeps, in its configured time zone, and named
+/// by the instant it begins: the top of an hour, or the start of a day, of a Monday or of the first
+/// of a month — its midnight, or the first instant the clocks show that day where they skip
+/// midnight. A bucket keeps its calendar length wherever the clocks change inside it, so a day can
+/// be twenty-three or twenty-five hours long and is still one day, and a week or a month across a
+/// change is still one bucket. A window holds one bucket for each day, week or month of the
+/// website's calendar it reaches into, whether or not anything happened in it.
+/// </para>
+/// <para>
+/// The first and last buckets of a window need not lie inside it. A window opening on a Wednesday
+/// has a first week named after the Monday before, and a window closing mid-month a last month
+/// named after its first; each counts only what the window holds, never the part of the bucket
+/// outside it.
+/// </para>
+/// <para>
+/// A bucket counts each visitor key once, however long the bucket is. A key covers one UTC day, so
+/// a bucket longer than a day counts somebody once for every day their key was rebuilt on — and
+/// because the key's day is UTC's rather than the website's, somebody who reads on both sides of a
+/// local midnight away from UTC under one key is one visitor in the week holding both readings and
+/// one in each of the two days. A week or a month can therefore hold fewer visitors than its days
+/// added up, and never more.
+/// </para>
+/// </remarks>
 public enum TimeGranularity
 {
     /// <summary>One bucket per hour.</summary>
@@ -74,6 +99,15 @@ public enum TimeGranularity
 
     /// <summary>One bucket per day, in the site's configured time zone.</summary>
     Day = 2,
+
+    /// <summary>
+    /// One bucket per week, Monday to Sunday as ISO 8601 has it, in the site's configured time
+    /// zone.
+    /// </summary>
+    Week = 3,
+
+    /// <summary>One bucket per calendar month, in the site's configured time zone.</summary>
+    Month = 4,
 }
 
 /// <summary>Which metric a time series reports.</summary>
@@ -1151,4 +1185,36 @@ public sealed record SiteLiveTrailQuery : AnalyticsQuery
 
     /// <summary>How many steps to carry back.</summary>
     public int Limit { get; }
+}
+
+/// <summary>
+/// A website's whole record, month by month: every month from the first it has a record of to the
+/// one running now, and what was kept of each.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The one question answered from the months kept after their reports rather than from the reports
+/// themselves, which is what lets it reach back further than the twelve months a report is kept.
+/// It carries no figure for a month that was never kept — the month running now, a month not yet
+/// counted, a month whose reports went before it could be — and leaves the caller to answer those
+/// from the reports, where they are still held, or to say they are missing.
+/// </para>
+/// <para>
+/// Asked of people alone it reads the figures kept for them beside everybody's, on the same row and
+/// from the same count.
+/// </para>
+/// </remarks>
+public sealed record KeptMonthsQuery : AnalyticsQuery
+{
+    /// <summary>
+    /// Asks for the record as it stands at a moment.
+    /// </summary>
+    /// <param name="asOf">The moment, which decides which month is the one running now.</param>
+    public KeptMonthsQuery(DateTimeOffset asOf)
+        : base(new TimeRange(DateTimeOffset.UnixEpoch, asOf))
+    {
+    }
+
+    /// <summary>Who the kept figures are about.</summary>
+    public Population Population { get; init; } = Population.Everybody;
 }

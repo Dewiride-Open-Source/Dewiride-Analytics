@@ -443,5 +443,5 @@ public sealed class VisitDetailsTests(AnalyticsStackFixture stack)
     private static string Domain() => $"{Guid.NewGuid():n}.example.com";
 
     private static TenantScope Scope(Site site) =>
-        new(site.Id, site.OrganizationId, SiteRole.Viewer, site.TimeZoneId);
+        new(site.Id, site.OrganizationId, SiteRole.Viewer, site.TimeZoneId, site.CreatedAt);
 }

@@ -8,6 +8,8 @@
 - **Follows**: [0017](0017-a-rented-address-is-a-lease-not-a-visitor.md) and
   [0034](0034-a-visit-begins-where-somebody-arrived.md), which describe the visitor key as
   `HMAC(the day's salt, site ‖ day ‖ connection ‖ user agent)` under a salt that rotates daily.
+- **Followed by**: [0064](0064-a-month-outlives-the-reports-it-was-counted-from.md), which states the
+  whole retention envelope, this record's salt lifecycle included.
 
 ## Context
 

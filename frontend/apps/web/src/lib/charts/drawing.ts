@@ -34,12 +34,45 @@ const OFFERED: Readonly<Record<ChartView, readonly Drawing[]>> = {
   activity: ['line', 'columns', 'area'],
 };
 
-/** What a view may be drawn as. */
-export function drawingsFor(view: ChartView): readonly Drawing[] {
-  return OFFERED[view];
+/**
+ * The fewest buckets a picture needs before a line or an area has a shape to draw.
+ *
+ * One bucket is a single point, which a line and an area draw as nothing at all, and two are one
+ * slope between two figures, read as a trend that is not there. Set side by side as columns, each
+ * is read as the figure it is — which is how the first month of a website's all time is drawn, and
+ * its first two years.
+ */
+export const SHAPED_FROM = 3;
+
+/** The one style a picture with too few buckets for a shape is drawn in. */
+const FEW: readonly Drawing[] = ['columns'];
+
+/**
+ * What a view may be drawn as.
+ *
+ * @param view The question the picture answers.
+ * @param buckets How many buckets the picture has, where that is known.
+ */
+export function drawingsFor(view: ChartView, buckets?: number): readonly Drawing[] {
+  return tooFew(buckets) ? FEW : OFFERED[view];
 }
 
-/** The style a view is actually drawn in, given what somebody last asked for. */
-export function drawingFor(view: ChartView, remembered: Drawing): Drawing {
+/**
+ * The style a view is actually drawn in, given what somebody last asked for.
+ *
+ * @param view The question the picture answers.
+ * @param remembered The style somebody last asked for.
+ * @param buckets How many buckets the picture has, where that is known.
+ */
+export function drawingFor(view: ChartView, remembered: Drawing, buckets?: number): Drawing {
+  if (tooFew(buckets)) {
+    return 'columns';
+  }
+
   return drawingsFor(view).includes(remembered) ? remembered : DEFAULT_DRAWING;
+}
+
+/** Whether a picture has too few buckets for a line or an area to have a shape. */
+function tooFew(buckets: number | undefined): boolean {
+  return buckets !== undefined && buckets < SHAPED_FROM;
 }

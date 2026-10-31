@@ -1,3 +1,4 @@
+using Dewiride.Analytics.Application.Consolidation;
 using Dewiride.Analytics.Application.Ingest;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Classification;
@@ -31,6 +32,7 @@ public static class ApplicationRegistration
         builder.Services.AddSingleton(TrafficClassifier.Current());
         builder.Services.AddScoped<SessionClassifier>();
         builder.Services.AddScoped<LiveTrafficReader>();
+        builder.Services.AddScoped<MonthlyConsolidation>();
 
         return builder;
     }

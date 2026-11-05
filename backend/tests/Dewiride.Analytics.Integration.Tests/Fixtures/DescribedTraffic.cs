@@ -122,13 +122,13 @@ internal static class DescribedTraffic
     public static RawEvent Arrived(Guid siteId, DateTimeOffset at, string path) =>
         Reported(siteId, at, path, EventKind.PageView);
 
-    /// <summary>A page saying how the reading is going.</summary>
+    /// <summary>A page saying how the reading went, as it was left.</summary>
     /// <param name="siteId">The site it belongs to.</param>
     /// <param name="at">When it said so.</param>
     /// <param name="path">Which page.</param>
     /// <returns>The report.</returns>
     public static RawEvent Read(Guid siteId, DateTimeOffset at, string path) =>
-        Reported(siteId, at, path, EventKind.Engagement) with
+        Reported(siteId, at, path, EventKind.Exit) with
         {
             EngagedMs = 42_000,
             ScrollDepthPercent = 80,

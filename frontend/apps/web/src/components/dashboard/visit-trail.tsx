@@ -472,7 +472,9 @@ function Reading({ step }: { readonly step: VisitJourneyStep }) {
     );
   }
 
-  const { minutes, seconds } = splitDuration(step.engagedMs);
+  // In whole seconds, counted down as the sentences beneath count them, so a page left at 14.6
+  // seconds is not written as the 15 it fell short of.
+  const { minutes, seconds } = splitDuration(Math.floor(step.engagedMs / 1000) * 1000);
 
   return (
     <>

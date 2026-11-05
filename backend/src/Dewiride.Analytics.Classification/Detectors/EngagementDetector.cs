@@ -8,11 +8,19 @@ namespace Dewiride.Analytics.Classification.Detectors;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The detector whose signals carry most of what the product can say about a person. Scrolling,
-/// touching and reading are cheap to fake in principle and rarely faked in practice, because
-/// automation that wanted to be counted as human would have to run a real browser, spend real
-/// seconds on a page and then let it go the way a reader does — at which point it is paying a
-/// person's price for a page.
+/// The detector whose signals carry most of what the product can say about a person. Staying on a
+/// page is cheap to fake in principle and rarely faked in practice, because automation that wanted
+/// to be counted as human would have to run a real browser, spend real seconds on a page and then
+/// let it go the way a reader does — at which point it is paying a person's price for a page.
+/// </para>
+/// <para>
+/// A visit that came straight in has only that to speak for it. How far down a page came into view
+/// counts the first screen, and a program can press a key as easily as anybody. A fleet of browsers
+/// measured on real traffic opened one page in a window three thousand pixels tall and closed it,
+/// half of them within half a second, with a third of the page counted as seen, which a window that
+/// tall reaches by being opened. So where nothing named a sender, how far down a page was seen counts
+/// only once the pages have stayed fifteen seconds, and a press does not count at any length of stay.
+/// A visit another site sent has that arrival beside what it did, and what it did counts.
 /// </para>
 /// <para>
 /// Every reading here is skipped when it was not observed. A session no browser surface reported
@@ -47,6 +55,16 @@ public sealed class EngagementDetector : IDetector
     /// </remarks>
     private const int LeftOpenWeight = 20;
 
+    /// <summary>
+    /// What a short stay and how far down a page was seen are worth on a visit that came straight
+    /// in and did not stay.
+    /// </summary>
+    /// <remarks>
+    /// Below the weight at which an observation counts toward a conclusion, and still reported,
+    /// because a reader of the verdict is owed what was seen as well as why it did not settle it.
+    /// </remarks>
+    private const int TooLightToCount = 20;
+
     /// <summary>Time beyond which the reading counts for as much as it is going to.</summary>
     private const int SubstantialReadMs = 15000;
 
@@ -70,6 +88,7 @@ public sealed class EngagementDetector : IDetector
         AddLeftOpen(found, session);
         AddScrolling(found, session);
         AddTouching(found, session);
+        AddBriefStay(found, session);
         AddSilence(found, session);
 
         return found.ToImmutable();
@@ -84,8 +103,14 @@ public sealed class EngagementDetector : IDetector
 
         // Reaching a substantial read is worth more than scraping past the threshold, and nothing
         // beyond it is worth more still: a tab left open all afternoon says no more about whether
-        // somebody was reading than one open for a minute.
-        var weight = read >= SubstantialReadMs ? 60 : 40;
+        // somebody was reading than one open for a minute. Short of that, a moment on a page counts
+        // only where another site sent the visit there.
+        var weight = read switch
+        {
+            >= SubstantialReadMs => 60,
+            _ when session.SentByAnotherSite => 40,
+            _ => TooLightToCount,
+        };
 
         found.Add(Observed.Signal(
             SignalCodes.ReadTime,
@@ -104,6 +129,9 @@ public sealed class EngagementDetector : IDetector
     /// </remarks>
     private static int? Read(SessionEvidence session) =>
         session.EngagedMs is int engaged ? Math.Max(0, engaged - (session.LeftOpenMs ?? 0)) : null;
+
+    /// <summary>Whether the session's pages stayed long enough for the reading to count by itself.</summary>
+    private static bool Stayed(SessionEvidence session) => Read(session) is >= SubstantialReadMs;
 
     private static void AddLeftOpen(ImmutableArray<Signal>.Builder found, SessionEvidence session)
     {
@@ -126,10 +154,13 @@ public sealed class EngagementDetector : IDetector
             return;
         }
 
+        // The first screen counts toward the depth, so on a visit that came straight in it says
+        // nothing about anybody until the pages have stayed: a window tall enough reaches a quarter
+        // of a page by being opened.
         found.Add(Observed.Signal(
             SignalCodes.Scrolled,
             SignalDirection.TowardHuman,
-            45,
+            session.SentByAnotherSite || Stayed(session) ? 45 : TooLightToCount,
             ("percent", Observed.Number(depth))));
     }
 
@@ -137,14 +168,66 @@ public sealed class EngagementDetector : IDetector
     {
         if (session.HadPointerInteraction == true)
         {
-            found.Add(Observed.Signal(SignalCodes.PointerUsed, SignalDirection.TowardHuman, 55));
+            found.Add(Press(SignalCodes.PointerUsed, 55, session));
         }
 
         if (session.HadKeyboardInteraction == true)
         {
-            found.Add(Observed.Signal(SignalCodes.KeyboardUsed, SignalDirection.TowardHuman, 50));
+            found.Add(Press(SignalCodes.KeyboardUsed, 50, session));
         }
     }
+
+    /// <summary>
+    /// What a press is worth, by whether anything named a sender.
+    /// </summary>
+    /// <remarks>
+    /// A program can press as easily as anybody, so on a visit that came straight in a press is not
+    /// taken as a sign of a person. It stays on the record as something seen, pointing nowhere.
+    /// </remarks>
+    private static Signal Press(string code, int weightWhereSent, SessionEvidence session) =>
+        session.SentByAnotherSite
+            ? Observed.Signal(code, SignalDirection.TowardHuman, weightWhereSent)
+            : Observed.Signal(code, SignalDirection.Neutral, 0);
+
+    /// <summary>
+    /// Says why a visit that came straight in was not taken for somebody reading, where anything
+    /// about it looked like reading.
+    /// </summary>
+    /// <remarks>
+    /// Without it a reader of the verdict is shown what was seen and nothing that says why it did
+    /// not settle the question.
+    /// </remarks>
+    private static void AddBriefStay(ImmutableArray<Signal>.Builder found, SessionEvidence session)
+    {
+        var shortOfAStay = !session.SentByAnotherSite && Read(session) is < SubstantialReadMs;
+
+        if (shortOfAStay && LeftOpenIsNotTheReason(session) && ShowedMoreThanTheTracker(session))
+        {
+            found.Add(Observed.Signal(SignalCodes.BriefStay, SignalDirection.Neutral, 0));
+        }
+    }
+
+    /// <summary>
+    /// Whether the visit is over, and no sentence about time left open already accounts for its
+    /// falling short of a stay.
+    /// </summary>
+    /// <remarks>
+    /// A visitor still on the site has no time left open to read, and their stay is not over, so
+    /// nothing is said about it. Where two seconds or more were left open and would have made the
+    /// fifteen seconds, the sentence about that time gives the reason: it says that time was not
+    /// counted, though nothing then says why how far down a page was seen or a press did not count.
+    /// Less than two seconds left open has no sentence of its own, so the reason is still owed.
+    /// </remarks>
+    private static bool LeftOpenIsNotTheReason(SessionEvidence session) =>
+        session.LeftOpenMs is int leftOpen
+        && (leftOpen < MeaningfulReadMs || session.EngagedMs < SubstantialReadMs);
+
+    /// <summary>Whether anything beyond the tracker having run was seen.</summary>
+    private static bool ShowedMoreThanTheTracker(SessionEvidence session) =>
+        Read(session) >= MeaningfulReadMs
+        || session.MaxScrollDepthPercent >= MeaningfulScrollPercent
+        || session.HadPointerInteraction == true
+        || session.HadKeyboardInteraction == true;
 
     /// <summary>
     /// Reports a session that something was watching and in which nothing whatever happened.
@@ -159,6 +242,12 @@ public sealed class EngagementDetector : IDetector
     /// The time weighed here is all of it, left open or not. A page kept open in front of a browser
     /// is something happening even where it is not somebody reading, and calling it silence would
     /// make a reader whose laptop was shut mid-page into a visit nobody was ever at.
+    /// </para>
+    /// <para>
+    /// A press, or a page seen a quarter of the way down, stops this being reported whatever they
+    /// count for elsewhere, because "nothing was touched" cannot be said of a visit on which something
+    /// was. So on a visit that came straight in a press can keep a visit from being called silent,
+    /// and never makes one a person.
     /// </para>
     /// </remarks>
     private static void AddSilence(ImmutableArray<Signal>.Builder found, SessionEvidence session)

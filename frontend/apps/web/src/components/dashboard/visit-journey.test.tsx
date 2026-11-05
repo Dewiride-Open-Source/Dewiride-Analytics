@@ -174,6 +174,19 @@ describe('the pages one visit went through', () => {
   });
 
   /**
+   * The sentences beneath the trail count whole seconds and state a line at fifteen, so the trail
+   * counts the same way rather than round a time on screen up to the figure it fell short of.
+   */
+  it('never writes a page on screen just short of fifteen seconds as the fifteen it fell short of', async () => {
+    engineWith([{ ...READ[0], engagedMs: 14_600 }]);
+
+    show(1);
+
+    expect(await screen.findByText('14s')).toBeInTheDocument();
+    expect(screen.queryByText('15s')).not.toBeInTheDocument();
+  });
+
+  /**
    * The distinction the whole product rests on, one step at a time — and said once rather than
    * beside every address, which would turn one honest fact into a column of noise.
    */

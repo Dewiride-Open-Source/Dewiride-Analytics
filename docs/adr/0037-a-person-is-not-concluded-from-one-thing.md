@@ -24,6 +24,10 @@
   it was being left: fleets of browsers opened a page, waited and were switched off, and their time
   was a page left open. A page whose wait was cut short — its timers run ahead of its own clocks —
   is automation whatever else it did.
+- **Revised by**: [0065](0065-somebody-who-came-straight-in-has-to-have-stayed.md). On a visit that
+  came straight in, how far down a page was seen and a short read are too light to count until its pages
+  have stayed fifteen seconds, and a press counts for nothing however long they stayed. What another site
+  sent reads as here.
 
 ## Context
 

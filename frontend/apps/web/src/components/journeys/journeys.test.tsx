@@ -74,6 +74,101 @@ const READER = {
   entryPath: '/posts/hello',
 };
 
+const BRIEF = {
+  ...READER,
+  id: 'visit-brief',
+  pageCount: 2,
+  category: 'unknown',
+  strength: 'weak',
+  ruleset: '12.0',
+  supporting: [
+    { code: 'browser.script_executed', direction: 'toward-human', weight: 35, values: {} },
+    {
+      code: 'engagement.scrolled',
+      direction: 'toward-human',
+      weight: 20,
+      values: { percent: '34' },
+    },
+    { code: 'engagement.pointer_used', direction: 'neutral', weight: 0, values: {} },
+    { code: 'engagement.brief_stay', direction: 'neutral', weight: 0, values: {} },
+  ],
+  contradicting: [],
+  context: { ...READER.context, source: '', kind: 'direct' },
+};
+
+/** A page opened straight in a window three thousand pixels tall, and closed at once. */
+const TALL_WINDOW = {
+  ...BRIEF,
+  id: 'visit-tall-window',
+  pageCount: 1,
+  category: 'suspicious-automation',
+  strength: 'moderate',
+  supporting: [
+    {
+      code: 'browser.oversized_window',
+      direction: 'toward-automation',
+      weight: 55,
+      values: { height: '3000' },
+    },
+  ],
+  contradicting: [
+    { code: 'browser.script_executed', direction: 'toward-human', weight: 35, values: {} },
+    {
+      code: 'engagement.scrolled',
+      direction: 'toward-human',
+      weight: 20,
+      values: { percent: '34' },
+    },
+  ],
+};
+
+/** The same window where the page stayed fifteen seconds: a person, with the window against it. */
+const TALL_WINDOW_THAT_STAYED = {
+  ...BRIEF,
+  id: 'visit-tall-window-stayed',
+  pageCount: 1,
+  category: 'likely-human',
+  strength: 'moderate',
+  supporting: [
+    {
+      code: 'engagement.read_time',
+      direction: 'toward-human',
+      weight: 60,
+      values: { seconds: '16' },
+    },
+    { code: 'browser.script_executed', direction: 'toward-human', weight: 35, values: {} },
+  ],
+  contradicting: [
+    {
+      code: 'browser.oversized_window',
+      direction: 'toward-automation',
+      weight: 55,
+      values: { height: '3000' },
+    },
+  ],
+};
+
+/** A page on screen for five seconds, and for fifteen more with no sign of ever being closed. */
+const PARTLY_LEFT_OPEN = {
+  ...BRIEF,
+  id: 'visit-partly-left-open',
+  supporting: [
+    { code: 'browser.script_executed', direction: 'toward-human', weight: 35, values: {} },
+    {
+      code: 'engagement.read_time',
+      direction: 'toward-human',
+      weight: 20,
+      values: { seconds: '5' },
+    },
+    {
+      code: 'engagement.left_open',
+      direction: 'toward-automation',
+      weight: 20,
+      values: { seconds: '15' },
+    },
+  ],
+};
+
 const CRAWLER = {
   id: 'visit-crawler',
   startedAt: '2026-08-17T04:02:00+00:00',
@@ -813,8 +908,85 @@ describe('the user journey screen', () => {
     await userEvent.click(await screen.findByText('3 pages'));
 
     expect(screen.getByText('A real browser ran your tracking code.')).toBeInTheDocument();
+    expect(screen.getByText('Your pages were on screen for about 4 minutes.')).toBeInTheDocument();
+  });
+
+  it('says why what a visit that came straight in showed did not settle it', async () => {
+    engineWith(GROUPS, [BRIEF]);
+
+    show();
+
+    await userEvent.click(await screen.findByText('2 pages'));
+
+    expect(screen.getByText('A page was seen 34% of the way down.')).toBeInTheDocument();
     expect(
-      screen.getByText('Your pages were open in front of somebody for about 4 minutes.'),
+      screen.getByText(
+        'It came straight here and your pages were on screen for under 15 seconds, which is too short to count as somebody reading.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Pointing the other way')).not.toBeInTheDocument();
+  });
+
+  it('marks a press on a visit that came straight in as neither a person nor machinery', async () => {
+    engineWith(GROUPS, [BRIEF]);
+
+    show();
+
+    await userEvent.click(await screen.findByText('2 pages'));
+
+    const press = screen.getByText('The page was clicked or touched.').closest('li');
+    const seen = screen.getByText('A page was seen 34% of the way down.').closest('li');
+
+    expect(press?.querySelector('svg')).toHaveClass('text-foreground-subtle');
+    expect(seen?.querySelector('svg')).toHaveClass('text-positive');
+  });
+
+  it('says how tall a window was, grouping its digits, where that is the reason', async () => {
+    engineWith(GROUPS, [TALL_WINDOW]);
+
+    show();
+
+    await userEvent.click(await screen.findByText('1 page'));
+
+    const reason = screen
+      .getByText(
+        'Its browser reported a window 3,000 pixels tall, taller and narrower than an ordinary screen.',
+      )
+      .closest('li');
+
+    expect(reason?.querySelector('svg')).toHaveClass('text-accent-strong');
+    expect(screen.getByText('Pointing the other way')).toBeInTheDocument();
+    expect(screen.getByText('A real browser ran your tracking code.')).toBeInTheDocument();
+  });
+
+  it('shows the window against the answer, where somebody stayed all the same', async () => {
+    engineWith(GROUPS, [TALL_WINDOW_THAT_STAYED]);
+
+    show();
+
+    await userEvent.click(await screen.findByText('1 page'));
+
+    expect(screen.getByText('Your pages were on screen for 16 seconds.')).toBeInTheDocument();
+    expect(screen.getByText('Pointing the other way')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Its browser reported a window 3,000 pixels tall, taller and narrower than an ordinary screen.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('says what time counted and what was not, where a page was never closed', async () => {
+    engineWith(GROUPS, [PARTLY_LEFT_OPEN]);
+
+    show();
+
+    await userEvent.click(await screen.findByText('2 pages'));
+
+    expect(screen.getByText('Your pages were on screen for 5 seconds.')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Your pages stayed on screen for 15 seconds with no sign they were ever closed, so that time isn't counted as reading.",
+      ),
     ).toBeInTheDocument();
   });
 

@@ -90,7 +90,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
 
     /// <summary>
     /// The case a live installation got wrong: a real browser reading a real page from a rented
-    /// server. Everything the engine watches says person; only where it came from says otherwise,
+    /// server. Its time and how far down it read say person; only where it came from says otherwise,
     /// and that has to survive the whole round trip through both stores to reach the verdict.
     /// </summary>
     [Fact]
@@ -826,6 +826,8 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         found[0].Evidence.HadPointerInteraction.Should().BeNull();
         found[0].Evidence.HadKeyboardInteraction.Should().BeNull();
         found[0].Evidence.DeclaredWebDriver.Should().BeNull();
+        found[0].Evidence.ViewportWidth.Should().BeNull();
+        found[0].Evidence.ViewportHeight.Should().BeNull();
     }
 
     [Fact]
@@ -846,6 +848,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         found[0].Evidence.HadPointerInteraction.Should().BeTrue();
         found[0].Evidence.HadKeyboardInteraction.Should().BeFalse();
         found[0].Evidence.ViewportWidth.Should().Be(1440);
+        found[0].Evidence.ViewportHeight.Should().Be(900);
         found[0].Evidence.Language.Should().Be("en-GB");
         found[0].Evidence.Surfaces.Should().Contain(IngestSurface.BrowserTracker);
     }
@@ -1127,10 +1130,12 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
 
     /// <summary>
     /// The shape measured on Microsoft's network: straight to one page, a while on it, the pointer
-    /// pressed and no key. Still not a person.
+    /// pressed, with and without a key. Still not a person.
     /// </summary>
-    [Fact]
-    public async Task A_Visit_That_Came_Straight_To_A_Cloud_Network_And_Only_Pressed_The_Pointer_Is_Not_A_Person()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_Visit_That_Came_Straight_To_A_Cloud_Network_Is_Not_A_Person_Whatever_Was_Pressed(bool typed)
     {
         var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
         var at = Yesterday;
@@ -1141,6 +1146,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
             {
                 EngagedMs = 26_000,
                 ScrollDepthPercent = 11,
+                HadKeyboardInteraction = typed,
             }));
 
         await JudgeAsync(site);
@@ -1223,6 +1229,141 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         visits[0].Verdict.Category.Should().Be(TrafficCategory.Unknown);
         visits[0].Verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.LeftOpen);
         visits[0].Verdict.Supporting.Should().NotContain(signal => signal.Code == SignalCodes.ReadTime);
+    }
+
+    /// <summary>
+    /// One page opened straight and closed within half a second in an ordinary window, with a third of
+    /// it counted as seen because the first screen held that much. It reaches the engine as a stay too
+    /// brief to count, and the reader is told so.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_Shown_And_Closed_At_Once_Is_Read_Back_As_Could_Not_Be_Told()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = YesterdayAtNoon;
+
+        await WriteAsync(
+            Page(site.Id, "shown", at, "/posts/hello", Chrome),
+            Left(site.Id, "shown", at.AddSeconds(1), "/posts/hello", 483) with { ScrollDepthPercent = 33 });
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.Unknown);
+        visits[0].Verdict.Strength.Should().Be(EvidenceStrength.Weak);
+        visits[0].Verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.Scrolled);
+        visits[0].Verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.BriefStay);
+    }
+
+    /// <summary>
+    /// The same page another site sent the visit to is a person: the arrival is what a visit that
+    /// came straight in does not have.
+    /// </summary>
+    [Fact]
+    public async Task The_Same_Page_Another_Site_Sent_Is_Read_Back_As_A_Person()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = YesterdayAtNoon;
+
+        await WriteAsync(
+            SentFrom(Page(site.Id, "sent", at, "/posts/hello", Chrome), Bing),
+            Left(site.Id, "sent", at.AddSeconds(1), "/posts/hello", 483) with { ScrollDepthPercent = 33 });
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        visits[0].Verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        visits[0].Verdict.Supporting.Should().NotContain(signal => signal.Code == SignalCodes.BriefStay);
+    }
+
+    /// <summary>
+    /// The same visit in the window a fleet of browsers opened it in, carried from the reports to the
+    /// verdict: a page view with a size beside a report with none, as a tracker sends them. The height
+    /// comes back as something the reader is told, and the verdict is automation.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_In_A_Window_Taller_Than_A_Screen_Is_Read_Back_As_Something_Automated()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = YesterdayAtNoon;
+
+        await WriteAsync(
+            Page(site.Id, "tall", at, "/posts/hello", Chrome) with { ViewportWidth = 1200, ViewportHeight = 3000 },
+            Left(site.Id, "tall", at.AddSeconds(1), "/posts/hello", 483) with { ScrollDepthPercent = 33 });
+
+        var read = await ReadSessionsAsync(site);
+
+        read.Should().ContainSingle();
+        read[0].Evidence.ViewportWidth.Should().Be(1200);
+        read[0].Evidence.ViewportHeight.Should().Be(3000);
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        visits[0].Verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        visits[0].Verdict.Supporting.Single(signal => signal.Code == SignalCodes.OversizedWindow)
+            .Parameters["height"].Should().Be("3000");
+    }
+
+    /// <summary>
+    /// A report of a page being left can reach the collector ahead of the page view it belongs to, and
+    /// is dropped with no arrival before it to be filed under. The page view is what carries the window,
+    /// so the verdict is the same one, which the time and depth on that report never reached.
+    /// </summary>
+    [Fact]
+    public async Task A_Report_Of_Leaving_That_Arrived_First_Does_Not_Keep_The_Window_From_The_Verdict()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = YesterdayAtNoon;
+
+        await WriteAsync(
+            Left(site.Id, "reversed", at, "/posts/hello", 483) with { ScrollDepthPercent = 33 },
+            Page(site.Id, "reversed", at.AddMilliseconds(40), "/posts/hello", Chrome) with
+            {
+                ViewportWidth = 1200,
+                ViewportHeight = 3000,
+            });
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        visits[0].Verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.OversizedWindow);
+        visits[0].Verdict.Contradicting.Should().NotContain(signal => signal.Code == SignalCodes.Scrolled);
+    }
+
+    /// <summary>
+    /// Another site having sent the visit keeps the window out of the verdict altogether, carried the
+    /// whole way from the reports.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_Another_Site_Sent_In_A_Window_Taller_Than_A_Screen_Is_Read_Back_As_A_Person()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = YesterdayAtNoon;
+
+        await WriteAsync(
+            SentFrom(Page(site.Id, "sent-tall", at, "/posts/hello", Chrome) with { ViewportWidth = 1200, ViewportHeight = 3000 }, Bing),
+            Left(site.Id, "sent-tall", at.AddSeconds(1), "/posts/hello", 483) with { ScrollDepthPercent = 33 });
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        visits[0].Verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        visits[0].Verdict.Contradicting.Should().NotContain(signal => signal.Code == SignalCodes.OversizedWindow);
     }
 
     /// <summary>
@@ -1734,6 +1875,7 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
             UserAgent = userAgent,
             Language = "en-GB",
             ViewportWidth = 1440,
+            ViewportHeight = 900,
         };
 
     private static RawEvent Read(
@@ -1745,6 +1887,8 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         Page(siteId, visitor, at, path, userAgent) with
         {
             Kind = EventKind.Exit,
+            ViewportWidth = null,
+            ViewportHeight = null,
             EngagedMs = 30_000,
             ScrollDepthPercent = 70,
             HadPointerInteraction = true,
@@ -1778,12 +1922,15 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
 
     /// <summary>
     /// The tracker's running account of a page still open: how long it has been in front of
-    /// somebody so far, the first screen in view, nothing pressed.
+    /// somebody so far, the first screen in view, nothing pressed, and no word of the window, which
+    /// only its page view gives.
     /// </summary>
     private static RawEvent Progress(Guid siteId, string visitor, DateTimeOffset at, string path, int engagedMs) =>
         Page(siteId, visitor, at, path, Chrome) with
         {
             Kind = EventKind.Engagement,
+            ViewportWidth = null,
+            ViewportHeight = null,
             EngagedMs = engagedMs,
             ScrollDepthPercent = 18,
             HadPointerInteraction = false,
@@ -1799,6 +1946,8 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         Page(siteId, visitor, at, "/docs", Chrome) with
         {
             Kind = EventKind.Engagement,
+            ViewportWidth = null,
+            ViewportHeight = null,
             EngagedMs = (int)(at - opened).TotalMilliseconds,
             ScrollDepthPercent = 40,
             HadPointerInteraction = true,

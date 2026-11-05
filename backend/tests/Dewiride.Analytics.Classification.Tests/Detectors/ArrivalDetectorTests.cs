@@ -27,7 +27,8 @@ public sealed class ArrivalDetectorTests
 
     /// <summary>
     /// Coming straight in is not a finding. Typing an address, opening a bookmark and following a
-    /// link from an application all look the same, and none of them is a sign of anything.
+    /// link from an application all look the same, and none of them is a sign of anything against
+    /// a visit.
     /// </summary>
     [Fact]
     public void A_Visit_That_Came_Straight_In_Is_Not_A_Finding()
@@ -45,8 +46,7 @@ public sealed class ArrivalDetectorTests
 
     /// <summary>
     /// Below 25, the weight at which an observation counts toward a conclusion. A referring address
-    /// costs nothing to forge, so it may tip a visit only where everything else has been weighed
-    /// already.
+    /// costs nothing to forge, so it never makes a person on its own.
     /// </summary>
     [Fact]
     public void It_Is_Too_Light_To_Count_Toward_A_Conclusion_On_Its_Own()

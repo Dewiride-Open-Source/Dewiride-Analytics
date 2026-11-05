@@ -203,6 +203,7 @@ const COUNTED: ReadonlySet<string> = new Set([
   'missingCount',
   'attemptCount',
   'perMinute',
+  'height',
 ]);
 
 /**

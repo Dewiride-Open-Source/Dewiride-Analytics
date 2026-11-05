@@ -74,6 +74,7 @@ internal sealed class ClickHouseSessionSource(IClickHouseClient client) : ISessi
         UserAgent = NullIfEmpty(reader.GetString(Column.UserAgent)),
         Language = NullIfEmpty(reader.GetString(Column.Language)),
         ViewportWidth = Reading<int>(reader, Column.ViewportWidth),
+        ViewportHeight = Reading<int>(reader, Column.ViewportHeight),
         EngagedMs = Milliseconds(reader, Column.EngagedMs),
         LeftOpenMs = LeftOpen(reader),
         SoonestProgressMs = Milliseconds(reader, Column.SoonestProgressMs),

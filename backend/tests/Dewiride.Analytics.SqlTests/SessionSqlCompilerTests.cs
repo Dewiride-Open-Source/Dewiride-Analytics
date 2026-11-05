@@ -437,6 +437,20 @@ public sealed class SessionSqlCompilerTests
         answer.Should().NotContain("page_last_at");
     }
 
+    /// <summary>
+    /// The height a visit is judged on is the tallest any of its reports gave, as the width is the
+    /// widest, and it leaves the statement.
+    /// </summary>
+    [Fact]
+    public void The_Height_Of_A_Window_Is_Read_Beside_Its_Width()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+        var answer = sql[sql.LastIndexOf("SELECT", StringComparison.Ordinal)..];
+
+        sql.Should().Contain("max(viewport_height) AS viewport_height");
+        answer.Should().Contain("viewport_height");
+    }
+
     /// <summary>The text from one marker to the first occurrence of another after it.</summary>
     /// <param name="sql">The statement.</param>
     /// <param name="from">Where the slice starts.</param>

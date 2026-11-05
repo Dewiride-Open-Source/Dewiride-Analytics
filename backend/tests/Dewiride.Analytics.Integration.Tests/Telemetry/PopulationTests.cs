@@ -523,9 +523,9 @@ public sealed class PopulationTests(AnalyticsStackFixture stack)
     ];
 
     /// <summary>
-    /// The same reading from a rented server, come straight to the site with no key pressed — the
-    /// shape the programs measured on those networks take. No site sent it, so nothing about how it
-    /// arrived speaks for a person.
+    /// The same reading from a rented server, come straight to the site — the shape the programs
+    /// measured on those networks take. No site sent it, so nothing about how it arrived speaks for
+    /// a person.
     /// </summary>
     private static RawEvent[] AScraping(Guid siteId, string visitor, DateTimeOffset at) =>
     [

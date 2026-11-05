@@ -22,10 +22,9 @@ namespace Dewiride.Analytics.Classification.Detectors;
 /// desktop a company rents in a cloud, staff whose browsing their company sends out through a
 /// provider's security edge, and a reader behind a privacy service that leaves from a hosting
 /// network are all real readers arriving from a datacentre. So this outweighs what the visit did
-/// without erasing it. Where it is the only thing pointing toward automation, a visit on which a
-/// key was pressed, or one another site sent on which the pointer was then pressed or the page
-/// read, is weighed as the reader it behaved like, with this shown against it and holding the
-/// conclusion back.
+/// without erasing it. Where it is the only thing pointing toward automation, a visit another site
+/// sent on which a key or the pointer was then pressed or the page read is weighed as the reader it
+/// behaved like, with this shown against it and holding the conclusion back.
 /// </para>
 /// <para>
 /// Silent about everything else. A network nobody catalogued, and a visit nothing could place at

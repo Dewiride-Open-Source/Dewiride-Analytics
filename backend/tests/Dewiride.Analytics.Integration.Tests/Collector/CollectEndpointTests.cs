@@ -118,6 +118,33 @@ public sealed class CollectEndpointTests(AnalyticsStackFixture stack)
         stored.Should().ContainSingle().Which["query_string"].Should().Be("?utm_source=news");
     }
 
+    /// <summary>
+    /// How big a window was can decide what a visit is called, and the store is the only place a verdict
+    /// can read it from, so it has to arrive there as the browser said it.
+    /// </summary>
+    [Fact]
+    public async Task The_Size_Of_A_Window_Reaches_The_Store_As_The_Browser_Said_It()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        using var client = stack.CreateClient();
+
+        var report = Report(site.Id, $"https://{site.Domain}/posts/hello");
+        report["viewportWidth"] = 1200;
+        report["viewportHeight"] = 3000;
+
+        await PostAsync(client, report, site.Domain);
+
+        var stored = await TelemetryStore.RowsAsync(
+            Client,
+            "SELECT viewport_width, viewport_height FROM events WHERE site_id = {site_id:UUID}",
+            TelemetryStore.Bind("site_id", site.Id));
+
+        var row = stored.Should().ContainSingle().Subject;
+
+        row["viewport_width"].Should().Be(1200);
+        row["viewport_height"].Should().Be(3000);
+    }
+
     [Fact]
     public async Task A_Site_That_Does_Not_Keep_Query_Strings_Stores_None()
     {

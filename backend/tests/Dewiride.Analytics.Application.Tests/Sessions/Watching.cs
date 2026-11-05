@@ -63,6 +63,23 @@ internal static class Watching
     };
 
     /// <summary>
+    /// One page opened straight in a window three thousand pixels tall, as the finished visit would
+    /// read it: what a live reading does not ask about, and would not name anybody by if it did.
+    /// </summary>
+    public static SessionEvidence APageInAWindowThreeThousandTall() => AReader() with
+    {
+        SessionKey = "tall-window",
+        EndedAt = Noon.AddSeconds(1),
+        Requests = Pages(1, "/posts/"),
+        ViewportWidth = 1200,
+        ViewportHeight = 3000,
+        EngagedMs = 483,
+        LeftOpenMs = 0,
+        MaxScrollDepthPercent = 34,
+        HadPointerInteraction = false,
+    };
+
+    /// <summary>
     /// A reader on a site that also reports from its own server, in the moment before their browser
     /// has said anything.
     /// </summary>

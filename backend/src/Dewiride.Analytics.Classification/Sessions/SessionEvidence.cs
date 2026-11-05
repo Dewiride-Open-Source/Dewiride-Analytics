@@ -80,6 +80,13 @@ public sealed record SessionEvidence
     /// <summary>Viewport width the browser reported, where a browser surface ran.</summary>
     public int? ViewportWidth { get; init; }
 
+    /// <summary>Viewport height the browser reported, where a browser surface ran.</summary>
+    /// <remarks>
+    /// Only a browser can report it: a reporter on the site's own server has no way to assert a
+    /// window. Null too in a reading of who is here now, which names nobody by it and does not ask.
+    /// </remarks>
+    public int? ViewportHeight { get; init; }
+
     /// <summary>Milliseconds the pages were actually in front of somebody, summed across the session.</summary>
     public int? EngagedMs { get; init; }
 
@@ -190,10 +197,19 @@ public sealed record SessionEvidence
     /// Only the kind reaches the engine, never the address or the site it names. The address is
     /// text the visitor's browser wrote, and the kind is all a rule needs: that another site sent
     /// the visit, and which sort of site that was. Direct means nothing named a sender, which is
-    /// not the same as nobody having sent them, and no rule reads it as evidence of anything.
+    /// not the same as nobody having sent them. It is no evidence against a visit; it only means
+    /// the visit has nothing but its own time on the page to speak for it.
     /// </para>
     /// </remarks>
     public SourceChannel SentBy { get; init; } = SourceChannel.Direct;
+
+    /// <summary>Whether another site was named as having sent the visit.</summary>
+    /// <remarks>
+    /// Text the visitor's browser wrote, so a faint sign rather than a fact, and what lets a moment
+    /// on a page, a page merely shown or a press count at all: a visit nothing named a sender for
+    /// has to have stayed.
+    /// </remarks>
+    public bool SentByAnotherSite => SentBy != SourceChannel.Direct;
 
     /// <summary>How long the session lasted.</summary>
     public TimeSpan Duration => EndedAt - StartedAt;

@@ -676,10 +676,9 @@ public readonly record struct SiteSoftwareRow(string Name, long Visitors, long P
 /// did anything.
 /// </param>
 /// <param name="MedianEngagedMs">
-/// The middle reading's attention, in milliseconds — time the page was genuinely in front of
-/// somebody rather than merely open. The middle rather than the mean, because a handful of very
-/// long readings would otherwise describe an audience nobody in it resembles. Nought when nothing
-/// could be measured.
+/// The middle reading's attention, in milliseconds — time the page was on screen rather than merely
+/// open. The middle rather than the mean, because a handful of very long readings would otherwise
+/// describe an audience nobody in it resembles. Nought when nothing could be measured.
 /// </param>
 /// <param name="InteractedReadings">Measured readings where a pointer or a key was used at all.</param>
 /// <param name="Reach">How far down the page those readings got.</param>
@@ -811,7 +810,7 @@ public readonly record struct SiteVisitFlowRow(string Path, long Visits);
 /// nothing to say about one that was not.
 /// </param>
 /// <param name="EngagedMs">
-/// How long the page was genuinely in front of somebody, in milliseconds. Nothing where no browser
+/// How long the page was on screen, in milliseconds. Nothing where no browser
 /// watched the step — which is a different statement from a reader who left immediately, and is
 /// kept distinct all the way to the screen.
 /// </param>
@@ -943,10 +942,11 @@ public sealed record LiveVisitors(int VisitorsSeen, ImmutableArray<LiveVisitor> 
 /// about where the visitor came from, and it never reaches <see cref="SessionEvidence"/>. What the
 /// evidence says sent the visitor, <see cref="SessionEvidence.SentBy"/>, is read from the same
 /// column as <see cref="VisitContext.Channel"/> and, like everything else in it, covers only the
-/// window: a visitor whose arriving page fell before it opened reads as sent by nobody, which no
-/// rule reads as evidence of anything. A reason saying another site sent them can therefore come
-/// and go with where the window starts — one more reason a live name rests only on observations
-/// that cannot be withdrawn.
+/// window: a visitor whose arriving page fell before it opened reads as sent by nobody, and is weighed
+/// as one that came straight in until their finished visit is judged, so a press there counts for
+/// nothing, and a named row's band and which list a reason stands in can differ from the finished
+/// visit's. A reason saying another site sent them can therefore come and go with where the window
+/// starts — one more reason a live name rests only on observations that cannot be withdrawn.
 /// </para>
 /// <para>
 /// The evidence is what the window holds rather than what the whole visit will eventually hold, so

@@ -30,9 +30,10 @@ namespace Dewiride.Analytics.Application.Sessions;
 /// classifier will ask about an address behind a visit that came out looking like machinery, and
 /// refuses to ask about one that came out looking like a reader, because a reader's address is not
 /// ours to ask anybody about. Half-way through a visit that distinction does not exist yet — a
-/// person who has not scrolled reads as machinery — so asking here would send readers' addresses to
-/// third parties on the strength of their not having scrolled yet. What a company publishes about
-/// its own machines was settled by the collector and travels as an answer, which is enough.
+/// person whose browser has not spoken yet reads as machinery — so asking here would send readers'
+/// addresses to third parties on the strength of their browser not having spoken yet. What a company
+/// publishes about its own machines was settled by the collector and travels as an answer, which is
+/// enough.
 /// </para>
 /// <para>
 /// The three readings are taken one after another rather than at once. They are small range scans

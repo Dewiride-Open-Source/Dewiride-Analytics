@@ -12,20 +12,22 @@ namespace Dewiride.Analytics.Domain.Telemetry;
 /// </para>
 /// <para>
 /// A verdict is the one place a kind is kept. The engine weighs a visit another site sent as a
-/// faint sign of somebody reading, and a verdict carries the kind it was judged with among its
-/// reasons until history is next judged again. A change to how a sender is recognised therefore
-/// moves verdicts as well as screens, and ships with new rules rather than on its own.
+/// faint sign of somebody reading, holds a visit nothing sent to having stayed, and a verdict carries
+/// the kind it was judged with among its reasons until history is next judged again. A change to how
+/// a sender is recognised therefore moves verdicts as well as screens, and ships with new rules
+/// rather than on its own.
 /// </para>
 /// </remarks>
 public enum SourceChannel
 {
     /// <summary>
-    /// The visitor's browser named nowhere at all.
+    /// The visitor's browser named no other site.
     /// </summary>
     /// <remarks>
     /// Typing the address, opening a bookmark, following a link from an application, and arriving
-    /// from a site that withholds the address are indistinguishable, and this covers all of them.
-    /// It is not "nobody sent them": it is "nothing said who did".
+    /// from a site that withholds the address are indistinguishable, and this covers all of them, as
+    /// well as a page reached from the site's own link. It is not "nobody sent them": it is "nothing
+    /// said who did".
     /// </remarks>
     Direct = 1,
 

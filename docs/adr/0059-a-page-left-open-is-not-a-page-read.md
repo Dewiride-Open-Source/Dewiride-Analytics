@@ -14,6 +14,10 @@
 - **Revises**: [0056](0056-somebody-can-be-reading-from-a-rented-computer.md), whose "read" — fifteen
   seconds in all in front of somebody with a quarter of a page seen — now counts the same time 0037's
   reading does.
+- **Revised by**: [0065](0065-somebody-who-came-straight-in-has-to-have-stayed.md). On a visit that came
+  straight in, a page left open whose first screen held a quarter of it, or on which something was
+  pressed, reads "Couldn't tell" rather than a person. What another site sent reads as here. And on such
+  a visit a window taller than a screen now counts, which this refused.
 
 ## Context
 

@@ -135,6 +135,12 @@ describe('the values a sentence counts with', () => {
     expect(found).toEqual({ pageCount: 120, seconds: 30, perMinute: 240 });
   });
 
+  it('hands back the height of a window as a number, so a sentence can group its digits', () => {
+    expect(reasonValues(reason('browser.oversized_window', { height: '3000' }))).toEqual({
+      height: 3000,
+    });
+  });
+
   it('offers a length of time in minutes as well, so a sentence can use either', () => {
     expect(reasonValues(reason('engagement.read_time', { seconds: '212' }))).toEqual({
       seconds: 212,

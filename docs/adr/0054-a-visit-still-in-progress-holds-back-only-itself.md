@@ -17,6 +17,8 @@
 - **Revised by**: [0064](0064-a-month-outlives-the-reports-it-was-counted-from.md). A picture of one
   bucket runs to the present and never settles, so the whole period is said to be still being judged
   there only where judging has reached none of it.
+- **Revised by**: [0065](0065-somebody-who-came-straight-in-has-to-have-stayed.md). More now rests on
+  a report arriving after a visit that came straight in is judged, as 0065 records.
 
 ## Context
 

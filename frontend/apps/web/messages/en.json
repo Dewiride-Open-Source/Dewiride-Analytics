@@ -854,16 +854,17 @@
     },
     "engagement": {
       "read_time": {
-        "seconds": "Your pages were open in front of somebody for {seconds, plural, one {# second} other {# seconds}}.",
-        "minutes": "Your pages were open in front of somebody for about {minutes, plural, one {# minute} other {# minutes}}."
+        "seconds": "Your pages were on screen for {seconds, plural, one {# second} other {# seconds}}.",
+        "minutes": "Your pages were on screen for about {minutes, plural, one {# minute} other {# minutes}}."
       },
       "left_open": {
-        "seconds": "Your pages were open for {seconds, plural, one {# second} other {# seconds}} with no sign they were ever closed, so that time isn't counted as reading.",
-        "minutes": "Your pages were open for about {minutes, plural, one {# minute} other {# minutes}} with no sign they were ever closed, so that time isn't counted as reading."
+        "seconds": "Your pages stayed on screen for {seconds, plural, one {# second} other {# seconds}} with no sign they were ever closed, so that time isn't counted as reading.",
+        "minutes": "Your pages stayed on screen for about {minutes, plural, one {# minute} other {# minutes}} with no sign they were ever closed, so that time isn't counted as reading."
       },
       "scrolled": "A page was seen {percent}% of the way down.",
-      "pointer_used": "A mouse or a finger was used on the page.",
+      "pointer_used": "The page was clicked or touched.",
       "keyboard_used": "A key was pressed on the page.",
+      "brief_stay": "It came straight here and your pages were on screen for under 15 seconds, which is too short to count as somebody reading.",
       "none_observed": "Across {pageCount, plural, one {# page} other {# pages}}, nothing was read, scrolled or touched."
     },
     "retrieval": {
@@ -882,7 +883,8 @@
     "browser": {
       "script_executed": "A real browser ran your tracking code.",
       "images_only": "Pictures on the page were fetched but nothing was run — a browser with scripts turned off.",
-      "no_language_declared": "It did not say which language it prefers. Browsers always do."
+      "no_language_declared": "It did not say which language it prefers. Browsers always do.",
+      "oversized_window": "Its browser reported a window {height, number} pixels tall, taller and narrower than an ordinary screen."
     },
     "network": {
       "hosting": "It came over a network where {operator} rents out computers."

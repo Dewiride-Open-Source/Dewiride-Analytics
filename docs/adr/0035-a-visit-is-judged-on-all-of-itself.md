@@ -12,6 +12,10 @@
   visit is the same visit the engine judged — the journey panel did not keep.
 - **Revises**: [0019](0019-a-window-that-opens-inside-a-visit.md), which proved one idle timeout was
   enough to reach back by, from a premise 0034 removed.
+- **Revised by**: [0065](0065-somebody-who-came-straight-in-has-to-have-stayed.md). On a visit that
+  came straight in, more now rests on a report arriving after the verdict, because a first ten seconds
+  that 11.0 called a person stays "Couldn't tell" until the visit is read again; the settling pass
+  refused here stays refused, on 0065's figures.
 
 ## Context
 

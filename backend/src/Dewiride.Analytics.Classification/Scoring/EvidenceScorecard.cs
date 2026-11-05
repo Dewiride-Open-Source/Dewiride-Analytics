@@ -15,9 +15,8 @@ namespace Dewiride.Analytics.Classification.Scoring;
 /// </para>
 /// <para>
 /// The fallback opens with a rule of its own, for a visit over a rented network with nothing else
-/// pointing toward automation: there what the visit did, and whether another site sent it, decide
-/// instead of the network alone — and a visit that came straight in with no key pressed is weighed
-/// as any other.
+/// pointing toward automation: where another site sent it, what it then did decides instead of the
+/// network alone, and a visit that came straight in is weighed as any other.
 /// </para>
 /// <para>
 /// One rule sits outside that order rather than at the top of it: an identity settled against what
@@ -91,7 +90,7 @@ public static class EvidenceScorecard
 
         var supporting = direction == SignalDirection.Neutral
             ? evidence.All
-            : [.. evidence.Pointing(direction), .. evidence.Pointing(SignalDirection.Neutral)];
+            : [.. evidence.Pointing(direction), .. evidence.Pointing(SignalDirection.Neutral).Where(BelongsBesideAConclusion)];
 
         var contradicting = direction == SignalDirection.Neutral
             ? []
@@ -215,10 +214,12 @@ public static class EvidenceScorecard
     /// A person is concluded only from corroboration: two observations that each count, or one
     /// that is substantial on its own. One thing pointing toward a person against nothing at all
     /// is a lean rather than a conclusion, and is answered as something the product could not
-    /// tell — which is the honest reading of a page opened and left whose first screen held less
-    /// than a quarter of it. A page short enough for its first screen to hold a quarter is seen
-    /// that far down by being shown, so opened and left with nothing pointing the other way it is
-    /// two things agreeing, and a person. So a person is never reported on slight signs.
+    /// tell — which is the honest reading of a page opened and left. On a visit that came straight
+    /// in, everything short of fifteen seconds reported as its pages were left is too light to
+    /// count, so it stays a lean however much it showed. Where another site sent the visit, a page
+    /// short enough for its first screen to hold a quarter is seen that far down by being shown, so
+    /// opened and left with nothing pointing the other way it is two things agreeing, and a person.
+    /// So a person is never reported on slight signs.
     /// </para>
     /// </remarks>
     private static TrafficCategory Weighed(EvidenceSet evidence)
@@ -255,8 +256,8 @@ public static class EvidenceScorecard
     /// <remarks>
     /// One passing remark is a lean rather than a conclusion. A browser running the tracker is the
     /// commonest thing an automated browser does too, so on its own it decides nothing; the same
-    /// browser with a quarter of a page seen is two things agreeing, and somebody reading for a
-    /// while is substantial by itself.
+    /// browser sent by another site with a quarter of a page seen is two things agreeing, and
+    /// somebody reading for a while is substantial by itself.
     /// </remarks>
     private static bool PointsFirmly(EvidenceSet evidence, SignalDirection direction) =>
         evidence.HeaviestPointing(direction) >= Substantial || TwoAgree(evidence, direction);
@@ -279,46 +280,39 @@ public static class EvidenceScorecard
     /// it arrived decide instead:
     /// </para>
     /// <list type="bullet">
-    /// <item><description>a key was pressed, and one more observation that counts agrees: a person;</description></item>
-    /// <item><description>another site sent it, the pointer was then pressed or its pages read, and
-    /// one more observation that counts agrees: a person;</description></item>
-    /// <item><description>another site sent it and neither happened — under 15 seconds in all said as
-    /// its pages were left, however long they stayed open and however far down a page came into
-    /// view, or longer with no page seen a quarter of the way down: the product cannot
+    /// <item><description>another site sent it, a key or the pointer was then pressed or its pages
+    /// read, and one more observation that counts agrees: a person;</description></item>
+    /// <item><description>another site sent it and none of that happened — under 15 seconds in all
+    /// said as its pages were left, however long they stayed open and however far down a page came
+    /// into view, or longer with no page seen a quarter of the way down: the product cannot
     /// tell;</description></item>
-    /// <item><description>it came straight in and no key was pressed: weighed as any other visit,
-    /// which leaves it automation.</description></item>
+    /// <item><description>it came straight in: weighed as any other visit, which leaves it
+    /// automation, because a press means nothing on a visit nothing sent.</description></item>
     /// </list>
     /// <para>
-    /// Named automation measured on every network almost never typed and almost never arrived from
-    /// another site, and neither did the fleets measured on these networks, while the visits
-    /// measured on Microsoft's network that a search sent read, saw a quarter of a page, pressed
-    /// and typed as people on household connections do. The network stays among the reasons,
-    /// pointing the other way, so a person concluded here is never stated more firmly than some
-    /// signs. The second observation is ordinarily the browser having run the tracker at all, so
-    /// what this rests on in practice is one key pressed, or an arrival and one press of the
-    /// pointer, or an arrival, 15 seconds in all said as the pages were left and one page seen a
-    /// quarter of the way down — and it is described as that rather than as more corroboration than
-    /// it is.
+    /// Named automation measured on every network almost never arrived from another site, and neither
+    /// did the fleets measured on these networks, while the visits measured on Microsoft's network that
+    /// a search sent read, saw a quarter of a page, pressed and typed as people on household
+    /// connections do. The network stays among the reasons, pointing the other way, so a person
+    /// concluded here is never stated more firmly than some signs. The second observation is
+    /// ordinarily the browser having run the tracker at all, so what this rests on in practice is an
+    /// arrival and one key or press of the pointer, or an arrival, 15 seconds in all said as the pages
+    /// were left and one page seen a quarter of the way down — and it is described as that rather
+    /// than as more corroboration than it is.
     /// </para>
     /// </remarks>
     /// <param name="evidence">What the detectors observed.</param>
     /// <returns>The category, or <see langword="null"/> to weigh the visit as any other.</returns>
     private static TrafficCategory? WhereOnlyTheNetworkObjects(EvidenceSet evidence)
     {
-        if (!TheNetworkStandsAlone(evidence))
+        if (!TheNetworkStandsAlone(evidence) || !evidence.Has(SignalCodes.ArrivedFromAnotherSite))
         {
             return null;
         }
 
-        var sent = evidence.Has(SignalCodes.ArrivedFromAnotherSite);
-
-        if (WasUsed(evidence, sent) && TwoAgree(evidence, SignalDirection.TowardHuman))
-        {
-            return TrafficCategory.LikelyHuman;
-        }
-
-        return sent ? TrafficCategory.Unknown : null;
+        return WasUsed(evidence) && TwoAgree(evidence, SignalDirection.TowardHuman)
+            ? TrafficCategory.LikelyHuman
+            : TrafficCategory.Unknown;
     }
 
     /// <summary>
@@ -328,19 +322,19 @@ public static class EvidenceScorecard
     /// Anything else that counts — no user agent sent, no language asked for, no script run on a
     /// page a browser delivered, nothing happening on a page something was watching, pages taken
     /// faster or wider than a reader goes, repeated requests for pages that were never there, a
-    /// tool naming itself — is a second objection, and the visit is weighed as any other.
+    /// tool naming itself, a window taller than a screen — is a second objection, and the visit is
+    /// weighed as any other.
     /// </remarks>
     private static bool TheNetworkStandsAlone(EvidenceSet evidence) =>
         evidence.Has(SignalCodes.HostingNetwork)
         && evidence.CountPointing(SignalDirection.TowardAutomation, Corroborating) == 1;
 
     /// <summary>
-    /// Whether the page was used the way a person uses one: a key pressed, or — where another site
-    /// sent the visit — the pointer pressed or its pages read.
+    /// Whether a page another site sent the visit to was used the way a person uses one: a key or
+    /// the pointer pressed, or its pages read.
     /// </summary>
-    private static bool WasUsed(EvidenceSet evidence, bool sent) =>
-        evidence.Has(SignalCodes.KeyboardUsed)
-        || (sent && (evidence.Has(SignalCodes.PointerUsed) || WasRead(evidence)));
+    private static bool WasUsed(EvidenceSet evidence) =>
+        evidence.Has(SignalCodes.KeyboardUsed) || evidence.Has(SignalCodes.PointerUsed) || WasRead(evidence);
 
     /// <summary>
     /// Whether the visit was read rather than glanced at: its pages in front of somebody long enough
@@ -433,6 +427,14 @@ public static class EvidenceScorecard
             ? EvidenceStrength.Moderate
             : reached;
     }
+
+    /// <summary>Whether a qualifying observation has a place among the reasons for a conclusion.</summary>
+    /// <remarks>
+    /// One saying why what a visit showed did not settle the question has none beside an answer
+    /// that did.
+    /// </remarks>
+    private static bool BelongsBesideAConclusion(Signal signal) =>
+        !string.Equals(signal.Code, SignalCodes.BriefStay, StringComparison.Ordinal);
 
     /// <summary>Whether an observation is the one that settles who a visitor is.</summary>
     private static bool Established(Signal signal) =>

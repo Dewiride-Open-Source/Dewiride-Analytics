@@ -16,16 +16,15 @@ namespace Dewiride.Analytics.Classification.Detectors;
 /// referring address it is read from is written by the visitor's own browser and can be made up.
 /// </para>
 /// <para>
-/// So it is weighted below anything that counts. Beside anything else an ordinary network shows it
-/// moves no verdict, and the one visit it would decide alone — one nothing else was observed about —
-/// is one this build's own collection never produces (see
-/// <see cref="SignalCodes.ArrivedFromAnotherSite"/>). The one place it decides anything is a visit
-/// over a rented network with nothing else pointing toward automation, and there it is read
-/// together with what the visit then did.
+/// So it is weighted below anything that counts, and what it decides it decides through what stands
+/// beside it. A moment on a page, a page merely shown and a press count only where another site sent
+/// the visit (see <see cref="EngagementDetector"/>), and a visit over a rented network with nothing
+/// else pointing toward automation is read together with what it then did. The one visit it would
+/// decide alone — one nothing else was observed about — is one this build's own collection never
+/// produces (see <see cref="SignalCodes.ArrivedFromAnotherSite"/>).
 /// </para>
 /// <para>
-/// Silent where nothing named a sender. A visit that came straight in is not thereby automation,
-/// and the absence of an arrival is never reported as anything.
+/// Silent where nothing named a sender. A visit that came straight in is not thereby automation.
 /// </para>
 /// </remarks>
 public sealed class ArrivalDetector : IDetector
@@ -35,9 +34,8 @@ public sealed class ArrivalDetector : IDetector
     /// </summary>
     /// <remarks>
     /// Below the weight at which an observation counts toward a conclusion, on purpose. A
-    /// referring address costs nothing to forge, so it may tip a visit only where everything else
-    /// about it has already been weighed and found to say nothing against a person but the network
-    /// it came over; it never makes a person on its own and never outweighs anything that counts.
+    /// referring address costs nothing to forge, so it never makes a person on its own and never
+    /// outweighs anything that counts.
     /// </remarks>
     private const int SentWeight = 20;
 

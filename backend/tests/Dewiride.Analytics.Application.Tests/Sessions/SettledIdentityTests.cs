@@ -86,6 +86,21 @@ public sealed class SettledIdentityTests
     }
 
     /// <summary>
+    /// The window is weighed and can be outweighed: fifteen seconds said as the page was left would
+    /// make the same visitor a person, so nothing may be said about it while it is still here.
+    /// </summary>
+    [Fact]
+    public void A_Window_Taller_Than_A_Screen_Names_Nobody_While_They_Are_Still_Here()
+    {
+        var visitor = Watching.APageInAWindowThreeThousandTall();
+
+        Engine.Classify(visitor).Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        Read(visitor).Should().BeNull();
+
+        Engine.Classify(visitor with { EngagedMs = 15_000 }).Category.Should().Be(TrafficCategory.LikelyHuman);
+    }
+
+    /// <summary>
     /// The case the rule exists for. On a site reported by both its own server and the browser, the
     /// server speaks first, and for that moment the engine's honest reading of a person is that
     /// nothing has executed — which it weighs towards machinery. Shown, it would put a real reader
@@ -180,6 +195,7 @@ public sealed class SettledIdentityTests
         Watching.AReader(),
         Watching.AReaderOnACloudDesktop(),
         Watching.AHandsOffVisitFromMicrosoftsCloud(),
+        Watching.APageInAWindowThreeThousandTall(),
         Watching.AReaderWhoseBrowserHasNotSpokenYet(),
         Watching.ACrawlerThatNamedItself(),
         Watching.ANamelessCrawler(),

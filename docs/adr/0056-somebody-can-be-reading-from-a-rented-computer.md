@@ -23,6 +23,10 @@
 - **Revised by**: [0059](0059-a-page-left-open-is-not-a-page-read.md). Read means fifteen seconds in
   front of somebody that the pages said as they were left; a page left open is not read, so one
   another site sent that was left open is "Couldn't tell" unless something was pressed or typed.
+- **Revised by**: [0065](0065-somebody-who-came-straight-in-has-to-have-stayed.md). On a rented network
+  a key answers the network only where another site sent the visit. On any other network, how far down a
+  page was seen counts on a visit that came straight in only beside fifteen seconds, which settles what
+  this left undecided for such a visit.
 
 ## Context
 

@@ -279,6 +279,9 @@ public static class SessionSqlCompiler
         /// saw has no time of day to read the report against. Null where no page qualifies.
         /// </remarks>
         public const int SoonestProgressMs = 24;
+
+        /// <summary>Tallest viewport reported.</summary>
+        public const int ViewportHeight = 25;
     }
 
     /// <summary>
@@ -318,6 +321,7 @@ public static class SessionSqlCompiler
                 "user_agent",
                 "language",
                 "viewport_width",
+                "viewport_height",
                 "engaged_ms",
                 "scroll_depth_percent",
                 "had_pointer_interaction",
@@ -360,6 +364,7 @@ public static class SessionSqlCompiler
                     anyIf(user_agent, user_agent != '') AS user_agent,
                     anyIf(language, language != '') AS language,
                     max(viewport_width) AS viewport_width,
+                    max(viewport_height) AS viewport_height,
                     sumIf(page_engaged_ms, opens_page) AS engaged_ms,
                     sumIf(
                         if(
@@ -441,7 +446,8 @@ public static class SessionSqlCompiler
             from_kind,
             ip_address,
             read_ms,
-            soonest_progress_ms
+            soonest_progress_ms,
+            viewport_height
         FROM visits
         LEFT JOIN confirmations USING (session_key)
         ORDER BY started_at, session_key

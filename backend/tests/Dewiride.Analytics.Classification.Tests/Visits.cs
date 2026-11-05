@@ -92,8 +92,8 @@ internal static class Visits
     /// <remarks>
     /// The case this product exists to get right, and the one it got wrong in the field: a real
     /// browser driven by a script, reading for a minute and scrolling to the bottom of the page,
-    /// arriving from a rented server. Every behavioural reading here says person; only where it
-    /// came from says otherwise.
+    /// arriving from a rented server. Its time and how far down it got say person, its press points
+    /// nowhere, and only where it came from says otherwise.
     /// </remarks>
     /// <param name="autonomousSystem">The network it arrived over.</param>
     public static SessionEvidence AReaderFromARentedServer(uint autonomousSystem = 45102) =>
@@ -216,12 +216,46 @@ internal static class Visits
     };
 
     /// <summary>
+    /// One page opened straight and closed within half a second in an ordinary window, nothing
+    /// pressed or typed, a third of it counted as seen because the first screen held that much.
+    /// </summary>
+    /// <remarks>
+    /// Named for what it did and never for what it was. Somebody who opens the wrong page and closes
+    /// it does this too, which is why the answer is that nothing was settled.
+    /// </remarks>
+    public static SessionEvidence APageShownAndClosedAtOnce() => APageLeftOpen() with
+    {
+        SessionKey = "shown-and-closed",
+        EndedAt = Noon,
+        EngagedMs = 483,
+        LeftOpenMs = 0,
+        SoonestProgressMs = null,
+        MaxScrollDepthPercent = 34,
+    };
+
+    /// <summary>
+    /// The same page in the window the fleet measured on real traffic opened it in: Chrome on Linux,
+    /// 1200 wide and 3000 tall.
+    /// </summary>
+    /// <remarks>
+    /// Named for what it did and never for what it was. The browser wrote all of it, the size
+    /// included.
+    /// </remarks>
+    public static SessionEvidence APageInAWindowThreeThousandTall() => APageShownAndClosedAtOnce() with
+    {
+        SessionKey = "tall-window",
+        UserAgent = ChromeOnLinux,
+        ViewportWidth = 1200,
+        ViewportHeight = 3000,
+    };
+
+    /// <summary>
     /// Somebody reading one page, whose first report of how it was going came within two seconds
     /// by both of the clocks it carries.
     /// </summary>
     /// <remarks>
-    /// Everything else about it says person — it read, was seen well down the page and pressed the
-    /// pointer — which is the point: all of that happened while its timers ran ahead of its clocks.
+    /// Its time and how far down it was seen say person and its press points nowhere — which is the
+    /// point: all of that happened while its timers ran ahead of its clocks.
     /// </remarks>
     public static SessionEvidence APageWhoseWaitWasCutShort() => AReader(pages: 1) with
     {
@@ -232,6 +266,15 @@ internal static class Visits
     private const string ChromeOnMac =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
         + "Chrome/145.0.0.0 Safari/537.36";
+
+    private const string ChromeOnLinux =
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+        + "Chrome/148.0.0.0 Safari/537.36";
+
+    /// <summary>What Chrome on an Android phone says it is, carrying the mark MDN gives for a mobile device.</summary>
+    public const string ChromeOnAPhone =
+        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) "
+        + "Chrome/148.0.0.0 Mobile Safari/537.36";
 
     /// <summary>What a crawler says when it introduces itself under a name nobody has catalogued.</summary>
     public const string NamelessCrawler = "Mozilla/5.0 (compatible; NobodysBot/1.0; +https://example.com/bot)";

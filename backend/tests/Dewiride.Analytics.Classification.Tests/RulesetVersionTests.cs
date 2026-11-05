@@ -124,8 +124,8 @@ public sealed class RulesetVersionTests
     /// it obliges whoever changed the rules to say so here as well.
     /// </remarks>
     [Fact]
-    public void The_Compiled_Ruleset_Is_The_One_Where_A_Page_Left_Open_Is_Not_A_Page_Read()
+    public void The_Compiled_Ruleset_Is_The_One_Where_Somebody_Who_Came_Straight_In_Has_To_Have_Stayed()
     {
-        RulesetVersion.Current.Should().Be(new RulesetVersion(11, 0));
+        RulesetVersion.Current.Should().Be(new RulesetVersion(12, 0));
     }
 }

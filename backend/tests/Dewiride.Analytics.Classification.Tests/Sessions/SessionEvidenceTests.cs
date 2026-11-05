@@ -25,12 +25,24 @@ public sealed class SessionEvidenceTests
 
     /// <summary>
     /// Left unsaid, nothing named a sender — which is not the same as nobody having sent the visit,
-    /// and is never read as evidence of anything.
+    /// and is never read as evidence against it.
     /// </summary>
     [Fact]
     public void Left_Unsaid_Nothing_Named_A_Sender()
     {
         Visit().SentBy.Should().Be(SourceChannel.Direct);
+        Visit().SentByAnotherSite.Should().BeFalse();
+    }
+
+    /// <summary>Every kind of sender is another site having sent the visit.</summary>
+    [Theory]
+    [InlineData(SourceChannel.Search)]
+    [InlineData(SourceChannel.Assistant)]
+    [InlineData(SourceChannel.Social)]
+    [InlineData(SourceChannel.Link)]
+    public void Any_Sender_Named_Is_Another_Site_Having_Sent_The_Visit(SourceChannel sentBy)
+    {
+        (Visit() with { SentBy = sentBy }).SentByAnotherSite.Should().BeTrue();
     }
 
     /// <summary>

@@ -23,9 +23,8 @@ namespace Dewiride.Analytics.Application.Telemetry;
 /// The cost is stated rather than hidden: everything on one rented network that describes itself
 /// identically is one visitor for the day, and one visit while its activity is never quiet for as
 /// long as the idle timeout. That understates how many machines were reading. And where that visit
-/// is judged to be a person's — a key pressed, or another site's link followed and the pointer then
-/// pressed or the page read — whatever the others did in that stretch is counted in that person's
-/// visit.
+/// is judged to be a person's — another site's link followed and a key or the pointer then pressed or
+/// the page read — whatever the others did in that stretch is counted in that person's visit.
 /// </para>
 /// <para>
 /// Which networks those are is <see cref="HostingNetworks"/> — the same catalogue the engine weighs

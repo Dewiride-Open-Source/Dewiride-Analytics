@@ -553,9 +553,9 @@ public sealed record VisitDetailRow(string Value, long Visits);
 /// <param name="Readings">Readings in the window, measured or not.</param>
 /// <param name="Measured">Readings a browser reported progress for.</param>
 /// <param name="MedianEngagedMs">
-/// The middle measured reading's attention, in milliseconds — time the page was genuinely in front
-/// of somebody rather than merely open. The middle rather than the mean, because a handful of very
-/// long readings would otherwise describe an audience nobody in it resembles.
+/// The middle measured reading's attention, in milliseconds — time the page was on screen rather
+/// than merely open. The middle rather than the mean, because a handful of very long readings would
+/// otherwise describe an audience nobody in it resembles.
 /// </param>
 /// <param name="Interacted">Measured readings where a pointer or a key was used at all.</param>
 /// <param name="Depths">How far down the page the measured readings got, in quarters.</param>
@@ -748,7 +748,7 @@ public sealed record VisitContextResponse(
 /// Absent where only the browser reported the page.
 /// </param>
 /// <param name="EngagedMs">
-/// How long the page was genuinely in front of somebody, in milliseconds. Absent where no browser
+/// How long the page was on screen, in milliseconds. Absent where no browser
 /// watched the step, which is a different statement from a reader who left immediately.
 /// </param>
 /// <param name="DepthPercent">How far down the page the reader got, on the same terms.</param>

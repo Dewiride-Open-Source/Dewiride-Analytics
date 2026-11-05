@@ -13,6 +13,9 @@
 - **Revises**: [0038](0038-a-list-says-what-each-visit-was.md), which put where a visit came from on
   a row's second line beside where it was and what it was read on, left the page it began on to the
   panel opened from the row, and had a visit whose activity has aged out read "Came straight here".
+- **Revised by**: [0065](0065-somebody-who-came-straight-in-has-to-have-stayed.md). A finished visit
+  opening on a page reached from the site's own link is left reading "Came straight here" as this
+  records, and a verdict on any network now rests on the same answer: it is held to having stayed.
 
 ## Context
 

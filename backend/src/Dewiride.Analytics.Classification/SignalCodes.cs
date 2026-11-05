@@ -81,9 +81,24 @@ public static class SignalCodes
     /// </summary>
     /// <remarks>
     /// Counts only the time each page reported by the last time it said it was being left. Anything
-    /// it reported afterwards, or at all where it never said so, is <see cref="LeftOpen"/>.
+    /// it reported afterwards, or at all where it never said so, is <see cref="LeftOpen"/>. Under
+    /// fifteen seconds it is too light to count on a visit that came straight in: see
+    /// <see cref="BriefStay"/>.
     /// </remarks>
     public const string ReadTime = "engagement.read_time";
+
+    /// <summary>
+    /// The visit came straight in and stayed too briefly for what it showed to count as somebody
+    /// reading.
+    /// </summary>
+    /// <remarks>
+    /// Pointing nowhere and weighing nothing: it does no work in the verdict. It is there because
+    /// the observations beside it look like somebody reading, and a reader shown them is owed the
+    /// reason they did not settle the question, so it stands among the reasons only where the answer
+    /// is that the product could not tell. Never said of a visitor still on the site. Carries no
+    /// parameters.
+    /// </remarks>
+    public const string BriefStay = "engagement.brief_stay";
 
     /// <summary>
     /// Pages stayed open in front of a browser with no sign they were ever left, so that time is
@@ -105,14 +120,23 @@ public static class SignalCodes
     /// <remarks>
     /// How far down counts the first screen, so a page no taller than four screens reaches a quarter
     /// by being shown. It says how much of a page was seen, and on its own it is no sign that
-    /// anybody scrolled.
+    /// anybody scrolled. On a visit that came straight in it is too light to count until the pages
+    /// have stayed fifteen seconds.
     /// </remarks>
     public const string Scrolled = "engagement.scrolled";
 
     /// <summary>The pointer was used at least once. Presence only; never where.</summary>
+    /// <remarks>
+    /// Counts toward a person where another site sent the visit. On a visit that came straight in it
+    /// points nowhere and weighs nothing, because a program can press as easily as anybody.
+    /// </remarks>
     public const string PointerUsed = "engagement.pointer_used";
 
     /// <summary>A key was pressed at least once. Presence only; never which.</summary>
+    /// <remarks>
+    /// Counts toward a person where another site sent the visit. On a visit that came straight in it
+    /// points nowhere and weighs nothing, because a program can press as easily as anybody.
+    /// </remarks>
     public const string KeyboardUsed = "engagement.keyboard_used";
 
     /// <summary>Somebody was watching, and nothing was touched, scrolled or read.</summary>
@@ -158,14 +182,35 @@ public static class SignalCodes
     public const string NoLanguageDeclared = "browser.no_language_declared";
 
     /// <summary>
+    /// A visit that came straight in reported a window taller than an ordinary screen and narrower
+    /// than one held upright.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// What a browser opened by a program with a window of whatever size it was told looks like: a
+    /// fleet measured on real traffic opened one page in a window three thousand pixels tall and
+    /// closed it. Reported only on a visit nothing named a sender for, and pointing toward automation
+    /// at a weight that decides a visit on its own only while nothing weighs more the other way, so
+    /// fifteen seconds said as the pages were left outweigh it and the window stands against the
+    /// conclusion.
+    /// </para>
+    /// <para>
+    /// A number the browser reported rather than a fact about a screen, and read as one: what is
+    /// established is that a window of this shape was reported, not who or what opened it. Carries
+    /// the height in pixels, and nothing else.
+    /// </para>
+    /// </remarks>
+    public const string OversizedWindow = "browser.oversized_window";
+
+    /// <summary>
     /// The visit arrived over a network whose business is renting computers.
     /// </summary>
     /// <remarks>
     /// Where a browser is running is the one thing about it that cannot be rewritten by whoever is
     /// driving it, short of renting a household connection — which is why this carries more weight
     /// than anything the visit says about itself. Where it is the only thing pointing toward
-    /// automation, what the visit did and whether another site sent it decide the verdict instead —
-    /// see <see cref="ArrivedFromAnotherSite"/>.
+    /// automation and another site sent the visit, what the visit then did decides the verdict
+    /// instead — see <see cref="ArrivedFromAnotherSite"/>.
     /// </remarks>
     public const string HostingNetwork = "network.hosting";
 
@@ -175,10 +220,9 @@ public static class SignalCodes
     /// <remarks>
     /// <para>
     /// A faint sign of somebody reading, and weighted as one: too light to count toward any
-    /// conclusion, so on an ordinary network it changes no verdict about a visit anything else was
-    /// observed about. Programs that fetch pages almost never arrive through another site's link,
-    /// while people mostly do, but the referring address is written by the visitor's own browser
-    /// and can be made up.
+    /// conclusion by itself. Programs that fetch pages almost never arrive through another site's
+    /// link, while people mostly do, but the referring address is written by the visitor's own
+    /// browser and can be made up.
     /// </para>
     /// <para>
     /// A visit it is the only observation of is answered as one the product could not tell rather
@@ -189,11 +233,12 @@ public static class SignalCodes
     /// this one.
     /// </para>
     /// <para>
-    /// Beside anything else observed, it matters only where a rented network is the one thing
-    /// pointing the other way. A company's staff sent out through a provider's security edge, or
-    /// somebody on a desktop a company rents in a cloud, reach a page the way everybody else does —
-    /// from a search, an answer or a link — and what they then do with it is what tells them apart
-    /// from a program on the same network.
+    /// What it does is let what stands beside it count. A moment on a page, a page merely shown and a
+    /// press all count only where another site sent the visit, so a visit that came straight in has
+    /// to have stayed. And where a rented network is the one thing pointing the other way, a company's
+    /// staff sent out through a provider's security edge, or somebody on a desktop a company rents in
+    /// a cloud, reach a page the way everybody else does — from a search, an answer or a link — and
+    /// what they then do with it is what tells them apart from a program on the same network.
     /// </para>
     /// <para>
     /// Carries the kind of site and never the site itself, because the address it was read from

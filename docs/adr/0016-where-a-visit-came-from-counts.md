@@ -8,6 +8,9 @@
   network is the only thing pointing toward automation, a visit on which a key was pressed, or one
   another site sent on which the pointer was then pressed or the page read, is a person with the
   network shown against it.
+- **Revised by**: [0065](0065-somebody-who-came-straight-in-has-to-have-stayed.md). A key pressed
+  answers the network only on a visit another site sent; one that came straight in is weighed as any
+  other, whatever was pressed.
 
 ## Context
 

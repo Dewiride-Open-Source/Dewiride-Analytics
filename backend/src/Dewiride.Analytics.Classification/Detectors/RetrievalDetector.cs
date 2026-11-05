@@ -13,10 +13,11 @@ namespace Dewiride.Analytics.Classification.Detectors;
 /// this one.
 /// </para>
 /// <para>
-/// Both thresholds are set where a person could not plausibly be on the other side of them, not
-/// where an average person sits. A fast reader skimming a documentation site should never trip
-/// this, so the rate is judged against how quickly pages can be <em>read</em> rather than how
-/// quickly they can be clicked.
+/// Both thresholds are set where a person could not plausibly stay on the other side of them, not
+/// where an average person sits, so the rate is judged against how quickly pages can be
+/// <em>read</em> rather than how quickly they can be clicked. Somebody who clicks through five pages
+/// and has left inside a quarter of a minute does cross it, and on a visit that came straight in
+/// nothing they did on the way outweighs it.
 /// </para>
 /// </remarks>
 public sealed class RetrievalDetector : IDetector

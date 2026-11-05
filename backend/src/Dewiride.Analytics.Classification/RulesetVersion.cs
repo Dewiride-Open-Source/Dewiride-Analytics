@@ -7,7 +7,7 @@ namespace Dewiride.Analytics.Classification;
 /// </summary>
 /// <remarks>
 /// Stamped on every stored classification and on every aggregate row derived from one. This
-/// is what lets the dashboard state which ruleset produced a number, lets a window be
+/// is what lets the store say which ruleset produced a number, lets a window be
 /// deterministically re-classified when the rules improve, and lets a rebuild be told apart
 /// from a regression. Without it, improving the rules would silently rewrite history with no
 /// way to explain the change to a customer who noticed.
@@ -18,6 +18,33 @@ public readonly record struct RulesetVersion(int Major, int Minor) : IComparable
 {
     /// <summary>The ruleset currently compiled into this build.</summary>
     /// <remarks>
+    /// <para>
+    /// Twelve, because a visit that came straight in has only its time to speak for it. A fleet of
+    /// browsers measured on real traffic opened one page in a window three thousand pixels tall and
+    /// closed it, half of them within half a second, and the first screen alone counted as a quarter
+    /// of the page seen, which with the tracker having run was enough to call most of them a person.
+    /// Where nothing named a sender, a visit is now a person only where its pages stayed fifteen
+    /// seconds, said as they were left: under that, the time and how far down a page was seen are too
+    /// light to count. A press of the pointer or a key points nowhere however long the pages stayed,
+    /// because a program can press as easily as anybody. Over a rented network such a visit is weighed
+    /// as any other, whatever was pressed.
+    /// </para>
+    /// <para>
+    /// The engine is told for the first time how tall a window was. Where nothing named a sender, a
+    /// window over 2,560 pixels tall and more than 2.2 times as tall as it is wide, on anything not
+    /// saying it is a phone, points toward automation, and short of fifteen seconds it settles the
+    /// answer. Fifteen seconds outweigh it, with the window shown against the conclusion.
+    /// </para>
+    /// <para>
+    /// A visit another site sent is judged exactly as it was under eleven, in category and in band.
+    /// </para>
+    /// <para>
+    /// Categories move, so this is a major version: what eleven called a person on a short stay, a page
+    /// merely shown or a press, twelve calls a visit it could not tell about, or automation where a
+    /// window taller than a screen or something else pointed that way and only those outweighed it; and
+    /// what eleven could not tell about in such a window, twelve calls automation. Verdicts are kept per
+    /// ruleset, so every earlier answer stays on record and history is re-judged rather than rewritten.
+    /// </para>
     /// <para>
     /// Eleven, because a page left open is not a page read, and a wait cut short is a program's.
     /// Fleets of browsers measured on real traffic opened one page, waited and were switched off
@@ -144,7 +171,7 @@ public readonly record struct RulesetVersion(int Major, int Minor) : IComparable
     /// something that will never be reconstructed again.
     /// </para>
     /// </remarks>
-    public static RulesetVersion Current => new(11, 0);
+    public static RulesetVersion Current => new(12, 0);
 
     /// <summary>Compares two ruleset versions by major then minor component.</summary>
     /// <param name="other">The version to compare against.</param>

@@ -75,6 +75,29 @@ describe('what the beacon reports when a page is opened', () => {
     expect(view).not.toHaveProperty('keyboardInteraction');
   });
 
+  /**
+   * How big a window is can decide what a visit is called, and a page view is the one report that
+   * says. It is rounded whatever a browser reports, because the store holds whole pixels.
+   */
+  it('says how big the window is, in whole pixels', () => {
+    const { innerWidth, innerHeight } = window;
+
+    Object.defineProperty(window, 'innerWidth', { value: 1199.6, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: 2999.6, configurable: true });
+
+    try {
+      page.open();
+
+      const view = only(page.sent, 'pageview');
+
+      expect(view['viewportWidth']).toBe(1200);
+      expect(view['viewportHeight']).toBe(3000);
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { value: innerWidth, configurable: true });
+      Object.defineProperty(window, 'innerHeight', { value: innerHeight, configurable: true });
+    }
+  });
+
   it('passes on the browser admitting it is being driven by automation', () => {
     Object.defineProperty(navigator, 'webdriver', { value: true, configurable: true });
 
@@ -396,6 +419,21 @@ describe('what the beacon reports when a reading ends', () => {
     visibility('hidden');
 
     expect(only(page.sent, 'exit')).toHaveProperty('engagedMs');
+  });
+
+  /**
+   * A report of a page being left can reach the collector ahead of the page view and be dropped, and
+   * the window has to survive that, so it is said by the page view alone.
+   */
+  it('says nothing about the window, which the page view already said', () => {
+    page.open();
+
+    visibility('hidden');
+
+    const exit = only(page.sent, 'exit');
+
+    expect(exit).not.toHaveProperty('viewportWidth');
+    expect(exit).not.toHaveProperty('viewportHeight');
   });
 
   /**

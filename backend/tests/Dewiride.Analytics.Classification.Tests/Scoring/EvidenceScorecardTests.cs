@@ -338,13 +338,23 @@ public sealed class EvidenceScorecardTests
     }
 
     /// <summary>
-    /// A key pressed over a rented network, with the tracker having run: the network is the only
-    /// objection, and what was done to the page is what a program on that network almost never does.
+    /// A key pressed over a rented network on a visit nothing sent, however much else counted beside
+    /// it: what was done to the page does not answer the network, so it is something automated.
     /// </summary>
     [Fact]
-    public void A_Key_Pressed_Over_A_Rented_Network_Is_A_Person_With_The_Network_Against_It()
+    public void A_Key_Pressed_Over_A_Rented_Network_Does_Not_Answer_It_Where_Nothing_Sent_The_Visit()
     {
-        var verdict = Weigh(Rented, Tracker, Key);
+        Weigh(Rented, Tracker, Key, Seen).Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+    }
+
+    /// <summary>
+    /// The same key where another site sent the visit: the network is the only objection, and what
+    /// was done to the page is what a program on that network almost never does.
+    /// </summary>
+    [Fact]
+    public void A_Key_Pressed_On_A_Visit_Another_Site_Sent_Over_A_Rented_Network_Is_A_Person()
+    {
+        var verdict = Weigh(Rented, Sent("search"), Tracker, Key);
 
         verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
         verdict.Strength.Should().Be(EvidenceStrength.Moderate);
@@ -416,13 +426,13 @@ public sealed class EvidenceScorecardTests
 
     /// <summary>
     /// The hands-off shape measured on Microsoft's network: straight to a page, a while on it, a
-    /// press of the pointer, and no key. The network is its only objection and nothing the visit
-    /// did answers it, so it is something automated.
+    /// press of the pointer. The network is its only objection and nothing the visit did answers
+    /// it, so it is something automated.
     /// </summary>
     [Fact]
-    public void A_Visit_That_Came_Straight_In_With_No_Key_Pressed_Is_Something_Automated()
+    public void A_Visit_That_Came_Straight_In_Over_A_Rented_Network_Is_Something_Automated_Whatever_Was_Pressed()
     {
-        var verdict = Weigh(Rented, Tracker, Pointer, LongRead);
+        var verdict = Weigh(Rented, Tracker, Pointer, Key, LongRead);
 
         verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
     }
@@ -434,7 +444,7 @@ public sealed class EvidenceScorecardTests
     [Fact]
     public void A_Key_Pressed_With_Nothing_Else_That_Counts_Is_Not_A_Person_Over_A_Rented_Network()
     {
-        Weigh(Rented, Key).Category.Should().NotBe(TrafficCategory.LikelyHuman);
+        Weigh(Rented, Sent("search"), Key).Category.Should().NotBe(TrafficCategory.LikelyHuman);
     }
 
     /// <summary>
@@ -510,8 +520,9 @@ public sealed class EvidenceScorecardTests
     }
 
     /// <summary>
-    /// Where the network is not involved, an arrival beside anything else observed changes neither
-    /// the answer nor how firmly it is stated.
+    /// The scorecard reads an arrival only beside a rented network: elsewhere, weighed observations
+    /// come out the same with or without one. That a short stay counts where another site sent the
+    /// visit is settled by what the detector reports, before anything is weighed.
     /// </summary>
     [Fact]
     public void An_Arrival_Beside_Anything_Else_Changes_Nothing_Where_No_Rented_Network_Objects()
@@ -521,6 +532,47 @@ public sealed class EvidenceScorecardTests
 
         sent.Category.Should().Be(straight.Category);
         sent.Strength.Should().Be(straight.Strength);
+    }
+
+    /// <summary>
+    /// What a visit that came straight in showed short of staying: reported, and too light to count,
+    /// so beside the tracker it is a lean and stated on slight signs whatever else is listed.
+    /// </summary>
+    [Fact]
+    public void Things_Too_Light_To_Count_Beside_The_Tracker_Are_A_Lean()
+    {
+        var verdict = Weigh(
+            Tracker,
+            Signal(SignalCodes.ReadTime, SignalDirection.TowardHuman, 20),
+            Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 20),
+            Signal(SignalCodes.PointerUsed, SignalDirection.Neutral, 0),
+            Signal(SignalCodes.BriefStay, SignalDirection.Neutral, 0));
+
+        verdict.Category.Should().Be(TrafficCategory.Unknown);
+        verdict.Strength.Should().Be(EvidenceStrength.Weak);
+        verdict.Supporting.Should().HaveCount(5);
+    }
+
+    /// <summary>
+    /// The reason a short stay did not settle the question belongs beside an answer it did not
+    /// settle. Beside one something else settled it would be giving the wrong reason, while a press
+    /// on the same visit stays on the record.
+    /// </summary>
+    [Fact]
+    public void The_Reason_A_Short_Stay_Did_Not_Count_Stands_Only_Beside_An_Answer_It_Left_Open()
+    {
+        var verdict = Weigh(
+            Rented,
+            Tracker,
+            Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 20),
+            Signal(SignalCodes.PointerUsed, SignalDirection.Neutral, 0),
+            Signal(SignalCodes.BriefStay, SignalDirection.Neutral, 0));
+
+        verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        verdict.Supporting.Should().NotContain(signal => signal.Code == SignalCodes.BriefStay);
+        verdict.Contradicting.Should().NotContain(signal => signal.Code == SignalCodes.BriefStay);
+        verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.PointerUsed);
     }
 
     /// <summary>A rented network, as the engine reports one.</summary>

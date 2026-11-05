@@ -54,11 +54,13 @@ public sealed class EventIngestorValidationTests
         outcome.Should().Be(IngestOutcome.Accepted);
     }
 
-    [Fact]
-    public async Task Rejects_A_Negative_Viewport()
+    [Theory]
+    [InlineData(-1, 900)]
+    [InlineData(1440, -1)]
+    public async Task Rejects_A_Negative_Viewport(int width, int height)
     {
         var harness = IngestHarness.ForSite();
-        var command = IngestHarness.PageView() with { ViewportWidth = -1, ViewportHeight = 900 };
+        var command = IngestHarness.PageView() with { ViewportWidth = width, ViewportHeight = height };
 
         var outcome = await harness.IngestAsync(command);
 
@@ -150,6 +152,7 @@ public sealed class EventIngestorValidationTests
 
         outcome.Should().Be(IngestOutcome.Accepted);
         harness.Single.ViewportWidth.Should().Be(999_999);
+        harness.Single.ViewportHeight.Should().Be(999_999);
         harness.Single.EngagedMs.Should().Be(1_209_600_000);
     }
 

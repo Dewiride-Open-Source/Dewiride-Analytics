@@ -135,17 +135,19 @@ and the [master plan](#master-plan) below it says what does not yet.
   that is settled a visit at a time by asking what the address is called and whether that name
   points back at it — a pair of questions only the company could arrange the answers to. Both reach
   crawlers that give no name at all: the largest search engine's fetches arrive behind an ordinary
-  browser string. Only a visit that does not look like a person is ever asked about, so the address
-  of a visit that looks like somebody reading is never sent anywhere; a person taken for machinery —
-  somebody reading over a rented network who came straight to the page and pressed no key, for one —
-  is asked about as machinery is. An install with no way out to the internet can be given the lists
+  browser string. Only a visit that does not look like a person is ever asked about, so a visit that
+  looks like somebody reading is never the reason an address is sent anywhere, though an address it
+  shares with a visit read as machinery is; a person taken for machinery — somebody reading over a
+  rented network who came straight to the page, or somebody in a window far taller and narrower than a
+  screen who came straight in and left inside 15 seconds — is asked about as machinery is. An install
+  with no way out to the internet can be given the lists
   by hand, or go without either check: traffic is measured the same, and every crawler simply reads
   as a claim.
 
 ## Master plan
 
 Every capability the product is meant to have, phase by phase, in the order the work is picked
-up. Each line is marked with one of four states. Last reviewed 2026-10-30.
+up. Each line is marked with one of four states. Last reviewed 2026-11-05.
 
 - **Done** — shipped and visible on the dashboard, or collected on every capture surface.
 - **Partly done** — a real piece ships; the line says what is still missing.
@@ -193,16 +195,28 @@ up. Each line is marked with one of four states. Last reviewed 2026-10-30.
   pages with no sign they were ever closed is shown as such and is not taken for somebody reading.
 - **Done** · A page whose tracking code's 15-second wait is over early by the page's own clock is
   called automation.
+- **Done** · A visit that came straight in is a person only where its pages stayed 15 seconds and were
+  then closed or left. Short of that, how long it stayed and how far down a page was seen do not count.
+  Where such a visit is "Couldn't tell" and showed a stay of two seconds or more, a page seen a quarter
+  of the way down or a press, it says so, except that where two seconds or more left open would have
+  made the 15 seconds it says only that that time was not counted.
+- **Done** · A click or a key press does not make a visit that came straight in a person.
+- **Done** · A window far taller and narrower than an ordinary screen, on a visit that came straight in,
+  points toward automation. With nothing more specific known it reads "Something automated" unless the
+  pages stayed 15 seconds and the visit did not come over a rented network, and it says how tall the window
+  was. A phone that says it is one is left out, and so is a 16:9 or 16:10 screen held upright, with up to
+  about a fifth of its width taken by a side panel.
 
 **2.2 Weak spot to close**
 
 - **Not started** · A headless browser with an ordinary Chrome name, its automation flag hidden, on
-  an unlisted network, that runs the script on a page a quarter of which fits on its first screen —
-  or scrolls a quarter of the way down a longer one — is judged "A person · some signs" today, and
-  "A person · strong signs" once the page has stayed on screen for two seconds and then been closed.
-- **Not started** · On a rented network a program is judged "A person · some signs" if it presses one
-  key, or makes up a link from another site and then clicks once, or stays 15 seconds on pages one
-  of which is short enough to be seen a quarter of the way down, and then closes them.
+  an unlisted network, that makes up a link from another site and runs the script on a page a quarter
+  of which fits on its first screen — or scrolls a quarter of the way down a longer one — is judged "A
+  person · some signs" today, and "A person · strong signs" once the page has stayed on screen for two
+  seconds and then been closed. With no link it has to stay 15 seconds, and is then judged the same.
+- **Not started** · On a rented network a program is judged "A person · some signs" if it makes up a
+  link from another site and then presses one key or clicks once, or stays 15 seconds on pages one of
+  which is short enough to be seen a quarter of the way down, and then closes them.
 
 **2.3 Timing**
 
@@ -217,8 +231,9 @@ up. Each line is marked with one of four states. Last reviewed 2026-10-30.
 - **Not started** · Sequential, alphabetical and numeric traversal.
 - **Not started** · Sitemap-like order; breadth-first and depth-first crawling.
 - **Not started** · Following a contextual internal link as a human signal.
-- **Partly done** · Arriving from another site is a faint human signal, and it decides anything
-  only for a visit from a rented network that nothing else points against.
+- **Partly done** · Arriving from another site is a faint human signal. It decides whether a short
+  stay, a page merely shown or a press counts at all, and how a visit from a rented network that nothing
+  else points against is read.
 - **Not started** · Progressive scrolling, not just the deepest point reached.
 
 **2.5 Journey types**
@@ -246,7 +261,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-10-30.
 **2.8 Ghost and synthetic traffic**
 
 - **Not started** · Reports with no matching page arrival flagged rather than dropped.
-- **Not started** · Impossible combinations of browser characteristics.
+- **Partly done** · Combinations of browser characteristics an ordinary screen does not give: a window
+  far taller and narrower than one, on a visit that came straight in. Nothing else yet.
 - **Not started** · Unrealistic event sequences; repeated fabricated-looking reports.
 - **Not started** · A "possible synthetic activity" verdict with reasons — this is what makes
   "Fake traffic" reachable.
@@ -307,8 +323,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-10-30.
 - **Done** · Time a page was actually on screen.
 - **Done** · How far down a page was seen, the first screen included.
 - **Done** · Whether the visitor clicked, tapped or typed — presence only, never content.
-- **Done** · Screen size, language, time-zone offset, and whether the browser declares itself
-  automated.
+- **Done** · The size of the browser window, language, time-zone offset, and whether the browser
+  declares itself automated.
 - **Done** · Clicks on links, buttons and fields, for a website that switches it on — the words on
   the control; nothing is read out of a text box, and a list is never named by its choices.
 - **Done** · Where a visitor came from is kept only up to its path: what followed it, where a search
@@ -495,10 +511,10 @@ up. Each line is marked with one of four states. Last reviewed 2026-10-30.
 - **Done** · Datacentre origin as a reason on the visit; hosting operators named in the Networks
   list.
 - **Done** · A rented network is not, on its own, automation. Where nothing else points against
-  it, a visit on which a key was pressed, or one another website sent on which something was then
-  clicked or that was read for 15 seconds or more with a quarter of the page seen, is called a
-  person with the network shown against it; one another website sent that did neither is "Couldn't
-  tell"; one that came straight in with no key pressed is still weighed as machinery.
+  it, a visit another website sent on which a key was then pressed or something clicked, or that was
+  read for 15 seconds or more with a quarter of the page seen, is called a person with the network
+  shown against it; one another website sent that did none of that is "Couldn't tell"; one that came
+  straight in is still weighed as machinery, whatever was pressed.
 - **Not started** · Region shown — stored, never shown.
 - **Not started** · Network number shown.
 - **Not started** · A "datacentre / hosting" label on rows and lists.
@@ -599,7 +615,7 @@ up. Each line is marked with one of four states. Last reviewed 2026-10-30.
   protection only.
 - **Not started** · A recorded-traffic test collection with hand-written labels.
 - **Not started** · Stored but unused data — use it or stop collecting it: time-zone offset,
-  screen height, clock drift, response size, content type, mobile hint, region.
+  clock drift, response size, content type, mobile hint, region.
 - **Not started** · Commercial edition: clustering across customers, the curated intelligence
   feed, alerting, single sign-on, directory sync.
 

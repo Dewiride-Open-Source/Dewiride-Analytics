@@ -512,8 +512,8 @@ public sealed class SessionClassifierTests
     }
 
     /// <summary>
-    /// The same reading, come straight in with no key pressed, is machinery on a rented network,
-    /// and so its address is asked about.
+    /// The same reading, come straight in, is machinery on a rented network, and so its address is
+    /// asked about.
     /// </summary>
     [Fact]
     public async Task A_Visit_That_Came_Straight_Over_A_Rented_Network_Is_Still_Asked_About()
@@ -526,6 +526,78 @@ public sealed class SessionClassifierTests
         await harness.RunAsync();
 
         harness.Asked.Should().ContainSingle().Which.Should().Equal("20.42.10.7");
+        harness.Stored.Should().ContainSingle()
+            .Which.Verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+    }
+
+    /// <summary>
+    /// A key pressed on that visit does not stop it being machinery, so its address is asked about
+    /// all the same.
+    /// </summary>
+    [Fact]
+    public async Task A_Visit_Straight_In_Over_A_Rented_Network_That_Pressed_A_Key_Is_Asked_About()
+    {
+        var harness = new JudgingHarness();
+        var reader = JudgingHarness.Reader(JudgingHarness.AddedAt.AddHours(1), "20.42.10.7");
+
+        harness.AnswerOnce(reader with
+        {
+            Evidence = reader.Evidence with { AutonomousSystem = 8075, HadKeyboardInteraction = true },
+        });
+
+        await harness.RunAsync();
+
+        harness.Asked.Should().ContainSingle().Which.Should().Equal("20.42.10.7");
+        harness.Stored.Should().ContainSingle()
+            .Which.Verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+    }
+
+    /// <summary>
+    /// A page opened straight and closed at once may be somebody, and an address that may be a
+    /// person's is not sent to a name server.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_Shown_And_Closed_At_Once_Is_Not_Asked_About()
+    {
+        var harness = new JudgingHarness();
+        var glance = JudgingHarness.Glance(JudgingHarness.AddedAt.AddHours(1), "203.0.113.7");
+
+        harness.AnswerOnce(glance with
+        {
+            Evidence = glance.Evidence with { EngagedMs = 483, LeftOpenMs = 0, MaxScrollDepthPercent = 34 },
+        });
+
+        await harness.RunAsync();
+
+        harness.Asked.Should().BeEmpty();
+        harness.Stored.Should().ContainSingle().Which.Verdict.Category.Should().Be(TrafficCategory.Unknown);
+    }
+
+    /// <summary>
+    /// The same page in a window taller than a screen reads as machinery, and an address behind
+    /// machinery is asked about while it is still kept, as any other is.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_In_A_Window_Taller_Than_A_Screen_Is_Asked_About()
+    {
+        var harness = new JudgingHarness();
+        var glance = JudgingHarness.Glance(JudgingHarness.AddedAt.AddHours(1), "203.0.113.7");
+
+        harness.AnswerOnce(glance with
+        {
+            Evidence = glance.Evidence with
+            {
+                EngagedMs = 483,
+                LeftOpenMs = 0,
+                MaxScrollDepthPercent = 34,
+                ViewportWidth = 1200,
+                ViewportHeight = 3000,
+            },
+        });
+
+        await harness.RunAsync();
+
+        harness.Asked.Should().ContainSingle().Which.Should().Equal("203.0.113.7");
         harness.Stored.Should().ContainSingle()
             .Which.Verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
     }

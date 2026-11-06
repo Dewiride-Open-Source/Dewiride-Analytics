@@ -3,8 +3,8 @@
 import { createParser } from 'nuqs';
 import {
   DEFAULT_PERIOD,
-  type Period,
   PERIOD_KEY,
+  type Period,
   readPeriod,
   samePeriod,
   writePeriod,

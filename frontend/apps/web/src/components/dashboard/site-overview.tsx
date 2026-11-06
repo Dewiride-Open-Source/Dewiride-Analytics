@@ -36,6 +36,13 @@ import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { changeBetween } from '@/lib/analytics/change';
 import { CHART_BYS, type ChartBy } from '@/lib/analytics/chart-by';
+import {
+  absence,
+  type Breakdown,
+  everJudged,
+  type JudgingReach,
+  reachedBy,
+} from '@/lib/analytics/people-absence';
 import type { Population } from '@/lib/analytics/people-only';
 import {
   type AllTimeGranularity,
@@ -303,6 +310,7 @@ export function SiteOverview({ site }: SiteOverviewProps) {
           measuring={measuring}
           comparedWith={comparedWith}
           peopleOnly={peopleOnly}
+          refused={headline.cardsRefused}
         />
       </div>
 
@@ -724,6 +732,8 @@ interface HeadlineCardsProps {
   readonly comparedWith: string | undefined;
   /** Whether the figures are kept to the visits judged to be people. */
   readonly peopleOnly: boolean;
+  /** Whether the cards' own figures could not be had. */
+  readonly refused: boolean;
 }
 
 /**
@@ -735,6 +745,10 @@ interface HeadlineCardsProps {
  * screen, and the sentence saying how the number moved where it will — so the picture the reader is
  * using below the cards stays where it is while a period's answers arrive one after the other, save
  * a line where a card's sentence breaks a line apart from its stand-in's.
+ *
+ * A stand-in promises a figure on its way, so figures that could not be had are shown as the mark for
+ * no figure: the notice above says why, and a stand-in moving under it would say something is coming
+ * when nothing is. Asked again and answered, the numbers take their place.
  */
 function HeadlineCards({
   totals,
@@ -742,12 +756,23 @@ function HeadlineCards({
   measuring,
   comparedWith,
   peopleOnly,
+  refused,
 }: HeadlineCardsProps) {
   const metrics = useTranslations('dashboard.metrics');
   // The cards are labelled with what they count, in the same words the columns under the chart
   // wear, so the table adds up to the cards in the reader's own terms.
   const labels = useTranslations(peopleOnly ? 'dashboard.metrics.people' : 'dashboard.metrics');
   const format = useFormatter();
+
+  if (totals === undefined && refused) {
+    return (
+      <>
+        <MetricCard label={labels('pageViews.label')} value={null} />
+        <MetricCard label={labels('visitors.label')} value={null} note={metrics('visitors.note')} />
+        <MetricCard label={labels('pagesPerVisitor.label')} value={null} />
+      </>
+    );
+  }
 
   if (totals === undefined || (measuring && before === undefined)) {
     const against = measuring ? comparedWith : undefined;
@@ -1064,6 +1089,11 @@ interface Headline {
    * read beside, which says whether anything of the website is held — or nothing.
    */
   readonly failure: Error | null;
+  /**
+   * Whether the cards' own figures could not be had. Everybody's record alone says nothing of them,
+   * which may be on their way yet: their stand-ins stay until they have answered, one way or the other.
+   */
+  readonly cardsRefused: boolean;
 }
 
 /**
@@ -1116,6 +1146,7 @@ function useHeadline({
       lists,
       listsFailure: lists === 'refused' ? (overview.error ?? everybody.error) : null,
       failure: sinceFirst.error ?? record.error,
+      cardsRefused: sinceFirst.error !== null,
     };
   }
 
@@ -1134,6 +1165,7 @@ function useHeadline({
     lists: 'lists',
     listsFailure: null,
     failure: overview.error,
+    cardsRefused: overview.error !== null,
   };
 }
 
@@ -1536,25 +1568,11 @@ function listsOver(
   return nought(everybody.data) ? 'nothing' : 'noPeople';
 }
 
-/** What a period held of each kind of visit judged, as it is being asked for. */
-interface Breakdown {
-  readonly data: { readonly groups: readonly unknown[] } | undefined;
-  readonly error: Error | null;
-}
-
-/** Where the picture being drawn says judging has reached. */
-interface Reached {
-  /** The first bucket still being judged, or nothing where every one has settled. */
-  readonly stillJudging: number | null;
-  /** Whether not one bucket of the period has settled, as `judgedNoneOf` says. */
-  readonly none: boolean;
-}
-
 interface PeopleAbsentProps {
   /** The period's breakdown of what was judged, as it is being asked for. */
   readonly breakdown: Breakdown;
   /** Where the picture says judging has reached, or undefined until that is known. */
-  readonly reached: Reached | undefined;
+  readonly reached: JudgingReach | undefined;
   /** Why the picture the period was drawn from could not be had, or nothing. */
   readonly pictureProblem: Error | null;
   readonly onShowEveryone: () => void;
@@ -1614,7 +1632,7 @@ function reachedIn(
   drawingActivity: boolean,
   activity: Activity | undefined,
   who: TrafficPicture | undefined,
-): Reached | undefined {
+): JudgingReach | undefined {
   if (drawingActivity) {
     return (
       activity && {
@@ -1624,63 +1642,7 @@ function reachedIn(
     );
   }
 
-  if (who === undefined) {
-    return undefined;
-  }
-
-  const stillJudging = stillJudgingFrom(who);
-
-  return { stillJudging, none: judgedNoneOf(who, who.buckets.length, stillJudging) };
-}
-
-/**
- * All time's answer about who came, as the one thing the absent state asks of it: which kinds of
- * visit were judged in any month at all. A month never counted, or one that held none of a kind,
- * says nothing of it.
- *
- * @param answer Who came across all time, as it is being asked for.
- */
-function everJudged(answer: {
-  readonly data: AllTimeTraffic | undefined;
-  readonly error: Error | null;
-}): Breakdown {
-  return {
-    data: answer.data && {
-      groups: answer.data.groups.filter((group) =>
-        group.sessions.some((sessions) => sessions !== null && sessions > 0),
-      ),
-    },
-    error: answer.error,
-  };
-}
-
-/**
- * Which of the absent screens a period is, and the sentence that explains it.
- *
- * Settled first: a period judged to the end has its answer whether or not anything in it was
- * judged — a visit that began before the period and was judged there leaves the period's own
- * breakdown empty — and only a period still being judged waits.
- *
- * @param judged Whether anything in the period has been judged.
- * @param reached Where the picture says judging has reached.
- * @returns The state's name and the key of its sentence.
- */
-function absence(
-  judged: boolean,
-  { stillJudging, none }: Reached,
-): {
-  readonly reason: 'unjudged' | 'nobody' | 'nobodyYet';
-  readonly body: 'unjudged.body' | 'unjudged.bodyAll' | 'nobody.body' | 'nobodyYet.body';
-} {
-  if (stillJudging === null) {
-    return { reason: 'nobody', body: 'nobody.body' };
-  }
-
-  if (judged) {
-    return { reason: 'nobodyYet', body: 'nobodyYet.body' };
-  }
-
-  return { reason: 'unjudged', body: none ? 'unjudged.bodyAll' : 'unjudged.body' };
+  return who && reachedBy(who);
 }
 
 /**

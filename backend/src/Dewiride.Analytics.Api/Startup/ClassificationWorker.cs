@@ -15,9 +15,12 @@ namespace Dewiride.Analytics.Api.Startup;
 /// starts again.
 /// </para>
 /// <para>
-/// A failure on one site does not stop the others and does not stop the loop. The stores are
-/// remote services, and a run that gave up permanently the first time one of them was briefly
-/// unreachable would leave an installation silently no longer classifying anything.
+/// A failure on one site does not stop the others, a run that fails as a whole does not stop the
+/// loop, and a statement the client gives up on is a failure like any other rather than a reason to
+/// stop. The stores are remote services, and a run that gave up permanently the first time one of
+/// them was briefly unreachable would leave an installation silently no longer classifying anything
+/// — or, since an exception that leaves a background service stops the host, stop the whole engine,
+/// collector included.
 /// </para>
 /// </remarks>
 /// <param name="scopeFactory">Creates the scope each run's database work is resolved from.</param>
@@ -48,13 +51,23 @@ internal sealed partial class ClassificationWorker(
             // and a failed health probe.
             while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
             {
-                await RunAsync(stoppingToken).ConfigureAwait(false);
+                try
+                {
+                    await RunAsync(stoppingToken).ConfigureAwait(false);
+                }
+                catch (Exception failure) when (!stoppingToken.IsCancellationRequested)
+                {
+                    // A run that could not even list the websites ends there, and the next one tries
+                    // again from the same bookmarks.
+                    Log.RunFailed(logger, failure);
+                }
             }
         }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        catch (Exception) when (stoppingToken.IsCancellationRequested)
         {
-            // Shutting down part-way through. Whatever the run reached has already been recorded,
-            // and the next start resumes from there.
+            // Shutting down part-way through, whether the work was told to stop or a store went down
+            // with the machine first. Whatever the run reached has already been recorded, and the
+            // next start resumes from there.
         }
     }
 
@@ -73,7 +86,7 @@ internal sealed partial class ClassificationWorker(
             {
                 await classifier.CatchUpAsync(site, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception failure) when (failure is not OperationCanceledException)
+            catch (Exception failure) when (!cancellationToken.IsCancellationRequested)
             {
                 Log.SiteFailed(logger, failure, site.Id);
             }
@@ -94,5 +107,11 @@ internal sealed partial class ClassificationWorker(
             Level = LogLevel.Error,
             Message = "Judging traffic on site {SiteId} failed. The next run resumes from the same point.")]
         public static partial void SiteFailed(ILogger logger, Exception failure, Guid siteId);
+
+        [LoggerMessage(
+            EventId = 5003,
+            Level = LogLevel.Error,
+            Message = "Judging traffic could not run. The next run tries again.")]
+        public static partial void RunFailed(ILogger logger, Exception failure);
     }
 }

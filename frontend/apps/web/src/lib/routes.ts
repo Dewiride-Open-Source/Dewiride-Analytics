@@ -9,6 +9,7 @@ import type { Session } from '@/lib/api/schemas';
  * screens, and they stay where they are.
  */
 export const DASHBOARD = '/app';
+export const INSIGHTS = '/app/insights';
 export const LIVE = '/app/live';
 export const JOURNEYS = '/app/journeys';
 export const SIGN_IN = '/app/sign-in';
@@ -55,6 +56,7 @@ const SITE_FILES: ReadonlySet<string> = new Set(['/robots.txt', '/sitemap.xml'])
  */
 export const SCREENS: ReadonlySet<string> = new Set([
   DASHBOARD,
+  INSIGHTS,
   LIVE,
   JOURNEYS,
   SIGN_IN,
@@ -93,28 +95,42 @@ const DOORS: ReadonlySet<string> = new Set([
  */
 const SPENT: ReadonlySet<string> = new Set([SIGN_IN, SIGN_UP, SET_UP]);
 
+/** What a screen can be handed of what is being looked at. */
+export type Carried = 'period' | 'population';
+
+/** One screen the bar lists. */
+interface Section {
+  readonly path: string;
+  /** Its name in the catalogue. */
+  readonly name: 'overview' | 'insights' | 'live' | 'journeys' | 'settings';
+  /** What it answers about, and is therefore handed by whichever screen links to it. */
+  readonly carries: readonly Carried[];
+}
+
 /**
  * The screens somebody moves between once they are signed in, in the order the bar lists them.
  *
- * Three questions about a website — how much traffic it had, who is on it at this moment, and who
- * each of its visitors turned out to be — and then everything about the account itself. Each is a
- * screen of its own because each is opened for a different reason: the totals are glanced at, the
- * present moment is watched, and the visits are worked through one at a time. The account is one
- * because nobody visits it daily and a bar that grew a tab for every setting would push the ones
- * that matter to the edge.
+ * Four questions about a website — how much traffic it had, what its whole record says, who is on
+ * it at this moment, and who each of its visitors turned out to be — and then everything about the
+ * account itself. Each is a screen of its own because each is opened for a different reason: the
+ * totals are glanced at, the record is looked back over, the present moment is watched, and the
+ * visits are worked through one at a time. The account is one because nobody visits it daily and a
+ * bar that grew a tab for every setting would push the ones that matter to the edge.
  *
  * Only the screens that answer about a stretch of days carry the period between them, so that
  * somebody looking at a fortnight of numbers who goes to read the visits behind them is still
- * looking at the same fortnight. The other two answer about something a period cannot narrow — the
- * present moment, and the person reading — and a period in either address would be a question
+ * looking at the same fortnight. The record is every month there is, so it carries whose figures
+ * are being read and no period. The other two answer about something neither can narrow — the
+ * present moment, and the person reading — and either in their addresses would be a question
  * nothing on the screen could answer.
  */
-export const SECTIONS = [
-  { path: DASHBOARD, name: 'overview', aboutSite: true },
-  { path: LIVE, name: 'live', aboutSite: false },
-  { path: JOURNEYS, name: 'journeys', aboutSite: true },
-  { path: SETTINGS, name: 'settings', aboutSite: false },
-] as const;
+export const SECTIONS: readonly Section[] = [
+  { path: DASHBOARD, name: 'overview', carries: ['period', 'population'] },
+  { path: INSIGHTS, name: 'insights', carries: ['population'] },
+  { path: LIVE, name: 'live', carries: [] },
+  { path: JOURNEYS, name: 'journeys', carries: ['period', 'population'] },
+  { path: SETTINGS, name: 'settings', carries: [] },
+];
 
 /**
  * The screens inside the account, in the order they are listed.

@@ -28,7 +28,7 @@ public sealed class TelemetryQueryTests(AnalyticsStackFixture stack)
     /// <summary>A zone that never changes its clocks, half an hour off the hour from UTC.</summary>
     private const string Kolkata = "Asia/Kolkata";
 
-    private static readonly DateTimeOffset Midnight = new(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Midnight = StillHeld.Midnight;
 
     [Fact]
     public async Task An_Overview_Counts_Page_Views_Visitors_And_Everything_Reported()

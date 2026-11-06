@@ -17,25 +17,27 @@ import {
   type Engagement,
   type EngagementRanking,
   engagementSchema,
+  type Insights,
   type Installation,
   type InvitationPreview,
   type IssuedServerKey,
-  type Join,
-  type Live,
-  type LiveTrail,
+  insightsSchema,
   installationSchema,
-  liveSchema,
-  liveTrailSchema,
   invitationPreviewSchema,
   issuedServerKeySchema,
+  type Join,
   joinSchema,
+  type Live,
+  type LiveTrail,
   type LocationGrouping,
   type Locations,
+  liveSchema,
+  liveTrailSchema,
   locationsSchema,
   type Organization,
   type OrganizationRole,
-  organizationSchema,
   type Overview,
+  organizationSchema,
   overviewSchema,
   type PageEngagement,
   type Pages,
@@ -45,8 +47,8 @@ import {
   type SeriesMetric,
   type ServerKey,
   type Session,
-  type Site,
   type SignedInUser,
+  type Site,
   type SiteSettings,
   type Software,
   type SoftwareGrouping,
@@ -182,6 +184,13 @@ export function readSeries(
   );
 }
 
+/** An address asked about one population alone: plain under everybody, with no bare question mark. */
+function ofPopulation(address: string, population: Population): string {
+  const asked = withPopulation(new URLSearchParams(), population).toString();
+
+  return asked.length === 0 ? address : `${address}?${asked}`;
+}
+
 /**
  * A website's whole record, for one population: its headline totals across it, where it begins,
  * and the months it leaves out and why.
@@ -189,12 +198,15 @@ export function readSeries(
  * No window. All time is every month the engine holds, and the engine decides which those are.
  */
 export function readAllTime(siteId: string, population: Population): Promise<AllTime> {
-  const asked = withPopulation(new URLSearchParams(), population).toString();
+  return readResource(ofPopulation(`${siteAddress(siteId)}/all-time`, population), allTimeSchema);
+}
 
-  return readResource(
-    `${siteAddress(siteId)}/all-time${asked.length === 0 ? '' : `?${asked}`}`,
-    allTimeSchema,
-  );
+/**
+ * What a website's whole record says, for one population: its totals, the day and the times it was
+ * read most, and every month of it. No window, for the reason all time has none.
+ */
+export function readInsights(siteId: string, population: Population): Promise<Insights> {
+  return readResource(ofPopulation(`${siteAddress(siteId)}/insights`, population), insightsSchema);
 }
 
 /** One measure across all time, month by month or year by year, for one population. */

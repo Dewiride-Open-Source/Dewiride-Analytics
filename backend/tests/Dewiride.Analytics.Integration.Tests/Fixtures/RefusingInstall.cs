@@ -56,6 +56,13 @@ internal sealed class RefusingInstall : WebApplicationFactory<Program>
     /// <param name="organizationId">The account.</param>
     public void Refuse(Guid organizationId) => _observer.Refused[organizationId] = true;
 
+    /// <summary>
+    /// Makes every act on an account end as a client giving up on a statement does: a cancellation
+    /// nobody asked for.
+    /// </summary>
+    /// <param name="organizationId">The account.</param>
+    public void GiveUpOn(Guid organizationId) => _observer.GivenUpOn[organizationId] = true;
+
     /// <summary>Lets the edition allow an account again.</summary>
     /// <param name="organizationId">The account.</param>
     public void Allow(Guid organizationId) => _observer.Refused.TryRemove(organizationId, out _);
@@ -108,6 +115,9 @@ internal sealed class RefusingInstall : WebApplicationFactory<Program>
         /// <summary>The accounts every act is refused on.</summary>
         public ConcurrentDictionary<Guid, bool> Refused { get; } = new();
 
+        /// <summary>The accounts every act ends in a client giving up on.</summary>
+        public ConcurrentDictionary<Guid, bool> GivenUpOn { get; } = new();
+
         /// <summary>The accounts every act is held open on.</summary>
         public ConcurrentDictionary<Guid, Gate> Held { get; } = new();
 
@@ -128,6 +138,11 @@ internal sealed class RefusingInstall : WebApplicationFactory<Program>
             if (Refused.ContainsKey(organizationId))
             {
                 throw new InvalidOperationException("The edition refuses this account.");
+            }
+
+            if (GivenUpOn.ContainsKey(organizationId))
+            {
+                throw new TaskCanceledException("The client stopped waiting for the edition.");
             }
 
             if (Held.TryGetValue(organizationId, out var gate))

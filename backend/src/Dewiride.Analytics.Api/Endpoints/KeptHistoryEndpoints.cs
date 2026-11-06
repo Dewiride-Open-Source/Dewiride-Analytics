@@ -34,6 +34,9 @@ namespace Dewiride.Analytics.Api.Endpoints;
 /// </remarks>
 internal static class KeptHistoryEndpoints
 {
+    /// <summary>How a day is written in an answer.</summary>
+    private const string DayFormat = "yyyy-MM-dd";
+
     /// <summary>
     /// Maps the questions about a website's whole record.
     /// </summary>
@@ -53,10 +56,14 @@ internal static class KeptHistoryEndpoints
         routes.MapGet("/api/sites/{siteId:guid}/all-time/traffic/series", TrafficSeriesAsync)
             .WithName("SiteAllTimeTrafficSeries")
             .WithSummary("Returns judged visits by what generated them across a website's whole record, month by month or year by year.");
+
+        routes.MapGet("/api/sites/{siteId:guid}/insights", InsightsAsync)
+            .WithName("SiteInsights")
+            .WithSummary("Returns what a website's whole record says about when it is read: its totals, its best day, its busiest day of the week and hour, and every month's page views.");
     }
 
     private static async Task<Results<Ok<AllTimeResponse>, NotFound, ProblemHttpResult>> AllTimeAsync(
-        [AsParameters] AllTimeParameters parameters,
+        [AsParameters] WholeRecordParameters parameters,
         ITenantScopeProvider scopes,
         ITelemetryQueries telemetry,
         IClassificationProgressStore progress,
@@ -93,7 +100,7 @@ internal static class KeptHistoryEndpoints
             new AllTimeResponse(
                 reading.Months.FirstOrDefault()?.Month.Begins,
                 reading.AsOf,
-                reading.FirstDay?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                reading.FirstDay?.ToString(DayFormat, CultureInfo.InvariantCulture),
                 Retention.DetailFrom(reading.AsOf, TimeZoneInfo.FindSystemTimeZoneById(scope.TimeZoneId)),
                 Total(reading, figures => figures.Figures.PageViews, pageViews),
                 Total(reading, figures => figures.Figures.Visitors, visitors),
@@ -210,6 +217,75 @@ internal static class KeptHistoryEndpoints
                 KeptHistory.Unjudged(reading.Months)));
     }
 
+    private static async Task<Results<Ok<InsightsResponse>, NotFound, ProblemHttpResult>> InsightsAsync(
+        [AsParameters] WholeRecordParameters parameters,
+        ITenantScopeProvider scopes,
+        ITelemetryQueries telemetry,
+        IClassificationProgressStore progress,
+        IOptions<ClassificationOptions> classification,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!TryReadPopulation(parameters.Only, out var population))
+        {
+            return Unusable(UnknownPopulation);
+        }
+
+        var scope = await scopes.ResolveAsync(parameters.SiteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var reading = await ReadAsync(
+                scope,
+                population,
+                population == Population.People,
+                new Readers(telemetry, progress, classification.Value, clock),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var pageViews = await LiveAsync(scope, reading, TimeSeriesMetric.PageViews, population, telemetry, cancellationToken)
+            .ConfigureAwait(false);
+        var visitors = await LiveAsync(scope, reading, TimeSeriesMetric.Visitors, population, telemetry, cancellationToken)
+            .ConfigureAwait(false);
+        var days = await LivePagesAsync(scope, reading, TimeGranularity.Day, population, telemetry, cancellationToken)
+            .ConfigureAwait(false);
+        var hours = await LivePagesAsync(scope, reading, TimeGranularity.Hour, population, telemetry, cancellationToken)
+            .ConfigureAwait(false);
+
+        var insights = KeptHistory.Insights(
+            reading.Months,
+            reading.FirstDay,
+            new LiveMonths(pageViews, days, hours),
+            TimeZoneInfo.FindSystemTimeZoneById(scope.TimeZoneId),
+            reading.AsOf);
+
+        return TypedResults.Ok(
+            new InsightsResponse(
+                reading.FirstDay?.ToString(DayFormat, CultureInfo.InvariantCulture),
+                reading.AsOf,
+                reading.CompleteTo,
+                Total(reading, figures => figures.Figures.PageViews, pageViews),
+                Total(reading, figures => figures.Figures.Visitors, visitors),
+                insights.BestDay is { } best
+                    ? new InsightsBestDay(best.ToString(DayFormat, CultureInfo.InvariantCulture), insights.BestDayPageViews)
+                    : null,
+                insights.Weekdays,
+                insights.BusiestWeekdays,
+                insights.Hours,
+                insights.BusiestHours,
+                [
+                    .. insights.Months.Select(month => new InsightsMonth(
+                        month.Month.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                        month.PageViews,
+                        month.DaysMeasured)),
+                ],
+                KeptHistory.Missing(reading.Months),
+                KeptHistory.Unjudged(reading.Months)));
+    }
+
     /// <summary>
     /// Reads a website's record and decides where each of its months is read from.
     /// </summary>
@@ -275,6 +351,32 @@ internal static class KeptHistoryEndpoints
         return points.ToDictionary(point => point.BucketStart, point => point.Value);
     }
 
+    /// <summary>
+    /// Counts the pages delivered, day by day or hour by hour, over the stretch a record answers from
+    /// its reports.
+    /// </summary>
+    /// <returns>Each bucket's figure; nothing where no month is answered so.</returns>
+    private static async Task<IReadOnlyList<TimeSeriesPoint>> LivePagesAsync(
+        TenantScope scope,
+        Reading reading,
+        TimeGranularity granularity,
+        Population population,
+        ITelemetryQueries telemetry,
+        CancellationToken cancellationToken)
+    {
+        if (reading.Live is not { } range)
+        {
+            return [];
+        }
+
+        return await telemetry
+            .GetTimeSeriesAsync(
+                scope,
+                new TimeSeriesQuery(range, granularity, TimeSeriesMetric.PageViews) { Population = population },
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private static Func<KeptFigures, long> Measured(TimeSeriesMetric metric) =>
         metric == TimeSeriesMetric.Visitors
             ? figures => figures.Figures.Visitors
@@ -303,15 +405,15 @@ internal static class KeptHistoryEndpoints
 }
 
 /// <summary>
-/// What the question about a website's headline totals for all time reads from the path and the
-/// query string.
+/// What a question about a website's whole record for one population reads from the path and the
+/// query string: its headline totals for all time, and its insights.
 /// </summary>
 /// <param name="SiteId">The website.</param>
 /// <param name="Only">
 /// Who the answer is about: <c>people</c> for the visits the engine concluded were people alone, or
 /// absent for everybody.
 /// </param>
-internal readonly record struct AllTimeParameters(
+internal readonly record struct WholeRecordParameters(
     Guid SiteId,
     [FromQuery] string? Only);
 

@@ -62,11 +62,14 @@ export function useRememberedAddress<T extends object | string, R extends T | nu
   const lastSaid = useRef<T | null | undefined>(undefined);
 
   useEffect(() => {
-    if (!seeding) {
+    const before = lastSaid.current;
+
+    // A screen that only reads the choice has no arrival to seed, and its address falling silent means
+    // it has moved to another screen. One that has yet to ask for seeding is the same until somebody
+    // chooses, and from then on it has arrived.
+    if (!seeding && before === undefined) {
       return;
     }
-
-    const before = lastSaid.current;
 
     lastSaid.current = inAddress;
 
@@ -92,11 +95,20 @@ export function useRememberedAddress<T extends object | string, R extends T | nu
 
   const choose = useCallback(
     (next: R) => {
+      // Somebody who has chosen has arrived, on a screen that asks for seeding only once it knows
+      // more as on any other: the way back from this choice is not an address to seed.
+      lastSaid.current = next;
       remember(next);
+
       // The fallback is left out of the address, so the plain address of a screen stays plain.
-      void write(same(written, next, store.fallback) ? null : next);
+      const saying = same(written, next, store.fallback) ? null : next;
+
+      // A second entry the same as the one somebody is on would make the way back do nothing.
+      if (!same(written, inAddress, saying)) {
+        void write(saying);
+      }
     },
-    [remember, write, written, store],
+    [inAddress, remember, write, written, store],
   );
 
   return [value, choose];

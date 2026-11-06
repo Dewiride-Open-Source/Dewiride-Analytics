@@ -31,6 +31,9 @@ and the [master plan](#master-plan) below it says what does not yet.
 **Working now**
 
 - The whole stack starts with one command and comes up healthy on a laptop.
+- Work the engine does in the background cannot stop the engine. Where a database is slow, or away for
+  a moment, a run that fails is written in the log and tried again, and the collector is not taken down
+  with it.
 - A collection endpoint accepts page views, engagement reports and clicks, stamps its own authoritative
   timestamp alongside the reported one, and writes them to the telemetry store.
 - Sign-in, several accounts on one installation, and three roles with a real membership check.
@@ -56,6 +59,11 @@ and the [master plan](#master-plan) below it says what does not yet.
   adds no page view and opens no visit, because nothing on it says which visit it belonged to. It
   still counts in how your pages are read, because there it is the only measurement of that page
   there is.
+- **Insights**, a screen of its own for a website's whole record: its page views and daily visitors
+  since it was first measured, its best day ever, its busiest day of the week and hour on its own
+  clock, and every month and year by total views or by average per day. All of it can be kept to the
+  visits judged to be people, and a month that could not be counted says so rather than reading as
+  nought.
 - Where your readers are, by country, by town, and by the network they arrived over, ranked by how
   many people were in each place rather than by how much browsing they did. Towns are named as an
   estimate, because that is what they are; the network view is there because a hundred rented
@@ -147,7 +155,7 @@ and the [master plan](#master-plan) below it says what does not yet.
 ## Master plan
 
 Every capability the product is meant to have, phase by phase, in the order the work is picked
-up. Each line is marked with one of four states. Last reviewed 2026-11-05.
+up. Each line is marked with one of four states. Last reviewed 2026-11-06.
 
 - **Done** — shipped and visible on the dashboard, or collected on every capture surface.
 - **Partly done** — a real piece ships; the line says what is still missing.
@@ -436,6 +444,12 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-05.
 - **Not started** · Bandwidth — stored today, never shown.
 - **Not started** · Share of requests from automation; highest-volume crawler; repeated fetches.
 - **Not started** · "Automation made 38% of requests and 7% of human reading" as one line.
+
+**5.8 Insights**
+
+- **Done** · All-time page views and daily visitors, the best day ever, the busiest day of the week
+  and hour, every month and year by total views or by average per day, and the same for people only.
+- **Not started** · Posts: how many there are, the latest, the most read, and when they were published.
 
 ### Phase 6 — AI analytics
 

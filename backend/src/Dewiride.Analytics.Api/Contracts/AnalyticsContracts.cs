@@ -978,6 +978,68 @@ public sealed record AllTimeResponse(
     IReadOnlyList<string> Unjudged);
 
 /// <summary>
+/// What a website's whole record says about when it is read, all from one reading.
+/// </summary>
+/// <param name="FirstDay">
+/// The first day of the website's record, as <see cref="AllTimeResponse"/> says; nothing where nothing
+/// of the website is held.
+/// </param>
+/// <param name="To">The moment the record was read at.</param>
+/// <param name="CompleteTo">The instant the answer is complete up to, as <see cref="AllTimeResponse"/> says.</param>
+/// <param name="PageViews">Pages delivered, the figure <see cref="AllTimeResponse"/> gives.</param>
+/// <param name="Visitors">Daily visitors, the figure <see cref="AllTimeResponse"/> gives.</param>
+/// <param name="BestDay">The day the most pages were delivered, or nothing where none were.</param>
+/// <param name="Weekdays">Pages delivered on each day of the week, Monday first.</param>
+/// <param name="BusiestWeekdays">
+/// Every place in <paramref name="Weekdays"/> sharing the most, in order, or none where nothing was read.
+/// </param>
+/// <param name="Hours">Pages delivered in each hour of the day, from midnight on the website's clock.</param>
+/// <param name="BusiestHours">
+/// Every place in <paramref name="Hours"/> sharing the most, in order, or none where nothing was read.
+/// </param>
+/// <param name="Months">Every month from the record's first to the one running now, oldest first.</param>
+/// <param name="Missing">
+/// The months, as <c>yyyy-MM</c>, the answer leaves out because they were never counted, on the terms
+/// <see cref="AllTimeResponse"/> gives.
+/// </param>
+/// <param name="Unjudged">
+/// Asked about people, the months the answer leaves out because they were kept before judging had
+/// finished with them and can no longer be counted again. Empty for everybody.
+/// </param>
+public sealed record InsightsResponse(
+    string? FirstDay,
+    DateTimeOffset To,
+    DateTimeOffset CompleteTo,
+    long PageViews,
+    long Visitors,
+    InsightsBestDay? BestDay,
+    IReadOnlyList<long> Weekdays,
+    IReadOnlyList<int> BusiestWeekdays,
+    IReadOnlyList<long> Hours,
+    IReadOnlyList<int> BusiestHours,
+    IReadOnlyList<InsightsMonth> Months,
+    IReadOnlyList<string> Missing,
+    IReadOnlyList<string> Unjudged);
+
+/// <summary>
+/// The day a website had the most pages delivered: the earliest of a tie.
+/// </summary>
+/// <param name="Day">The day, as <c>yyyy-MM-dd</c> on the website's calendar.</param>
+/// <param name="PageViews">Pages delivered on it.</param>
+public sealed record InsightsBestDay(string Day, long PageViews);
+
+/// <summary>
+/// How much of a website's record one month holds.
+/// </summary>
+/// <param name="Month">The month, as <c>yyyy-MM</c> on the website's calendar.</param>
+/// <param name="PageViews">Pages delivered in it, or nothing where it cannot be said.</param>
+/// <param name="DaysMeasured">
+/// How many of its days those pages cover: from the website's first day, and up to and including today
+/// in the month running now. None where the month has no figure.
+/// </param>
+public readonly record struct InsightsMonth(string Month, long? PageViews, int DaysMeasured);
+
+/// <summary>
 /// One measure across a website's whole record, month by month or year by year.
 /// </summary>
 /// <param name="From">The first bucket's start, or <paramref name="To"/> where there is none.</param>

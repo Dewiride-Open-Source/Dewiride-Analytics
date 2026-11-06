@@ -64,10 +64,11 @@ internal sealed partial class ConsolidationWorker(
             }
             while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
         }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        catch (Exception) when (stoppingToken.IsCancellationRequested)
         {
-            // Shutting down part-way through. Every month already written was counted whole, and
-            // the next start counts whatever this run did not reach.
+            // Shutting down part-way through, whether the work was told to stop or a store went down
+            // with the machine first. Every month already written was counted whole, and the next
+            // start counts whatever this run did not reach.
         }
     }
 

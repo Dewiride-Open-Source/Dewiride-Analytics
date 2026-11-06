@@ -20,7 +20,7 @@ namespace Dewiride.Analytics.Integration.Tests.Telemetry;
 [Collection(SharedStackDefinition.Name)]
 public sealed class SitePagesTests(AnalyticsStackFixture stack)
 {
-    private static readonly DateTimeOffset Midnight = new(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Midnight = StillHeld.Midnight;
 
     [Fact]
     public async Task Pages_Are_Listed_Busiest_First()

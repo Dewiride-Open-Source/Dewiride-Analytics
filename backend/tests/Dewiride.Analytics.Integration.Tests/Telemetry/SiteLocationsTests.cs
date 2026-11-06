@@ -21,7 +21,7 @@ namespace Dewiride.Analytics.Integration.Tests.Telemetry;
 [Collection(SharedStackDefinition.Name)]
 public sealed class SiteLocationsTests(AnalyticsStackFixture stack)
 {
-    private static readonly DateTimeOffset Midnight = new(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Midnight = StillHeld.Midnight;
 
     [Fact]
     public async Task Countries_Are_Listed_By_How_Many_People_Were_In_Them()

@@ -9,6 +9,7 @@ import {
   readDevices,
   readEngagement,
   readFacets,
+  readInsights,
   readLocations,
   readOverview,
   readPageEngagement,
@@ -291,6 +292,71 @@ describe('asking the engine about all time', () => {
     missing: ['2026-08'],
     unjudged: [],
   };
+
+  /** What the whole record says, all of it from one answer, as the screen about it reads it. */
+  describe('what the whole record says', () => {
+    const RECORD = {
+      firstDay: '2026-07-19',
+      to: '2026-08-18T00:00:00+00:00',
+      completeTo: '2026-08-18T00:00:00+00:00',
+      pageViews: 120,
+      visitors: 40,
+      bestDay: { day: '2026-07-21', pageViews: 12 },
+      weekdays: [1, 2, 3, 4, 5, 6, 7],
+      busiestWeekdays: [6],
+      hours: Array.from({ length: 24 }, (_, hour) => hour),
+      busiestHours: [23],
+      months: [
+        { month: '2026-07', pageViews: null, daysMeasured: 0 },
+        { month: '2026-08', pageViews: 120, daysMeasured: 18 },
+      ],
+      missing: ['2026-07'],
+      unjudged: [],
+    };
+
+    it('asks about everybody by saying nothing, with no bare question mark', async () => {
+      const engine = engineAnswering(200, RECORD);
+
+      await readInsights(SITE, 'everybody');
+
+      expect(engine.first().path).toBe(`/api/sites/${SITE}/insights`);
+    });
+
+    it('asks about the people by name, and never about a window', async () => {
+      const engine = engineAnswering(200, RECORD);
+
+      await readInsights(SITE, 'people');
+
+      const asked = askedIn(engine.first().path);
+
+      expect(addressOf(engine.first().path)).toBe(`/api/sites/${SITE}/insights`);
+      expect([...asked.keys()]).toStrictEqual(['only']);
+      expect(asked.get('only')).toBe('people');
+    });
+
+    it('reads a month with no figure as nothing rather than as nought', async () => {
+      engineAnswering(200, RECORD);
+
+      await expect(readInsights(SITE, 'everybody')).resolves.toMatchObject({
+        months: [
+          { month: '2026-07', pageViews: null, daysMeasured: 0 },
+          { month: '2026-08', pageViews: 120, daysMeasured: 18 },
+        ],
+        missing: ['2026-07'],
+      });
+    });
+
+    /** A week of six days or a day of twenty-three hours would misplace every share. */
+    it('refuses an answer whose week or day is the wrong length', async () => {
+      engineAnswering(200, { ...RECORD, weekdays: [1, 2, 3] });
+
+      await expect(readInsights(SITE, 'everybody')).rejects.toThrow();
+
+      engineAnswering(200, { ...RECORD, hours: [1, 2, 3] });
+
+      await expect(readInsights(SITE, 'everybody')).rejects.toThrow();
+    });
+  });
 
   it('asks about everybody by saying nothing, with no bare question mark', async () => {
     const engine = engineAnswering(200, NEVER_MEASURED);

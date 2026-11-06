@@ -23,7 +23,7 @@ namespace Dewiride.Analytics.Integration.Tests.Telemetry;
 [Collection(SharedStackDefinition.Name)]
 public sealed class SiteSourcesTests(AnalyticsStackFixture stack)
 {
-    private static readonly DateTimeOffset Midnight = new(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Midnight = StillHeld.Midnight;
 
     private const string Measured = "example.com";
 

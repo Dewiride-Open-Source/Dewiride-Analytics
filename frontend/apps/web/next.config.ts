@@ -80,6 +80,18 @@ const config: NextConfig = {
     },
   },
 
+  // How long a request forwarded to the engine may wait for its answer to begin. Left alone the
+  // framework gives up after thirty seconds and tells the reader something went wrong, and the
+  // engine, cut off with it, writes nothing of what it was doing. That is sooner than the engine
+  // gives up on one statement to its store, and reading a website's whole record asks several, one
+  // after another.
+  // Two minutes is longer than any one statement is allowed, so a statement that takes too long is
+  // ended by the engine, whose log says which. A reading that asks several can still run past two
+  // minutes between them, and is then given up on here, where this server's own log says so.
+  experimental: {
+    proxyTimeout: 120_000,
+  },
+
   reactStrictMode: true,
 
   // Nothing here asks the framework to resize a picture, yet left alone it still answers such

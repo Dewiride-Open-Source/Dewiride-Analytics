@@ -49,6 +49,8 @@ const SILENT_AGAIN = '?';
 interface Arrived {
   /** Stands for the browser's own way back to the silent address the screen was opened on. */
   readonly back: () => void;
+  /** Stands for the screen coming to know enough to ask for seeding, on whatever address it is on. */
+  readonly beginSeeding: () => void;
 }
 
 function arrive({ at, picking = 'b', seeding = true, watching }: Arriving = {}): Arrived {
@@ -59,6 +61,7 @@ function arrive({ at, picking = 'b', seeding = true, watching }: Arriving = {}):
     </NuqsTestingAdapter>
   );
   const probe = <Probe pick={picking} seeding={seeding} />;
+  let spelt = at;
 
   // The stand-in address renders once more the moment it is mounted, to take up what it was given,
   // and throws away whatever is waiting to be written every time it renders. A screen mounted in
@@ -68,7 +71,13 @@ function arrive({ at, picking = 'b', seeding = true, watching }: Arriving = {}):
 
   shown.rerender(address(at, probe));
 
-  return { back: () => shown.rerender(address(SILENT_AGAIN, probe)) };
+  return {
+    back: () => {
+      spelt = SILENT_AGAIN;
+      shown.rerender(address(spelt, probe));
+    },
+    beginSeeding: () => shown.rerender(address(spelt, <Probe pick={picking} seeding />)),
+  };
 }
 
 /** What the screen currently believes was chosen. */
@@ -181,6 +190,22 @@ describe('a choice carried in the address and remembered by the browser', () => 
     expect(watching).not.toHaveBeenCalled();
   });
 
+  /** The bar across the top outlives the screens below it, whose addresses say different things. */
+  it('forgets nothing where it only reads and its address falls silent', async () => {
+    const watching = vi.fn();
+
+    window.localStorage.setItem('test.pick', 'b');
+
+    const { back } = arrive({ at: '?pick=b', seeding: false, watching });
+
+    back();
+    await anyWriting();
+
+    expect(showing()).toBe('b');
+    expect(window.localStorage.getItem('test.pick')).toBe('b');
+    expect(watching).not.toHaveBeenCalled();
+  });
+
   /**
    * A choice made on the plain address of the screen leaves that address behind it in the
    * history, and the button somebody reaches for to undo the choice lands on it. The screen
@@ -221,5 +246,95 @@ describe('a choice carried in the address and remembered by the browser', () => 
 
     expect(watching).toHaveBeenCalledTimes(1);
     expect(watching.mock.calls[0]?.[0].options.history).toBe('replace');
+  });
+
+  /** An entry the same as the one somebody is on is one the way back appears to do nothing from. */
+  it.each([
+    ['the fallback to an address saying nothing', undefined, 'a'],
+    ['what the address already names', '?pick=b', 'b'],
+  ] as const)('adds no entry for %s', async (_, at, picking) => {
+    const watching = vi.fn();
+
+    arrive({ at, picking, watching });
+
+    await userEvent.click(screen.getByRole('button'));
+    await anyWriting();
+
+    expect(showing()).toBe(picking);
+    expect(window.localStorage.getItem('test.pick')).toBe(picking);
+    expect(watching).not.toHaveBeenCalled();
+  });
+
+  /** A screen may ask for seeding only once it knows more, and the reader need not wait for it. */
+  describe('where seeding begins after somebody could already choose', () => {
+    it('seeds what was remembered when nobody chose', async () => {
+      const watching = vi.fn();
+
+      window.localStorage.setItem('test.pick', 'b');
+
+      const { beginSeeding } = arrive({ seeding: false, watching });
+
+      await anyWriting();
+      expect(watching).not.toHaveBeenCalled();
+
+      beginSeeding();
+
+      await waitFor(() => expect(watching).toHaveBeenCalledTimes(1));
+      expect(watching.mock.calls[0]?.[0].queryString).toContain('pick=b');
+      expect(watching.mock.calls[0]?.[0].options.history).toBe('replace');
+    });
+
+    it('lets a choice stand', async () => {
+      const watching = vi.fn();
+      const { beginSeeding } = arrive({ seeding: false, watching });
+
+      await userEvent.click(screen.getByRole('button'));
+      await waitFor(() => expect(watching).toHaveBeenCalledTimes(1));
+
+      beginSeeding();
+      await anyWriting();
+
+      expect(showing()).toBe('b');
+      expect(watching).toHaveBeenCalledTimes(1);
+      expect(window.localStorage.getItem('test.pick')).toBe('b');
+    });
+
+    it('does not write a choice back over the way back from it', async () => {
+      const watching = vi.fn();
+      const { back, beginSeeding } = arrive({ seeding: false, watching });
+
+      await userEvent.click(screen.getByRole('button'));
+      await waitFor(() => expect(watching).toHaveBeenCalledTimes(1));
+
+      back();
+
+      // As soon as they are back, and not only once the screen has come to know more.
+      await waitFor(() => expect(showing()).toBe('a'));
+
+      beginSeeding();
+      await anyWriting();
+
+      expect(showing()).toBe('a');
+      expect(watching).toHaveBeenCalledTimes(1);
+      expect(window.localStorage.getItem('test.pick')).toBe('a');
+    });
+
+    it('does not bring back what was remembered after it was turned off', async () => {
+      const watching = vi.fn();
+
+      window.localStorage.setItem('test.pick', 'b');
+
+      const { beginSeeding } = arrive({ picking: 'a', seeding: false, watching });
+
+      await userEvent.click(screen.getByRole('button'));
+      await waitFor(() => expect(showing()).toBe('a'));
+
+      beginSeeding();
+      await anyWriting();
+
+      expect(showing()).toBe('a');
+      expect(window.localStorage.getItem('test.pick')).toBe('a');
+      expect(watching).not.toHaveBeenCalled();
+    });
   });
 });

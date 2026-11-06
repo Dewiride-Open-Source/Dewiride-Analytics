@@ -888,11 +888,16 @@ export interface ScreenChoices {
  * what is in the address is what they see.
  *
  * A choice that is what every screen opens on is left out. An address that says what it would have
- * said anyway is one more thing in the bar for nothing.
+ * said anyway is one more thing in the bar for nothing. So is a choice the screen is not given,
+ * because it answers about something that choice cannot narrow.
  *
  * @param screen One of the product's own addresses, which never asks a question of its own.
+ * @param choices What the screen is handed of what is being looked at.
  */
-export function withChoices(screen: string, { period, population }: ScreenChoices): string {
+export function withChoices(
+  screen: string,
+  { period = DEFAULT_PERIOD, population = 'everybody' }: Partial<ScreenChoices>,
+): string {
   const asked = new URLSearchParams();
 
   if (!samePeriod(period, DEFAULT_PERIOD)) {

@@ -10,8 +10,8 @@ import { useRememberedAddress } from '@/lib/preferences/use-remembered-address';
  * Whether a screen is kept to people, carried in the address and remembered by the browser.
  *
  * It changes what every figure counts rather than how anything looks, so it travels: somebody who
- * found a rise in their readers can send exactly that. Remembered as well, so the next visit to
- * either screen about a period opens on it. Left off, it says nothing in the address at all.
+ * found a rise in their readers can send exactly that. Remembered as well, so the next visit to the
+ * overview, Insights or the User journey opens on it. Left off, it says nothing in the address at all.
  */
 
 /** Which of the closed set is in force, or nothing when everybody is counted. */
@@ -28,7 +28,7 @@ export interface PeopleOptions {
   /**
    * Whether a remembered population is written into an address that says nothing.
    *
-   * Asked for by the two screens the population is the subject of, and by nothing else: the bar
+   * Asked for by the screens the population is the subject of, and by nothing else: the bar
    * across the top reads it on every screen so its links can carry it, and must not write it into
    * the address of a screen it means nothing on.
    */

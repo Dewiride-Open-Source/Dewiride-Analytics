@@ -5,7 +5,8 @@
  * somebody asks otherwise. But the question most owners bring to a screen is how many people came,
  * and a machinery-heavy week buries that under a band three times its height. Asking for the
  * people alone changes what every figure on the screen counts rather than how one picture is
- * drawn, so it travels in the address as the period does, and both screens about a period read it.
+ * drawn, so it travels in the address as the period does, and the overview, Insights and the User
+ * journey read it.
  */
 
 /** What asking for people alone is called in an address, and in a question put to the engine. */

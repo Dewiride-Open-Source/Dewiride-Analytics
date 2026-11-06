@@ -194,6 +194,65 @@ describe('the bar across the top', () => {
     );
   });
 
+  /** How much traffic there was, what the whole record says, who is here, who each visitor was. */
+  it('offers Insights between the screens', async () => {
+    engineWith([SITE]);
+
+    withTheme(<AppHeader />);
+
+    const sections = await screen.findByRole('navigation', { name: 'Sections' });
+
+    expect(
+      within(sections)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['Overview', 'Insights', 'Live', 'User journey', 'Settings']);
+    expect(within(sections).getByRole('link', { name: 'Insights' })).toHaveAttribute(
+      'href',
+      '/app/insights',
+    );
+  });
+
+  /**
+   * The record is every month there is, so a period in its address would be a question nothing on
+   * the screen could answer. Whose figures are being read is another matter: it is the one choice
+   * the screen takes.
+   */
+  it.each([
+    ['?period=yesterday&only=people', '/app/insights?only=people'],
+    ['?only=people', '/app/insights?only=people'],
+    ['?period=yesterday', '/app/insights'],
+    ['?period=all-time', '/app/insights'],
+  ])('hands the population, and not the period, to Insights (%s)', async (at, address) => {
+    engineWith([SITE]);
+
+    withTheme(<AppHeader />, { at });
+
+    const sections = await screen.findByRole('navigation', { name: 'Sections' });
+
+    expect(within(sections).getByRole('link', { name: 'Insights' })).toHaveAttribute(
+      'href',
+      address,
+    );
+  });
+
+  it('marks Insights while it is the screen being looked at', async () => {
+    pathname.mockReturnValue('/app/insights');
+    engineWith([SITE]);
+
+    withTheme(<AppHeader />);
+
+    const sections = await screen.findByRole('navigation', { name: 'Sections' });
+
+    expect(within(sections).getByRole('link', { name: 'Insights' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(within(sections).getByRole('link', { name: 'Overview' })).not.toHaveAttribute(
+      'aria-current',
+    );
+  });
+
   /**
    * The overview and the journeys are two questions about the same days and the same people, so
    * the way between them carries both. The present moment and the account are not about any
@@ -206,7 +265,7 @@ describe('the bar across the top', () => {
     ['?only=people', '?only=people'],
     ['?period=all-time', '?period=all-time'],
   ])(
-    'hands what is being looked at (%s) between the screens about a stretch of days, and to no other',
+    'hands what is being looked at (%s) between the screens about a stretch of days, and none of it to Live or Settings',
     async (at, carried) => {
       engineWith([SITE]);
 

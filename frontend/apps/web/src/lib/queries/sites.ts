@@ -3,6 +3,7 @@
 import {
   keepPreviousData,
   type QueryClient,
+  skipToken,
   useMutation,
   useQuery,
   useQueryClient,
@@ -21,6 +22,7 @@ import {
   readDevices,
   readEngagement,
   readFacets,
+  readInsights,
   readLive,
   readLiveTrail,
   readLocations,
@@ -43,6 +45,7 @@ import type {
   LocationGrouping,
   SeriesMetric,
   Session,
+  Site,
   SoftwareGrouping,
   SourceGrouping,
   VisitPosition,
@@ -55,6 +58,7 @@ import {
   devicesKey,
   engagementKey,
   facetsKey,
+  insightsKey,
   liveKey,
   liveTrailKey,
   locationsKey,
@@ -186,6 +190,27 @@ export function useAllTime(
     queryKey: allTimeKey(siteId, timeZoneId, population),
     queryFn: () => readAllTime(siteId, population),
     enabled,
+    retry: false,
+    staleTime: ALL_TIME_FRESH_FOR,
+  });
+}
+
+/**
+ * What a website's whole record says, for one population.
+ *
+ * Under everybody it is the same question the screen checks a population against, filed under the
+ * same name, so that check costs nothing. Nothing is asked until the website is known, which lets the
+ * screen about the record be the same screen before it is known and after.
+ *
+ * @param site The website, or nothing while which one it is has still to be read.
+ */
+export function useInsights(
+  site: Pick<Site, 'id' | 'timeZoneId'> | undefined,
+  population: Population,
+) {
+  return useQuery({
+    queryKey: insightsKey(site?.id, site?.timeZoneId, population),
+    queryFn: site === undefined ? skipToken : () => readInsights(site.id, population),
     retry: false,
     staleTime: ALL_TIME_FRESH_FOR,
   });

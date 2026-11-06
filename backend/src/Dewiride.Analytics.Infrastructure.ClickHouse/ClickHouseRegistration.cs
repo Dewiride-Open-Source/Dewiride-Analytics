@@ -29,7 +29,8 @@ public static class ClickHouseRegistration
     public const string TelemetryConnectionName = "Telemetry";
 
     /// <summary>
-    /// Name of the pooled HTTP client every request but the schema migrations runs over.
+    /// Name of the pooled HTTP client every request runs over, but for the schema migrations and the
+    /// counting of a finished month, which have their own.
     /// </summary>
     private const string HttpClientName = "dewiride-telemetry";
 
@@ -47,8 +48,8 @@ public static class ClickHouseRegistration
     /// How long one statement of a schema migration may run before the engine gives up on it.
     /// </summary>
     /// <remarks>
-    /// Everything else the engine asks the store is held to the HTTP client's default of a hundred
-    /// seconds, which is generous for a question asked by a screen. A migration that rewrites or
+    /// What a screen asks, and the engine's ordinary work, is held to <see cref="LongestStatement"/>,
+    /// a hundred seconds, which is generous for a question asked by a screen. A migration that rewrites or
     /// copies data reads a whole table instead, and a script is recorded as applied only once all
     /// of it has finished — so a client that gave up sooner would fail every start-up of an
     /// installation large enough, each attempt beginning the same statement again. An hour bounds
@@ -65,6 +66,18 @@ public static class ClickHouseRegistration
     /// Key the telemetry client a finished month is counted through is registered under.
     /// </summary>
     internal const string ConsolidationClientKey = "telemetry-consolidation";
+
+    /// <summary>
+    /// How long one statement a screen asks, or the engine's ordinary work, may run before the engine
+    /// gives up on it.
+    /// </summary>
+    /// <remarks>
+    /// The dashboard forwards a reader's request to the engine and waits a little longer than this for
+    /// the answer, so that a statement taking too long is ended here, where the log says which, and not
+    /// by the dashboard hanging up on an engine still at work. That holds for one statement: a reading
+    /// that asks several, one after another, can outlast the dashboard's wait between them.
+    /// </remarks>
+    internal static readonly TimeSpan LongestStatement = TimeSpan.FromSeconds(100);
 
     /// <summary>
     /// How long one statement counting a month may run before the engine gives up on it.
@@ -91,7 +104,8 @@ public static class ClickHouseRegistration
                 $"Connection string '{TelemetryConnectionName}' is not configured. "
                 + "Set ConnectionStrings__Telemetry in the environment.");
 
-        AddStoreHttpClient(builder.Services, HttpClientName);
+        AddStoreHttpClient(builder.Services, HttpClientName)
+            .ConfigureHttpClient(http => http.Timeout = LongestStatement);
         AddStoreHttpClient(builder.Services, SchemaHttpClientName)
             .ConfigureHttpClient(http => http.Timeout = LongestSchemaStatement);
         AddStoreHttpClient(builder.Services, ConsolidationHttpClientName)
@@ -101,8 +115,9 @@ public static class ClickHouseRegistration
         // a test can still substitute a controlled clock for the whole host.
         builder.Services.TryAddSingleton(TimeProvider.System);
 
-        // One client for every question the engine asks outside the schema migrations. It holds a
-        // cache of table schemas, which would be wasted if it were rebuilt per request.
+        // One client for every question the engine asks outside the schema migrations and the counting
+        // of a finished month. It holds a cache of table schemas, which would be wasted if it were
+        // rebuilt per request.
         builder.Services.AddSingleton<IClickHouseClient>(
             provider => CreateClient(provider, connectionString, HttpClientName));
 
@@ -180,6 +195,6 @@ public static class ClickHouseRegistration
         {
             HttpClientFactory = provider.GetRequiredService<IHttpClientFactory>(),
             HttpClientName = httpClientName,
-            LoggerFactory = provider.GetRequiredService<ILoggerFactory>(),
+            LoggerFactory = new StoreDriverLogging(provider.GetRequiredService<ILoggerFactory>()),
         });
 }

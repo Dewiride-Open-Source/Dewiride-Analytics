@@ -9,12 +9,13 @@ import {
   DASHBOARD,
   destinationFor,
   FORGOT_PASSWORD,
-  JOIN,
-  JOURNEYS,
+  INSIGHTS,
   isEngineAddress,
-  LIVE,
   isScreen,
   isSiteFile,
+  JOIN,
+  JOURNEYS,
+  LIVE,
   PLAN,
   RESET_PASSWORD,
   SCREENS,
@@ -177,6 +178,7 @@ describe('where somebody belongs', () => {
 describe('which addresses name a screen', () => {
   it.each([
     DASHBOARD,
+    INSIGHTS,
     LIVE,
     SIGN_IN,
     SIGN_UP,
@@ -249,6 +251,7 @@ describe('what the engine answers rather than the dashboard', () => {
 describe('which part of the product an address is in', () => {
   it.each([
     [DASHBOARD, DASHBOARD],
+    [INSIGHTS, INSIGHTS],
     [LIVE, LIVE],
     [JOURNEYS, JOURNEYS],
     [SETTINGS, SETTINGS],

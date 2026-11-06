@@ -455,6 +455,47 @@ describe('the dashboard', () => {
   });
 
   /**
+   * A stand-in promises a figure on its way. Figures that could not be had are not on their way, so
+   * the cards settle on the mark for no figure beneath the notice that says why, and take their
+   * numbers once asking again is answered.
+   */
+  it('settles the cards on no figure when their figures are refused, until asking again is answered', async () => {
+    engineWith(
+      [SITE],
+      totals(464, 132, 900),
+      NOTHING_JUDGED,
+      totals(464, 132, 900),
+      totals(464, 132, 900),
+      ['/overview'],
+    );
+
+    const { cache } = renderScreen(<Dashboard />);
+
+    expect(await screen.findByText('Something went wrong')).toBeInTheDocument();
+
+    const cards = screen.getByRole('heading', { name: 'Page views' }).closest('.grid');
+
+    expect(cards).not.toBeNull();
+
+    const grid = cards as HTMLElement;
+
+    await waitFor(() => expect(within(grid).getAllByText('—')).toHaveLength(3));
+    expect(grid.querySelector('.animate-pulse')).toBeNull();
+    expect(within(grid).getByRole('heading', { name: 'Daily visitors' })).toBeInTheDocument();
+    expect(within(grid).getByRole('heading', { name: 'Pages per visitor' })).toBeInTheDocument();
+    expect(
+      within(grid).getByText('Someone who returns tomorrow counts again.'),
+    ).toBeInTheDocument();
+
+    busy();
+    await act(() => cache.invalidateQueries());
+
+    expect(await within(grid).findByText('464')).toBeInTheDocument();
+    expect(within(grid).queryByText('—')).not.toBeInTheDocument();
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
+  });
+
+  /**
    * A website with nothing on it yet is almost always a website whose owner has not put the code
    * on their pages. Sending them elsewhere to look for it is how a first evening with a new
    * product ends.
@@ -2192,6 +2233,51 @@ describe('all time', () => {
     expect(await screen.findByText('Something went wrong')).toBeInTheDocument();
     expect(screen.queryByText('6,156')).not.toBeInTheDocument();
     expect(screen.queryByText('20,520')).not.toBeInTheDocument();
+
+    // Under all time as under any period, a stand-in promises a figure that is not coming.
+    const cards = screen.getByRole('heading', { name: 'Page views by people' }).closest('.grid');
+
+    expect(cards).not.toBeNull();
+    await waitFor(() => expect(within(cards as HTMLElement).getAllByText('—')).toHaveLength(3));
+    expect((cards as HTMLElement).querySelector('.animate-pulse')).toBeNull();
+  });
+
+  /**
+   * A stand-in promises a figure on its way, and the people's figures are: only everybody's record was
+   * refused, which the notice says. The cards take the mark for no figure only once their own answer
+   * has been refused too.
+   */
+  it('keeps the cards standing in while the people’s figures are on their way, where only everybody’s record was refused', async () => {
+    const { release } = recordHeld(
+      {},
+      (path) => addressOf(path).endsWith('/all-time') && partOf(path, 'only') === 'people',
+    );
+    const answering = globalThis.fetch as unknown as (
+      path: string,
+      init: RequestInit,
+    ) => Promise<Response>;
+
+    engineDoing(async (path, init) =>
+      everybodysRecord(path)
+        ? respondWith(500, { status: 500, title: 'The engine is having trouble.' })
+        : answering(path, init),
+    );
+
+    renderScreen(<Dashboard />, { searchParams: '?period=all-time&only=people' });
+
+    expect(await screen.findAllByText('Something went wrong')).not.toHaveLength(0);
+
+    const cards = screen
+      .getByRole('heading', { name: 'Page views by people' })
+      .closest('.grid') as HTMLElement;
+
+    expect(cards.querySelector('.animate-pulse')).not.toBeNull();
+    expect(within(cards).queryByText('—')).not.toBeInTheDocument();
+
+    release();
+
+    expect(await within(cards).findByText('6,156')).toBeInTheDocument();
+    expect(cards.querySelector('.animate-pulse')).toBeNull();
   });
 
   it('says the lists cover the last 12 months, and asks every list about them', async () => {

@@ -33,8 +33,9 @@ public sealed partial class VisitorKeySaltRotationService(
             {
                 await saltStore.RotateAsync(stoppingToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (Exception) when (stoppingToken.IsCancellationRequested)
             {
+                // The host is stopping, and whatever the work in hand ended in is part of that.
                 return;
             }
 #pragma warning disable CA1031 // A failed rotation must not stop the service; the next tick retries.

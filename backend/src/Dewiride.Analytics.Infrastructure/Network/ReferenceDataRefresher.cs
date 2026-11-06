@@ -83,8 +83,9 @@ internal sealed partial class ReferenceDataRefresher(
                 await RefreshPlacesAsync(settings, stoppingToken).ConfigureAwait(false);
                 await RefreshNetworksAsync(settings, stoppingToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (Exception) when (stoppingToken.IsCancellationRequested)
             {
+                // The host is stopping, and whatever the work in hand ended in is part of that.
                 return;
             }
 #pragma warning disable CA1031 // Whatever went wrong, the next interval retries and measurement continues meanwhile.
@@ -216,6 +217,14 @@ internal sealed partial class ReferenceDataRefresher(
             File.Move(partial, destination, overwrite: true);
             return true;
         }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // The host stopping says nothing about this release, whatever the download in hand ended
+            // in, and there is no asking for the one before it. A partial file's name carries its
+            // month, so a later download would not write over it.
+            Discard(partial);
+            throw;
+        }
 #pragma warning disable CA1031 // Any failure means this release is unavailable; the caller tries the one before.
         catch (Exception exception)
         {
@@ -248,6 +257,12 @@ internal sealed partial class ReferenceDataRefresher(
             }
 
             File.Move(partial, destination, overwrite: true);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // The host stopping says nothing about the file, whatever the download in hand ended in.
+            Discard(partial);
+            throw;
         }
 #pragma warning disable CA1031 // The previous copy stays in service and the next interval retries.
         catch (Exception exception)

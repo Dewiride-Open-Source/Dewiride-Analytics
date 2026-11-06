@@ -27,6 +27,8 @@
 - **Extended by**: [0063](0063-the-picture-is-drawn-by-the-day-the-week-or-the-month.md), which cuts
   the picture by the week or the month, washes a week or a month still being judged exactly as this
   record washes a day, and quietens the same way a week or a month the period cuts short.
+- **Extended by**: [0066](0066-insights-are-read-from-the-months-that-were-kept.md), whose whole screen
+  is kept to one population, under the same rule for saying why there are no people.
 - **Followed by**: [0064](0064-a-month-outlives-the-reports-it-was-counted-from.md), which keeps each
   month's figures for both populations, on one row and from one count.
 

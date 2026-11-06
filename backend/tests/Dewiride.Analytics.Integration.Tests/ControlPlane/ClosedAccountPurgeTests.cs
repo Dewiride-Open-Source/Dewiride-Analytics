@@ -289,6 +289,26 @@ public sealed class ClosedAccountPurgeTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// A client giving up on a statement reaches the sweep as a cancellation nobody asked for. It is
+    /// a failure on that one account like any other: the next is still deleted, and the sweep ends
+    /// normally, rather than letting it out to stop the host.
+    /// </summary>
+    [Fact]
+    public async Task A_Client_Giving_Up_On_One_Account_Leaves_The_Next_Deleted()
+    {
+        using var install = RefusingInstall.Start(stack);
+        var abandoned = await ClosedAccountAsync(Overdue + TimeSpan.FromDays(1));
+        var allowed = await ClosedAccountAsync(Overdue);
+
+        install.GiveUpOn(abandoned.OrganizationId);
+
+        await SweepAsync(install.Services);
+
+        (await HeldAboutAsync(allowed)).Organizations.Should().Be(0);
+        (await HeldAboutAsync(abandoned)).Organizations.Should().Be(1);
+    }
+
+    /// <summary>
     /// Every owner is told once, a week out, and nobody else is told at all. Once is recorded on
     /// the account rather than remembered by a mail server, so a second pass has nothing to send.
     /// </summary>

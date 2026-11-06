@@ -203,6 +203,33 @@ export const allTimeSchema = z.object({
 });
 
 /**
+ * What a website's whole record says, for one population, in one answer: its totals, the day and the
+ * times it was read most, and every month of it.
+ *
+ * Days and hours are on the website's clock. `weekdays` runs from Monday and `hours` from midnight,
+ * and the two `busiest` lists name every place sharing the most, none where nothing was read.
+ * `months` runs oldest first, the last of them the month running now, one for every month of the
+ * record: `pageViews` is nothing where a month is left out, as `missing` or `unjudged` says why, and
+ * `daysMeasured` is how many days its figure covers, none for such a month.
+ */
+export const insightsSchema = z.object({
+  firstDay: calendarDay.nullable(),
+  to: timestamp,
+  completeTo: timestamp,
+  pageViews: z.number().int(),
+  visitors: z.number().int(),
+  bestDay: z.object({ day: calendarDay, pageViews: z.number().int() }).nullable(),
+  weekdays: z.array(z.number().int()).length(7),
+  busiestWeekdays: z.array(z.number().int()),
+  hours: z.array(z.number().int()).length(24),
+  busiestHours: z.array(z.number().int()),
+  months: z.array(
+    z.object({ month: calendarMonth, pageViews: counted, daysMeasured: z.number().int() }),
+  ),
+  ...leftOut,
+});
+
+/**
  * One measure across a website's whole record, month by month or year by year, oldest first, with
  * the months it leaves out and why.
  */
@@ -878,6 +905,7 @@ export type SeriesMetric = Series['metric'];
 export type AllTime = z.infer<typeof allTimeSchema>;
 export type AllTimeSeries = z.infer<typeof allTimeSeriesSchema>;
 export type AllTimeTraffic = z.infer<typeof allTimeTrafficSchema>;
+export type Insights = z.infer<typeof insightsSchema>;
 export type SitePage = z.infer<typeof sitePageSchema>;
 export type Pages = z.infer<typeof pagesSchema>;
 export type LocationGrouping = z.infer<typeof locationGroupingSchema>;

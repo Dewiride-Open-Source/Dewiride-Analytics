@@ -73,7 +73,7 @@ public sealed partial class ClosedAccountPurge(
             {
                 await RemindAsync(due, now, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception failure) when (failure is not OperationCanceledException)
+            catch (Exception failure) when (!cancellationToken.IsCancellationRequested)
             {
                 Log.ReminderFailed(logger, failure);
             }
@@ -87,7 +87,7 @@ public sealed partial class ClosedAccountPurge(
             {
                 await PurgeAsync(organizationId, now, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception failure) when (failure is not OperationCanceledException)
+            catch (Exception failure) when (!cancellationToken.IsCancellationRequested)
             {
                 Log.PurgeFailed(logger, failure);
             }

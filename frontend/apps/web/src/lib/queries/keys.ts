@@ -78,6 +78,19 @@ export function allTimeKey(siteId: string, timeZoneId: string, population: Popul
   return ['sites', siteId, 'all-time', timeZoneId, population] as const;
 }
 
+/**
+ * What a website's whole record says, for one population, in its zone: the screen about the record
+ * reads all of it from one answer, and the zone is in the name for the reason it is in all time's.
+ * A website not yet known has a name here as well, under which nothing is ever asked.
+ */
+export function insightsKey(
+  siteId: string | undefined,
+  timeZoneId: string | undefined,
+  population: Population,
+) {
+  return ['sites', siteId, 'insights', timeZoneId, population] as const;
+}
+
 /** One measure across all time, at one size of bucket, for one population, in the website's zone. */
 export function allTimeSeriesKey(
   siteId: string,

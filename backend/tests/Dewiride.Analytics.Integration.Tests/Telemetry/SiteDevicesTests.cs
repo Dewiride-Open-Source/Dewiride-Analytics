@@ -21,7 +21,7 @@ namespace Dewiride.Analytics.Integration.Tests.Telemetry;
 [Collection(SharedStackDefinition.Name)]
 public sealed class SiteDevicesTests(AnalyticsStackFixture stack)
 {
-    private static readonly DateTimeOffset Midnight = new(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Midnight = StillHeld.Midnight;
 
     [Fact]
     public async Task Devices_Are_Counted_By_How_Many_People_Were_On_Them()

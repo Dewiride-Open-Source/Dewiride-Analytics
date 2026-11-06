@@ -71,8 +71,9 @@ internal sealed partial class CrawlerRangeRefresher(
                     Load(settings);
                 }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (Exception) when (stoppingToken.IsCancellationRequested)
             {
+                // The host is stopping, and whatever the work in hand ended in is part of that.
                 return;
             }
 #pragma warning disable CA1031 // Whatever went wrong, the next interval retries and measurement continues meanwhile.
@@ -149,6 +150,12 @@ internal sealed partial class CrawlerRangeRefresher(
             // costs its own company's addresses and must not cost the ones fetched after it.
             Log.FetchTimedOut(logger, file.Address);
             Discard(partial);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // The host stopping says nothing about the file, whatever the fetch in hand ended in.
+            Discard(partial);
+            throw;
         }
 #pragma warning disable CA1031 // Any failure means this file is unavailable; the copy on disk stays in service.
         catch (Exception exception)

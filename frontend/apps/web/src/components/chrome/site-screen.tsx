@@ -22,6 +22,10 @@ interface SiteScreenProps {
  * it cannot be, and what an account with no website at all sees — four answers each screen would
  * otherwise give for itself, and would eventually give differently. Written once so that moving
  * between screens is moving between two views of the same website rather than two products.
+ *
+ * What waits and the screen itself stand in the same place. A screen that hands over the same thing
+ * for both is drawn once and filled in when its website is known, and keeps whatever it was holding:
+ * a choice, or the keyboard.
  */
 export function SiteScreen({ waiting, children }: SiteScreenProps) {
   const t = useTranslations('dashboard');

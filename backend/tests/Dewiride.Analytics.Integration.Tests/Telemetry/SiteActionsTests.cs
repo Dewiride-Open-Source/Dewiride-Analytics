@@ -21,7 +21,7 @@ namespace Dewiride.Analytics.Integration.Tests.Telemetry;
 [Collection(SharedStackDefinition.Name)]
 public sealed class SiteActionsTests(AnalyticsStackFixture stack)
 {
-    private static readonly DateTimeOffset Midnight = new(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Midnight = StillHeld.Midnight;
 
     [Fact]
     public async Task Controls_Are_Listed_Most_Pressed_First()

@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronLeft, ChevronRight, type LucideIcon } from 'lucide-react';
-import { useFormatter, useTranslations } from 'next-intl';
+import { type NumberFormatOptions, useFormatter, useTranslations } from 'next-intl';
 import type { ReactNode, Ref } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -293,6 +293,9 @@ export function ListSwitch<TValue extends string>({
               'rounded-sm py-1.5 text-sm font-medium transition-colors',
               Picture ? 'px-2.5' : 'px-3',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong',
+              // In forced colours the shade that marks the choice is painted out, and only colours of
+              // the system's own, with its backplate off, show which one it is.
+              'aria-checked:forced-colors:bg-[Highlight] aria-checked:forced-colors:text-[HighlightText] aria-checked:forced-colors:forced-color-adjust-none',
               chosen
                 ? 'bg-accent-soft text-accent-strong'
                 : 'text-foreground-muted hover:text-foreground',
@@ -363,18 +366,39 @@ function width(part: number, most: number): string {
   return `${Math.max(shareOf(part, most) * 100, 2)}%`;
 }
 
+/** Below this a share has no whole per cent to round to. */
+const WHOLE_PERCENT = 0.01;
+
+/** From this a share would round to the whole, though something else is still there. */
+const ROUNDS_TO_THE_WHOLE = 0.995;
+
 /**
  * How much of a period one row accounts for.
  *
- * A share too small to round to a whole per cent is written with a decimal instead. Further down
- * a long list every row would otherwise read as nought, which says nobody was there when
- * somebody was.
+ * A share too small to round to a whole per cent is written to its first digit instead. Further down
+ * a long list every row would otherwise read as nought, which says nobody was there when somebody
+ * was. A share just short of the whole is written just short of it, rounded down, for the same reason:
+ * 100% beside a row that holds something says it holds nothing.
  */
-function writeShare(part: number, whole: number, format: ReturnType<typeof useFormatter>): string {
+export function writeShare(
+  part: number,
+  whole: number,
+  format: ReturnType<typeof useFormatter>,
+): string {
   const share = shareOf(part, whole);
 
-  return format.number(share, {
-    style: 'percent',
-    maximumFractionDigits: share > 0 && share < 0.01 ? 1 : 0,
-  });
+  return format.number(share, shareWriting(share));
+}
+
+/** How a share is written, by how near it is to nothing or to the whole. */
+function shareWriting(share: number): NumberFormatOptions {
+  if (share > 0 && share < WHOLE_PERCENT) {
+    return { style: 'percent', maximumSignificantDigits: 1 };
+  }
+
+  if (share >= ROUNDS_TO_THE_WHOLE && share < 1) {
+    return { style: 'percent', maximumFractionDigits: 1, roundingMode: 'floor' };
+  }
+
+  return { style: 'percent', maximumFractionDigits: 0 };
 }

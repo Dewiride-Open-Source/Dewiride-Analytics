@@ -11,6 +11,7 @@
     "sections": "Sections",
     "section": {
       "overview": "Overview",
+      "insights": "Insights",
       "live": "Live",
       "journeys": "User journey",
       "settings": "Settings"
@@ -643,6 +644,71 @@
         "bodyReader": "Somebody who manages this website can switch on “Record what people click” in its settings.",
         "action": "Open settings",
         "caption": "Not recording new clicks"
+      }
+    }
+  },
+  "insights": {
+    "title": "Insights",
+    "caption": "{site}, from {since} to today.",
+    "highlights": {
+      "title": "All-time highlights"
+    },
+    "times": {
+      "title": "Most popular times",
+      "bestDay": "Best day ever",
+      "weekday": "Busiest day of the week",
+      "hour": "Busiest hour",
+      "share": "{share} of page views",
+      "shareEach": "{share} of page views each",
+      "bar": "{when}: {count, plural, one {# page view} other {# page views}}",
+      "zone": "Days and hours are counted in {zone}.",
+      "table": "Show these figures as a table",
+      "column": {
+        "when": "When",
+        "views": "Page views",
+        "share": "Share"
+      },
+      "weekdays": "Days of the week",
+      "hours": "Hours of the day"
+    },
+    "months": {
+      "title": "Months and years",
+      "measure": {
+        "label": "What each month shows",
+        "total": "Total views",
+        "average": "Average per day"
+      },
+      "caption": {
+        "total": "Page views in each month, newest year first.",
+        "average": "Page views per day in each month, counting only the days measured."
+      },
+      "year": "Year",
+      "total": "Total",
+      "average": "Whole year",
+      "unmeasured": "Not measured",
+      "future": "Not yet",
+      "soFar": "so far",
+      "legend": {
+        "fewer": "Fewer",
+        "more": "More",
+        "soFar": "This month so far",
+        "unmeasured": "Before measuring began"
+      }
+    },
+    "empty": {
+      "title": "Nothing to look back on yet",
+      "body": "Once {site} has its first visit, its history builds up here, month by month.",
+      "action": "Get your tracking code"
+    },
+    "absent": {
+      "unjudged": {
+        "title": "Nothing judged yet",
+        "body": "People appear here once their visits have finished and been judged.",
+        "bodyAll": "Everything so far is still being judged."
+      },
+      "nobodyYet": {
+        "title": "No people yet",
+        "body": "None of the visits so far has been judged to be a person."
       }
     }
   },

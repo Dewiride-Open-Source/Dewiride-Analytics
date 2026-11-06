@@ -10,13 +10,26 @@ import { SiteSwitch } from '@/components/dashboard/site-switch';
 import { Button } from '@/components/ui/button';
 import { Link, usePathname } from '@/i18n/navigation';
 import { useChosenSite } from '@/lib/analytics/chosen-site';
-import { withChoices } from '@/lib/analytics/period';
+import { type ScreenChoices, withChoices } from '@/lib/analytics/period';
 import { usePeopleOnly } from '@/lib/analytics/use-people-only';
 import { usePeriod } from '@/lib/analytics/use-period';
 import { useSession, useSignOut } from '@/lib/queries/session';
 import { useSites } from '@/lib/queries/sites';
-import { CLOSED, currentSection, SECTIONS } from '@/lib/routes';
+import { type Carried, CLOSED, currentSection, SECTIONS } from '@/lib/routes';
 import { cn } from '@/lib/styling';
+
+/**
+ * What a screen is handed of what is being looked at: only what it answers about.
+ *
+ * @param carries What the screen answers about.
+ * @param choices What is being looked at now.
+ */
+function carriedBy(carries: readonly Carried[], choices: ScreenChoices): Partial<ScreenChoices> {
+  return {
+    ...(carries.includes('period') ? { period: choices.period } : {}),
+    ...(carries.includes('population') ? { population: choices.population } : {}),
+  };
+}
 
 /**
  * The bar across the top of every screen, signed in or not.
@@ -111,30 +124,30 @@ export function AppHeader() {
             little wider than the screen, and a bar that folded onto a second line would push the
             heading below it down on exactly the devices with the least room to spare.
           */}
-          <ul className="mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto px-2 [-ms-overflow-style:none] [scrollbar-width:none] sm:px-4 [&::-webkit-scrollbar]:hidden">
+          <ul className="mx-auto flex max-w-6xl items-center overflow-x-auto px-2 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-1 sm:px-4 [&::-webkit-scrollbar]:hidden">
             {SECTIONS.map((section) => {
               const current = here !== null && currentSection(here) === section.path;
 
               return (
-                <li key={section.path}>
+                <li key={section.path} className="shrink-0">
                   {/*
                     The screens that answer about a stretch of days hand each other the period and
                     the population, so that moving between them is moving between two questions
-                    about the same days and the same people rather than starting again. The one
+                    about the same days and the same people rather than starting again. The record
+                    is every month there is, so it takes the population and no period. The one
                     about the present moment takes neither: there is no stretch of days for it to
                     be asked about, and what is happening now is counted rather than judged.
                   */}
                   <Link
-                    href={
-                      section.aboutSite
-                        ? withChoices(section.path, { period, population })
-                        : section.path
-                    }
+                    href={withChoices(
+                      section.path,
+                      carriedBy(section.carries, { period, population }),
+                    )}
                     aria-current={current ? 'page' : undefined}
                     className={cn(
-                      'relative flex h-11 items-center rounded-sm px-3 text-sm font-medium transition-colors',
+                      'relative flex h-11 items-center rounded-sm px-1.5 text-sm font-medium whitespace-nowrap transition-colors min-[375px]:px-2 sm:px-3',
                       'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent-strong',
-                      'after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full',
+                      'after:absolute after:inset-x-1.5 after:bottom-0 after:h-0.5 after:rounded-full min-[375px]:after:inset-x-2 sm:after:inset-x-3',
                       current
                         ? 'text-foreground after:bg-accent'
                         : 'text-foreground-muted hover:text-foreground',

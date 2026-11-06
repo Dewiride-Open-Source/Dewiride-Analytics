@@ -27,7 +27,7 @@ public sealed class StoredVisitRepairTests(AnalyticsStackFixture stack)
 {
     private const string Repair = "0008_visits_that_never_began.sql";
 
-    private static readonly DateTimeOffset Midnight = new(2026, 4, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Midnight = StillHeld.Midnight;
 
     /// <summary>
     /// The shape the repair exists for: a departure report that opened a visit of its own because

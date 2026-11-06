@@ -28,6 +28,11 @@
   period is still being judged where not one bucket has settled" makes an exception for a picture of
   one bucket — today's first hour, or all time in a website's first month. That bucket runs to the
   present and never settles, so the whole period is named only where judging has reached none of it.
+- **Followed by**: [0066](0066-insights-are-read-from-the-months-that-were-kept.md), which reads each
+  kept month's best day and its weekday and hour figures on a screen of their own.
+- **Extended by**: [0067](0067-work-in-the-background-ends-when-the-host-does-and-not-before.md), which
+  holds every timed service to what the one that keeps months does: a failed run ends there, and the
+  loop goes on.
 
 ## Context
 

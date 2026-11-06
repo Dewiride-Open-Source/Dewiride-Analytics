@@ -8,9 +8,9 @@ import {
   cutOf,
   cutsFor,
   type DaySpan,
+  DEFAULT_PERIOD,
   dayOf,
   daysIn,
-  DEFAULT_PERIOD,
   GRANULARITIES,
   type Granularity,
   granularityFor,
@@ -934,6 +934,15 @@ describe('the address of a screen carrying what is being looked at', () => {
     expect(withChoices('/app/journeys', { period: DEFAULT_PERIOD, population: 'people' })).toBe(
       '/app/journeys?only=people',
     );
+  });
+
+  /** A screen a choice cannot narrow is not given it, and its address says nothing of it. */
+  it('writes only what it is given', () => {
+    expect(withChoices('/app/insights', { population: 'people' })).toBe(
+      '/app/insights?only=people',
+    );
+    expect(withChoices('/app/journeys', { period: TODAY })).toBe('/app/journeys?period=today');
+    expect(withChoices('/app/live', {})).toBe('/app/live');
   });
 });
 

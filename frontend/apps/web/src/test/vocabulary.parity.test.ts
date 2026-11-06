@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { MEASURES } from '@/lib/analytics/all-time';
 import { CHART_BYS } from '@/lib/analytics/chart-by';
 import { GRANULARITIES, hasEarlier, KEPT_MONTHS, PRESETS } from '@/lib/analytics/period';
 import { reasonKey } from '@/lib/analytics/verdicts';
@@ -305,6 +306,33 @@ describe('the ways this dashboard cuts a picture', () => {
         [...GRANULARITIES].sort(),
       );
     }
+  });
+});
+
+/**
+ * Every way a month of the record can be read needs a name in the switch somebody picks it from, a
+ * caption for the table it is read in, and a heading for the figure each year ends on.
+ */
+describe('the ways this dashboard reads a month', () => {
+  /** Whatever the switch holds besides the ways themselves. */
+  const AROUND_THE_WAYS = ['label'];
+
+  it.each(MEASURES)('has a name for reading a month as %s', (measure) => {
+    expect(isWritten(wordsAt(`insights.months.measure.${measure}`))).toBe(true);
+  });
+
+  it.each(MEASURES)('captions a table read as %s, and heads what its years end on', (measure) => {
+    expect(isWritten(wordsAt(`insights.months.caption.${measure}`))).toBe(true);
+    expect(isWritten(wordsAt(`insights.months.${measure}`))).toBe(true);
+  });
+
+  it('names no way of reading a month it cannot offer', () => {
+    const named = sentencesUnder('insights.months.measure').filter(
+      (sentence) => !AROUND_THE_WAYS.includes(sentence),
+    );
+
+    expect([...named].sort()).toEqual([...MEASURES].sort());
+    expect([...sentencesUnder('insights.months.caption')].sort()).toEqual([...MEASURES].sort());
   });
 });
 

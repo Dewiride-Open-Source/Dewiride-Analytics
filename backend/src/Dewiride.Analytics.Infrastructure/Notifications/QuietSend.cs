@@ -57,7 +57,7 @@ public static class QuietSend
 
             return true;
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             EmailLog.CouldNotHandOver(logger, message.Subject, exception);
 

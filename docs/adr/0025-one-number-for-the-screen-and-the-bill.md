@@ -6,6 +6,8 @@
 - **Applies to**: both editions. The count is open-source; what anybody is charged for it is not.
 - **Followed by**: [0064](0064-a-month-outlives-the-reports-it-was-counted-from.md), whose kept months
   are counted by the same arithmetic as the dashboard's figure for the same month.
+- **Followed by**: [0066](0066-insights-are-read-from-the-months-that-were-kept.md), whose totals for a
+  website's whole record are All time's to the unit.
 
 ## Context
 

@@ -111,11 +111,9 @@ public sealed class IgnoredSenderTests(AnalyticsStackFixture stack)
     [Fact]
     public void An_Installation_Does_Not_Start_With_Anything_But_Host_Names_On_The_List()
     {
-        using var host = Ignoring("https://aocr.org/");
-
-        var starting = () => host.CreateClient();
-
-        starting.Should().Throw<OptionsValidationException>().WithMessage("*IgnoredSenders*");
+        HostRefusal.Of(() => Ignoring("https://aocr.org/"))
+            .Should().BeOfType<OptionsValidationException>()
+            .Which.Message.Should().Contain("IgnoredSenders");
     }
 
     private WebApplicationFactory<Program> Ignoring(string sender) =>

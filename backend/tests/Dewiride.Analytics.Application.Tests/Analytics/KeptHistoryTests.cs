@@ -10,7 +10,7 @@ namespace Dewiride.Analytics.Application.Tests.Analytics;
 /// </summary>
 /// <remarks>
 /// The record is read at the middle of March 2026, in UTC. A month that began before about the
-/// last day of January 2025 can no longer be counted in full, so a record reaching back that far is
+/// middle of March 2025 can no longer be counted in full, so a record reaching back that far is
 /// how a month comes to be missing.
 /// </remarks>
 public sealed class KeptHistoryTests

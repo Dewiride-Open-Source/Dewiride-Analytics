@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using Dewiride.Analytics.Application.Consolidation;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Classification;
 
@@ -317,6 +318,138 @@ public static class KeptHistory
         return new KeptTraffic([.. buckets], [.. groups]);
     }
 
+    /// <summary>
+    /// What a website's whole record says about when it is read: its best day, how its reading falls
+    /// across the week and the day, and how much of it each month holds.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A kept month gives the best day and the weekday and hour figures kept with it. A month answered
+    /// from its reports gives them from its figures day by day and hour by hour, on the website's
+    /// clock, which is how a kept month's were counted. Those figures cover a stretch that can hold
+    /// months that were kept, and only the months answered from their reports are read from them, so
+    /// no day is counted twice. A month missing from the record adds nothing and covers no days.
+    /// </para>
+    /// <para>
+    /// The best day is the busiest of the months' best days and the earliest of a tie. Being worked
+    /// out afresh rather than recorded, it falls with its month where a month still held is counted
+    /// again under newer rules. Every weekday or hour sharing the most is busiest, and none is where
+    /// nothing was read. A figure a day or an hour counted a visitor's page in may count it again in
+    /// another, so a weekday's or an hour's share is of its own figures, never of the month's total.
+    /// </para>
+    /// </remarks>
+    /// <param name="months">The record, resolved.</param>
+    /// <param name="firstDay">The day the record begins on.</param>
+    /// <param name="live">What the reports say of the months answered from them.</param>
+    /// <param name="zone">The website's reporting zone.</param>
+    /// <param name="asOf">The moment the record is read at.</param>
+    /// <returns>What the record says.</returns>
+    public static KeptInsights Insights(
+        ImmutableArray<MonthOfRecord> months,
+        DateOnly? firstDay,
+        LiveMonths live,
+        TimeZoneInfo zone,
+        DateTimeOffset asOf)
+    {
+        ArgumentNullException.ThrowIfNull(live);
+        ArgumentNullException.ThrowIfNull(zone);
+
+        var best = new BusiestDay();
+        var weekdays = new long[MonthFigures.Weekdays];
+        var hours = new long[MonthFigures.Hours];
+        var fromReports = months
+            .Where(month => month.Source == MonthSource.Live)
+            .Select(month => month.Month.Month)
+            .ToHashSet();
+
+        foreach (var month in months.Where(month => month.Source == MonthSource.Kept))
+        {
+            AddKept(month.Month.Kept!.Figures, best, weekdays, hours);
+        }
+
+        foreach (var point in live.Days)
+        {
+            var day = ZoneDays.Of(point.BucketStart, zone);
+
+            if (fromReports.Contains(new DateOnly(day.Year, day.Month, 1)))
+            {
+                best.Offer(day, point.Value);
+                weekdays[MondayFirst(day)] += point.Value;
+            }
+        }
+
+        foreach (var point in live.Hours)
+        {
+            var shown = TimeZoneInfo.ConvertTime(point.BucketStart, zone);
+
+            if (fromReports.Contains(new DateOnly(shown.Year, shown.Month, 1)))
+            {
+                hours[shown.Hour] += point.Value;
+            }
+        }
+
+        var today = ZoneDays.Of(asOf, zone);
+
+        return new KeptInsights(
+            best.Day,
+            best.PageViews,
+            [.. weekdays],
+            Busiest(weekdays),
+            [.. hours],
+            Busiest(hours),
+            [.. months.Select(month => ReadingOf(month, firstDay, live.PageViews, today))]);
+    }
+
+    private static void AddKept(MonthFigures figures, BusiestDay best, long[] weekdays, long[] hours)
+    {
+        if (figures.BestDay is { } day)
+        {
+            best.Offer(day, figures.BestDayPageViews);
+        }
+
+        AddTo(weekdays, figures.ByWeekday);
+        AddTo(hours, figures.ByHour);
+    }
+
+    private static void AddTo(long[] sums, ImmutableArray<long> figures)
+    {
+        for (var index = 0; index < sums.Length; index++)
+        {
+            sums[index] += figures[index];
+        }
+    }
+
+    /// <summary>Where a day falls in a week that begins on a Monday, from nought.</summary>
+    private static int MondayFirst(DateOnly day) => ((int)day.DayOfWeek + 6) % MonthFigures.Weekdays;
+
+    /// <summary>Every place sharing the most, or none where nothing is counted anywhere.</summary>
+    private static ImmutableArray<int> Busiest(long[] figures)
+    {
+        var most = figures.Max();
+
+        return most == 0 ? [] : [.. Enumerable.Range(0, figures.Length).Where(index => figures[index] == most)];
+    }
+
+    /// <summary>
+    /// A month's page views and the days they cover: as they were kept, or from its reports, where the
+    /// running month counts today; none of either where the month cannot be given a figure.
+    /// </summary>
+    private static MonthReading ReadingOf(
+        MonthOfRecord month,
+        DateOnly? firstDay,
+        IReadOnlyDictionary<DateTimeOffset, long> live,
+        DateOnly today) =>
+        month.Source switch
+        {
+            MonthSource.Kept when month.Month.Kept is { } kept =>
+                new MonthReading(month.Month.Month, kept.Figures.PageViews, kept.DaysMeasured),
+            MonthSource.Live => new MonthReading(
+                month.Month.Month,
+                live.GetValueOrDefault(month.Month.Begins),
+                DaysMeasured.In(month.Month.Month, firstDay, today)),
+            _ => new MonthReading(month.Month.Month, null, 0),
+        };
+
     private static MonthSource SourceOf(RecordedMonth month, DateTimeOffset asOf, bool judged)
     {
         var countable = asOf < Retention.CountableUntil(month.Begins);
@@ -426,6 +559,44 @@ public sealed record MonthOfRecord(RecordedMonth Month, MonthSource Source);
 /// <param name="BucketStart">The bucket's first instant, where the website is.</param>
 /// <param name="Value">Its figure, or nothing where none of it can be given.</param>
 public readonly record struct KeptPoint(DateTimeOffset BucketStart, long? Value);
+
+/// <summary>
+/// What the reports say of the months a record answers from them.
+/// </summary>
+/// <param name="PageViews">Pages delivered in each month, by the instant it begins.</param>
+/// <param name="Days">Pages delivered on each day of the stretch those months begin at, to the present.</param>
+/// <param name="Hours">Pages delivered in each hour of that stretch.</param>
+public sealed record LiveMonths(
+    IReadOnlyDictionary<DateTimeOffset, long> PageViews,
+    IReadOnlyList<TimeSeriesPoint> Days,
+    IReadOnlyList<TimeSeriesPoint> Hours);
+
+/// <summary>
+/// What a website's whole record says about when it is read.
+/// </summary>
+/// <param name="BestDay">The day the most pages were delivered, the earliest of a tie, or nothing where none were.</param>
+/// <param name="BestDayPageViews">Pages delivered on that day.</param>
+/// <param name="Weekdays">Pages delivered on each day of the week, Monday first.</param>
+/// <param name="BusiestWeekdays">Every place in <paramref name="Weekdays"/> sharing the most, or none where nothing was read.</param>
+/// <param name="Hours">Pages delivered in each hour of the day, from midnight on the website's clock.</param>
+/// <param name="BusiestHours">Every place in <paramref name="Hours"/> sharing the most, or none where nothing was read.</param>
+/// <param name="Months">Each month of the record, oldest first.</param>
+public sealed record KeptInsights(
+    DateOnly? BestDay,
+    long BestDayPageViews,
+    ImmutableArray<long> Weekdays,
+    ImmutableArray<int> BusiestWeekdays,
+    ImmutableArray<long> Hours,
+    ImmutableArray<int> BusiestHours,
+    ImmutableArray<MonthReading> Months);
+
+/// <summary>
+/// How much of a website's record one month holds.
+/// </summary>
+/// <param name="Month">The first of the month, on the website's calendar.</param>
+/// <param name="PageViews">Pages delivered in it, or nothing where it cannot be said.</param>
+/// <param name="DaysMeasured">How many of its days those pages cover, which is none where it cannot be said.</param>
+public readonly record struct MonthReading(DateOnly Month, long? PageViews, int DaysMeasured);
 
 /// <summary>
 /// How many visits of each kind a record holds, bucket by bucket.

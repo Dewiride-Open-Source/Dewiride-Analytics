@@ -29,8 +29,9 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// clocks change by a whole hour. Lord Howe Island changes them by half an hour, which neither that
 /// step nor the store's own rounding to the hour follows, so an hourly series there that begins on
 /// the day of a change, or reaches across one, fills hours half an hour away from the hours it
-/// counts. It is the one zone that does, and the dashboard asks for hours only over two days or
-/// fewer.
+/// counts. It is the one zone that does. A picture is drawn by the hour only over two days or fewer,
+/// and where Insights folds hours over a longer stretch, an hour a fill misplaces holds nothing and
+/// so adds nothing.
 /// </para>
 /// <para>
 /// Written once here because both series cut their buckets by it — the one counted from activity

@@ -181,9 +181,9 @@ public static class InfrastructureRegistration
                 $"{ReferenceDataOptions.SectionName}:PlacesUrl and NetworksUrl must both be "
                 + "absolute http or https addresses.")
             .Validate(
-                settings => settings.RefreshInterval >= TimeSpan.FromMinutes(5),
-                $"{ReferenceDataOptions.SectionName}:RefreshInterval must be at least five "
-                + "minutes. The data behind it is republished monthly and hourly.")
+                settings => IsARefreshInterval(settings.RefreshInterval),
+                $"{ReferenceDataOptions.SectionName}:RefreshInterval must be between five minutes "
+                + "and 49 days. The data behind it is republished monthly and hourly.")
             .Validate(
                 settings => settings.DownloadTimeout >= TimeSpan.FromSeconds(30),
                 $"{ReferenceDataOptions.SectionName}:DownloadTimeout must be at least thirty "
@@ -198,6 +198,14 @@ public static class InfrastructureRegistration
 
         AddCrawlerAddresses(builder);
     }
+
+    /// <summary>
+    /// Whether a refresh can wait this long: not so often that it hammers whoever publishes the data,
+    /// and no longer than a timer can wait, which is a little over 49 days. A service asked to wait
+    /// longer fails as it starts, and takes the engine with it.
+    /// </summary>
+    private static bool IsARefreshInterval(TimeSpan interval) =>
+        interval >= TimeSpan.FromMinutes(5) && interval <= TimeSpan.FromDays(49);
 
     /// <summary>
     /// Adds the lookup that recognises an address a company vouches for as its own crawlers', and
@@ -226,9 +234,9 @@ public static class InfrastructureRegistration
                 $"{CrawlerRangeOptions.SectionName}:Directory must name a directory to keep the "
                 + "published crawler address ranges in.")
             .Validate(
-                settings => settings.RefreshInterval >= TimeSpan.FromMinutes(5),
-                $"{CrawlerRangeOptions.SectionName}:RefreshInterval must be at least five minutes. "
-                + "The lists behind it are republished no more often than daily.")
+                settings => IsARefreshInterval(settings.RefreshInterval),
+                $"{CrawlerRangeOptions.SectionName}:RefreshInterval must be between five minutes and "
+                + "49 days. The lists behind it are republished no more often than daily.")
             .Validate(
                 settings => settings.DownloadTimeout >= TimeSpan.FromSeconds(5),
                 $"{CrawlerRangeOptions.SectionName}:DownloadTimeout must be at least five seconds.")

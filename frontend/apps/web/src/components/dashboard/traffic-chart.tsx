@@ -40,16 +40,12 @@ import {
 } from '@/lib/analytics/traffic-series';
 import { TONE_ORDER, type VerdictTone } from '@/lib/analytics/verdicts';
 import type { TrafficPicture, TrafficSeries } from '@/lib/api/schemas';
-import {
-  type BucketWriting,
-  bucketNames,
-  monthsInFull,
-  monthsOfItsYear,
-} from '@/lib/charts/bucket-names';
+import { type BucketWriting, bucketNames, monthsOfItsYear } from '@/lib/charts/bucket-names';
 import { type Drawing, drawingFor, drawingsFor } from '@/lib/charts/drawing';
 import { type FigureWriter, figureWriter } from '@/lib/charts/frame';
 import type { ChartPalette } from '@/lib/charts/palette';
 import { useDrawing } from '@/lib/charts/use-drawing';
+import { sentences, useLeftOut } from '@/lib/charts/use-left-out';
 import { type Quiet, quietensCutShort } from '@/lib/charts/wash';
 
 /**
@@ -829,44 +825,6 @@ function useFigure(days: readonly BucketDays[], unsettled: readonly string[]): F
 }
 
 /**
- * The sentences naming the months a picture's figures leave out, or nothing where they leave none
- * out. A month never counted and a month kept before its visits were all judged are two different
- * facts, and each is named as the one it is: a gap in the drawing and a month nobody came in can
- * look alike, and a year that leaves one out looks like any other year.
- *
- * @param missing Every month never counted, written `2025-06`.
- * @param unsettled Every month kept before its visits were all judged.
- * @param timeZoneId The website's zone, which the months are named in.
- */
-function useLeftOut(
-  missing: readonly string[],
-  unsettled: readonly string[],
-  timeZoneId: string,
-): string | null {
-  const t = useTranslations('dashboard.chart');
-  const format = useFormatter();
-
-  return useMemo(() => {
-    const said = sentences(
-      missing.length === 0
-        ? null
-        : t('uncounted', {
-            count: missing.length,
-            months: monthsInFull(missing, timeZoneId, format),
-          }),
-      unsettled.length === 0
-        ? null
-        : t('unsettled', {
-            count: unsettled.length,
-            months: monthsInFull(unsettled, timeZoneId, format),
-          }),
-    );
-
-    return said === '' ? null : said;
-  }, [missing, unsettled, timeZoneId, format, t]);
-}
-
-/**
  * What a bucket with no figure says in its place: that it was not fully judged, wherever a month of
  * it was counted and kept before its visits were all judged — a year holding one beside a month
  * never counted was counted in part, and its row and the caption name the rest — and otherwise
@@ -1357,15 +1315,6 @@ function count(
   }
 
   return value === null ? unknown : format.number(value);
-}
-
-/**
- * Sentences said one after another, leaving out any that are not said.
- *
- * @param said Each sentence, or nothing where it is not said.
- */
-function sentences(...said: readonly (string | null)[]): string {
-  return said.filter((sentence) => sentence !== null).join(' ');
 }
 
 /** The picture each drawing style is offered under. */

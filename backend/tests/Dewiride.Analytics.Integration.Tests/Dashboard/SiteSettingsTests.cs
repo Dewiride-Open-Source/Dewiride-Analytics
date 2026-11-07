@@ -5,8 +5,12 @@ using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Infrastructure.Persistence;
+using Dewiride.Analytics.Infrastructure.Sites;
 using Dewiride.Analytics.Infrastructure.Tenancy;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dewiride.Analytics.Integration.Tests.Dashboard;
@@ -534,13 +538,369 @@ public sealed class SiteSettingsTests(AnalyticsStackFixture stack)
         }
     }
 
+    /// <summary>
+    /// What comes back is the one spelling it is kept in, because that is what the panel then shows
+    /// and what saving the same sitemap again has to find unchanged.
+    /// </summary>
+    [Fact]
+    public async Task An_Editor_Can_Name_The_Sitemap()
+    {
+        var domain = Domain();
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: domain);
+        var browser = await SignedIn.AsAsync(stack, SiteRole.Editor, site.Id);
+
+        using (browser)
+        {
+            var named = await ApplyAsync(
+                browser,
+                site.Id,
+                new UpdateSiteSettingsRequest { SitemapAddress = $"  HTTPS://{domain}:443/sitemap.xml#top  " });
+
+            named.SitemapAddress.Should().Be($"https://{domain}/sitemap.xml");
+            (await ReadAsync(browser, site.Id)).SitemapAddress.Should().Be($"https://{domain}/sitemap.xml");
+        }
+    }
+
+    [Fact]
+    public async Task A_New_Website_Has_No_Sitemap()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedIn.AsAsync(stack, SiteRole.Viewer, site.Id);
+
+        using (browser)
+        {
+            (await ReadAsync(browser, site.Id)).SitemapAddress.Should().BeNull();
+        }
+    }
+
+    /// <summary>
+    /// Asserted by code rather than by status, because the code is what the dashboard writes its
+    /// own sentence from, and a sentence about the name or the zone would send somebody to the wrong
+    /// field. Whatever it was, the setting stays as it was.
+    /// </summary>
+    [Theory]
+    [InlineData("https://example.org/sitemap.xml")]
+    [InlineData("ftp://{0}/sitemap.xml")]
+    [InlineData("https://{0}:8443/sitemap.xml")]
+    [InlineData("https://user:secret@{0}/sitemap.xml")]
+    [InlineData("http://127.0.0.1/sitemap.xml")]
+    [InlineData("/sitemap.xml")]
+    public async Task A_Sitemap_Elsewhere_Is_Refused_By_Code(string addressTemplate)
+    {
+        var domain = Domain();
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: domain);
+        var browser = await SignedIn.AsAsync(stack, SiteRole.Owner, site.Id);
+
+        var elsewhere = addressTemplate.Replace("{0}", domain, StringComparison.Ordinal);
+
+        using (browser)
+        {
+            var response = await browser.PutAsync(
+                Settings(site.Id),
+                new UpdateSiteSettingsRequest { SitemapAddress = elsewhere });
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await Refusal.ReasonsOfAsync(response)).Should().Equal(SitemapRejected);
+            (await ReadAsync(browser, site.Id)).SitemapAddress.Should().BeNull();
+        }
+    }
+
+    /// <summary>
+    /// A host a name server cannot be asked about parses and then throws when it is asked for its
+    /// ASCII form. Somebody who pasted one is told the address cannot be used, like anybody else with
+    /// a bad address, rather than being shown that the server fell over.
+    /// </summary>
+    [Fact]
+    public async Task A_Sitemap_On_A_Name_With_No_Ascii_Form_Is_Refused_By_Code()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var browser = await SignedIn.AsAsync(stack, SiteRole.Owner, site.Id);
+
+        using (browser)
+        {
+            var response = await browser.PutAsync(
+                Settings(site.Id),
+                new UpdateSiteSettingsRequest { SitemapAddress = "https://exam‍ple.com/sitemap.xml" });
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await Refusal.ReasonsOfAsync(response)).Should().Equal(SitemapRejected);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task An_Empty_Sitemap_Address_Stops_It_Being_Read(string empty)
+    {
+        var domain = Domain();
+        var site = await ControlPlaneSeed.AddSiteAsync(
+            stack,
+            domain: domain,
+            configure: created => created.SetSitemapAddress($"https://{domain}/sitemap.xml"));
+        var browser = await SignedIn.AsAsync(stack, SiteRole.Editor, site.Id);
+
+        using (browser)
+        {
+            var stopped = await ApplyAsync(browser, site.Id, new UpdateSiteSettingsRequest { SitemapAddress = empty });
+
+            stopped.SitemapAddress.Should().BeNull();
+            (await ReadAsync(browser, site.Id)).SitemapAddress.Should().BeNull();
+        }
+    }
+
+    /// <summary>
+    /// Naming a sitemap has this engine fetch from the address named, so it takes the same role as
+    /// anything else that changes how a website is measured.
+    /// </summary>
+    [Fact]
+    public async Task Somebody_Who_May_Only_Read_Cannot_Name_A_Sitemap()
+    {
+        var domain = Domain();
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: domain);
+        var browser = await SignedIn.AsAsync(stack, SiteRole.Viewer, site.Id);
+
+        using (browser)
+        {
+            var response = await browser.PutAsync(
+                Settings(site.Id),
+                new UpdateSiteSettingsRequest { SitemapAddress = $"https://{domain}/sitemap.xml" });
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await ReadAsync(browser, site.Id)).SitemapAddress.Should().BeNull();
+        }
+    }
+
+    /// <summary>
+    /// Null means unchanged here as it does for every other setting, so a save from a panel that
+    /// has never heard of a sitemap cannot stop one being read.
+    /// </summary>
+    [Fact]
+    public async Task A_Change_That_Does_Not_Name_The_Sitemap_Leaves_It_As_It_Was()
+    {
+        var domain = Domain();
+        var site = await ControlPlaneSeed.AddSiteAsync(
+            stack,
+            domain: domain,
+            configure: created => created.SetSitemapAddress($"https://{domain}/sitemap.xml"));
+        var browser = await SignedIn.AsAsync(stack, SiteRole.Editor, site.Id);
+
+        using (browser)
+        {
+            var renamed = await ApplyAsync(
+                browser,
+                site.Id,
+                new UpdateSiteSettingsRequest { DisplayName = "The Reading Room" });
+
+            renamed.SitemapAddress.Should().Be($"https://{domain}/sitemap.xml");
+        }
+    }
+
+    /// <summary>
+    /// A change of sitemap saves differently from any other change, and everything else named beside
+    /// it has to arrive all the same, the collector's cached copy being thrown away included.
+    /// </summary>
+    [Fact]
+    public async Task A_Change_Naming_A_Sitemap_Applies_Everything_Else_It_Names()
+    {
+        var domain = Domain();
+        var site = await ControlPlaneSeed.AddSiteAsync(
+            stack,
+            domain: domain,
+            configure: created => created.SetClickCapture(true));
+        var browser = await SignedIn.AsAsync(stack, SiteRole.Owner, site.Id);
+
+        using (browser)
+        {
+            (await CollectorSeesAsync(site.Id)).Should().BeTrue();
+
+            var changed = await ApplyAsync(browser, site.Id, new UpdateSiteSettingsRequest
+            {
+                DisplayName = "The Reading Room",
+                CaptureClicks = false,
+                SitemapAddress = $"https://{domain}/sitemap.xml",
+            });
+
+            changed.DisplayName.Should().Be("The Reading Room");
+            changed.CaptureClicks.Should().BeFalse();
+            changed.SitemapAddress.Should().Be($"https://{domain}/sitemap.xml");
+
+            (await CollectorSeesAsync(site.Id)).Should().BeFalse();
+        }
+    }
+
+    /// <summary>
+    /// One refused part refuses the whole change, whichever part it was, and the sitemap is settled
+    /// after the name and the zone, so somebody who got all three wrong is told about the first.
+    /// </summary>
+    [Fact]
+    public async Task A_Refused_Sitemap_Leaves_Every_Setting_As_It_Was()
+    {
+        var domain = Domain();
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: domain, timeZoneId: "Etc/UTC");
+        var browser = await SignedIn.AsAsync(stack, SiteRole.Owner, site.Id);
+
+        using (browser)
+        {
+            var refused = await browser.PutAsync(Settings(site.Id), new UpdateSiteSettingsRequest
+            {
+                DisplayName = "The Reading Room",
+                TimeZoneId = "Asia/Kolkata",
+                CaptureClicks = true,
+                SitemapAddress = "https://example.org/sitemap.xml",
+            });
+
+            (await Refusal.ReasonsOfAsync(refused)).Should().Equal(SitemapRejected);
+
+            var unchanged = await ReadAsync(browser, site.Id);
+            unchanged.DisplayName.Should().Be(domain);
+            unchanged.TimeZoneId.Should().Be("Etc/UTC");
+            unchanged.CaptureClicks.Should().BeFalse();
+            unchanged.SitemapAddress.Should().BeNull();
+
+            var first = await browser.PutAsync(Settings(site.Id), new UpdateSiteSettingsRequest
+            {
+                TimeZoneId = "Mars/Olympus_Mons",
+                SitemapAddress = "https://example.org/sitemap.xml",
+            });
+
+            (await Refusal.ReasonsOfAsync(first)).Should().Equal(TimeZoneRejected);
+        }
+    }
+
+    /// <summary>
+    /// How reading the old address went says nothing about the new one, and deleting it is what stops
+    /// a reading still under way. The posts are kept: they are keyed by their paths, so the new sitemap
+    /// lists them again or a complete reading of it unlists them, and nobody's calendar empties in the
+    /// meantime. Another website's reading is nothing to do with any of this.
+    /// </summary>
+    [Fact]
+    public async Task Changing_The_Sitemap_Forgets_How_The_Old_One_Was_Read_And_Keeps_The_Posts()
+    {
+        var (site, neighbour, browser) = await TwoWebsitesBeingReadAsync();
+
+        using (browser)
+        {
+            await ApplyAsync(
+                browser,
+                site.Id,
+                new UpdateSiteSettingsRequest { SitemapAddress = $"https://{site.Domain}/sitemap_index.xml" });
+
+            (await SitemapSeed.LeftAsync(stack, site.Id)).Should().Be(new SitemapSeed.Left(0, 0, 1));
+            (await SitemapSeed.LeftAsync(stack, neighbour.Id)).Should().Be(new SitemapSeed.Left(1, 1, 1));
+        }
+    }
+
+    /// <summary>
+    /// With no sitemap there is nothing that could ever list these posts again or say they had gone,
+    /// so they would otherwise be counted for ever. Another website's posts stay where they are.
+    /// </summary>
+    [Fact]
+    public async Task Clearing_The_Sitemap_Forgets_Everything_Read_From_It()
+    {
+        var (site, neighbour, browser) = await TwoWebsitesBeingReadAsync();
+
+        using (browser)
+        {
+            await ApplyAsync(browser, site.Id, new UpdateSiteSettingsRequest { SitemapAddress = string.Empty });
+
+            (await SitemapSeed.LeftAsync(stack, site.Id)).Should().Be(new SitemapSeed.Left(0, 0, 0));
+            (await SitemapSeed.LeftAsync(stack, neighbour.Id)).Should().Be(new SitemapSeed.Left(1, 1, 1));
+        }
+    }
+
+    /// <summary>
+    /// A save that leaves the sitemap where it was writes nothing about it, whatever else it changes
+    /// and however the same address was spelled this time. Forgetting a reading is what stops it,
+    /// so anything less careful would have a change of name start a website's reading again.
+    /// </summary>
+    [Fact]
+    public async Task A_Change_That_Leaves_The_Sitemap_Alone_Leaves_Its_Reading_Alone()
+    {
+        var (site, _, browser) = await TwoWebsitesBeingReadAsync();
+
+        using (browser)
+        {
+            await ApplyAsync(browser, site.Id, new UpdateSiteSettingsRequest { DisplayName = "The Reading Room" });
+            (await SitemapSeed.LeftAsync(stack, site.Id)).Should().Be(new SitemapSeed.Left(1, 1, 1));
+
+            var respelled = $"HTTPS://{site.Domain.ToUpperInvariant()}/sitemap.xml#top";
+
+            await ApplyAsync(browser, site.Id, new UpdateSiteSettingsRequest { SitemapAddress = respelled });
+
+            (await SitemapSeed.LeftAsync(stack, site.Id)).Should().Be(new SitemapSeed.Left(1, 1, 1));
+        }
+    }
+
+    /// <summary>
+    /// A change the database did not take leaves everything as it was. Forgetting how a sitemap was
+    /// read before the new address was saved would leave a website read from nowhere, with a reading
+    /// under way for it that nothing would stop.
+    /// </summary>
+    [Fact]
+    public async Task A_Change_Of_Sitemap_That_Cannot_Be_Saved_Forgets_Nothing()
+    {
+        var (site, _, browser) = await TwoWebsitesBeingReadAsync();
+
+        browser.Dispose();
+
+        await using var work = stack.Services.CreateAsyncScope();
+        await using var failing = new ControlPlaneDbContext(
+            new DbContextOptionsBuilder<ControlPlaneDbContext>()
+                .UseNpgsql(stack.ControlPlaneConnectionString)
+                .UseSnakeCaseNamingConvention()
+                .AddInterceptors(new RefusingSave())
+                .Options);
+
+        var settings = new SiteSettings(failing, work.ServiceProvider.GetRequiredService<HybridCache>());
+
+        var act = () => settings.ApplyAsync(
+            site.Id,
+            new SiteAmendment(null, null, null, string.Empty),
+            Cancellation.Token);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage(RefusingSave.Refusal);
+
+        (await SitemapSeed.LeftAsync(stack, site.Id)).Should().Be(new SitemapSeed.Left(1, 1, 1));
+    }
+
     /// <summary>Names the reason a name is not one a website can be shown under.</summary>
     private const string NameRejected = "SiteNameRejected";
 
     /// <summary>Names the reason a time zone is not one this installation knows.</summary>
     private const string TimeZoneRejected = "SiteTimeZoneRejected";
 
+    /// <summary>Names the reason an address is not one a website's posts may be read from.</summary>
+    private const string SitemapRejected = "SiteSitemapRejected";
+
     private static string Settings(Guid siteId) => $"/api/sites/{siteId}/settings";
+
+    /// <summary>
+    /// Two websites with a sitemap each and a reading of it behind them, and somebody signed in who
+    /// owns the first.
+    /// </summary>
+    /// <returns>The website the test is about, its neighbour, and the browser.</returns>
+    private async Task<(Site Site, Site Neighbour, Browser Browser)> TwoWebsitesBeingReadAsync()
+    {
+        var site = await WebsiteBeingReadAsync();
+        var neighbour = await WebsiteBeingReadAsync();
+        var browser = await SignedIn.AsAsync(stack, SiteRole.Owner, site.Id);
+
+        return (site, neighbour, browser);
+    }
+
+    private async Task<Site> WebsiteBeingReadAsync()
+    {
+        var domain = Domain();
+        var address = $"https://{domain}/sitemap.xml";
+        var site = await ControlPlaneSeed.AddSiteAsync(
+            stack,
+            domain: domain,
+            configure: created => created.SetSitemapAddress(address));
+
+        await SitemapSeed.AddReadingAsync(stack, site.Id, address);
+
+        return site;
+    }
 
     /// <summary>Whether the collector would record a press for this site, as it stands now.</summary>
     private async Task<bool> CollectorSeesAsync(Guid siteId)
@@ -629,5 +989,19 @@ public sealed class SiteSettingsTests(AnalyticsStackFixture stack)
     {
         /// <inheritdoc />
         public Guid? GetUserId() => userId;
+    }
+
+    /// <summary>A database that takes every statement up to the point of saving a change, and then does not.</summary>
+    private sealed class RefusingSave : SaveChangesInterceptor
+    {
+        /// <summary>What the refusal says, so a test can tell it from any other failure.</summary>
+        public const string Refusal = "The database did not take this change.";
+
+        /// <inheritdoc />
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException(Refusal);
     }
 }

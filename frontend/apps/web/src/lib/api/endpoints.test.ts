@@ -15,6 +15,7 @@ import {
   readPageEngagement,
   readPages,
   readSeries,
+  readSitemapStatus,
   readSoftware,
   readSources,
   readTraffic,
@@ -519,5 +520,58 @@ describe('asking the engine what a period held', () => {
       sourceKinds: [{ value: 'search', visits: 4 }],
       towns: [],
     });
+  });
+});
+
+describe('asking the engine how reading a sitemap is going', () => {
+  const NOTHING_NAMED = {
+    address: null,
+    state: 'none',
+    problem: null,
+    readAt: null,
+    succeededAt: null,
+    posts: 0,
+    dated: 0,
+    reading: 0,
+    turnedAway: 0,
+  };
+
+  it('asks about the website alone', async () => {
+    const engine = engineAnswering(200, NOTHING_NAMED);
+
+    await readSitemapStatus(SITE);
+
+    expect(engine.first().path).toBe(`/api/sites/${SITE}/sitemap`);
+  });
+
+  it('reads a website nobody has named a sitemap for', async () => {
+    engineAnswering(200, NOTHING_NAMED);
+
+    await expect(readSitemapStatus(SITE)).resolves.toStrictEqual(NOTHING_NAMED);
+  });
+
+  /** PostgreSQL keeps six places of a second, and the engine writes them all. */
+  it('reads a reading that got partway, to the fraction of a second', async () => {
+    const partly = {
+      address: 'https://example.com/sitemap.xml',
+      state: 'partly-read',
+      problem: 'too-slow',
+      readAt: '2026-08-18T09:30:00.123456+00:00',
+      succeededAt: '2026-08-17T09:30:00.654321+00:00',
+      posts: 12,
+      dated: 10,
+      reading: 3,
+      turnedAway: 2,
+    };
+
+    engineAnswering(200, partly);
+
+    await expect(readSitemapStatus(SITE)).resolves.toStrictEqual(partly);
+  });
+
+  it('refuses a word it has no sentence for', async () => {
+    engineAnswering(200, { ...NOTHING_NAMED, state: 'pondering' });
+
+    await expect(readSitemapStatus(SITE)).rejects.toThrow();
   });
 });

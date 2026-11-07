@@ -9,6 +9,9 @@
 - **Extended by**: [0064](0064-a-month-outlives-the-reports-it-was-counted-from.md), which keeps each
   website's totals for each finished month after its reports are gone. Removing the website removes
   them with everything else, and nothing else ever deletes them.
+- **Extended by**: [0068](0068-a-website-s-posts-are-read-from-the-sitemap-it-names.md), which keeps what
+  is read from a website's sitemap in the control plane. Removing the website removes it by cascade,
+  having first stopped any reading still under way.
 
 ## Context
 

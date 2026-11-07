@@ -92,6 +92,7 @@ public sealed class AnalyticsStackFixture : WebApplicationFactory<Program>, IAsy
         // be running on a timer and writing verdicts in the middle of them.
         builder.UseSetting(TestSettings.BackgroundJudging, "false");
         builder.UseSetting(TestSettings.BackgroundConsolidation, "false");
+        builder.UseSetting(TestSettings.BackgroundSitemapReaders, TestSettings.NoBackgroundSitemapReaders);
 
         // Nothing in this suite may reach out to the internet. Both of these would, one to a dozen
         // other companies' web servers and one to a name server, and neither would make a single

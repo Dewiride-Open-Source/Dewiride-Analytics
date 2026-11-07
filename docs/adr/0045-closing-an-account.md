@@ -10,6 +10,8 @@
   a whole account and whose "refused for ever" this keeps true by other means; and
   [0026](0026-somebody-else-on-the-account.md), which left a person able to belong to two
   organisations without saying what happens when one of them is closed.
+- **Followed by**: [0068](0068-a-website-s-posts-are-read-from-the-sitemap-it-names.md), under which a
+  closed account's websites are not read, and deleting the account deletes what was read from them.
 
 ## Context
 

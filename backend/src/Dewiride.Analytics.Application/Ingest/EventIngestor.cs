@@ -1,5 +1,6 @@
 using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Telemetry;
+using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Domain.Telemetry;
 using Microsoft.Extensions.Logging;
 
@@ -284,7 +285,7 @@ public sealed partial class EventIngestor(
             ClockSkewMs = CalculateClockSkewMs(clientTimestamp, receivedAt),
             VisitorKey = visitorKey,
             Host = url.Host,
-            Path = url.AbsolutePath,
+            Path = PagePath.Of(url),
             QueryString = site.RetainQueryStrings ? NullIfEmpty(url.Query) : null,
             Referrer = referrer,
             ReferrerDomain = ExtractHost(referrer),
@@ -364,16 +365,13 @@ public sealed partial class EventIngestor(
     }
 
     /// <summary>
-    /// Whether a host is one of the addresses a site is published at: those it permits, or its own
-    /// hostname and the addresses below it where it names none.
+    /// Whether a host is one of the addresses a site is published at.
     /// </summary>
     /// <param name="site">The site.</param>
     /// <param name="host">The host, in lower case.</param>
     /// <returns>Whether the site is published at it.</returns>
     private static bool IsPublishedAt(SiteSnapshot site, string host) =>
-        site.AllowedOrigins.Length > 0
-            ? site.AllowedOrigins.Any(allowed => HostMatches(host, allowed))
-            : HostMatches(host, site.Domain);
+        PublishedHosts.Covers(site.Domain, site.AllowedOrigins.AsSpan(), host);
 
     /// <summary>
     /// Renders a host safe to write to a log.
@@ -408,10 +406,6 @@ public sealed partial class EventIngestor(
     private static bool IsHostCharacter(char character) =>
         char.IsAsciiLetterOrDigit(character)
         || character is '.' or '-' or ':' or '[' or ']' or '_';
-
-    private static bool HostMatches(string candidate, string allowed) =>
-        string.Equals(candidate, allowed, StringComparison.Ordinal)
-        || candidate.EndsWith('.' + allowed, StringComparison.Ordinal);
 
     private static string? NormalizeHost(string? value)
     {

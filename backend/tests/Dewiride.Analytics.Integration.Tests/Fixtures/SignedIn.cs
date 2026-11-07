@@ -1,6 +1,7 @@
 using System.Net;
 using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Domain.Sites;
+using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Dewiride.Analytics.Integration.Tests.Fixtures;
 
@@ -50,12 +51,12 @@ internal static class SignedIn
     /// For the tests that need the account's identifier as well as a browser, which is anything
     /// that goes on to resolve something the engine would resolve for itself on a request.
     /// </remarks>
-    /// <param name="stack">The running stack.</param>
+    /// <param name="host">The host to sign in on, which may be one built for the test.</param>
     /// <param name="emailAddress">The address the account was registered under.</param>
     /// <returns>The browser, signed in and holding a proof-of-origin token.</returns>
-    public static async Task<Browser> AsAccountAsync(AnalyticsStackFixture stack, string emailAddress)
+    public static async Task<Browser> AsAccountAsync(WebApplicationFactory<Program> host, string emailAddress)
     {
-        var browser = await Browser.OpenAsync(stack).ConfigureAwait(false);
+        var browser = await Browser.OpenAsync(host).ConfigureAwait(false);
         var response = await browser
             .PostAsync("/api/session", new SignInRequest
             {

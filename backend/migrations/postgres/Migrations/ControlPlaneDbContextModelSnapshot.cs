@@ -241,6 +241,11 @@ namespace Dewiride.Analytics.Migrations.Postgres.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("retain_query_strings");
 
+                    b.Property<string>("SitemapAddress")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("sitemap_address");
+
                     b.Property<string>("TimeZoneId")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -513,6 +518,289 @@ namespace Dewiride.Analytics.Migrations.Postgres.Migrations
                         .HasName("pk_visitor_key_salts");
 
                     b.ToTable("visitor_key_salts", (string)null);
+                });
+
+            modelBuilder.Entity("Dewiride.Analytics.Infrastructure.Posts.SitePost", b =>
+                {
+                    b.Property<Guid>("SiteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("site_id");
+
+                    b.Property<string>("Path")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("path");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("address");
+
+                    b.Property<DateTimeOffset>("FirstListedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_listed_at");
+
+                    b.Property<bool>("IsPost")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_post")
+                        .HasComputedColumnSql("page_type IS DISTINCT FROM 'Other' AND page_outcome IS DISTINCT FROM 'Gone' AND (listed_in_posts_part OR page_type IS NOT DISTINCT FROM 'Article')", true);
+
+                    b.Property<string>("LandedPath")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("landed_path");
+
+                    b.Property<bool>("ListedInPostsPart")
+                        .HasColumnType("boolean")
+                        .HasColumnName("listed_in_posts_part");
+
+                    b.Property<DateTimeOffset?>("ListedModifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("listed_modified_at");
+
+                    b.Property<short>("PageAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValue((short)0)
+                        .HasColumnName("page_attempts");
+
+                    b.Property<DateTimeOffset?>("PageDueAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("page_due_at");
+
+                    b.Property<string>("PageEtag")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("page_etag");
+
+                    b.Property<DateTimeOffset?>("PageLastModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("page_last_modified");
+
+                    b.Property<string>("PageOutcome")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("page_outcome");
+
+                    b.Property<DateTimeOffset?>("PageReadAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("page_read_at");
+
+                    b.Property<DateTimeOffset?>("PageReadLastmod")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("page_read_lastmod");
+
+                    b.Property<string>("PageType")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("page_type");
+
+                    b.Property<Guid?>("PartGeneration")
+                        .HasColumnType("uuid")
+                        .HasColumnName("part_generation");
+
+                    b.Property<Guid?>("PartId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("part_id");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("published_at");
+
+                    b.Property<string>("PublishedSource")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("published_source");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("title");
+
+                    b.Property<string>("TitleSource")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("title_source");
+
+                    b.Property<DateTimeOffset?>("UnlistedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("unlisted_at");
+
+                    b.HasKey("SiteId", "Path")
+                        .HasName("pk_site_posts");
+
+                    b.HasIndex("PartId")
+                        .HasDatabaseName("ix_site_posts_part_id");
+
+                    b.HasIndex("SiteId", "PageDueAt")
+                        .HasDatabaseName("ix_site_posts_page_due")
+                        .HasFilter("page_due_at IS NOT NULL AND unlisted_at IS NULL");
+
+                    b.ToTable("site_posts", (string)null);
+                });
+
+            modelBuilder.Entity("Dewiride.Analytics.Infrastructure.Posts.SitemapPart", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("address");
+
+                    b.Property<int>("Entries")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("entries");
+
+                    b.Property<string>("Etag")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("etag");
+
+                    b.Property<Guid?>("Generation")
+                        .HasColumnType("uuid")
+                        .HasColumnName("generation");
+
+                    b.Property<bool>("IsPosts")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_posts");
+
+                    b.Property<DateTimeOffset?>("LastModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_modified");
+
+                    b.Property<int>("OffSiteEntries")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("off_site_entries");
+
+                    b.Property<string>("Outcome")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("outcome");
+
+                    b.Property<int>("QueryEntries")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("query_entries");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("read_at");
+
+                    b.Property<Guid>("SiteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("site_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_sitemap_parts");
+
+                    b.HasIndex("SiteId", "Address")
+                        .IsUnique()
+                        .HasDatabaseName("ux_sitemap_parts_site_address");
+
+                    b.ToTable("sitemap_parts", (string)null);
+                });
+
+            modelBuilder.Entity("Dewiride.Analytics.Infrastructure.Posts.SitemapRead", b =>
+                {
+                    b.Property<Guid>("SiteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("site_id");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("address");
+
+                    b.Property<Guid?>("ClaimToken")
+                        .HasColumnType("uuid")
+                        .HasColumnName("claim_token");
+
+                    b.Property<DateTimeOffset?>("ClaimedUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("claimed_until");
+
+                    b.Property<DateTimeOffset?>("CycleStartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cycle_started_at");
+
+                    b.Property<string>("Host")
+                        .IsRequired()
+                        .HasMaxLength(253)
+                        .HasColumnType("character varying(253)")
+                        .HasColumnName("host");
+
+                    b.Property<DateTimeOffset>("NextCycleAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_cycle_at");
+
+                    b.Property<DateTimeOffset>("NextPassAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_pass_at");
+
+                    b.Property<string>("Problem")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("problem");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("read_at");
+
+                    b.Property<string>("RootEtag")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("root_etag");
+
+                    b.Property<string>("RootKind")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("root_kind");
+
+                    b.Property<DateTimeOffset?>("RootLastModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("root_last_modified");
+
+                    b.Property<string>("RootProblem")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("root_problem");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("state");
+
+                    b.Property<DateTimeOffset?>("SucceededAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("succeeded_at");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("SiteId")
+                        .HasName("pk_sitemap_reads");
+
+                    b.HasIndex("NextPassAt")
+                        .HasDatabaseName("ix_sitemap_reads_next_pass_at");
+
+                    b.HasIndex("Host", "ClaimedUntil")
+                        .HasDatabaseName("ix_sitemap_reads_host_claimed_until");
+
+                    b.ToTable("sitemap_reads", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey", b =>
@@ -1020,6 +1308,42 @@ namespace Dewiride.Analytics.Migrations.Postgres.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_site_memberships_users_user_id");
+                });
+
+            modelBuilder.Entity("Dewiride.Analytics.Infrastructure.Posts.SitePost", b =>
+                {
+                    b.HasOne("Dewiride.Analytics.Infrastructure.Posts.SitemapPart", null)
+                        .WithMany()
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_site_posts_sitemap_parts_part_id");
+
+                    b.HasOne("Dewiride.Analytics.Domain.Sites.Site", null)
+                        .WithMany()
+                        .HasForeignKey("SiteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_site_posts_sites_site_id");
+                });
+
+            modelBuilder.Entity("Dewiride.Analytics.Infrastructure.Posts.SitemapPart", b =>
+                {
+                    b.HasOne("Dewiride.Analytics.Domain.Sites.Site", null)
+                        .WithMany()
+                        .HasForeignKey("SiteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_sitemap_parts_sites_site_id");
+                });
+
+            modelBuilder.Entity("Dewiride.Analytics.Infrastructure.Posts.SitemapRead", b =>
+                {
+                    b.HasOne("Dewiride.Analytics.Domain.Sites.Site", null)
+                        .WithOne()
+                        .HasForeignKey("Dewiride.Analytics.Infrastructure.Posts.SitemapRead", "SiteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_sitemap_reads_sites_site_id");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

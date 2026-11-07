@@ -426,11 +426,63 @@ export const actionsSchema = z.object({
   controls: z.array(siteActionSchema),
 });
 
-/** Everything about one website that its owner decides: what it is called, and what it records. */
+/**
+ * Everything about one website that its owner decides: what it is called, what it records, and
+ * where it lists its posts, which is nowhere until somebody names a sitemap.
+ */
 export const siteSettingsSchema = z.object({
   displayName: z.string(),
   timeZoneId: z.string(),
   captureClicks: z.boolean(),
+  sitemapAddress: z.string().nullable(),
+});
+
+/** How reading a website's sitemap stands. */
+export const sitemapStateSchema = z.enum([
+  'none',
+  'off',
+  'waiting',
+  'read',
+  'partly-read',
+  'failed',
+]);
+
+/** What got in the way of reading it. */
+export const sitemapProblemSchema = z.enum([
+  'unreachable',
+  'not-found',
+  'turned-away',
+  'server-error',
+  'insecure',
+  'not-a-sitemap',
+  'too-large',
+  'left-the-website',
+  'too-many-redirects',
+  'private-address',
+  'too-slow',
+  'too-many',
+  'addresses-with-queries',
+  'robots-disallowed',
+  'robots-unreadable',
+]);
+
+/**
+ * How reading a website's sitemap is going.
+ *
+ * The state and the problem are words with a sentence written for each, and neither is ever shown.
+ * The figures are what the sitemap lists as far as anybody knows, so they stay beside a reading that
+ * failed: what was found earlier has not gone anywhere.
+ */
+export const sitemapStatusSchema = z.object({
+  address: z.string().nullable(),
+  state: sitemapStateSchema,
+  problem: sitemapProblemSchema.nullable(),
+  readAt: timestamp.nullable(),
+  succeededAt: timestamp.nullable(),
+  posts: z.number().int(),
+  dated: z.number().int(),
+  reading: z.number().int(),
+  turnedAway: z.number().int(),
 });
 
 /**
@@ -927,6 +979,8 @@ export type SiteAction = z.infer<typeof siteActionSchema>;
 export type Actions = z.infer<typeof actionsSchema>;
 
 export type SiteSettings = z.infer<typeof siteSettingsSchema>;
+
+export type SitemapStatus = z.infer<typeof sitemapStatusSchema>;
 
 export type TargetKind = z.infer<typeof targetKindSchema>;
 

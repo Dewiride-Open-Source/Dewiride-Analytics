@@ -239,6 +239,13 @@ public sealed partial class ClosedAccountPurge(
                 await telemetry.PurgeSiteAsync(siteId, cancellationToken).ConfigureAwait(false);
             }
 
+            // First, for the reason removing one website does: every write a reading of a sitemap makes
+            // is fenced on these rows, and this waits for the write in hand and leaves no other.
+            await database.SitemapReads
+                .Where(read => siteIds.Contains(read.SiteId))
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false);
+
             database.Organizations.Remove(organization);
             await database.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 

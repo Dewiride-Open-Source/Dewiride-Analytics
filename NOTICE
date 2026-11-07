@@ -107,6 +107,10 @@ https://opensource.org/licenses/MIT
   BouncyCastle.Cryptography       https://github.com/bcgit/bc-csharp
                                   Copyright Legion of the Bouncy Castle Inc. 2000-2026
                                   Reaches this product through MimeKit.
+  AngleSharp                      https://github.com/AngleSharp/AngleSharp
+                                  Copyright (c) 2013 - 2026 AngleSharp
+                                  Reads the title and publish date a website's own pages
+                                  declare about themselves.
   Testcontainers, NetArchTest
 
 

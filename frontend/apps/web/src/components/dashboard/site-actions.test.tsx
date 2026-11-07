@@ -57,6 +57,7 @@ function engineWith(
         displayName: 'Example',
         timeZoneId: 'Etc/UTC',
         captureClicks: await recording,
+        sitemapAddress: null,
       });
     }
 

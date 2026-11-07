@@ -171,8 +171,9 @@ public sealed class SiteDirectory(
     /// saying no.
     /// </para>
     /// <para>
-    /// The memberships, the ingest keys and the classification bookmarks go with the site, by
-    /// cascade in the database rather than by four deletions here.
+    /// The memberships, the ingest keys, the classification bookmarks and everything read from the
+    /// site's sitemap go with the site, by cascade in the database rather than by seven deletions
+    /// here.
     /// </para>
     /// <para>
     /// The collector's cached snapshot is thrown away last, once the deletion is committed. Until
@@ -207,6 +208,14 @@ public sealed class SiteDirectory(
             .TakeAsync(database, AdvisoryLocks.SiteTelemetryNamespace, siteId, cancellationToken)
             .ConfigureAwait(false);
         await telemetry.PurgeSiteAsync(siteId, cancellationToken).ConfigureAwait(false);
+
+        // First, because every write a reading of its sitemap makes is fenced on this row. It waits for
+        // the write in hand and leaves no other to wait for, where deleting the website itself would
+        // reach that write's rows while the write was waiting on the website.
+        await database.SitemapReads
+            .Where(read => read.SiteId == siteId)
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         database.Sites.Remove(site);
         await database.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

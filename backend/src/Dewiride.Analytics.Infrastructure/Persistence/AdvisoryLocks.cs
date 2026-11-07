@@ -1,4 +1,6 @@
 using System.Buffers.Binary;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dewiride.Analytics.Infrastructure.Persistence;
@@ -67,6 +69,17 @@ internal static class AdvisoryLocks
     public const int SiteTelemetryNamespace = 0x44_57_53_54;
 
     /// <summary>
+    /// Pair-key namespace for claiming a website to read its sitemap, keyed per website.
+    /// </summary>
+    /// <remarks>
+    /// Nobody may claim a website while another row for the same website holds a claim. Asking that and
+    /// writing the claim are two steps on two different rows, and two claims side by side would each find
+    /// the way clear. The lock is held for those two steps and for nothing else: never while a pass is
+    /// out asking a website for anything.
+    /// </remarks>
+    public const int SitemapWebsiteNamespace = 0x44_57_53_4D;
+
+    /// <summary>
     /// Takes a single-key lock for the rest of the open transaction.
     /// </summary>
     /// <param name="database">Control-plane database, with a transaction open.</param>
@@ -95,6 +108,34 @@ internal static class AdvisoryLocks
 
         return database.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({ns}, {key})", cancellationToken);
     }
+
+    /// <summary>
+    /// Takes a pair-key lock, in a namespace and for one name, for the rest of the open transaction.
+    /// </summary>
+    /// <param name="database">Control-plane database, with a transaction open.</param>
+    /// <param name="ns">Which use of the pair-key space this is.</param>
+    /// <param name="name">What the lock is about.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static Task TakeAsync(ControlPlaneDbContext database, int ns, string name, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(database);
+
+        var key = KeyFor(name);
+
+        return database.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({ns}, {key})", cancellationToken);
+    }
+
+    /// <summary>
+    /// Folds a name to the 32 bits a pair-key lock is addressed by.
+    /// </summary>
+    /// <remarks>
+    /// By a hash every engine works out alike, whatever it runs on. A collision between two names costs
+    /// one of them a moment's wait behind the other and nothing else.
+    /// </remarks>
+    /// <param name="name">The name the lock is about.</param>
+    /// <returns>The second number of the pair.</returns>
+    private static int KeyFor(string name) =>
+        BinaryPrimitives.ReadInt32LittleEndian(SHA256.HashData(Encoding.UTF8.GetBytes(name)));
 
     /// <summary>
     /// Folds an identifier to the 32 bits a pair-key lock is addressed by.

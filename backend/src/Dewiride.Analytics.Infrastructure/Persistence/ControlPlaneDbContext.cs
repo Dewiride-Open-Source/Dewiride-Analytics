@@ -1,6 +1,7 @@
 using Dewiride.Analytics.Domain.Classification;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Infrastructure.Identity;
+using Dewiride.Analytics.Infrastructure.Posts;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -76,6 +77,15 @@ public sealed class ControlPlaneDbContext(DbContextOptions<ControlPlaneDbContext
 
     /// <summary>How far the detection engine has judged each site, under each set of rules.</summary>
     public DbSet<ClassificationProgress> ClassificationProgress => Set<ClassificationProgress>();
+
+    /// <summary>How far reading each website's sitemap has got.</summary>
+    public DbSet<SitemapRead> SitemapReads => Set<SitemapRead>();
+
+    /// <summary>The files each website's sitemap is made of.</summary>
+    public DbSet<SitemapPart> SitemapParts => Set<SitemapPart>();
+
+    /// <summary>The pages each website's sitemap lists, and what those pages said about themselves.</summary>
+    public DbSet<SitePost> SitePosts => Set<SitePost>();
 
     /// <summary>
     /// Keys the framework uses to sign and encrypt sign-in cookies.

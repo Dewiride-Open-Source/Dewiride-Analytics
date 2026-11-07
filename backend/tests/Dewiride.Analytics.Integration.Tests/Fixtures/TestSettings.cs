@@ -2,6 +2,7 @@ using Dewiride.Analytics.Application.Consolidation;
 using Dewiride.Analytics.Application.Dashboard;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Infrastructure.Crawlers;
+using Dewiride.Analytics.Infrastructure.Posts;
 
 namespace Dewiride.Analytics.Integration.Tests.Fixtures;
 
@@ -63,4 +64,22 @@ internal static class TestSettings
     /// </remarks>
     public static readonly string CrawlerRangeDownloads =
         $"{CrawlerRangeOptions.SectionName}:{nameof(CrawlerRangeOptions.AutoDownload)}";
+
+    /// <summary>Whether this installation reads the sitemaps its websites name.</summary>
+    public static readonly string SitemapReading =
+        $"{SitemapOptions.SectionName}:{nameof(SitemapOptions.Enabled)}";
+
+    /// <summary>How many websites an engine reads at once in the background.</summary>
+    /// <remarks>
+    /// Nought across the suite, on the same terms as judging: the reader is driven directly by the tests
+    /// that are about reading, and one running on its own schedule would go looking for websites named by
+    /// tests about something else. It is this setting rather than the switch above because that one is
+    /// about the installation, and the status the dashboard is told has to go on reading as it would on
+    /// an installation that reads.
+    /// </remarks>
+    public static readonly string BackgroundSitemapReaders =
+        $"{SitemapOptions.SectionName}:{nameof(SitemapOptions.SitesAtOnce)}";
+
+    /// <summary>What <see cref="BackgroundSitemapReaders"/> is set to, which is none.</summary>
+    public const string NoBackgroundSitemapReaders = "0";
 }

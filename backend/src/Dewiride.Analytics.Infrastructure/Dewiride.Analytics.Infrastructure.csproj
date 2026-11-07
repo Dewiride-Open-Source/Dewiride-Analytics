@@ -38,6 +38,11 @@
       in. The reader only: no database ships with this product, and none of MaxMind's own are used.
     -->
     <PackageReference Include="MaxMind.Db" />
+    <!--
+      Cuts a website's own pages into tags, to read what they say about themselves. Its tokenizer
+      is all that is used, so a page can make it build nothing, fetch nothing and run nothing.
+    -->
+    <PackageReference Include="AngleSharp" />
   </ItemGroup>
 
   <!--

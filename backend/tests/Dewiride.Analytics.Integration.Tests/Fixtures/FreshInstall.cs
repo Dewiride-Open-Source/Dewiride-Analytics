@@ -112,6 +112,7 @@ internal sealed class FreshInstall : WebApplicationFactory<Program>
 
         builder.UseSetting(TestSettings.SignInAllowance, TestSettings.NoPracticalLimit);
         builder.UseSetting(TestSettings.BackgroundConsolidation, "false");
+        builder.UseSetting(TestSettings.BackgroundSitemapReaders, TestSettings.NoBackgroundSitemapReaders);
     }
 
     /// <summary>

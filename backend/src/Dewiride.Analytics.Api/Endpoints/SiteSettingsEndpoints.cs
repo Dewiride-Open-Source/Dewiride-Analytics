@@ -1,4 +1,6 @@
+using Dewiride.Analytics.Api.Analytics;
 using Dewiride.Analytics.Api.Contracts;
+using Dewiride.Analytics.Application.Posts;
 using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Domain.Sites;
@@ -12,10 +14,11 @@ namespace Dewiride.Analytics.Api.Endpoints;
 /// </summary>
 /// <remarks>
 /// <para>
-/// What is settled here decides how a website is named, when its days begin and what is written
-/// into the telemetry store for it, so changing any of it is restricted to somebody who may
-/// already change how the site is measured. Reading is not: how a site is set up is something
-/// anybody who can see its numbers ought to be able to check.
+/// What is settled here decides how a website is named, when its days begin, what is written into
+/// the telemetry store for it and what this engine fetches on its behalf, so changing any of it is
+/// restricted to somebody who may already change how the site is measured. Reading is not: how a
+/// site is set up, and how reading its sitemap is going, is something anybody who can see its
+/// numbers ought to be able to check.
 /// </para>
 /// <para>
 /// A site that does not exist and a site the caller has no role on are answered identically, as
@@ -29,6 +32,9 @@ internal static class SiteSettingsEndpoints
 
     /// <summary>Names the reason a time zone is not one this installation knows.</summary>
     private const string TimeZoneRejectedCode = "SiteTimeZoneRejected";
+
+    /// <summary>Names the reason an address is not one this website's posts may be read from.</summary>
+    private const string SitemapRejectedCode = "SiteSitemapRejected";
 
     /// <summary>
     /// Maps reading and changing a site's settings.
@@ -48,8 +54,12 @@ internal static class SiteSettingsEndpoints
             .WithDescription(
                 "Every setting is optional and one that is left out is left as it was. A change "
                 + "to what is collected takes effect on the next report, not on what has already "
-                + "been collected.")
+                + "been collected. An empty sitemap address stops it being read.")
             .RequireProofOfOrigin();
+
+        routes.MapGet("/api/sites/{siteId:guid}/sitemap", ReadSitemapAsync)
+            .WithName("SiteSitemap")
+            .WithSummary("Returns how reading a website's sitemap is going.");
     }
 
     private static async Task<Results<Ok<SiteSettingsResponse>, NotFound>> ReadAsync(
@@ -96,7 +106,12 @@ internal static class SiteSettingsEndpoints
             return Unusable();
         }
 
-        var amendment = new SiteAmendment(request.DisplayName, request.TimeZoneId, request.CaptureClicks);
+        var amendment = new SiteAmendment(
+            request.DisplayName,
+            request.TimeZoneId,
+            request.CaptureClicks,
+            request.SitemapAddress);
+
         var change = await settings.ApplyAsync(siteId, amendment, cancellationToken).ConfigureAwait(false);
 
         return change.Outcome switch
@@ -104,12 +119,43 @@ internal static class SiteSettingsEndpoints
             SiteChangeOutcome.Applied when change.Profile is { } profile => TypedResults.Ok(Describe(profile)),
             SiteChangeOutcome.NameRejected => NameRejected(),
             SiteChangeOutcome.TimeZoneRejected => TimeZoneRejected(),
+            SiteChangeOutcome.SitemapRejected => SitemapRejected(),
             _ => TypedResults.NotFound(),
         };
     }
 
+    private static async Task<Results<Ok<SitemapStatusResponse>, NotFound>> ReadSitemapAsync(
+        Guid siteId,
+        ITenantScopeProvider scopes,
+        ISitePosts posts,
+        CancellationToken cancellationToken)
+    {
+        var scope = await scopes.ResolveAsync(siteId, cancellationToken).ConfigureAwait(false);
+
+        if (scope is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var report = await posts.DescribeSitemapAsync(scope, cancellationToken).ConfigureAwait(false);
+
+        return TypedResults.Ok(Describe(report));
+    }
+
     private static SiteSettingsResponse Describe(SiteProfile profile) =>
-        new(profile.DisplayName, profile.TimeZoneId, profile.CaptureClicks);
+        new(profile.DisplayName, profile.TimeZoneId, profile.CaptureClicks, profile.SitemapAddress);
+
+    private static SitemapStatusResponse Describe(SitemapReport report) =>
+        new(
+            report.Address,
+            ReportedNames.SitemapStates[report.State],
+            report.Problem is { } problem ? ReportedNames.SitemapProblems[problem] : null,
+            report.ReadAt,
+            report.SucceededAt,
+            report.Posts,
+            report.Dated,
+            report.Reading,
+            report.TurnedAway);
 
     /// <summary>
     /// Whether the caller may change how a site is measured.
@@ -135,6 +181,14 @@ internal static class SiteSettingsEndpoints
             new RefusedReason(
                 TimeZoneRejectedCode,
                 "Choose the time zone the website's days should be counted in."));
+
+    private static ProblemHttpResult SitemapRejected() =>
+        Refused(
+            "That sitemap address could not be saved.",
+            new RefusedReason(
+                SitemapRejectedCode,
+                "Give the full address of this website's own sitemap, such as "
+                + "https://blog.example.com/sitemap.xml."));
 
     /// <summary>
     /// Refuses with a reason the dashboard can write its own sentence for.

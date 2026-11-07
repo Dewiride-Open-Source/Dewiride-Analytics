@@ -10,6 +10,8 @@
 - **Extends**: [0064](0064-a-month-outlives-the-reports-it-was-counted-from.md), whose service that
   keeps finished months already ended a failed run without ending its loop. Every timed service now
   does, on one rule.
+- **Followed by**: [0068](0068-a-website-s-posts-are-read-from-the-sitemap-it-names.md), whose service
+  that reads sitemaps keeps to the same rule, and whose waits are held to the same 49 days.
 
 ## Context
 

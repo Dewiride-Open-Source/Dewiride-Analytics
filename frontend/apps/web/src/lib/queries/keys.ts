@@ -228,6 +228,14 @@ export function siteSettingsKey(siteId: string) {
   return ['sites', siteId, 'settings'] as const;
 }
 
+/**
+ * How reading a website's sitemap is going, filed apart from the settings because it changes by
+ * itself while they stand still.
+ */
+export function sitemapStatusKey(siteId: string) {
+  return ['sites', siteId, 'sitemap'] as const;
+}
+
 export function trafficKey(siteId: string, window: AnalyticsWindow) {
   return ['sites', siteId, 'traffic', window.from, window.to] as const;
 }

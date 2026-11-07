@@ -176,6 +176,15 @@ A withdrawn key can keep working for up to a minute: resolved keys are held brie
 that a reporter presenting the same secret on every batch does not put the control-plane database
 in front of the busiest write path in the product.
 
+## Requests from the engine's own sitemap reader
+
+Where a website's settings name its sitemap, the engine reads the sitemap and the pages it lists,
+and says so in its user agent: `DewirideAnalytics/<version> (sitemap fetcher; +…)`. A reporter sees
+those requests as it sees any other, and what it reports is judged, as a crawler, and counted, on
+the hosted service against the account's monthly allowance. To keep them out, leave out requests
+whose user agent begins `DewirideAnalytics/`. The engine does not leave them out itself, because
+anybody can send that name.
+
 ## Limits
 
 Configurable under `Dewiride:Collector`:

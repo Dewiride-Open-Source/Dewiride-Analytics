@@ -230,6 +230,21 @@ function engineWith(
         displayName: 'Example',
         timeZoneId: 'Etc/UTC',
         captureClicks: true,
+        sitemapAddress: null,
+      });
+    }
+
+    if (path.endsWith('/sitemap')) {
+      return respondWith(200, {
+        address: null,
+        state: 'none',
+        problem: null,
+        readAt: null,
+        succeededAt: null,
+        posts: 0,
+        dated: 0,
+        reading: 0,
+        turnedAway: 0,
       });
     }
 
@@ -3354,7 +3369,12 @@ function recordingSwitchedOff() {
       captureClicks = saved.captureClicks ?? captureClicks;
     }
 
-    return respondWith(200, { displayName: 'Example', timeZoneId: 'Etc/UTC', captureClicks });
+    return respondWith(200, {
+      displayName: 'Example',
+      timeZoneId: 'Etc/UTC',
+      captureClicks,
+      sitemapAddress: null,
+    });
   });
 }
 

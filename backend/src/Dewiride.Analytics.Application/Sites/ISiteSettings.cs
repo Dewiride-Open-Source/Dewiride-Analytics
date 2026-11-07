@@ -38,7 +38,12 @@ public interface ISiteSettings
 /// <param name="DisplayName">Name it is shown under.</param>
 /// <param name="TimeZoneId">IANA time zone its days are counted in.</param>
 /// <param name="CaptureClicks">Whether the controls visitors operate are recorded.</param>
-public readonly record struct SiteProfile(string DisplayName, string TimeZoneId, bool CaptureClicks);
+/// <param name="SitemapAddress">Where it lists its posts, or nothing where no sitemap is named.</param>
+public readonly record struct SiteProfile(
+    string DisplayName,
+    string TimeZoneId,
+    bool CaptureClicks,
+    string? SitemapAddress);
 
 /// <summary>
 /// A change to a site's properties.
@@ -52,7 +57,15 @@ public readonly record struct SiteProfile(string DisplayName, string TimeZoneId,
 /// <param name="CaptureClicks">
 /// Whether to record the controls visitors operate, or nothing to leave it as it is.
 /// </param>
-public readonly record struct SiteAmendment(string? DisplayName, string? TimeZoneId, bool? CaptureClicks);
+/// <param name="SitemapAddress">
+/// Where it lists its posts, or nothing to leave it as it is. An empty or blank address stops it
+/// being read and forgets the posts read from it.
+/// </param>
+public readonly record struct SiteAmendment(
+    string? DisplayName,
+    string? TimeZoneId,
+    bool? CaptureClicks,
+    string? SitemapAddress);
 
 /// <summary>What came of trying to change a site's properties.</summary>
 public enum SiteChangeOutcome
@@ -68,6 +81,9 @@ public enum SiteChangeOutcome
 
     /// <summary>The time zone is not one this installation knows.</summary>
     TimeZoneRejected = 4,
+
+    /// <summary>The address is not one this site's posts may be read from.</summary>
+    SitemapRejected = 5,
 }
 
 /// <summary>

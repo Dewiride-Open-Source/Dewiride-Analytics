@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using Dewiride.Analytics.Application.Posts;
 using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Domain.Telemetry;
 
@@ -152,6 +153,39 @@ internal static class ReportedNames
             [IngestSurface.NextJsMiddleware] = "nextjs-middleware",
             [IngestSurface.LogImport] = "log-import",
             [IngestSurface.ServerSide] = "server-side",
+        }.ToFrozenDictionary();
+
+    /// <summary>Wire name for how reading a website's sitemap stands.</summary>
+    public static FrozenDictionary<SitemapState, string> SitemapStates { get; } =
+        new Dictionary<SitemapState, string>
+        {
+            [SitemapState.None] = "none",
+            [SitemapState.Off] = "off",
+            [SitemapState.Waiting] = "waiting",
+            [SitemapState.Read] = "read",
+            [SitemapState.PartlyRead] = "partly-read",
+            [SitemapState.Failed] = "failed",
+        }.ToFrozenDictionary();
+
+    /// <summary>Wire name for what got in the way of reading a website's sitemap.</summary>
+    public static FrozenDictionary<SitemapProblem, string> SitemapProblems { get; } =
+        new Dictionary<SitemapProblem, string>
+        {
+            [SitemapProblem.Unreachable] = "unreachable",
+            [SitemapProblem.NotFound] = "not-found",
+            [SitemapProblem.TurnedAway] = "turned-away",
+            [SitemapProblem.ServerError] = "server-error",
+            [SitemapProblem.Insecure] = "insecure",
+            [SitemapProblem.NotASitemap] = "not-a-sitemap",
+            [SitemapProblem.TooLarge] = "too-large",
+            [SitemapProblem.LeftTheWebsite] = "left-the-website",
+            [SitemapProblem.TooManyRedirects] = "too-many-redirects",
+            [SitemapProblem.PrivateAddress] = "private-address",
+            [SitemapProblem.TooSlow] = "too-slow",
+            [SitemapProblem.TooMany] = "too-many",
+            [SitemapProblem.AddressesWithQueries] = "addresses-with-queries",
+            [SitemapProblem.RobotsDisallowed] = "robots-disallowed",
+            [SitemapProblem.RobotsUnreadable] = "robots-unreadable",
         }.ToFrozenDictionary();
 
     /// <summary>

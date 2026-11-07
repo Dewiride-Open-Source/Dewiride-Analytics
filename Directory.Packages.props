@@ -108,6 +108,17 @@
     <PackageVersion Include="MaxMind.Db" Version="5.2.0" />
   </ItemGroup>
 
+  <ItemGroup Label="Reading websites">
+    <!--
+      Reads the title and publish date a website's own pages declare about themselves. It cuts
+      markup into tags the way a browser does, because what arrives was written by whoever runs the
+      website and nothing promises it is well formed. Its tokenizer is all that is used: no document
+      is ever built, so nothing can be fetched or run. An upgrade has to pass the architecture test
+      on where the tokenizer calls itself. MIT.
+    -->
+    <PackageVersion Include="AngleSharp" Version="1.9.1" />
+  </ItemGroup>
+
   <ItemGroup Label="Runtime infrastructure">
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.13" />

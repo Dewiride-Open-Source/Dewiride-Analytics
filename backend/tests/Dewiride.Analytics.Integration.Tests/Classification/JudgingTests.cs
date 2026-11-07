@@ -7,6 +7,7 @@ using Dewiride.Analytics.Classification;
 using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Domain.Telemetry;
 using Dewiride.Analytics.Infrastructure.Persistence;
+using Dewiride.Analytics.Infrastructure.Posts;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -995,6 +996,42 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         return await scope.ServiceProvider.GetRequiredService<IClassificationProgressStore>()
             .ResumeFromAsync(siteId, RulesetVersion.Current, from, Cancellation.Token)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A website reporting from its own server reports the reader of its sitemap too. Going by the name it does,
+    /// the reader says what it is, so somebody who named their sitemap is told a crawler read their pages and
+    /// is not told, on strong signs, that something was copying them.
+    /// </summary>
+    /// <param name="pages">How many pages it asked for.</param>
+    [Theory]
+    [InlineData(2)]
+    [InlineData(8)]
+    [InlineData(30)]
+    [InlineData(120)]
+    public async Task The_Reader_Of_A_Sitemap_Is_Judged_A_Crawler_However_Many_Pages_It_Read(int pages)
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+        [
+            .. Enumerable.Range(0, pages).Select(page =>
+                Probe(site.Id, "reader", at.AddSeconds(page), $"/posts/{page}") with
+                {
+                    UserAgent = WebsiteHttp.UserAgent,
+                    StatusCode = 200,
+                    ContentType = "text/html",
+                    ResponseBytes = 12_000,
+                }),
+        ]);
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.GenericWebCrawler);
     }
 
     private static string Domain() => $"{Guid.NewGuid():n}.example.com";

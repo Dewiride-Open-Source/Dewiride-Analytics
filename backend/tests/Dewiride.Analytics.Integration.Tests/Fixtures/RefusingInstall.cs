@@ -101,6 +101,7 @@ internal sealed class RefusingInstall : WebApplicationFactory<Program>
         builder.UseSetting(TestSettings.SignInAllowance, TestSettings.NoPracticalLimit);
         builder.UseSetting(TestSettings.BackgroundJudging, "false");
         builder.UseSetting(TestSettings.BackgroundConsolidation, "false");
+        builder.UseSetting(TestSettings.BackgroundSitemapReaders, TestSettings.NoBackgroundSitemapReaders);
         builder.UseSetting(TestSettings.NameChecks, "false");
         builder.UseSetting(TestSettings.CrawlerRangeDownloads, "false");
 

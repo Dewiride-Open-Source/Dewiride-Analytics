@@ -49,6 +49,7 @@ import {
   type Session,
   type SignedInUser,
   type Site,
+  type SitemapStatus,
   type SiteSettings,
   type Software,
   type SoftwareGrouping,
@@ -58,6 +59,7 @@ import {
   serverKeysSchema,
   sessionSchema,
   signedInUserSchema,
+  sitemapStatusSchema,
   siteSchema,
   siteSettingsSchema,
   sitesSchema,
@@ -406,13 +408,23 @@ export function readSiteSettings(siteId: string): Promise<SiteSettings> {
 }
 
 /**
+ * What a change to a website's settings can name.
+ *
+ * The answer gives a website with no sitemap a null address, and the question must not: null means
+ * unchanged on the way in, as for every other setting, and an empty address is what removes one.
+ */
+export type SiteSettingsChange = Partial<Omit<SiteSettings, 'sitemapAddress'>> & {
+  readonly sitemapAddress?: string;
+};
+
+/**
  * Changes one website's settings.
  *
  * A setting left out is left as it was, so this sends only what is being changed.
  */
 export function updateSiteSettings(
   siteId: string,
-  settings: Partial<SiteSettings>,
+  settings: SiteSettingsChange,
   proof: string,
 ): Promise<SiteSettings> {
   return submitResource(
@@ -422,6 +434,16 @@ export function updateSiteSettings(
     siteSettingsSchema,
     settings,
   );
+}
+
+/**
+ * How reading a website's sitemap is going.
+ *
+ * Asked apart from the settings because it moves on its own: nothing about the website changes while
+ * its pages are being read, and the screen watching them has no reason to ask for the rest again.
+ */
+export function readSitemapStatus(siteId: string): Promise<SitemapStatus> {
+  return readResource(`${siteAddress(siteId)}/sitemap`, sitemapStatusSchema);
 }
 
 /**

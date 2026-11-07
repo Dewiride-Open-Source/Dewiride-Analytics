@@ -59,9 +59,9 @@ public sealed class ClosedAccountPurgeTests(AnalyticsStackFixture stack)
         Organization.ClosureRetention - Organization.DeletionReminderLead - TimeSpan.FromDays(3);
 
     /// <summary>
-    /// A grant, a key, an invitation or a bookmark that outlived the account it belongs to would be
-    /// a row nothing can evaluate. They go by cascade from the one row the sweep deletes, and this
-    /// is what proves every cascade is declared.
+    /// A grant, a key, an invitation, a bookmark or anything read from a website's sitemap that
+    /// outlived the account it belongs to would be a row nothing can evaluate. They go by cascade
+    /// from the one row the sweep deletes, and this is what proves every cascade is declared.
     /// </summary>
     [Fact]
     public async Task A_Closed_Account_Whose_Time_Has_Run_Is_Deleted_With_Everything_The_Control_Plane_Held()
@@ -71,12 +71,13 @@ public sealed class ClosedAccountPurgeTests(AnalyticsStackFixture stack)
         await ControlPlaneSeed.AddServerKeyAsync(stack, account.SiteId);
         await BookmarkAsync(account.SiteId);
         await InviteIntoAsync(account.OrganizationId, account.OwnerId);
+        await SitemapSeed.AddReadingAsync(stack, account.SiteId, "https://example.com/sitemap.xml");
 
-        (await HeldAboutAsync(account)).Should().Be(new Held(1, 1, 1, 1, 1, 1));
+        (await HeldAboutAsync(account)).Should().Be(new Held(1, 1, 1, 1, 1, 1, new SitemapSeed.Left(1, 1, 1)));
 
         await SweepAsync(stack.Services);
 
-        (await HeldAboutAsync(account)).Should().Be(new Held(0, 0, 0, 0, 0, 0));
+        (await HeldAboutAsync(account)).Should().Be(new Held(0, 0, 0, 0, 0, 0, default));
     }
 
     /// <summary>
@@ -245,7 +246,7 @@ public sealed class ClosedAccountPurgeTests(AnalyticsStackFixture stack)
 
         (await CensusAsync()).Should().Be(census);
         (await HeldAboutAsync(going)).Organizations.Should().Be(0);
-        (await HeldAboutAsync(staying)).Should().Be(new Held(1, 1, 1, 0, 0, 0));
+        (await HeldAboutAsync(staying)).Should().Be(new Held(1, 1, 1, 0, 0, 0, default));
         (await PersonExistsAsync(staying.OwnerId)).Should().BeTrue();
     }
 
@@ -276,7 +277,7 @@ public sealed class ClosedAccountPurgeTests(AnalyticsStackFixture stack)
         (await HeldAboutAsync(allowed)).Organizations.Should().Be(0);
         (await PersonExistsAsync(allowed.OwnerId)).Should().BeFalse();
 
-        (await HeldAboutAsync(refused)).Should().Be(new Held(1, 1, 1, 0, 0, 0));
+        (await HeldAboutAsync(refused)).Should().Be(new Held(1, 1, 1, 0, 0, 0, default));
         (await PersonExistsAsync(refused.OwnerId)).Should().BeTrue();
         (await ClosedAtAsync(stack.Services, refused.OrganizationId)).Should().NotBeNull();
         (await ActivityCountAsync(refused.SiteId)).Should().Be(0);
@@ -766,7 +767,8 @@ public sealed class ClosedAccountPurgeTests(AnalyticsStackFixture stack)
             await database.SiteIngestKeys
                 .CountAsync(key => key.SiteId == account.SiteId, Cancellation.Token),
             await database.ClassificationProgress
-                .CountAsync(progress => progress.SiteId == account.SiteId, Cancellation.Token));
+                .CountAsync(progress => progress.SiteId == account.SiteId, Cancellation.Token),
+            await SitemapSeed.LeftAsync(stack, account.SiteId));
     }
 
     /// <summary>How much of everything the control plane holds, across every account.</summary>
@@ -905,7 +907,14 @@ public sealed class ClosedAccountPurgeTests(AnalyticsStackFixture stack)
     private sealed record Person(Guid Id, string Address);
 
     /// <summary>What the control plane holds about one account, counted.</summary>
-    private sealed record Held(int Organizations, int Sites, int Standings, int Invitations, int Keys, int Bookmarks);
+    private sealed record Held(
+        int Organizations,
+        int Sites,
+        int Standings,
+        int Invitations,
+        int Keys,
+        int Bookmarks,
+        SitemapSeed.Left Sitemap);
 
     /// <summary>What the control plane holds across every account, counted.</summary>
     private sealed record Census(

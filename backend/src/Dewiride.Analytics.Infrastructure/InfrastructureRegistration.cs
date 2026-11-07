@@ -1,7 +1,9 @@
+using System.Net;
 using Dewiride.Analytics.Application.Abstractions;
 using Dewiride.Analytics.Application.Accounts;
 using Dewiride.Analytics.Application.Ingest;
 using Dewiride.Analytics.Application.Notifications;
+using Dewiride.Analytics.Application.Posts;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Telemetry;
@@ -15,6 +17,7 @@ using Dewiride.Analytics.Infrastructure.Ingest;
 using Dewiride.Analytics.Infrastructure.Network;
 using Dewiride.Analytics.Infrastructure.Notifications;
 using Dewiride.Analytics.Infrastructure.Persistence;
+using Dewiride.Analytics.Infrastructure.Posts;
 using Dewiride.Analytics.Infrastructure.Sites;
 using Dewiride.Analytics.Infrastructure.Telemetry;
 using Dewiride.Analytics.Infrastructure.Tenancy;
@@ -59,6 +62,12 @@ public static class InfrastructureRegistration
     /// puts the assembly in the load context at run time.
     /// </remarks>
     public const string MigrationsAssemblyName = "Dewiride.Analytics.Migrations.Postgres";
+
+    /// <summary>
+    /// How many turns one asking of a website can have to wait for inside its own time: each redirect, and
+    /// the robots.txt of the website's other name on the way.
+    /// </summary>
+    private const int TurnsInOneAsking = WebsiteFetcher.MostRedirects + 1;
 
     /// <summary>
     /// Adds the control-plane database, the account store, the site catalogue and visitor-key
@@ -137,6 +146,7 @@ public static class InfrastructureRegistration
 
         AddVisitorContext(builder);
         AddNotifications(builder);
+        AddSitemapReading(builder);
 
         builder.Services.AddHealthChecks()
             .AddCheck<ControlPlaneHealthCheck>(
@@ -351,6 +361,154 @@ public static class InfrastructureRegistration
             builder.Services.AddSingleton<IEmailSender, LoggingEmailSender>();
         }
     }
+
+    /// <summary>
+    /// Adds what is known about the posts a website lists in its sitemap, and the way out to the
+    /// websites themselves.
+    /// </summary>
+    /// <remarks>
+    /// The way out is not configured from anywhere. Where a connection may go is decided by the one
+    /// implementation registered here, because a setting able to widen it would also be a setting able
+    /// to point the hosted service at its own network.
+    /// </remarks>
+    /// <param name="builder">The host application builder.</param>
+    private static void AddSitemapReading(IHostApplicationBuilder builder)
+    {
+        // Bound as the host starts, so that a value that is not a switch in an environment file is a
+        // refusal to start and not an installation reading sitemaps it was told to leave alone.
+        var settings = builder.Services.AddOptions<SitemapOptions>()
+            .Bind(builder.Configuration.GetSection(SitemapOptions.SectionName))
+            .ValidateOnStart();
+
+        ValidateAsking(settings);
+        ValidatePasses(settings);
+
+        builder.Services.AddScoped<ISitePosts, SitePosts>();
+
+        builder.Services.AddSingleton<IPublicEndpoints>(new PublicInternetEndpoints(Dns.GetHostAddressesAsync));
+        WebsiteHttp.AddClient(builder.Services);
+
+        // One for the process, because the limit it keeps is the website's and not any one reading's.
+        builder.Services.AddSingleton(services => new Pacer(
+            services.GetRequiredService<TimeProvider>(),
+            services.GetRequiredService<IOptions<SitemapOptions>>().Value.RequestGap));
+        builder.Services.AddSingleton<WebsiteFetcher>();
+
+        AddSitemapReader(builder.Services);
+        builder.Services.AddHostedService<SitemapReadingService>();
+    }
+
+    /// <summary>
+    /// Adds what one pass over a website is made of, given the way out to websites.
+    /// </summary>
+    /// <remarks>
+    /// One scope to a pass, so that nothing of one website's can ride along into the next website's, and
+    /// its database connection is only open while a statement is. The pass goes off to a website for
+    /// minutes at a time and holds nothing while it does.
+    /// </remarks>
+    /// <param name="services">The service collection.</param>
+    internal static void AddSitemapReader(IServiceCollection services)
+    {
+        services.AddSingleton<SitemapPass>();
+        services.AddScoped<SitemapClaims>();
+        services.AddScoped<PostWriter>();
+        services.AddScoped<SitemapCycle>();
+        services.AddScoped<PageReader>();
+    }
+
+    /// <summary>
+    /// Refuses what no website should be asked under, and what no timer could keep.
+    /// </summary>
+    private static void ValidateAsking(OptionsBuilder<SitemapOptions> settings) =>
+        settings
+            .Validate(
+                sitemaps => sitemaps.RequestGap >= TimeSpan.FromSeconds(1) && IsAWaitATimerCanKeep(sitemaps.RequestGap),
+                $"{SitemapOptions.SectionName}:RequestGap must be at least one second, and no more than 49 "
+                + "days. The website being read did not ask to be, and pays for every request.")
+            .Validate(
+                sitemaps => sitemaps.RequestGap < ShortestAsking(sitemaps) / TurnsInOneAsking,
+                $"{SitemapOptions.SectionName}:RequestGap must leave time to follow a website's redirects: "
+                + $"{WebsiteFetcher.MostRedirects} of them and a robots.txt on the way each wait that long, inside both "
+                + $"{SitemapOptions.SectionName}:PageTimeout and {SitemapOptions.SectionName}:SitemapTimeout.")
+            .Validate(
+                sitemaps => sitemaps.ConnectTimeout >= TimeSpan.FromSeconds(1)
+                    && sitemaps.ConnectTimeout <= TimeSpan.FromSeconds(60),
+                $"{SitemapOptions.SectionName}:ConnectTimeout must be between one second and a minute.")
+            .Validate(
+                sitemaps => IsAWaitATimerCanKeep(sitemaps.SitemapTimeout),
+                $"{SitemapOptions.SectionName}:SitemapTimeout must be no more than 49 days.")
+            .Validate(
+                sitemaps => IsAWaitATimerCanKeep(sitemaps.PageTimeout),
+                $"{SitemapOptions.SectionName}:PageTimeout must be no more than 49 days.")
+            .Validate(
+                sitemaps => sitemaps.LargestSitemapBytes is >= 1024 * 1024 and <= SitemapOptions.ProtocolLimitBytes,
+                $"{SitemapOptions.SectionName}:LargestSitemapBytes must be between one mebibyte and "
+                + $"{SitemapOptions.ProtocolLimitBytes} bytes, which is as much as the protocol lets one file hold.")
+            .Validate(
+                sitemaps => sitemaps.PageBytesRead is >= 64 * 1024 and <= 4 * 1024 * 1024,
+                $"{SitemapOptions.SectionName}:PageBytesRead must be between 64 kibibytes and four mebibytes.");
+
+    /// <summary>
+    /// Refuses a reader that could not do its job, or could not keep to what a claim promises.
+    /// </summary>
+    private static void ValidatePasses(OptionsBuilder<SitemapOptions> settings) =>
+        settings
+            .Validate(
+                sitemaps => sitemaps.SitesAtOnce is >= 0 and <= 16,
+                $"{SitemapOptions.SectionName}:SitesAtOnce must be between nought, which leaves reading to "
+                + "other engines, and sixteen.")
+            .Validate(
+                sitemaps => sitemaps.Interval >= TimeSpan.FromSeconds(5) && IsAWaitATimerCanKeep(sitemaps.Interval),
+                $"{SitemapOptions.SectionName}:Interval must be at least five seconds, and no more than 49 days.")
+            .Validate(
+                sitemaps => sitemaps.Cadence >= TimeSpan.FromHours(1) && IsAWaitATimerCanKeep(sitemaps.Cadence),
+                $"{SitemapOptions.SectionName}:Cadence must be at least an hour, and no more than 49 days.")
+            .Validate(
+                sitemaps => sitemaps.PagesPerPass is >= 1 and <= 600,
+                $"{SitemapOptions.SectionName}:PagesPerPass must be between one and six hundred.")
+            .Validate(
+                sitemaps => sitemaps.PassBudget >= TimeSpan.FromMinutes(1) && IsAWaitATimerCanKeep(sitemaps.PassBudget),
+                $"{SitemapOptions.SectionName}:PassBudget must be at least a minute, and no more than 49 days.")
+            .Validate(
+                sitemaps => IsAWaitATimerCanKeep(sitemaps.Lease) && sitemaps.Lease >= LeastLease(sitemaps),
+                $"{SitemapOptions.SectionName}:Lease must be no more than 49 days, and must outlast the "
+                + "pass holding it: its PassBudget, a minute's margin, and asking for robots.txt and a sitemap "
+                + "at the last moment, with the RequestGap before each.")
+            .Validate(
+                sitemaps => sitemaps.MostSitemapParts is >= 1 and <= 50_000,
+                $"{SitemapOptions.SectionName}:MostSitemapParts must be between one and 50,000, which is as "
+                + "many as the protocol lets an index name.")
+            .Validate(
+                sitemaps => sitemaps.MostPostsPerSite is >= 1_000 and <= 1_000_000,
+                $"{SitemapOptions.SectionName}:MostPostsPerSite must be between 1,000 and 1,000,000.")
+            .Validate(
+                sitemaps => sitemaps.RetryAfterFailure >= TimeSpan.FromMinutes(5)
+                    && IsAWaitATimerCanKeep(sitemaps.RetryAfterFailure),
+                $"{SitemapOptions.SectionName}:RetryAfterFailure must be at least five minutes, and no more "
+                + "than 49 days.");
+
+    /// <summary>The shorter of the two times one asking of a website can have.</summary>
+    private static TimeSpan ShortestAsking(SitemapOptions settings) =>
+        settings.PageTimeout < settings.SitemapTimeout ? settings.PageTimeout : settings.SitemapTimeout;
+
+    /// <summary>
+    /// How long a pass can run for, at the most. It starts nothing new once its budget is spent, and the
+    /// worst it can have just started is a website's robots.txt followed by a file of its sitemap, each
+    /// of which waits its turn before its own time starts. A redirect partway through that file can read the
+    /// robots.txt of the website's other name, and does so in the time the file has.
+    /// </summary>
+    private static TimeSpan LeastLease(SitemapOptions settings) =>
+        settings.PassBudget
+        + settings.PageTimeout
+        + settings.SitemapTimeout
+        + (settings.RequestGap * 2)
+        + TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Whether a timer can keep a wait this long, which is a little over 49 days. A longer one fails
+    /// when it is set, which would be partway through reading somebody's sitemap.
+    /// </summary>
+    private static bool IsAWaitATimerCanKeep(TimeSpan wait) => wait <= TimeSpan.FromDays(49);
 
     /// <summary>
     /// Whether a value could be a mailbox rather than something somebody meant to fill in later.

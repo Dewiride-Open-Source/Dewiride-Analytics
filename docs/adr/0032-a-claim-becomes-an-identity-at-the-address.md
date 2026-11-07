@@ -7,6 +7,8 @@
   retention envelope rather than widening it.
 - **Completed by**: [0033](0033-an-identity-from-the-name-an-address-answers-to.md), which builds
   the half this one records as unbuilt.
+- **Followed by**: [0068](0068-a-website-s-posts-are-read-from-the-sitemap-it-names.md), the first thing
+  the engine fetches from an address a customer supplies and not from a catalogue chosen here.
 
 ## Context
 

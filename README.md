@@ -64,6 +64,11 @@ and the [master plan](#master-plan) below it says what does not yet.
   clock, and every month and year by total views or by average per day. All of it can be kept to the
   visits judged to be people, and a month that could not be counted says so rather than reading as
   nought.
+- A website's posts, known from its sitemap. Give its settings the sitemap's address and the engine
+  reads it, and once each page it lists, for that page's title and publish date, keeping to one
+  request a second and to the website's own addresses. Settings says how many posts it found, how
+  many say when they were published, and in plain words anything that got in the way. How it behaves,
+  and how to switch it off, is under [Reading a website's sitemap](#reading-a-websites-sitemap).
 - Where your readers are, by country, by town, and by the network they arrived over, ranked by how
   many people were in each place rather than by how much browsing they did. Towns are named as an
   estimate, because that is what they are; the network view is there because a hundred rented
@@ -155,7 +160,7 @@ and the [master plan](#master-plan) below it says what does not yet.
 ## Master plan
 
 Every capability the product is meant to have, phase by phase, in the order the work is picked
-up. Each line is marked with one of four states. Last reviewed 2026-11-06.
+up. Each line is marked with one of four states. Last reviewed 2026-11-07.
 
 - **Done** — shipped and visible on the dashboard, or collected on every capture surface.
 - **Partly done** — a real piece ships; the line says what is still missing.
@@ -293,7 +298,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-06.
 
 **3.3 Site coverage**
 
-- **Not started** · An inventory of a website's known pages, from traffic, sitemap or feed.
+- **Partly done** · A website's posts, read from the sitemap its settings name: address, title and
+  publish date. Pages known only from traffic, and feeds, are still to come.
 - **Not started** · Share of known pages and of published articles a crawler has reached.
 - **Not started** · Whether it reached every tag and author page; whether it touched admin or
   unlinked paths.
@@ -770,6 +776,90 @@ services:
 
 The engine refuses to start with an entry that is not a host name, rather than starting with one
 nothing could match. Visits already stored stay as they are.
+
+### Reading a website's sitemap
+
+Give a website's settings the address of its sitemap and the engine finds out what the website has
+published: each page's address, title and publish date. This is the one thing the engine fetches
+from an address somebody typed, so it keeps to the rules below, whoever typed it. If you found
+`DewirideAnalytics` in your server's logs, this is what it was doing and how to stop it.
+
+**What it asks for**
+
+- Your `robots.txt`, once in each go at the website that has anything to ask.
+- The sitemap, every hour. Where your server gave it something to ask with, it asks only whether
+  anything has changed.
+- Where the sitemap is an index, the file of posts if it recognises one (WordPress, Yoast, Rank
+  Math, All in One SEO, SEOPress and Ghost name theirs), and otherwise every file the index names.
+- Each page listed, once, as far as its first 512 KiB. A page is read again only when the sitemap's
+  date for it moves forward, so one the sitemap gives no date for is read once and never again.
+  Somebody removing the sitemap and naming it again, or naming your website in another account,
+  starts again from nothing. Nothing a page links to is fetched and nothing on it is run.
+
+A large website takes a while: at most 120 pages in one go, with half a minute between goes, so
+fifty thousand posts take most of a day, the newest first. It reads at most 500 files of a sitemap,
+50 MiB of each, and 50,000 pages for a website, and Settings says so where a sitemap lists more.
+
+**How it behaves**
+
+- **One request a second** to any one website, redirects and `robots.txt` included, however many
+  people on the installation name it. `www.example.com` and `example.com` count as one website.
+- **Only the website's own addresses**: a host the website was added under or one below it, on the
+  default port, and of those only the host the sitemap is on, with or without `www.`. Anything else
+  a sitemap lists is skipped, and Settings says so. A redirect anywhere else is not followed, and it
+  follows at most five.
+- **`robots.txt` is obeyed**, as [RFC 9309](https://www.rfc-editor.org/rfc/rfc9309.html) sets out,
+  for the name `DewirideAnalytics`, or for `*` where no group names it, and for every redirect as
+  well as every address it is given. A file that is missing, or that your server will not give out,
+  permits everything. If your server is in trouble, answers `429`, or the file cannot be read,
+  nothing else is asked for, and it tries again an hour later, or when `Retry-After` says.
+  `Crawl-delay` is not read: it keeps to one request a second whatever that asks.
+- **Never a private network.** A name that answers with any address outside the public internet is
+  refused whole, whatever its other answers are, and no setting changes that.
+- **Never through a proxy.** It connects to websites itself, so a machine whose only way out is a
+  proxy cannot read sitemaps, and Settings says the website did not answer.
+- **No cookies and no credentials**, and nothing about your visitors, are sent to anybody's website.
+
+What it keeps is each page's address, title and publish date, with when the sitemap says the page
+last changed. Removing the sitemap in Settings deletes all of it, and so does removing the website.
+
+**Letting it in, or keeping it out**
+
+It introduces itself as:
+
+```text
+DewirideAnalytics/<version> (sitemap fetcher; +https://github.com/Dewiride-Open-Source/Dewiride-Analytics#reading-a-websites-sitemap)
+```
+
+If a firewall or a security plugin turns it away, Settings says so, and allowing that name is the
+fix. A website that reports its requests from its own server reports the reader's too, as a crawler;
+leave out user agents beginning `DewirideAnalytics/` to keep it out of your numbers. In `robots.txt`
+it answers to `DewirideAnalytics`:
+
+```text
+User-agent: DewirideAnalytics
+Allow: /
+```
+
+Write `Disallow: /` there instead and it reads nothing but that file from your website. A page
+refused that way, or one that failed three times, is not asked for again until the sitemap's date
+for it moves forward. So once you have let the reader in, remove the sitemap in Settings and add it
+back to have every page read.
+
+**Switching it off**
+
+It does nothing until somebody names a sitemap. To switch it off for the whole installation, put
+this in a `compose.override.yaml` beside `compose.yaml` and run `docker compose up --wait`:
+
+```yaml
+services:
+  api:
+    environment:
+      Dewiride__Sitemaps__Enabled: "false"
+```
+
+Settings then says reading is switched off. What was read before stays where it is, and nothing new
+is read.
 
 ### Copying it somewhere safe
 

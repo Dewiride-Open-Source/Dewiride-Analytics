@@ -71,28 +71,76 @@ public sealed class RemoveSiteTests(AnalyticsStackFixture stack)
     /// <summary>
     /// A grant, a key or a bookmark that outlived the website it names would be a row nothing can
     /// evaluate: the grant authorises nothing, the key reports for nowhere, and the bookmark marks
-    /// a place in a history that has been deleted. They go by cascade rather than by four
-    /// deletions here, and this is what proves the cascade is actually declared.
+    /// a place in a history that has been deleted. What was read from its sitemap is the website's
+    /// too. They go by cascade rather than by seven deletions here, and this is what proves the
+    /// cascade is actually declared.
     /// </summary>
     [Fact]
     public async Task Everything_The_Control_Plane_Held_About_A_Website_Goes_With_It()
     {
-        var (going, _, browser) = await TwoWebsitesOwnedByOnePersonAsync();
+        var (going, staying, browser) = await TwoWebsitesOwnedByOnePersonAsync();
 
         using (browser)
         {
             await ControlPlaneSeed.AddServerKeyAsync(stack, going.Id);
             await BookmarkAsync(going);
+            await SitemapSeed.AddReadingAsync(stack, going.Id, $"https://{going.Domain}/sitemap.xml");
+            await SitemapSeed.AddReadingAsync(stack, staying.Id, $"https://{staying.Domain}/sitemap.xml");
 
             (await MembershipCountAsync(going.Id)).Should().BeGreaterThan(0);
             (await IngestKeyCountAsync(going.Id)).Should().BeGreaterThan(0);
             (await BookmarkCountAsync(going.Id)).Should().BeGreaterThan(0);
+            (await SitemapSeed.LeftAsync(stack, going.Id)).Should().Be(new SitemapSeed.Left(1, 1, 1));
 
             await RemoveAsync(browser, going.Id);
 
             (await MembershipCountAsync(going.Id)).Should().Be(0);
             (await IngestKeyCountAsync(going.Id)).Should().Be(0);
             (await BookmarkCountAsync(going.Id)).Should().Be(0);
+            (await SitemapSeed.LeftAsync(stack, going.Id)).Should().Be(new SitemapSeed.Left(0, 0, 0));
+            (await SitemapSeed.LeftAsync(stack, staying.Id)).Should().Be(new SitemapSeed.Left(1, 1, 1));
+        }
+    }
+
+    /// <summary>
+    /// A reading of a website's sitemap can have a write in hand at any moment. A write holds the rows it
+    /// has written, and the last thing its statement does is ask for the website's own row to check it
+    /// still exists. Removal deleting the website first would be waiting for those rows while the write
+    /// waited for the website, and the database would end one of them, which here can be somebody's
+    /// request to remove their website. So removal waits its turn, and both go through.
+    /// </summary>
+    [Fact]
+    public async Task Removing_A_Website_Waits_For_A_Write_From_A_Reading_Of_Its_Sitemap()
+    {
+        var (going, _, browser) = await TwoWebsitesOwnedByOnePersonAsync();
+
+        using (browser)
+        {
+            await SitemapSeed.AddReadingAsync(stack, going.Id, $"https://{going.Domain}/sitemap.xml");
+
+            await using var scope = stack.Services.CreateAsyncScope();
+            var database = scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>();
+
+            await using var write = await database.Database.BeginTransactionAsync(Cancellation.Token);
+
+            await database.Database.ExecuteSqlAsync(
+                $"SELECT 1 FROM sitemap_reads WHERE site_id = {going.Id} FOR KEY SHARE",
+                Cancellation.Token);
+            await database.Database.ExecuteSqlAsync(
+                $"UPDATE site_posts SET title = 'Written' WHERE site_id = {going.Id}",
+                Cancellation.Token);
+
+            var removing = browser.DeleteAsync(Site(going.Id));
+
+            await UntilSomethingIsWaitingForALockAsync();
+
+            await database.Database.ExecuteSqlAsync(
+                $"SELECT 1 FROM sites WHERE id = {going.Id} FOR KEY SHARE",
+                Cancellation.Token);
+            await write.CommitAsync(Cancellation.Token);
+
+            (await removing).StatusCode.Should().Be(HttpStatusCode.NoContent);
+            (await SitemapSeed.LeftAsync(stack, going.Id)).Should().Be(new SitemapSeed.Left(0, 0, 0));
         }
     }
 
@@ -338,6 +386,40 @@ public sealed class RemoveSiteTests(AnalyticsStackFixture stack)
         var browser = await SignedIn.AsAsync(stack, SiteRole.Owner, going.Id, staying.Id);
 
         return (going, staying, browser);
+    }
+
+    /// <summary>
+    /// Waits for a statement to be held up behind somebody's lock. Asked from a scope of its own, because
+    /// a transaction goes on seeing the same answer to this for as long as it lasts.
+    /// </summary>
+    /// <returns>A task that completes once one is.</returns>
+    private async Task UntilSomethingIsWaitingForALockAsync()
+    {
+        var began = TimeProvider.System.GetTimestamp();
+
+        while (true)
+        {
+            await using var scope = stack.Services.CreateAsyncScope();
+            var database = scope.ServiceProvider.GetRequiredService<ControlPlaneDbContext>();
+
+            var waiting = await database.Database
+                .SqlQuery<int>(
+                    $"""
+                    SELECT count(*)::int AS "Value"
+                    FROM pg_stat_activity
+                    WHERE wait_event_type = 'Lock' AND datname = current_database()
+                    """)
+                .SingleAsync(Cancellation.Token);
+
+            if (waiting > 0)
+            {
+                return;
+            }
+
+            TimeProvider.System.GetElapsedTime(began).Should().BeLessThan(TimeSpan.FromSeconds(30));
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50), Cancellation.Token);
+        }
     }
 
     private static async Task RemoveAsync(Browser browser, Guid siteId)

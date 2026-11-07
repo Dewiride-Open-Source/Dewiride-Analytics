@@ -4,12 +4,15 @@ import { describe, expect, it } from 'vitest';
 import { MEASURES } from '@/lib/analytics/all-time';
 import { CHART_BYS } from '@/lib/analytics/chart-by';
 import { GRANULARITIES, hasEarlier, KEPT_MONTHS, PRESETS } from '@/lib/analytics/period';
+import { LONGEST_SITEMAP_ADDRESS, SITEMAP_REFUSED } from '@/lib/analytics/sitemap';
 import { reasonKey } from '@/lib/analytics/verdicts';
 import {
   captureSurfaceSchema,
   deviceKindSchema,
   evidenceStrengthSchema,
   signalDirectionSchema,
+  sitemapProblemSchema,
+  sitemapStateSchema,
   trafficCategorySchema,
 } from '@/lib/api/schemas';
 import messages from '../../messages/en.json';
@@ -72,6 +75,15 @@ const RETENTION = path.join(
   'backend/src/Dewiride.Analytics.Application/Telemetry/Retention.cs',
 );
 
+/** Where the engine states how long an address it will read a website's posts from may be. */
+const SITE = path.join(REPOSITORY, 'backend/src/Dewiride.Analytics.Domain/Sites/Site.cs');
+
+/** Where the engine names the refusals a change to a website's settings can come back with. */
+const SITE_SETTINGS_ENDPOINTS = path.join(
+  REPOSITORY,
+  'backend/src/Dewiride.Analytics.Api/Endpoints/SiteSettingsEndpoints.cs',
+);
+
 /** Every value a declaration in the engine's source assigns. */
 function declared(file: string, pattern: RegExp): readonly string[] {
   const found = [...readFileSync(file, 'utf8').matchAll(pattern)].map((match) => match[1] ?? '');
@@ -89,6 +101,8 @@ const directions = declared(REPORTED_NAMES, /\[SignalDirection\.\w+\] = "([^"]+)
 const devices = declared(REPORTED_NAMES, /\[DeviceClass\.\w+\] = "([^"]+)"/g);
 const purposes = declared(DECLARED_IDENTITY, /\[CrawlerPurpose\.\w+\] = "([^"]+)"/g);
 const senders = declared(ARRIVAL, /\[SourceChannel\.\w+\] = "([^"]+)"/g);
+const sitemapStates = declared(REPORTED_NAMES, /\[SitemapState\.\w+\] = "([^"]+)"/g);
+const sitemapProblems = declared(REPORTED_NAMES, /\[SitemapProblem\.\w+\] = "([^"]+)"/g);
 
 /** The sentence key the dashboard picks for another site of one kind having sent a visit. */
 function sentBy(kind: string): string {
@@ -219,6 +233,8 @@ describe('the engine vocabulary', () => {
     expect([...captureSurfaceSchema.options].sort()).toEqual([...surfaces].sort());
     expect([...signalDirectionSchema.options].sort()).toEqual([...directions].sort());
     expect([...deviceKindSchema.options].sort()).toEqual([...devices].sort());
+    expect([...sitemapStateSchema.options].sort()).toEqual([...sitemapStates].sort());
+    expect([...sitemapProblemSchema.options].sort()).toEqual([...sitemapProblems].sort());
   });
 
   it('carries no sentence for an observation the engine cannot report', () => {
@@ -236,6 +252,58 @@ describe('the engine vocabulary', () => {
     expect([...sentencesUnder('verdicts.strength')].sort()).toEqual([...strengths].sort());
     expect([...sentencesUnder('verdicts.surface')].sort()).toEqual([...surfaces].sort());
     expect([...sentencesUnder('dashboard.devices.kind')].sort()).toEqual([...devices].sort());
+  });
+});
+
+/**
+ * A reading of a website's sitemap is reported as a word for how it stands and a word for what got
+ * in its way, and neither word is ever shown. A word without a sentence would reach a customer as
+ * the name of a key in a catalogue, on the one line telling them what to go and put right.
+ */
+describe('what the engine can say about reading a sitemap', () => {
+  it.each(sitemapStates)('says in words what it means for a reading to stand at %s', (state) => {
+    expect(isWritten(wordsAt(`siteSettings.sitemap.state.${state}`))).toBe(true);
+  });
+
+  it.each(sitemapProblems)('says in words what to do about %s', (problem) => {
+    expect(isWritten(wordsAt(`siteSettings.sitemap.problem.${problem}`))).toBe(true);
+  });
+
+  it.each(sitemapProblems)(
+    'says in words what to do about %s in a file the sitemap lists',
+    (problem) => {
+      expect(isWritten(wordsAt(`siteSettings.sitemap.partlyProblem.${problem}`))).toBe(true);
+    },
+  );
+
+  it('writes no sentence for anything the engine cannot report', () => {
+    expect([...sentencesUnder('siteSettings.sitemap.state')].sort()).toEqual(
+      [...sitemapStates].sort(),
+    );
+    expect([...sentencesUnder('siteSettings.sitemap.problem')].sort()).toEqual(
+      [...sitemapProblems].sort(),
+    );
+    expect([...sentencesUnder('siteSettings.sitemap.partlyProblem')].sort()).toEqual(
+      [...sitemapProblems].sort(),
+    );
+  });
+
+  /** An address the box lets through is one the engine has room for, and the reverse. */
+  it('stops an address in the box exactly where the engine stops keeping one', () => {
+    const [longest] = declared(SITE, /public const int MaxSitemapAddressLength = (\d+);/g);
+
+    expect(LONGEST_SITEMAP_ADDRESS).toBe(Number(longest));
+  });
+
+  /**
+   * The box says this under itself by the code, so a code the engine has stopped using would turn an
+   * address it refuses into a general failure, and a code with no words would show its own name.
+   */
+  it('knows the refusal of an address by the engine’s word for it, and has words for it', () => {
+    const [refusal] = declared(SITE_SETTINGS_ENDPOINTS, /SitemapRejectedCode = "([^"]+)";/g);
+
+    expect(SITEMAP_REFUSED).toBe(refusal);
+    expect(isWritten(wordsAt(`problems.${refusal}`))).toBe(true);
   });
 });
 

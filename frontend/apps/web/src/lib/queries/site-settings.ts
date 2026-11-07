@@ -1,9 +1,16 @@
 'use client';
 
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { readSiteSettings, removeSite, updateSiteSettings } from '@/lib/api/endpoints';
-import type { Session, SiteSettings } from '@/lib/api/schemas';
-import { siteSettingsKey, sitesKey } from './keys';
+import { askAgainIn } from '@/lib/analytics/sitemap';
+import {
+  readSitemapStatus,
+  readSiteSettings,
+  removeSite,
+  type SiteSettingsChange,
+  updateSiteSettings,
+} from '@/lib/api/endpoints';
+import type { Session } from '@/lib/api/schemas';
+import { sitemapStatusKey, siteSettingsKey, sitesKey } from './keys';
 import { sessionKey } from './session';
 
 /** Everything about one website that its owner decides. */
@@ -33,17 +40,44 @@ export function useSiteSettings(siteId: string, enabled: boolean) {
  * website what it used to be called, and the screen would go on cutting its days where they used
  * to fall. Asked for exactly rather than by prefix, so that renaming a website does not send every
  * question already answered about it round again.
+ *
+ * A change of sitemap asks how reading it is going as well. Nothing else can start that question
+ * again once the last answer said there was nothing more to wait for, so a new address would sit
+ * under the verdict on the old one until the panel was next opened.
  */
 export function useUpdateSiteSettings(siteId: string) {
   const cache = useQueryClient();
 
   return useMutation({
-    mutationFn: (settings: Partial<SiteSettings>) =>
+    mutationFn: (settings: SiteSettingsChange) =>
       updateSiteSettings(siteId, settings, proofFrom(cache)),
-    onSuccess: (settings) => {
+    onSuccess: (settings, change) => {
       cache.setQueryData(siteSettingsKey(siteId), settings);
       void cache.invalidateQueries({ queryKey: sitesKey, exact: true });
+
+      if (change.sitemapAddress !== undefined) {
+        void cache.invalidateQueries({ queryKey: sitemapStatusKey(siteId), exact: true });
+      }
     },
+  });
+}
+
+/**
+ * How reading a website's sitemap is going, for as long as anything on the screen is showing it.
+ *
+ * Never held, so the panel opens on how things stand now, and read again whenever somebody comes
+ * back to the tab, which is often from their own website after putting right what this said was
+ * wrong. Beyond that it asks again only while something is under way: {@link askAgainIn} has the
+ * pace, and a reading that has finished stays finished until it next changes.
+ */
+export function useSitemapStatus(siteId: string) {
+  return useQuery({
+    queryKey: sitemapStatusKey(siteId),
+    queryFn: () => readSitemapStatus(siteId),
+    retry: false,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchInterval: (query) => askAgainIn(query.state.data),
   });
 }
 

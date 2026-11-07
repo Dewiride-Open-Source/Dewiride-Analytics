@@ -73,6 +73,7 @@ internal sealed class MailboxInstall : WebApplicationFactory<Program>
         builder.UseSetting(TestSettings.SignInAllowance, TestSettings.NoPracticalLimit);
         builder.UseSetting(TestSettings.BackgroundJudging, "false");
         builder.UseSetting(TestSettings.BackgroundConsolidation, "false");
+        builder.UseSetting(TestSettings.BackgroundSitemapReaders, TestSettings.NoBackgroundSitemapReaders);
 
         // Without this the engine has no address to build a link on and writes a relative one,
         // which is honest but is not what a deployment sends.

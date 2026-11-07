@@ -53,6 +53,7 @@ namespace Dewiride.Analytics.Api.Contracts;
 [JsonSerializable(typeof(ActionsResponse))]
 [JsonSerializable(typeof(SiteSettingsResponse))]
 [JsonSerializable(typeof(UpdateSiteSettingsRequest))]
+[JsonSerializable(typeof(SitemapStatusResponse))]
 [JsonSerializable(typeof(PagesResponse))]
 [JsonSerializable(typeof(LocationsResponse))]
 [JsonSerializable(typeof(SourcesResponse))]

@@ -22,6 +22,11 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// is ever parsed as SQL. The store replaces a month on its newest count, so writing one twice keeps
 /// one.
 /// </para>
+/// <para>
+/// A month's posts are kept the same way, on a row of their own. They are counted by one statement that
+/// answers for every path a page was delivered at in the month, of which only the posts' rows are kept
+/// (<see cref="PostViewsStatement.ReadAsync"/>), so no post's path is ever sent to the store.
+/// </para>
 /// </remarks>
 /// <param name="client">Telemetry store client for counting.</param>
 /// <param name="origin">When this installation began keeping months.</param>
@@ -29,7 +34,9 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
 {
     private const string TableName = "consolidated_months";
 
-    /// <summary>Insert columns, in the order <see cref="ToRow"/> produces values for them.</summary>
+    private const string PostTableName = "consolidated_post_months";
+
+    /// <summary>Insert columns, in the order <see cref="ToRow(ConsolidatedMonth)"/> produces values for them.</summary>
     private static readonly string[] Columns =
     [
         "site_id",
@@ -54,6 +61,27 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
         "verdict_categories",
         "verdict_visits",
         "verdict_page_views",
+        "ruleset_major",
+        "ruleset_minor",
+        "ruleset_judged_to",
+        "counting_rules",
+        "counted_to",
+        "judged_to",
+        "counted_at",
+    ];
+
+    /// <summary>Insert columns of a month of posts, in the order its <see cref="ToRow(ConsolidatedPostMonth)"/> produces values for them.</summary>
+    private static readonly string[] PostColumns =
+    [
+        "site_id",
+        "month",
+        "time_zone",
+        "begins_at",
+        "ends_at",
+        "paths",
+        "page_views",
+        "people_page_views",
+        "posts_fingerprint",
         "ruleset_major",
         "ruleset_minor",
         "ruleset_judged_to",
@@ -165,15 +193,61 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
     {
         ArgumentNullException.ThrowIfNull(months);
 
-        if (months.Count == 0)
+        return months.Count == 0
+            ? Task.CompletedTask
+            : client.InsertBinaryAsync(TableName, Columns, months.Select(ToRow), Waited(), cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<ImmutableArray<KeptPostMonth>> SurveyPostsAsync(Guid siteId, CancellationToken cancellationToken)
+    {
+        var months = ImmutableArray.CreateBuilder<KeptPostMonth>();
+
+        await using var reader = await ExecuteAsync(ConsolidationSqlCompiler.CompilePostSurvey(siteId), cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            return Task.CompletedTask;
+            months.Add(DescribedPosts(reader));
         }
 
-        // Waited for, so a run that returns has kept what it counted: the store gathers small
-        // writes from many callers before it commits them, and a write it was still holding when
-        // the process stopped would be a month nobody knows was never kept.
-        var options = new InsertOptions
+        return months.DrainToImmutable();
+    }
+
+    /// <inheritdoc />
+    public async Task<ImmutableArray<PathViews>> CountPostsAsync(
+        MonthToCount month,
+        Population population,
+        ImmutableArray<string> paths,
+        CancellationToken cancellationToken)
+    {
+        await using var reader = await ExecuteAsync(
+                ConsolidationSqlCompiler.CompilePostCount(month, population),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return await PostViewsStatement.ReadAsync(reader, paths, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public Task KeepPostsAsync(IReadOnlyCollection<ConsolidatedPostMonth> months, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(months);
+
+        return months.Count == 0
+            ? Task.CompletedTask
+            : client.InsertBinaryAsync(PostTableName, PostColumns, months.Select(ToRow), Waited(), cancellationToken);
+    }
+
+    /// <summary>
+    /// How a kept month is written: waited for, so a run that returns has kept what it counted.
+    /// </summary>
+    /// <remarks>
+    /// The store gathers small writes from many callers before it commits them, and a write it was still
+    /// holding when the process stopped would be a month nobody knows was never kept.
+    /// </remarks>
+    private static InsertOptions Waited() =>
+        new()
         {
             CustomSettings = new Dictionary<string, object>(StringComparer.Ordinal)
             {
@@ -181,9 +255,6 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
                 ["wait_for_async_insert"] = 1,
             },
         };
-
-        return client.InsertBinaryAsync(TableName, Columns, months.Select(ToRow), options, cancellationToken);
-    }
 
     private static object[] ToRow(ConsolidatedMonth month)
     {
@@ -223,6 +294,31 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
         ];
     }
 
+    private static object[] ToRow(ConsolidatedPostMonth month)
+    {
+        var counted = month.Month;
+
+        return
+        [
+            counted.SiteId,
+            Midnight(counted.Month),
+            counted.TimeZoneId,
+            counted.Window.From.UtcDateTime,
+            counted.Window.To.UtcDateTime,
+            month.Views.Select(view => view.Path).ToArray(),
+            month.Views.Select(view => (ulong)view.PageViews).ToArray(),
+            month.Views.Select(view => (ulong)view.PeoplePageViews).ToArray(),
+            month.Fingerprint,
+            (ushort)month.Ruleset.Major,
+            (ushort)month.Ruleset.Minor,
+            month.RulesetJudgedTo.UtcDateTime,
+            (ushort)month.CountingRules,
+            month.CountedTo.UtcDateTime,
+            month.JudgedTo.UtcDateTime,
+            month.CountedAt.UtcDateTime,
+        ];
+    }
+
     /// <summary>How a kept month was counted, from the columns the calendar reads of it.</summary>
     private static KeptMonth Described(ClickHouseDataReader reader)
     {
@@ -238,6 +334,21 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
             reader.GetDateTimeOffset(at + 7),
             reader.GetDateTimeOffset(at + 8));
     }
+
+    /// <summary>How a kept month of posts was counted, from the columns its survey reads.</summary>
+    private static KeptPostMonth DescribedPosts(ClickHouseDataReader reader) =>
+        new(
+            KeptRows.Day(reader, 0),
+            new KeptMonth(
+                reader.GetString(1),
+                null,
+                new RulesetVersion(reader.GetFieldValue<ushort>(3), reader.GetFieldValue<ushort>(4)),
+                reader.GetDateTimeOffset(5),
+                reader.GetFieldValue<ushort>(6),
+                reader.GetDateTimeOffset(7),
+                reader.GetDateTimeOffset(8),
+                reader.GetDateTimeOffset(9)),
+            reader.GetString(2));
 
     private static DateTime Midnight(DateOnly day) => day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
 

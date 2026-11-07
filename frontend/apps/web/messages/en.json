@@ -695,6 +695,58 @@
         "unmeasured": "Before measuring began"
       }
     },
+    "posts": {
+      "title": "Your posts",
+      "card": {
+        "label": "Posts",
+        "listed": "Posts your sitemap lists.",
+        "none": "No sitemap yet",
+        "off": "Switched off on this server",
+        "waiting": "Reading your sitemap…",
+        "pages": "Reading your posts…",
+        "failed": "Couldn't read your sitemap",
+        "partly": "Couldn't read all of your sitemap",
+        "empty": "No posts found"
+      },
+      "viewsSince": "Views since {month}.",
+      "partly": "Part of your sitemap couldn't be read, so some posts may be missing.",
+      "failed": "We couldn't read your sitemap the last time we tried, so your newest posts may be missing.",
+      "check": "Check the address",
+      "newTab": "(opens in a new tab)",
+      "views": "{count, plural, one {# view} other {# views}}",
+      "undated": "{count, plural, one {# post has no publishing date, so it isn't shown here.} other {# posts have no publishing dates, so they aren't shown here.}}",
+      "latest": "Latest posts",
+      "best": {
+        "title": "Most popular post",
+        "views": "{count, plural, one {<figure>#</figure> view} other {<figure>#</figure> views}}",
+        "unread": "None of your posts has been read yet."
+      },
+      "calendar": {
+        "title": "Posting activity",
+        "summary": "{posts, plural, =0 {No posts in the last 12 months.} one {# post on {days, plural, one {# day} other {# days}} in the last 12 months.} other {# posts on {days, plural, one {# day} other {# days}} in the last 12 months.}}",
+        "tip": "{posts, plural, =0 {No posts} one {# post} other {# posts}} on {date}",
+        "fewer": "No posts",
+        "more": "5 or more",
+        "list": "Show posting days as a list",
+        "column": {
+          "day": "Day",
+          "posts": "Posts"
+        }
+      },
+      "undatedAll": {
+        "title": "None of your posts says when it was published",
+        "body": "Your newest posts and how often you post appear here once your posts' pages say when they were published."
+      },
+      "undatedYet": "Your newest posts and how often you post appear here as their pages are read.",
+      "none": {
+        "title": "See your posts here",
+        "body": "Add your website's sitemap and your posts appear here: how many there are, the newest, and how much each is read.",
+        "viewer": "Somebody who manages {site} can add its sitemap in Settings.",
+        "action": "Add your sitemap"
+      },
+      "waiting": "Your posts appear here once they're found.",
+      "unexplained": "Check that the address opens in a browser."
+    },
     "empty": {
       "title": "Nothing to look back on yet",
       "body": "Once {site} has its first visit, its history builds up here, month by month.",

@@ -2,14 +2,16 @@
 
 import { History, ScanSearch } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
-import { type ReactNode, useId, useState } from 'react';
+import { type ReactNode, type RefObject, useId, useRef, useState } from 'react';
 import { SiteScreen } from '@/components/chrome/site-screen';
 import { MetricCard, MetricCardSkeleton } from '@/components/dashboard/metric-card';
 import { PopulationSwitch } from '@/components/dashboard/population-switch';
 import { ListEmpty, ListWaiting } from '@/components/dashboard/ranked-list';
+import { SiteSettings } from '@/components/dashboard/site-settings';
 import { TrackingCode } from '@/components/dashboard/tracking-code';
 import { MonthsTable } from '@/components/insights/months-table';
 import { PopularTimes } from '@/components/insights/popular-times';
+import { Posts, PostsCard } from '@/components/insights/posts';
 import { Button } from '@/components/ui/button';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import {
@@ -20,6 +22,7 @@ import {
   writableDay,
 } from '@/lib/analytics/all-time';
 import { everJudged, reachedBy } from '@/lib/analytics/people-absence';
+import type { Population } from '@/lib/analytics/people-only';
 import { usePeopleOnly } from '@/lib/analytics/use-people-only';
 import type { Insights as InsightsAnswer, Site } from '@/lib/api/schemas';
 import { sentences, useLeftOut } from '@/lib/charts/use-left-out';
@@ -74,6 +77,16 @@ interface SiteInsightsProps {
   readonly reading: RecordReading;
 }
 
+/** What the posts on the screen take from the screen around them. */
+interface PostsPlace {
+  /** Whose views they count. */
+  readonly population: Population;
+  /** Opens the website's settings on the box its sitemap's address goes in. */
+  readonly onCheckAddress: () => void;
+  /** Where focus comes back to when the settings close having taken away what opened them. */
+  readonly headingRef: RefObject<HTMLHeadingElement | null>;
+}
+
 /**
  * One website's record, for whoever the screen is kept to; and the same screen before its website is
  * known, with stand-ins for whatever only the website can say.
@@ -81,12 +94,23 @@ interface SiteInsightsProps {
  * Everybody is always asked about as well, since it is what tells a website nobody has been to from
  * one in which nobody was judged a person. Under everybody it is the same question filed under the
  * same name, so it costs nothing.
+ *
+ * The website's settings open from its posts, straight onto where its sitemap is named, since that
+ * is the one thing on this screen they are opened for. Saving an address there can take away what
+ * opened them, so focus comes back to the posts' heading, which by then says what changed.
  */
 function SiteInsights({ site, reading }: SiteInsightsProps) {
   // Remembered people are written into the address once there is a website for them to be the people
   // of: until then the screen may still turn out to be one the choice means nothing on.
   const { peopleOnly, population, showOnlyPeople } = usePeopleOnly({ seeding: site !== undefined });
   const [showingCode, setShowingCode] = useState(false);
+  const [showingSettings, setShowingSettings] = useState(false);
+  const postsHeading = useRef<HTMLHeadingElement>(null);
+  const posts: PostsPlace = {
+    population,
+    onCheckAddress: () => setShowingSettings(true),
+    headingRef: postsHeading,
+  };
   const everybody = useInsights(site, 'everybody');
   const own = useInsights(site, population);
   const shown = recordShown(everybody, own);
@@ -114,17 +138,28 @@ function SiteInsights({ site, reading }: SiteInsightsProps) {
         site={site}
         peopleOnly={peopleOnly}
         reading={reading}
+        posts={posts}
         onShowCode={() => setShowingCode(true)}
         onShowEveryone={() => showOnlyPeople(false)}
       />
 
       {site === undefined ? null : (
-        <TrackingCode
-          open={showingCode}
-          onClose={() => setShowingCode(false)}
-          siteId={site.id}
-          siteDomain={site.domain}
-        />
+        <>
+          <TrackingCode
+            open={showingCode}
+            onClose={() => setShowingCode(false)}
+            siteId={site.id}
+            siteDomain={site.domain}
+          />
+          <SiteSettings
+            open={showingSettings}
+            onClose={() => setShowingSettings(false)}
+            site={site}
+            onRemoved={() => setShowingSettings(false)}
+            focusOn="sitemap"
+            returnFocusTo={postsHeading}
+          />
+        </>
       )}
     </div>
   );
@@ -210,6 +245,7 @@ interface RecordPlaceProps {
   readonly site: Site | undefined;
   readonly peopleOnly: boolean;
   readonly reading: RecordReading;
+  readonly posts: PostsPlace;
   readonly onShowCode: () => void;
   readonly onShowEveryone: () => void;
 }
@@ -225,6 +261,7 @@ function RecordPlace({
   site,
   peopleOnly,
   reading,
+  posts,
   onShowCode,
   onShowEveryone,
 }: RecordPlaceProps) {
@@ -237,6 +274,7 @@ function RecordPlace({
         site={site}
         peopleOnly={peopleOnly}
         reading={reading}
+        posts={posts}
       />
     );
   }
@@ -311,17 +349,21 @@ interface WholeRecordProps {
   readonly site: Site | undefined;
   readonly peopleOnly: boolean;
   readonly reading: RecordReading;
+  readonly posts: PostsPlace;
 }
 
 /**
  * Everything the record says, in the order somebody looking back would ask it; and the same cards
- * while it is on its way, each holding the place of its own figures.
+ * while it is on its way, each holding the place of its own figures. The posts are read apart from
+ * the record and arrive in their own time, between when the website is read most and how each month
+ * went.
  */
-function WholeRecord({ insights, site, peopleOnly, reading }: WholeRecordProps) {
+function WholeRecord({ insights, site, peopleOnly, reading, posts }: WholeRecordProps) {
   return (
     <>
       <Highlights
         figures={insights}
+        site={site}
         peopleOnly={peopleOnly}
         leftOut={
           insights && site ? <LeftOut insights={insights} timeZoneId={site.timeZoneId} /> : null
@@ -333,6 +375,7 @@ function WholeRecord({ insights, site, peopleOnly, reading }: WholeRecordProps) 
         figuresOpen={reading.figuresOpen}
         onFiguresToggle={reading.onFiguresToggle}
       />
+      <Posts site={site} firstMonth={insights?.months[0]?.month} {...posts} />
       <MonthsTable insights={insights} measure={reading.measure} onMeasure={reading.onMeasure} />
     </>
   );
@@ -354,16 +397,19 @@ function LeftOut({ insights, timeZoneId }: LeftOutProps) {
 interface HighlightsProps {
   /** The figures, or nothing while they are on their way. */
   readonly figures: Pick<InsightsAnswer, 'pageViews' | 'visitors'> | undefined;
+  /** The website, or nothing while which one it is has still to be read. */
+  readonly site: Site | undefined;
   readonly peopleOnly: boolean;
   /** What says which months the figures leave out, where they leave any out. */
   readonly leftOut: ReactNode;
 }
 
 /**
- * The record's two headline figures, or their stand-ins until they are in. Labelled as the overview's
- * cards are, so the same figure is called the same thing wherever it is read.
+ * The record's headline figures, or their stand-ins until they are in: page views and daily visitors,
+ * labelled as the overview's cards are so the same figure is called the same thing wherever it is
+ * read, and how many posts the website has, which arrives in its own time.
  */
-function Highlights({ figures, peopleOnly, leftOut }: HighlightsProps) {
+function Highlights({ figures, site, peopleOnly, leftOut }: HighlightsProps) {
   const t = useTranslations('insights.highlights');
   const metrics = useTranslations('dashboard.metrics');
   const labels = useTranslations(peopleOnly ? 'dashboard.metrics.people' : 'dashboard.metrics');
@@ -378,7 +424,7 @@ function Highlights({ figures, peopleOnly, leftOut }: HighlightsProps) {
         </h2>
         {leftOut}
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         {figures === undefined ? (
           <>
             <MetricCardSkeleton label={labels('pageViews.label')} />
@@ -397,6 +443,7 @@ function Highlights({ figures, peopleOnly, leftOut }: HighlightsProps) {
             />
           </>
         )}
+        <PostsCard site={site} />
       </div>
     </section>
   );

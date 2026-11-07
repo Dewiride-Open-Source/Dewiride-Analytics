@@ -1588,6 +1588,71 @@ describe('where a website lists its posts, for somebody who manages it', () => {
   });
 });
 
+/**
+ * A screen asking somebody to add or check their sitemap opens the panel for exactly that, so the
+ * keyboard starts where the address goes, whether the settings arrive after the panel opens or were
+ * already there.
+ */
+describe('a panel opened for the sitemap', () => {
+  /** A panel that is asked for, which is how a screen opens one, and what it is opened for. */
+  function Openable({ focusOn }: { readonly focusOn?: 'sitemap' }) {
+    const [open, setOpen] = useState(false);
+
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>
+          Open
+        </button>
+        <SiteSettings
+          open={open}
+          onClose={() => setOpen(false)}
+          site={SITE}
+          onRemoved={() => {}}
+          focusOn={focusOn}
+        />
+      </>
+    );
+  }
+
+  function sitemapBox(): Promise<HTMLElement> {
+    return screen.findByRole('textbox', { name: 'Sitemap address' });
+  }
+
+  it('starts the keyboard in the box for its address once the settings arrive', async () => {
+    offering();
+    engineHolding();
+
+    renderScreen(<Openable focusOn="sitemap" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+    const box = await sitemapBox();
+
+    await waitFor(() => expect(box).toHaveFocus());
+  });
+
+  it('starts there too where the settings were already read', async () => {
+    offering();
+    engineHolding();
+
+    const { cache } = renderScreen(<Openable focusOn="sitemap" />);
+
+    cache.setQueryData(siteSettingsKey(SITE.id), STORED);
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+    expect(await sitemapBox()).toHaveFocus();
+  });
+
+  it('leaves the keyboard where any panel starts it, when opened for nothing in particular', async () => {
+    offering();
+    engineHolding();
+
+    renderScreen(<Openable />);
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+    expect(await sitemapBox()).not.toHaveFocus();
+  });
+});
+
 describe('stopping measuring a website altogether', () => {
   it('offers nothing of the sort to somebody who may only read the numbers', async () => {
     offering();

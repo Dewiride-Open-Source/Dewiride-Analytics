@@ -1040,6 +1040,61 @@ public sealed record InsightsBestDay(string Day, long PageViews);
 public readonly record struct InsightsMonth(string Month, long? PageViews, int DaysMeasured);
 
 /// <summary>
+/// What a website's posts have done, all from one reading.
+/// </summary>
+/// <param name="Posts">Posts its sitemap lists now: the figure Settings gives.</param>
+/// <param name="Dated">Those of them whose page said when it was published, as Settings counts them.</param>
+/// <param name="ViewsFrom">
+/// The month, as <c>yyyy-MM</c> on the website's calendar, the posts' views are counted from: the first
+/// month whose posts were kept, or the first answered from its reports where that is earlier. Nothing
+/// where nothing of the website is held, when no post has a view.
+/// </param>
+/// <param name="Latest">Up to ten of the posts with a publishing date, the newest first.</param>
+/// <param name="MostRead">The post read the most, or nothing where none of them has been read.</param>
+/// <param name="CalendarFrom">
+/// The calendar's first day, as <c>yyyy-MM-dd</c>: the first of the month eleven months before this one,
+/// on the website's calendar.
+/// </param>
+/// <param name="CalendarTo">The calendar's last day, as <c>yyyy-MM-dd</c>: today, on the website's calendar.</param>
+/// <param name="Calendar">Each day of the calendar a post was published on, the oldest first.</param>
+public sealed record InsightsPostsResponse(
+    int Posts,
+    int Dated,
+    string? ViewsFrom,
+    IReadOnlyList<InsightsPost> Latest,
+    InsightsPost? MostRead,
+    string CalendarFrom,
+    string CalendarTo,
+    IReadOnlyList<PostingDayResponse> Calendar);
+
+/// <summary>
+/// One of a website's posts, with how much it was read.
+/// </summary>
+/// <remarks>
+/// The address and the title were written by the website, through its sitemap and its page. They are
+/// text to show, and an address is to be linked to only where it is a web address.
+/// </remarks>
+/// <param name="Path">The path the post is read at.</param>
+/// <param name="Address">Its address, as the website's sitemap gave it.</param>
+/// <param name="Title">What the post says it is called, or nothing where it said nothing.</param>
+/// <param name="Published">
+/// The day it was published, as <c>yyyy-MM-dd</c> on the website's calendar, or nothing where it did not
+/// say.
+/// </param>
+/// <param name="PageViews">
+/// Pages delivered at it since <see cref="InsightsPostsResponse.ViewsFrom"/>, at its own path and where it
+/// landed, to whoever the reading is about.
+/// </param>
+public sealed record InsightsPost(string Path, string Address, string? Title, string? Published, long PageViews);
+
+/// <summary>
+/// One day posts were published on.
+/// </summary>
+/// <param name="Day">The day, as <c>yyyy-MM-dd</c> on the website's calendar.</param>
+/// <param name="Posts">How many posts were published on it.</param>
+public readonly record struct PostingDayResponse(string Day, int Posts);
+
+/// <summary>
 /// One measure across a website's whole record, month by month or year by year.
 /// </summary>
 /// <param name="From">The first bucket's start, or <paramref name="To"/> where there is none.</param>

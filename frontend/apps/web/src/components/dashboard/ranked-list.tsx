@@ -325,6 +325,11 @@ interface ListEmptyProps {
    * — a panel opened from it that took its action away while it was open.
    */
   readonly headingRef?: Ref<HTMLHeadingElement>;
+  /**
+   * Where its heading stands among the screen's: beneath the screen's own name by default, and a
+   * level further down where the card stands under a heading of its own.
+   */
+  readonly level?: 2 | 3;
 }
 
 /**
@@ -334,7 +339,16 @@ interface ListEmptyProps {
  * apology. Every list on the dashboard wears the same one so that a quiet website reads as a
  * quiet website rather than as four different kinds of nothing.
  */
-export function ListEmpty({ icon: Icon, title, body, action, headingRef }: ListEmptyProps) {
+export function ListEmpty({
+  icon: Icon,
+  title,
+  body,
+  action,
+  headingRef,
+  level = 2,
+}: ListEmptyProps) {
+  const Heading = level === 3 ? 'h3' : 'h2';
+
   return (
     <Card className="flex flex-col items-center gap-2 px-6 py-14 text-center">
       <span
@@ -343,14 +357,14 @@ export function ListEmpty({ icon: Icon, title, body, action, headingRef }: ListE
       >
         <Icon className="size-5 text-accent-strong" />
       </span>
-      <h2
+      <Heading
         ref={headingRef}
         tabIndex={headingRef === undefined ? undefined : -1}
-        className="text-base font-semibold text-foreground"
+        className="text-base font-semibold text-balance text-foreground"
       >
         {title}
-      </h2>
-      <p className="max-w-sm text-sm text-foreground-muted">{body}</p>
+      </Heading>
+      <p className="max-w-sm text-sm text-pretty text-foreground-muted">{body}</p>
       {action === undefined ? null : <div className="mt-4">{action}</div>}
     </Card>
   );

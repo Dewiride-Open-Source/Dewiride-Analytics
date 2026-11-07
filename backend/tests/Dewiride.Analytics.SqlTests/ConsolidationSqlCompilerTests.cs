@@ -53,6 +53,19 @@ public sealed partial class ConsolidationSqlCompilerTests
         [1] = "2c66959a2fac04ae5e9a15dca73075c14b3c4406d3fa2cd793c00cf2ad74c9e6",
     };
 
+    /// <summary>
+    /// What the arithmetic of each version of a month's posts reads as, on the terms of
+    /// <see cref="ArithmeticOf"/>: raise <see cref="CountingRules.Posts"/> and add its entry here when the
+    /// test below fails.
+    /// </summary>
+    private static readonly Dictionary<int, string> ArithmeticOfPosts = new()
+    {
+        [1] = "ed0ddf2ceb6a556ce87e0e5c263feda81af0b8f267e9b97cedf492b95bba46db",
+    };
+
+    /// <summary>Two of a website's posts, as the collector stores their paths.</summary>
+    private static readonly string[] Posts = ["/posts/a-first-post/", "/posts/another/"];
+
     [Fact]
     public void Month_Calendar()
     {
@@ -83,6 +96,50 @@ public sealed partial class ConsolidationSqlCompilerTests
         var statement = ConsolidationSqlCompiler.CompileVerdicts(May);
 
         Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Post_Count()
+    {
+        var statement = ConsolidationSqlCompiler.CompilePostCount(May, Population.Everybody);
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Post_Count_Of_People()
+    {
+        var statement = ConsolidationSqlCompiler.CompilePostCount(May, Population.People);
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Kept_Post_Month_Descriptions()
+    {
+        var statement = ConsolidationSqlCompiler.CompilePostSurvey(SiteId);
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    /// <summary>
+    /// A month's posts are counted by the statement the dashboard counts the same posts' views by, and
+    /// both are the list of pages for the same stretch: the same reports, settled and kept the same way,
+    /// and the same pages delivered counted from them, path by path.
+    /// </summary>
+    /// <param name="population">Who the posts are counted for.</param>
+    [Theory]
+    [InlineData(Population.Everybody)]
+    [InlineData(Population.People)]
+    public void A_Months_Posts_Are_Counted_By_The_Arithmetic_Of_The_List_Of_Pages(Population population)
+    {
+        var counted = ConsolidationSqlCompiler.CompilePostCount(May, population);
+        var viewed = AnalyticsSqlCompiler.Compile(Scope(), new PostViewsQuery(May.Window, [.. Posts]) { Population = population });
+        var pages = AnalyticsSqlCompiler.Compile(Scope(), new SitePagesQuery(May.Window, 10) { Population = population });
+
+        Selection(counted.Sql).Should().Be(Selection(pages.Sql));
+        Flattened(counted.Sql).Should().Contain(Delivered(pages.Sql));
+        counted.Sql.Should().StartWith(viewed.Sql);
     }
 
     /// <summary>
@@ -144,7 +201,7 @@ public sealed partial class ConsolidationSqlCompilerTests
     [Fact]
     public void Every_Placeholder_In_A_Counting_Statement_Has_A_Bound_Value()
     {
-        foreach (var statement in EveryCountingStatement().Append(ConsolidationSqlCompiler.CompileSurvey(SiteId, Zone, Now)))
+        foreach (var statement in EveryCountingStatement().Concat(EverySurvey()))
         {
             var named = Placeholder().Matches(statement.Sql)
                 .Select(match => match.Groups[1].Value)
@@ -161,7 +218,7 @@ public sealed partial class ConsolidationSqlCompilerTests
     [Fact]
     public void No_Value_Appears_In_A_Counting_Statement()
     {
-        foreach (var statement in EveryCountingStatement().Append(ConsolidationSqlCompiler.CompileSurvey(SiteId, Zone, Now)))
+        foreach (var statement in EveryCountingStatement().Concat(EverySurvey()))
         {
             statement.Sql.Should().NotContain(SiteId.ToString());
             statement.Sql.Should().NotContain(Zone);
@@ -174,10 +231,12 @@ public sealed partial class ConsolidationSqlCompilerTests
         var count = () => ConsolidationSqlCompiler.CompileCount(null!, Population.Everybody);
         var verdicts = () => ConsolidationSqlCompiler.CompileVerdicts(null!);
         var survey = () => ConsolidationSqlCompiler.CompileSurvey(SiteId, " ", Now);
+        var posts = () => ConsolidationSqlCompiler.CompilePostCount(null!, Population.Everybody);
 
         count.Should().Throw<ArgumentNullException>();
         verdicts.Should().Throw<ArgumentNullException>();
         survey.Should().Throw<ArgumentException>();
+        posts.Should().Throw<ArgumentNullException>();
     }
 
     /// <summary>
@@ -191,28 +250,57 @@ public sealed partial class ConsolidationSqlCompilerTests
     public void The_Version_Of_The_Arithmetic_Moves_With_The_Statements_That_Count()
     {
         ArithmeticOf.Should().ContainKey(CountingRules.Current);
-        Fingerprint().Should().Be(
+        Fingerprint(MonthCountingStatements()).Should().Be(
             ArithmeticOf[CountingRules.Current],
             "the statements that count a month changed, so raise CountingRules.Current and record the new fingerprint");
     }
 
     /// <summary>
-    /// The fingerprint of the arithmetic: a hash of the text of every statement that counts a month,
-    /// with line endings as the repository keeps them.
+    /// The posts of a month are held to a version of their own, on the same terms: a change to the
+    /// arithmetic they share with the list of pages fails until <see cref="CountingRules.Posts"/> is
+    /// raised, which has the months of posts still held counted again — and none of the months' totals.
     /// </summary>
-    private static string Fingerprint()
+    [Fact]
+    public void The_Version_Of_The_Posts_Arithmetic_Moves_With_The_Statements_That_Count_Them()
     {
-        var text = string.Join("\n--\n", EveryCountingStatement().Select(statement => statement.Sql))
+        ArithmeticOfPosts.Should().ContainKey(CountingRules.Posts);
+        Fingerprint(PostCountingStatements()).Should().Be(
+            ArithmeticOfPosts[CountingRules.Posts],
+            "the statements that count a month's posts changed, so raise CountingRules.Posts and record the new fingerprint");
+    }
+
+    /// <summary>
+    /// The fingerprint of the arithmetic: a hash of the text of every statement that counts a month,
+    /// or its posts, with line endings as the repository keeps them.
+    /// </summary>
+    private static string Fingerprint(CompiledStatement[] statements)
+    {
+        var text = string.Join("\n--\n", statements.Select(statement => statement.Sql))
             .Replace("\r\n", "\n", StringComparison.Ordinal);
 
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
     }
 
-    private static CompiledStatement[] EveryCountingStatement() =>
+    private static CompiledStatement[] MonthCountingStatements() =>
     [
         ConsolidationSqlCompiler.CompileCount(May, Population.Everybody),
         ConsolidationSqlCompiler.CompileCount(May, Population.People),
         ConsolidationSqlCompiler.CompileVerdicts(May),
+    ];
+
+    private static CompiledStatement[] PostCountingStatements() =>
+    [
+        ConsolidationSqlCompiler.CompilePostCount(May, Population.Everybody),
+        ConsolidationSqlCompiler.CompilePostCount(May, Population.People),
+    ];
+
+    private static CompiledStatement[] EveryCountingStatement() =>
+        [.. MonthCountingStatements(), .. PostCountingStatements()];
+
+    private static CompiledStatement[] EverySurvey() =>
+    [
+        ConsolidationSqlCompiler.CompileSurvey(SiteId, Zone, Now),
+        ConsolidationSqlCompiler.CompilePostSurvey(SiteId),
     ];
 
     /// <summary>Everything a statement reads before its own selection: the reports, settled and kept.</summary>

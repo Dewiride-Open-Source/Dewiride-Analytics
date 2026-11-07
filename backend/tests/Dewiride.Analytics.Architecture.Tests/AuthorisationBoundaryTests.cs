@@ -1,6 +1,7 @@
 using System.Reflection;
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Consolidation;
+using Dewiride.Analytics.Application.Posts;
 using Dewiride.Analytics.Application.Tenancy;
 using NetArchTest.Rules;
 
@@ -62,11 +63,11 @@ public sealed class AuthorisationBoundaryTests
     }
 
     /// <summary>
-    /// Counting a website's months and metering what it delivered work on websites the control plane
-    /// hands them, with no proof that anybody may read those websites. A request that could reach
-    /// either would read a website by the identifier in its address, which is printed in the page
-    /// source of every page that website measures — so nothing that answers a request may depend on
-    /// them, and everything a person reads goes through a question that demands a scope.
+    /// Counting a website's months and its posts, and metering what it delivered, work on websites the
+    /// control plane hands them, with no proof that anybody may read those websites. A request that
+    /// could reach any of them would read a website by the identifier in its address, which is printed
+    /// in the page source of every page that website measures — so nothing that answers a request may
+    /// depend on them, and everything a person reads goes through a question that demands a scope.
     /// </summary>
     [Fact]
     public void Nothing_Answering_A_Request_Counts_For_The_System()
@@ -78,6 +79,7 @@ public sealed class AuthorisationBoundaryTests
             .HaveDependencyOnAny(
                 typeof(IMonthConsolidation).FullName,
                 typeof(MonthlyConsolidation).FullName,
+                typeof(IPostCatalogue).FullName,
                 typeof(ISiteVolume).FullName)
             .GetResult();
 

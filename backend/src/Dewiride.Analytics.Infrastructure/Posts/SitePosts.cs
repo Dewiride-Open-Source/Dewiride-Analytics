@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Dewiride.Analytics.Application.Posts;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Infrastructure.Persistence;
@@ -56,6 +57,39 @@ internal sealed class SitePosts(ControlPlaneDbContext database, IOptions<Sitemap
             counted.Dated,
             counted.Reading,
             counted.TurnedAway);
+    }
+
+    /// <inheritdoc />
+    public Task<ImmutableArray<ListedPost>> ListAsync(TenantScope scope, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+
+        return ListedPosts.ReadAsync(database, scope.SiteId, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<ImmutableArray<NamedPost>> NamedAsync(
+        TenantScope scope,
+        IReadOnlyCollection<string> paths,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(paths.Count, ISitePosts.MostNamed);
+
+        if (paths.Count == 0)
+        {
+            return [];
+        }
+
+        var asked = paths.ToArray();
+        var named = await ListedPosts.Of(database, scope.SiteId)
+            .Where(post => asked.Contains(post.Path))
+            .Select(post => new NamedPost(post.Path, post.Address, post.Title, post.PublishedAt))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return [.. named];
     }
 
     /// <summary>

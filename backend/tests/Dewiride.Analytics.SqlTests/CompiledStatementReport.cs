@@ -47,6 +47,7 @@ internal static class CompiledStatementReport
         string[] entries => $"[{string.Join(", ", entries.Select(entry => $"'{entry}'"))}]",
         uint[] numbers => $"[{string.Join(", ", numbers.Select(number => number.ToString(CultureInfo.InvariantCulture)))}]",
         Guid[] identifiers => $"[{string.Join(", ", identifiers)}]",
+        DateOnly day => day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
         long number => number.ToString(CultureInfo.InvariantCulture),
         string text => $"'{text}'",
         _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,

@@ -486,6 +486,45 @@ export const sitemapStatusSchema = z.object({
 });
 
 /**
+ * One post a website's sitemap lists, as the screen about its record names it.
+ *
+ * `path` is the address its page views are counted under, and `address` where the post itself is.
+ * The title and the address come from the website's own pages, so both are only ever text, and the
+ * address only becomes a link where it is a web page's. `published` is the day it says it was
+ * published, on the website's calendar, and nothing where it does not say. `pageViews` counts its
+ * views from the month the answer's `viewsFrom` names on.
+ */
+export const insightsPostSchema = z.object({
+  path: z.string(),
+  address: z.string(),
+  title: z.string().nullable(),
+  published: calendarDay.nullable(),
+  pageViews: z.number().int(),
+});
+
+/**
+ * A website's posts as its whole record reads them, for one population.
+ *
+ * `posts` is how many its sitemap lists and `dated` how many of those say when they were published,
+ * the same figures its settings show. `latest` is the newest of the dated ones, newest first, and
+ * `mostRead` the one read most, or nothing where none has been read. `viewsFrom` is the first month
+ * the views are counted from, and nothing where the record has no month to count them in. The
+ * calendar runs from
+ * `calendarFrom` to `calendarTo`, today on the website's calendar, and names only the days that saw
+ * a post, oldest first.
+ */
+export const insightsPostsSchema = z.object({
+  posts: z.number().int(),
+  dated: z.number().int(),
+  viewsFrom: calendarMonth.nullable(),
+  latest: z.array(insightsPostSchema),
+  mostRead: insightsPostSchema.nullable(),
+  calendarFrom: calendarDay,
+  calendarTo: calendarDay,
+  calendar: z.array(z.object({ day: calendarDay, posts: z.number().int() })),
+});
+
+/**
  * How a period's pages were actually read.
  *
  * Only the browser tracker can observe any of this, so how many readings could be measured
@@ -981,6 +1020,10 @@ export type Actions = z.infer<typeof actionsSchema>;
 export type SiteSettings = z.infer<typeof siteSettingsSchema>;
 
 export type SitemapStatus = z.infer<typeof sitemapStatusSchema>;
+
+export type InsightsPost = z.infer<typeof insightsPostSchema>;
+
+export type InsightsPosts = z.infer<typeof insightsPostsSchema>;
 
 export type TargetKind = z.infer<typeof targetKindSchema>;
 

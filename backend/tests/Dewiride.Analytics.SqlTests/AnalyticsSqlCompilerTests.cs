@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Dewiride.Analytics.Application.Analytics;
+using Dewiride.Analytics.Application.Consolidation;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
@@ -52,6 +53,9 @@ public sealed partial class AnalyticsSqlCompilerTests
 
     /// <summary>The empty text, which is what the rebuild holds where nothing could be established.</summary>
     private static readonly string[] NothingEstablished = [""];
+
+    /// <summary>The first month whose kept posts are not read: where their views begin to be counted from the reports.</summary>
+    private static readonly DateOnly PostsKeptBefore = new(2026, 5, 1);
 
     /// <summary>The free-text narrowings a hostile value is proved to reach the store as a value.</summary>
     private static readonly string[] FreeTextNarrowings = ["towns", "browsers", "entry_pages"];
@@ -120,18 +124,107 @@ public sealed partial class AnalyticsSqlCompilerTests
         Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
+    [Fact]
+    public void Post_Views()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), PostViews(Population.Everybody));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Post_Views_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), PostViews(Population.People));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Kept_Post_Months()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new KeptPostMonthsQuery(To));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Kept_Post_Views()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new KeptPostViewsQuery(To, PostsKeptBefore));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Kept_Post_Views_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(
+            Scope(),
+            new KeptPostViewsQuery(To, PostsKeptBefore) { Population = Population.People });
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
     /// <summary>
     /// Two engines can count one month twice, and the store replaces one row with the other only
-    /// when it next merges. A month is read as its newest count, whatever has been merged so far.
+    /// when it next merges. A month is read as its newest count, whatever has been merged so far — its
+    /// totals and its posts alike.
     /// </summary>
     [Fact]
     public void A_Kept_Month_Is_Read_As_Its_Newest_Count()
     {
-        foreach (var statement in EveryQuestionAboutKeptMonths())
+        foreach (var statement in EveryQuestionAboutKeptMonths().Concat(EveryQuestionAboutKeptPosts()))
         {
             statement.Sql.Should().Contain("ORDER BY month, counted_at DESC");
             statement.Sql.Should().Contain("LIMIT 1 BY month");
         }
+    }
+
+    /// <summary>
+    /// A post's path comes from the website's sitemap, which whoever runs the website writes. However it
+    /// is spelled, it never reaches the store — for the dashboard's count and the count kept for a month
+    /// alike: not as part of a statement and not as a value bound to one. What is bound is the website,
+    /// the window and, about people, how far back their verdicts are read, none of them text.
+    /// </summary>
+    [Fact]
+    public void No_Posts_Path_Enters_A_Statement_Or_Its_Bound_Values()
+    {
+        string[] hostile = ["/posts/it's-here/') OR 1=1 --", "/{paths:Array(String)}/", "/posts/x/\nSELECT 1"];
+        string[] windowAndPeople = ["site_id", "from_ms", "to_ms", "longest_visit_seconds"];
+        var month = new MonthToCount(SiteId, "Europe/London", new DateOnly(2026, 5, 1), Window());
+
+        CompiledStatement[] statements =
+        [
+            .. Enum.GetValues<Population>().Select(population =>
+                AnalyticsSqlCompiler.Compile(Scope(), new PostViewsQuery(Window(), [.. hostile]) { Population = population })),
+            .. Enum.GetValues<Population>().Select(population =>
+                ConsolidationSqlCompiler.CompilePostCount(month, population)),
+        ];
+
+        foreach (var statement in statements)
+        {
+            foreach (var path in hostile)
+            {
+                statement.Sql.Should().NotContain(path);
+            }
+
+            statement.Sql.Should().NotContain("{paths:");
+            statement.Parameters.Should().OnlyContain(parameter => windowAndPeople.Contains(parameter.Name));
+            statement.Parameters.Should().NotContain(parameter => parameter.Value is string || parameter.Value is IEnumerable<string>);
+        }
+    }
+
+    [Fact]
+    public void Asking_About_No_Post_Or_More_Than_A_Question_May_Name_Is_Refused()
+    {
+        var none = () => new PostViewsQuery(Window(), []);
+        var unset = () => new PostViewsQuery(Window(), default);
+        var tooMany = () => new PostViewsQuery(Window(), [.. Enumerable.Repeat("/a/", PostViewsQuery.MostPaths + 1)]);
+
+        none.Should().Throw<ArgumentException>();
+        unset.Should().Throw<ArgumentException>();
+        tooMany.Should().Throw<ArgumentOutOfRangeException>();
     }
 
     /// <summary>
@@ -3195,6 +3288,19 @@ public sealed partial class AnalyticsSqlCompilerTests
         AnalyticsSqlCompiler.Compile(Scope(), new KeptMonthsQuery(To) { Population = Population.People }),
     ];
 
+    /// <summary>The questions about what was kept of a website's posts, the views asked of both populations.</summary>
+    /// <returns>The three statements.</returns>
+    private static CompiledStatement[] EveryQuestionAboutKeptPosts() =>
+    [
+        AnalyticsSqlCompiler.Compile(Scope(), new KeptPostMonthsQuery(To)),
+        AnalyticsSqlCompiler.Compile(Scope(), new KeptPostViewsQuery(To, PostsKeptBefore)),
+        AnalyticsSqlCompiler.Compile(Scope(), new KeptPostViewsQuery(To, PostsKeptBefore) { Population = Population.People }),
+    ];
+
+    /// <summary>How many pages were delivered at two of the website's posts over the standard window.</summary>
+    private static PostViewsQuery PostViews(Population population) =>
+        new(Window(), ["/posts/a-first-post/", "/posts/another/"]) { Population = population };
+
     /// <summary>
     /// Which stored column a question about kept months reads a figure from.
     /// </summary>
@@ -3208,14 +3314,14 @@ public sealed partial class AnalyticsSqlCompilerTests
             .Split(' ')[0];
 
     /// <summary>
-    /// One question of each of the twelve shapes that may be asked about a population.
+    /// One question of each of the thirteen shapes that may be asked about a population from activity.
     /// </summary>
     /// <remarks>
     /// Held together so that a property every one of them has to have is asserted over all of
     /// them, and so that the next question given a population cannot be added without it.
     /// </remarks>
     /// <param name="population">Who to ask about.</param>
-    /// <returns>The twelve questions.</returns>
+    /// <returns>The thirteen questions.</returns>
     private static AnalyticsQuery[] EveryQuestion(Population population) =>
     [
         new OverviewQuery(Window()) { Population = population },
@@ -3230,9 +3336,10 @@ public sealed partial class AnalyticsSqlCompilerTests
         new SitePageEngagementQuery(Window(), EngagementRanking.Attention, 10) { Population = population },
         new SiteVisitShapeQuery(Window(), Visits()) { Population = population },
         new SiteVisitFlowQuery(Window(), Visits(), VisitPosition.Entry, 10) { Population = population },
+        PostViews(population),
     ];
 
-    /// <summary>The twelve, compiled.</summary>
+    /// <summary>The thirteen, compiled.</summary>
     /// <param name="population">Who to ask about.</param>
     /// <returns>The statements.</returns>
     private static CompiledStatement[] EveryStatementAbout(Population population) =>
@@ -3272,6 +3379,7 @@ public sealed partial class AnalyticsSqlCompilerTests
         AnalyticsSqlCompiler.Compile(Scope(), JudgedByDetail()),
         AnalyticsSqlCompiler.Compile(Scope(), Facets()),
         .. EveryQuestionAboutKeptMonths(),
+        .. EveryQuestionAboutKeptPosts(),
         .. EveryStatementAbout(Population.People),
     ];
 

@@ -63,6 +63,37 @@ public interface IMonthConsolidation
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task that completes once the store has them.</returns>
     Task KeepAsync(IReadOnlyCollection<ConsolidatedMonth> months, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads how each month whose posts were kept for a website was counted, as its newest count.
+    /// </summary>
+    /// <param name="siteId">The website.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One per month whose posts were kept, oldest first.</returns>
+    Task<ImmutableArray<KeptPostMonth>> SurveyPostsAsync(Guid siteId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Counts the pages delivered at each of a website's posts in one month, for everybody or for the
+    /// visits judged to be people, by the arithmetic of the dashboard's list of pages.
+    /// </summary>
+    /// <param name="month">The month.</param>
+    /// <param name="population">Who to count.</param>
+    /// <param name="paths">The paths the website's posts are read at, distinct and in ordinal order.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Each path a page was delivered at, in ordinal order; the others are left out.</returns>
+    Task<ImmutableArray<PathViews>> CountPostsAsync(
+        MonthToCount month,
+        Population population,
+        ImmutableArray<string> paths,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Keeps counted months of posts, each replacing whatever was kept of the same month's posts before.
+    /// </summary>
+    /// <param name="months">The months, all of one website.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes once the store has them.</returns>
+    Task KeepPostsAsync(IReadOnlyCollection<ConsolidatedPostMonth> months, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -152,3 +183,53 @@ public sealed record ConsolidatedMonth(
     /// <summary>Which version of the arithmetic counted it.</summary>
     public int CountingRules { get; init; } = Consolidation.CountingRules.Current;
 }
+
+/// <summary>
+/// How a kept month of a website's posts was counted.
+/// </summary>
+/// <param name="Month">The first of the month, on the calendar it was counted on.</param>
+/// <param name="Described">
+/// How it was counted, on the terms a month's totals say it, with no first day: that is kept with the
+/// month's totals alone.
+/// </param>
+/// <param name="Fingerprint">
+/// Which list of posts it was counted for, as <see cref="Posts.PostFingerprint"/> gives it.
+/// </param>
+public sealed record KeptPostMonth(DateOnly Month, KeptMonth Described, string Fingerprint);
+
+/// <summary>
+/// One month of a website's posts, counted and ready to keep.
+/// </summary>
+/// <remarks>
+/// The paths are the website's own, from its sitemap, and only those a page was delivered at in the
+/// month: what a month keeps is how much each of its posts was read, and nothing about who read it.
+/// </remarks>
+/// <param name="Month">Which month, and where.</param>
+/// <param name="Views">Each path a page was delivered at, in ordinal order, with the pages delivered there.</param>
+/// <param name="Fingerprint">Which list of posts was counted, as <see cref="Posts.PostFingerprint"/> gives it.</param>
+/// <param name="Ruleset">The rules the engine was running.</param>
+/// <param name="RulesetJudgedTo">How far those rules had judged the website, no further than the month.</param>
+/// <param name="CountedTo">The last instant the count reached.</param>
+/// <param name="JudgedTo">How far judging had reached, no further than the month.</param>
+/// <param name="CountedAt">When the count was taken.</param>
+public sealed record ConsolidatedPostMonth(
+    MonthToCount Month,
+    ImmutableArray<PostMonthViews> Views,
+    string Fingerprint,
+    RulesetVersion Ruleset,
+    DateTimeOffset RulesetJudgedTo,
+    DateTimeOffset CountedTo,
+    DateTimeOffset JudgedTo,
+    DateTimeOffset CountedAt)
+{
+    /// <summary>Which version of the arithmetic counted it.</summary>
+    public int CountingRules { get; init; } = Consolidation.CountingRules.Posts;
+}
+
+/// <summary>
+/// The pages delivered at one of a website's paths in one month.
+/// </summary>
+/// <param name="Path">The path, as the collector stored it.</param>
+/// <param name="PageViews">Pages delivered at it to everybody.</param>
+/// <param name="PeoplePageViews">Pages delivered at it in the visits judged to be people.</param>
+public readonly record struct PostMonthViews(string Path, long PageViews, long PeoplePageViews);

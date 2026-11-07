@@ -53,6 +53,7 @@ app.MapOrganization();
 app.MapClosure();
 app.MapSites();
 app.MapKeptHistory();
+app.MapInsightsPosts();
 app.MapServerKeys();
 app.MapSiteSettings();
 app.MapHealth();

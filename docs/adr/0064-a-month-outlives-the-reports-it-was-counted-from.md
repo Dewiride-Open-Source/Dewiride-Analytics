@@ -33,6 +33,9 @@
 - **Extended by**: [0067](0067-work-in-the-background-ends-when-the-host-does-and-not-before.md), which
   holds every timed service to what the one that keeps months does: a failed run ends there, and the
   loop goes on.
+- **Extended by**: [0069](0069-a-post-s-views-are-kept-a-month-at-a-time.md), which keeps how many times
+  each of a website's posts was read beside each month's totals — counted, counted again and removed on
+  these terms — and widens the retention envelope by it.
 
 ## Context
 

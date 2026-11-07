@@ -19,4 +19,12 @@ public static class CountingRules
 {
     /// <summary>The version this build counts with.</summary>
     public const int Current = 1;
+
+    /// <summary>The version this build counts a month's posts with.</summary>
+    /// <remarks>
+    /// A number of its own, held by a test of its own to the statements that count a month's posts, so
+    /// a change to how posts are counted recounts the months of posts still held and none of the
+    /// months' totals, and the other way round.
+    /// </remarks>
+    public const int Posts = 1;
 }

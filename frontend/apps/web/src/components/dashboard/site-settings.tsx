@@ -42,6 +42,12 @@ interface SiteSettingsProps {
    * way in does once recording is switched on here.
    */
   readonly returnFocusTo?: RefObject<HTMLElement | null>;
+  /**
+   * The one thing the panel is opened for, where a screen opens it for one: the box a sitemap's
+   * address goes in, for a screen asking somebody to add or check one. The keyboard starts there
+   * as soon as it is drawn, for anybody who may change it.
+   */
+  readonly focusOn?: 'sitemap';
 }
 
 /** The longest name the engine will keep, so a name is stopped here rather than refused there. */
@@ -60,7 +66,14 @@ const A_MINUTE = 60_000;
  * name typed and then abandoned is gone by the time somebody looks again, and the confirmation
  * that removes a website is never found already armed.
  */
-export function SiteSettings({ open, onClose, site, onRemoved, returnFocusTo }: SiteSettingsProps) {
+export function SiteSettings({
+  open,
+  onClose,
+  site,
+  onRemoved,
+  returnFocusTo,
+  focusOn,
+}: SiteSettingsProps) {
   const t = useTranslations('siteSettings');
   const settings = useSiteSettings(site.id, open);
   const saving = useUpdateSiteSettings(site.id);
@@ -110,7 +123,7 @@ export function SiteSettings({ open, onClose, site, onRemoved, returnFocusTo }: 
               />
             </section>
 
-            <SitemapDetails site={site} stored={settings.data} />
+            <SitemapDetails site={site} stored={settings.data} focused={focusOn === 'sitemap'} />
           </>
         ) : null}
 
@@ -261,6 +274,8 @@ function WebsiteDetails({ siteId, stored }: WebsiteDetailsProps) {
 interface SitemapDetailsProps {
   readonly site: Site;
   readonly stored: StoredSettings;
+  /** Whether the panel was opened for the address, so the keyboard starts in its box. */
+  readonly focused: boolean;
 }
 
 /**
@@ -270,7 +285,7 @@ interface SitemapDetailsProps {
  * they could press: how a website is set up is theirs to check, and changing what this engine goes
  * and fetches for it is not.
  */
-function SitemapDetails({ site, stored }: SitemapDetailsProps) {
+function SitemapDetails({ site, stored, focused }: SitemapDetailsProps) {
   const t = useTranslations('siteSettings.sitemap');
   const mayChange = site.role !== 'viewer';
   const reading = (
@@ -282,7 +297,7 @@ function SitemapDetails({ site, stored }: SitemapDetailsProps) {
       <h3 className="text-sm font-semibold text-foreground">{t('title')}</h3>
 
       {mayChange ? (
-        <SitemapForm site={site} stored={stored.sitemapAddress}>
+        <SitemapForm site={site} stored={stored.sitemapAddress} focused={focused}>
           {reading}
         </SitemapForm>
       ) : (
@@ -299,6 +314,8 @@ interface SitemapFormProps {
   readonly site: Site;
   /** The address in force, in the spelling the engine keeps it in. */
   readonly stored: string | null;
+  /** Whether the panel was opened for the address, so the keyboard starts in its box. */
+  readonly focused: boolean;
   /** How reading it is going, which sits between the box and the button that changes it. */
   readonly children: ReactNode;
 }
@@ -320,13 +337,25 @@ interface SitemapFormProps {
  * is one of this website's is the engine's to say. The two are one refusal to whoever typed it, so
  * they read the same and sit in the same place, under the box. Anything else that goes wrong with a
  * save has nothing to do with the address, and is reported as it is everywhere else.
+ *
+ * Opened for the address, the keyboard starts in its box. The panel puts it there as it opens where
+ * the box is already drawn; where the settings are still being read as it opens, the box takes it
+ * itself the moment it appears.
  */
-function SitemapForm({ site, stored, children }: SitemapFormProps) {
+function SitemapForm({ site, stored, focused, children }: SitemapFormProps) {
   const t = useTranslations('siteSettings');
   const reasons = useTranslations('problems');
   const [typed, setTyped] = useState<string | null>(null);
   const [refused, setRefused] = useState(false);
   const saving = useUpdateSiteSettings(site.id);
+  const box = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Only into a panel already open: one opening as this is drawn starts on the box by itself.
+    if (focused && box.current?.closest('dialog')?.open) {
+      box.current.focus();
+    }
+  }, [focused]);
 
   const inForce = stored ?? '';
   const held = typed ?? inForce;
@@ -374,6 +403,8 @@ function SitemapForm({ site, stored, children }: SitemapFormProps) {
         {(attributes) => (
           <TextInput
             {...attributes}
+            ref={box}
+            data-opens-on={focused || undefined}
             type="url"
             inputMode="url"
             dir="ltr"

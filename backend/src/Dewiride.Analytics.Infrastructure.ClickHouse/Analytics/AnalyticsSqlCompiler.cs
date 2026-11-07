@@ -31,12 +31,13 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// lets the rest of the system treat them as ordinary data.
 /// </para>
 /// <para>
-/// Twelve of the questions that read activity may be asked of people alone. Each then has two
+/// Thirteen of the questions that read activity may be asked of people alone. Each then has two
 /// shapes chosen by what was asked, on the terms the visit list's two shapes were chosen: the
 /// everybody shape reads no verdict and binds nothing for one, and the people shape is that
 /// statement with the two expressions <see cref="JudgedPeople"/> writes placed after the settled
-/// identity and its first aggregation reading from them. One more, a website's kept months, is
-/// asked of people by reading the figures kept for them beside everybody's.
+/// identity and its first aggregation reading from them. Two more, a website's kept months and the
+/// views kept for its posts, are asked of people by reading the figures kept for them beside
+/// everybody's.
 /// </para>
 /// </remarks>
 public static class AnalyticsSqlCompiler
@@ -66,6 +67,7 @@ public static class AnalyticsSqlCompiler
     private const string EntryPagesParameter = "entry_pages";
     private const string MostValuesParameter = "most_values";
     private const string MaxRequestsParameter = "max_requests";
+    private const string BeforeParameter = "before";
 
     /// <summary>
     /// Aggregate per metric, over one visitor's activity on one page. Visitors excludes activity
@@ -92,6 +94,17 @@ public static class AnalyticsSqlCompiler
         {
             [Population.Everybody] = KeptFiguresOf(string.Empty),
             [Population.People] = KeptFiguresOf("people_"),
+        }.ToFrozenDictionary();
+
+    /// <summary>
+    /// Which kept column a question about a website's posts reads the pages delivered from, by who it is
+    /// about, on the terms of <see cref="KeptFigureColumns"/>.
+    /// </summary>
+    private static readonly FrozenDictionary<Population, string> KeptPostViewColumns =
+        new Dictionary<Population, string>
+        {
+            [Population.Everybody] = "page_views",
+            [Population.People] = "people_page_views",
         }.ToFrozenDictionary();
 
     /// <summary>
@@ -654,6 +667,7 @@ public static class AnalyticsSqlCompiler
             ?? CompileFromVerdicts(scope, query)
             ?? CompileFromNow(scope, query)
             ?? CompileFromKept(scope, query)
+            ?? CompileAboutPosts(scope, query)
             ?? throw new NotSupportedException($"No statement is defined for {query.GetType().Name}.");
     }
 
@@ -665,6 +679,26 @@ public static class AnalyticsSqlCompiler
     /// <returns>The statement, or <see langword="null"/> where this is not one of these questions.</returns>
     private static CompiledStatement? CompileFromKept(TenantScope scope, AnalyticsQuery query) =>
         query is KeptMonthsQuery kept ? CompileKeptMonths(scope, kept) : null;
+
+    /// <summary>
+    /// Compiles a question about how a website's posts were read, or nothing where it is not one.
+    /// </summary>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement, or <see langword="null"/> where this is not one of these questions.</returns>
+    /// <remarks>
+    /// A post's views are read as a website's whole record is: from what was kept month by month, and
+    /// from the reports of the months nothing was kept of — the one by reading the kept months, the
+    /// other by the arithmetic of the list of pages.
+    /// </remarks>
+    private static CompiledStatement? CompileAboutPosts(TenantScope scope, AnalyticsQuery query) =>
+        query switch
+        {
+            PostViewsQuery posts => CompilePostViews(scope, posts),
+            KeptPostMonthsQuery postMonths => CompileKeptPostMonths(scope, postMonths),
+            KeptPostViewsQuery postViews => CompileKeptPostViews(scope, postViews),
+            _ => null,
+        };
 
     /// <summary>
     /// Reads a website's whole record, month by month, with what was kept of each finished month.
@@ -685,6 +719,99 @@ public static class AnalyticsSqlCompiler
                 new QueryParameter(ToParameter, query.Range.To.ToUnixTimeMilliseconds()),
                 new QueryParameter(TimeZoneParameter, scope.TimeZoneId),
             ]);
+
+    /// <summary>
+    /// Reads the months a website's posts were kept for, up to the one running now.
+    /// </summary>
+    /// <remarks>
+    /// Each month once, as its newest count would be read, and nothing of what was kept of it.
+    /// </remarks>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement and its bound values.</returns>
+    private static CompiledStatement CompileKeptPostMonths(TenantScope scope, KeptPostMonthsQuery query)
+    {
+        const string sql = """
+            SELECT month
+            FROM consolidated_post_months
+            WHERE site_id = {site_id:UUID}
+              AND month <= toStartOfMonth(toDate(fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC'), {time_zone:String}))
+            ORDER BY month, counted_at DESC
+            LIMIT 1 BY month
+            """;
+
+        return new CompiledStatement(
+            sql,
+            [
+                new QueryParameter(StatementBindings.SiteId, scope.SiteId),
+                new QueryParameter(ToParameter, query.Range.To.ToUnixTimeMilliseconds()),
+                new QueryParameter(TimeZoneParameter, scope.TimeZoneId),
+            ]);
+    }
+
+    /// <summary>
+    /// Adds up the pages delivered at each path kept for a website's posts, over the months kept before
+    /// one.
+    /// </summary>
+    /// <remarks>
+    /// Each month is read as its newest count and spread out into one row per path, then added up path by
+    /// path. The figures for the people a month held are kept beside everybody's, on the same row and
+    /// from the same count, so asking about people reads another column rather than other rows. No path
+    /// is bound: a kept month holds the paths of the website's own posts and nothing else.
+    /// </remarks>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement and its bound values.</returns>
+    private static CompiledStatement CompileKeptPostViews(TenantScope scope, KeptPostViewsQuery query)
+    {
+        var sql = $$"""
+            SELECT
+                path,
+                toInt64(sum(views)) AS page_views
+            FROM
+            (
+                SELECT
+                    month,
+                    paths,
+                    {{KeptPostViewColumns[query.Population]}} AS counted
+                FROM consolidated_post_months
+                WHERE site_id = {site_id:UUID}
+                  AND month < {before:Date}
+                ORDER BY month, counted_at DESC
+                LIMIT 1 BY month
+            )
+            ARRAY JOIN
+                paths AS path,
+                counted AS views
+            GROUP BY path
+            HAVING page_views > 0
+            ORDER BY path
+            """;
+
+        return new CompiledStatement(
+            sql,
+            [
+                new QueryParameter(StatementBindings.SiteId, scope.SiteId),
+                new QueryParameter(BeforeParameter, query.Before),
+            ]);
+    }
+
+    /// <summary>
+    /// Counts the pages delivered at every path of a website over a window, by the arithmetic of the list
+    /// of pages, for a website's posts to be read out of.
+    /// </summary>
+    /// <remarks>
+    /// Written by <see cref="PostViewsStatement"/>, which the count of a month's posts for keeping is
+    /// written by too. The paths asked about are neither part of the statement nor bound to it: they are
+    /// what its answer is kept to as it is read.
+    /// </remarks>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement and its bound values.</returns>
+    private static CompiledStatement CompilePostViews(TenantScope scope, PostViewsQuery query) =>
+        new(
+            PostViewsStatement.Text(query.Population),
+            PostViewsStatement.Bound(scope.SiteId, query.Range, query.Population));
 
     /// <summary>
     /// What is read of a kept month, by who the question is about, in the order it comes back.

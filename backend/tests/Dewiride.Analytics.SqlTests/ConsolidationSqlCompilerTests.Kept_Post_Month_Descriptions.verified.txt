@@ -1,0 +1,19 @@
+﻿--- statement ---
+SELECT
+    month,
+    time_zone,
+    posts_fingerprint,
+    ruleset_major,
+    ruleset_minor,
+    ruleset_judged_to,
+    counting_rules,
+    counted_to,
+    judged_to,
+    counted_at
+FROM consolidated_post_months
+WHERE site_id = {site_id:UUID}
+ORDER BY month, counted_at DESC
+LIMIT 1 BY month
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001

@@ -23,6 +23,7 @@ import {
   readEngagement,
   readFacets,
   readInsights,
+  readInsightsPosts,
   readLive,
   readLiveTrail,
   readLocations,
@@ -46,6 +47,7 @@ import type {
   SeriesMetric,
   Session,
   Site,
+  SitemapStatus,
   SoftwareGrouping,
   SourceGrouping,
   VisitPosition,
@@ -59,6 +61,7 @@ import {
   engagementKey,
   facetsKey,
   insightsKey,
+  insightsPostsKey,
   liveKey,
   liveTrailKey,
   locationsKey,
@@ -214,6 +217,53 @@ export function useInsights(
     retry: false,
     staleTime: ALL_TIME_FRESH_FOR,
   });
+}
+
+/**
+ * A website's posts as its whole record reads them, for one population.
+ *
+ * Asked only once its sitemap is known to list some: a website with none has nothing to ask about,
+ * and the screen says why from how reading its sitemap stands. Each reading that finishes is asked
+ * about afresh, and again once every page it lists has been read, and the lists already on the
+ * screen stay there until the answer lands, so a sitemap read again while somebody is looking does
+ * not empty the lists under them. Only the same lists are kept like that: an answer about other
+ * people, another zone or another website is never shown in the meantime.
+ *
+ * @param site The website.
+ * @param population Whose views are counted.
+ * @param reading How reading its sitemap stands, or nothing while that is still being asked.
+ */
+export function useInsightsPosts(
+  site: Pick<Site, 'id' | 'timeZoneId'>,
+  population: Population,
+  reading: SitemapStatus | undefined,
+) {
+  const listed = reading !== undefined && reading.posts > 0;
+  const key = insightsPostsKey(site.id, site.timeZoneId, population, {
+    readAt: reading?.readAt ?? null,
+    pagesRead: (reading?.reading ?? 0) === 0,
+  });
+
+  return useQuery({
+    queryKey: key,
+    queryFn: listed ? () => readInsightsPosts(site.id, population) : skipToken,
+    placeholderData: (previous, previousQuery) =>
+      previousQuery !== undefined && sameListsAs(key, previousQuery.queryKey)
+        ? previous
+        : undefined,
+    retry: false,
+    staleTime: ALL_TIME_FRESH_FOR,
+  });
+}
+
+/**
+ * Whether an answer filed under one name is the same lists as another, as of an earlier stage of
+ * reading the sitemap: everything in the two names but how far reading had got is the same.
+ */
+function sameListsAs(key: readonly unknown[], earlier: readonly unknown[]): boolean {
+  return (
+    key.length === earlier.length && key.slice(0, -1).every((part, at) => part === earlier[at])
+  );
 }
 
 /**

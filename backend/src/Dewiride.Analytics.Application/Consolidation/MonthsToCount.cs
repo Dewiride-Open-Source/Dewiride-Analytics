@@ -48,16 +48,40 @@ public static class MonthsToCount
         return
         [
             .. survey.Months
-                .Where(month => month.Window.To <= now && now < Retention.CountableUntil(month.Window.From))
-                .Where(month => NeedsCounting(month, judging, timeZoneId))
+                .Where(month => Countable(month, now))
+                .Where(month => NeedsCounting(month, month.Kept, judging, timeZoneId, CountingRules.Current))
                 .Take(most),
         ];
     }
 
-    private static bool NeedsCounting(SurveyedMonth month, SiteJudging judging, string timeZoneId) =>
-        month.Kept is not { } kept
+    /// <summary>
+    /// Whether a month has finished and every report it is counted from is still held.
+    /// </summary>
+    /// <param name="month">The month.</param>
+    /// <param name="now">The present moment.</param>
+    /// <returns><see langword="true"/> where it may be counted.</returns>
+    internal static bool Countable(SurveyedMonth month, DateTimeOffset now) =>
+        month.Window.To <= now && now < Retention.CountableUntil(month.Window.From);
+
+    /// <summary>
+    /// Whether what was kept of a month no longer describes it, by the reasons that hold for anything
+    /// counted from a month's reports.
+    /// </summary>
+    /// <param name="month">The month, as the calendar has it now.</param>
+    /// <param name="kept">How it was counted when it was last kept, or nothing where it never was.</param>
+    /// <param name="judging">How far judging has reached on the website.</param>
+    /// <param name="timeZoneId">The zone the website is read in now.</param>
+    /// <param name="countingRules">The version of the arithmetic this build counts it with.</param>
+    /// <returns><see langword="true"/> where it needs counting.</returns>
+    internal static bool NeedsCounting(
+        SurveyedMonth month,
+        KeptMonth? kept,
+        SiteJudging judging,
+        string timeZoneId,
+        int countingRules) =>
+        kept is null
         || !string.Equals(kept.TimeZoneId, timeZoneId, StringComparison.Ordinal)
-        || kept.CountingRules < CountingRules.Current
+        || kept.CountingRules < countingRules
         || kept.CountedTo < month.Window.To
         || JudgingMovedOn(month, kept, judging)
         || NewerRulesFinished(month, kept, judging);

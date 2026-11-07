@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Consolidation;
+using Dewiride.Analytics.Application.Posts;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Classification;
@@ -69,6 +70,7 @@ public sealed class MonthlyConsolidationTests
 
     private readonly ISiteRoster _roster = Substitute.For<ISiteRoster>();
     private readonly IMonthConsolidation _months = Substitute.For<IMonthConsolidation>();
+    private readonly IPostCatalogue _catalogue = Substitute.For<IPostCatalogue>();
     private readonly IClassificationProgressStore _progress = Substitute.For<IClassificationProgressStore>();
     private readonly FakeTimeProvider _clock = new(Now);
     private readonly FakeLogger<MonthlyConsolidation> _logger = new();
@@ -85,6 +87,12 @@ public sealed class MonthlyConsolidationTests
             .Returns(Counted);
         _months.CountVerdictsAsync(Arg.Any<MonthToCount>(), Arg.Any<CancellationToken>())
             .Returns(Verdicts);
+        _months.SurveyPostsAsync(SiteId, Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray<KeptPostMonth>.Empty);
+        _months.CountPostsAsync(Arg.Any<MonthToCount>(), Arg.Any<Population>(), Arg.Any<ImmutableArray<string>>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray<PathViews>.Empty);
+        _catalogue.CountedPathsAsync(SiteId, Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray<string>.Empty);
         Surveying(new MonthSurvey(new DateOnly(2026, 1, 19), [Month(1), Month(2), Month(3)]));
     }
 
@@ -194,7 +202,103 @@ public sealed class MonthlyConsolidationTests
 
         dependencies.Should().NotContain(typeof(ITelemetryPurge));
         typeof(IMonthConsolidation).GetMethods().Select(method => method.Name)
-            .Should().BeEquivalentTo("SurveyAsync", "CountAsync", "CountVerdictsAsync", "KeepAsync");
+            .Should().BeEquivalentTo(
+                "SurveyAsync",
+                "CountAsync",
+                "CountVerdictsAsync",
+                "KeepAsync",
+                "SurveyPostsAsync",
+                "CountPostsAsync",
+                "KeepPostsAsync");
+    }
+
+    /// <summary>
+    /// A month's posts are kept on a row of their own: every path a page was delivered at, with the
+    /// people's pages beside everybody's — nought where none went to a person — and which list of posts
+    /// was counted, under the posts' own version of the arithmetic.
+    /// </summary>
+    [Fact]
+    public async Task A_Months_Posts_Are_Kept_With_The_Peoples_Pages_Beside_Everybodys()
+    {
+        ImmutableArray<string> paths = ["/a/", "/b/", "/c/"];
+        ListingPosts(paths);
+        _months.CountPostsAsync(Arg.Any<MonthToCount>(), Population.Everybody, paths, Arg.Any<CancellationToken>())
+            .Returns([new PathViews("/a/", 5), new PathViews("/b/", 3)]);
+        _months.CountPostsAsync(Arg.Any<MonthToCount>(), Population.People, paths, Arg.Any<CancellationToken>())
+            .Returns([new PathViews("/b/", 2)]);
+
+        await CatchUpAsync();
+
+        await _months.Received(1).KeepPostsAsync(Arg.Any<IReadOnlyCollection<ConsolidatedPostMonth>>(), Arg.Any<CancellationToken>());
+
+        var kept = KeptPosts();
+
+        kept.Select(month => month.Month.Month).Should().Equal(new DateOnly(2026, 1, 1), new DateOnly(2026, 2, 1));
+        kept[0].Views.Should().Equal(new PostMonthViews("/a/", 5, 0), new PostMonthViews("/b/", 3, 2));
+        kept[0].Fingerprint.Should().Be(PostFingerprint.Of(paths));
+        kept[0].CountingRules.Should().Be(CountingRules.Posts);
+        kept[0].CountedTo.Should().Be(Midnight(2026, 2));
+        kept[0].JudgedTo.Should().Be(Midnight(2026, 2));
+        kept[0].CountedAt.Should().Be(Now);
+    }
+
+    /// <summary>
+    /// A month whose posts fail to count is left as it was and tried again, and stops neither the posts
+    /// of the months after it nor any month's totals.
+    /// </summary>
+    [Fact]
+    public async Task A_Months_Posts_That_Fail_To_Count_Stop_Neither_The_Other_Months_Posts_Nor_Their_Totals()
+    {
+        ListingPosts(["/a/"]);
+        _months.CountPostsAsync(
+                Arg.Is<MonthToCount>(month => month.Month.Month == 1),
+                Population.Everybody,
+                Arg.Any<ImmutableArray<string>>(),
+                Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("The store went away."));
+
+        await CatchUpAsync();
+
+        Kept().Select(month => month.Month.Month).Should().Equal(new DateOnly(2026, 1, 1), new DateOnly(2026, 2, 1));
+        KeptPosts().Select(month => month.Month.Month).Should().Equal(new DateOnly(2026, 2, 1));
+        _logger.Collector.GetSnapshot().Should().Contain(record =>
+            record.Id.Id == 5208 && record.Level == LogLevel.Warning);
+    }
+
+    /// <summary>
+    /// The months' totals are kept before the posts are counted, so a pass over posts that cannot even
+    /// read what was kept of them leaves the totals kept.
+    /// </summary>
+    [Fact]
+    public async Task A_Pass_Over_Posts_That_Fails_Leaves_The_Months_Totals_Kept()
+    {
+        ListingPosts(["/a/"]);
+        _months.SurveyPostsAsync(SiteId, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("The store went away."));
+
+        Func<Task> act = CatchUpAsync;
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        Kept().Select(month => month.Month.Month).Should().Equal(new DateOnly(2026, 1, 1), new DateOnly(2026, 2, 1));
+        await _months.DidNotReceive().KeepPostsAsync(Arg.Any<IReadOnlyCollection<ConsolidatedPostMonth>>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// A website that lists no posts has nothing to count, so nothing about its posts is read at all —
+    /// which is most websites, on every run.
+    /// </summary>
+    [Fact]
+    public async Task A_Website_That_Lists_No_Posts_Has_None_Counted()
+    {
+        await CatchUpAsync();
+
+        await _months.DidNotReceive().SurveyPostsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await _months.DidNotReceive().CountPostsAsync(
+            Arg.Any<MonthToCount>(),
+            Arg.Any<Population>(),
+            Arg.Any<ImmutableArray<string>>(),
+            Arg.Any<CancellationToken>());
+        await _months.DidNotReceive().KeepPostsAsync(Arg.Any<IReadOnlyCollection<ConsolidatedPostMonth>>(), Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -529,6 +633,7 @@ public sealed class MonthlyConsolidationTests
         new MonthlyConsolidation(
                 _roster,
                 _months,
+                _catalogue,
                 _progress,
                 Options.Create(new ConsolidationOptions()),
                 Options.Create(new ClassificationOptions()),
@@ -555,6 +660,19 @@ public sealed class MonthlyConsolidationTests
             .Select(call => (IReadOnlyCollection<ConsolidatedMonth>)call.GetArguments()[0]!)
             .Single(),
     ];
+
+    /// <summary>What the one write of posts held.</summary>
+    private ConsolidatedPostMonth[] KeptPosts() =>
+    [
+        .. _months.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IMonthConsolidation.KeepPostsAsync))
+            .Select(call => (IReadOnlyCollection<ConsolidatedPostMonth>)call.GetArguments()[0]!)
+            .Single(),
+    ];
+
+    /// <summary>Has the website list posts at these paths.</summary>
+    private void ListingPosts(ImmutableArray<string> paths) =>
+        _catalogue.CountedPathsAsync(SiteId, Arg.Any<CancellationToken>()).Returns(paths);
 
     /// <summary>
     /// An instant inside January that judging stopped at, with the part of a millisecond a bookmark

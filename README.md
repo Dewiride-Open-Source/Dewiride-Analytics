@@ -20,8 +20,8 @@ Two rules shape everything here:
   the key that tells one visitor's activity from another's is worked out with a secret that
   changes every day, so once an address is gone there is no key that joins a reader's activity
   from one day to the next — and no screen or figure ever tries to. Every report of a visit is
-  deleted after twelve months; what is kept after that is each month's totals, until the website
-  is removed.
+  deleted after twelve months; what is kept after that is each month's totals, and how many times
+  each of the website's posts was read that month, until the website is removed.
 
 ## Where this is today
 
@@ -67,8 +67,10 @@ and the [master plan](#master-plan) below it says what does not yet.
 - A website's posts, known from its sitemap. Give its settings the sitemap's address and the engine
   reads it, and once each page it lists, for that page's title and publish date, keeping to one
   request a second and to the website's own addresses. Settings says how many posts it found, how
-  many say when they were published, and in plain words anything that got in the way. How it behaves,
-  and how to switch it off, is under [Reading a website's sitemap](#reading-a-websites-sitemap).
+  many say when they were published, and in plain words anything that got in the way. Insights shows
+  them: how many there are, the newest ten with how often each was read, the most read ever, and a
+  calendar of the last twelve months of posting. How it behaves, and how to switch it off, is under
+  [Reading a website's sitemap](#reading-a-websites-sitemap).
 - Where your readers are, by country, by town, and by the network they arrived over, ranked by how
   many people were in each place rather than by how much browsing they did. Towns are named as an
   estimate, because that is what they are; the network view is there because a hundred rented
@@ -169,8 +171,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-07.
 
 ### Phase 1 — Public statements
 
-- **Done** · README: every report of a visit is kept for 12 months; each website's monthly totals
-  until the website is removed.
+- **Done** · README: every report of a visit is kept for 12 months; each website's monthly totals,
+  and each post's views month by month, until the website is removed.
 - **Done** · README: a page counts as read only when its arrival reached us.
 - **Done** · README: multi-customer analysis is planned, not present.
 - **Done** · README: the daily key does not recognise a returning reader.
@@ -455,7 +457,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-07.
 
 - **Done** · All-time page views and daily visitors, the best day ever, the busiest day of the week
   and hour, every month and year by total views or by average per day, and the same for people only.
-- **Not started** · Posts: how many there are, the latest, the most read, and when they were published.
+- **Done** · Posts from the website's own sitemap: how many, the newest ten with their views, the most
+  read ever, and a calendar of the last 12 months of posting.
 
 ### Phase 6 — AI analytics
 
@@ -822,6 +825,8 @@ fifty thousand posts take most of a day, the newest first. It reads at most 500 
 
 What it keeps is each page's address, title and publish date, with when the sitemap says the page
 last changed. Removing the sitemap in Settings deletes all of it, and so does removing the website.
+How many times each post was read is kept month by month with the website's monthly totals, and
+goes only when the website is removed.
 
 **Letting it in, or keeping it out**
 

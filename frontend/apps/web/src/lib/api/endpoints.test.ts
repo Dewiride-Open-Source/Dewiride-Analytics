@@ -10,6 +10,7 @@ import {
   readEngagement,
   readFacets,
   readInsights,
+  readInsightsPosts,
   readLocations,
   readOverview,
   readPageEngagement,
@@ -520,6 +521,79 @@ describe('asking the engine what a period held', () => {
       sourceKinds: [{ value: 'search', visits: 4 }],
       towns: [],
     });
+  });
+});
+
+/** A website's posts have no window either: their views are the record's, and so is the calendar. */
+describe('asking the engine about a website’s posts', () => {
+  const POSTS = {
+    posts: 42,
+    dated: 40,
+    viewsFrom: '2026-08',
+    latest: [
+      {
+        path: '/a/',
+        address: 'https://example.com/a/',
+        title: 'A',
+        published: '2026-11-03',
+        pageViews: 12,
+      },
+    ],
+    mostRead: {
+      path: '/b/',
+      address: 'https://example.com/b/',
+      title: null,
+      published: null,
+      pageViews: 90,
+    },
+    calendarFrom: '2025-12-01',
+    calendarTo: '2026-11-07',
+    calendar: [{ day: '2026-11-03', posts: 2 }],
+  };
+
+  it('asks about everybody by saying nothing, with no bare question mark', async () => {
+    const engine = engineAnswering(200, POSTS);
+
+    await readInsightsPosts(SITE, 'everybody');
+
+    expect(engine.first().path).toBe(`/api/sites/${SITE}/insights/posts`);
+  });
+
+  it('asks about the people by name, and never about a window', async () => {
+    const engine = engineAnswering(200, POSTS);
+
+    await readInsightsPosts(SITE, 'people');
+
+    const asked = askedIn(engine.first().path);
+
+    expect(addressOf(engine.first().path)).toBe(`/api/sites/${SITE}/insights/posts`);
+    expect([...asked.keys()]).toStrictEqual(['only']);
+    expect(asked.get('only')).toBe('people');
+  });
+
+  it('reads the posts as the engine gives them, an untitled undated one included', async () => {
+    engineAnswering(200, POSTS);
+
+    await expect(readInsightsPosts(SITE, 'everybody')).resolves.toStrictEqual(POSTS);
+  });
+
+  it('reads a website whose record has no month to count views in', async () => {
+    const uncounted = { ...POSTS, viewsFrom: null, latest: [], mostRead: null, calendar: [] };
+
+    engineAnswering(200, uncounted);
+
+    await expect(readInsightsPosts(SITE, 'everybody')).resolves.toStrictEqual(uncounted);
+  });
+
+  /** A day is a day on the website's calendar, and anything else would be put on the wrong one. */
+  it.each([
+    ['a publishing day', { latest: [{ ...POSTS.latest[0], published: '2026-11-03T10:00:00Z' }] }],
+    ['a day of the calendar', { calendar: [{ day: '3 November 2026', posts: 2 }] }],
+    ['the month views are counted from', { viewsFrom: '2026-8' }],
+  ])('refuses %s it cannot read as one', async (_, wrong) => {
+    engineAnswering(200, { ...POSTS, ...wrong });
+
+    await expect(readInsightsPosts(SITE, 'everybody')).rejects.toThrow();
   });
 });
 

@@ -15,6 +15,8 @@
   the period does not, since it has none, and
   [0041](0041-one-population-for-the-whole-screen.md), whose one population for the whole screen, and
   whose rule for saying why there are no people, apply here.
+- **Followed by**: [0069](0069-a-post-s-views-are-kept-a-month-at-a-time.md), whose posts join this
+  screen and whose views are read the way this screen reads a whole record.
 
 ## Context
 
@@ -107,7 +109,9 @@ every period; they show the mark for no figure the same way, until asking again 
 
 ## What it does not do
 
-- **Say anything about posts.** Those are read from a sitemap under a later record.
+- **Say anything about posts.** Those are read from a sitemap under
+  [0068](0068-a-website-s-posts-are-read-from-the-sitemap-it-names.md) and shown here under
+  [0069](0069-a-post-s-views-are-kept-a-month-at-a-time.md).
 - **Explain or compare.** It shows this March above last March and leaves the reading to the reader.
 - **Keep anything by the day past twelve months.** A month's best day, and on the first month the day
   the website was first measured, are the only days a kept month names, which is why "best day ever" can

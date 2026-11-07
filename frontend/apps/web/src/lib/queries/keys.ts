@@ -91,6 +91,33 @@ export function insightsKey(
   return ['sites', siteId, 'insights', timeZoneId, population] as const;
 }
 
+/** How far reading a website's sitemap has got, as far as its posts are concerned. */
+export interface PostsReadingStage {
+  /** When the last reading of the sitemap itself finished, or nothing where none has. */
+  readonly readAt: string | null;
+  /** Whether every page it lists has been read since. */
+  readonly pagesRead: boolean;
+}
+
+/**
+ * A website's posts as its whole record reads them, for one population, in its zone, as of how far
+ * reading its sitemap has got.
+ *
+ * The zone is in the name for the reason it is in the record's: the calendar and every day a post
+ * was published on are the website's own. How far reading has got is in it because a page only says
+ * whether it is a post, and when it was published, once it has been read: a reading finishing, and
+ * its pages finishing after it, are each a new question, and the lists follow them without being
+ * asked for again on every beat of watching how reading goes.
+ */
+export function insightsPostsKey(
+  siteId: string,
+  timeZoneId: string,
+  population: Population,
+  stage: PostsReadingStage,
+) {
+  return ['sites', siteId, 'insights', 'posts', timeZoneId, population, stage] as const;
+}
+
 /** One measure across all time, at one size of bucket, for one population, in the website's zone. */
 export function allTimeSeriesKey(
   siteId: string,

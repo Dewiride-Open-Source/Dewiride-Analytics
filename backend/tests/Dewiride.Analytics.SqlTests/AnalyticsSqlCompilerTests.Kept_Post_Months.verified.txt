@@ -1,0 +1,12 @@
+﻿--- statement ---
+SELECT month
+FROM consolidated_post_months
+WHERE site_id = {site_id:UUID}
+  AND month <= toStartOfMonth(toDate(fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC'), {time_zone:String}))
+ORDER BY month, counted_at DESC
+LIMIT 1 BY month
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+to_ms = 1778198400000
+time_zone = 'Europe/London'

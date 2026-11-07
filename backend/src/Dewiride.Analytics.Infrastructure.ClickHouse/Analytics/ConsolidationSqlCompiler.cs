@@ -27,6 +27,10 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// in the background beside the screens people are reading, which matter more than how soon a
 /// month is kept.
 /// </para>
+/// <para>
+/// A month's posts are counted by statements of their own, held to a version of their own,
+/// <see cref="CountingRules.Posts"/>, so a change to one recounts the months of the other not at all.
+/// </para>
 /// </remarks>
 public static class ConsolidationSqlCompiler
 {
@@ -215,5 +219,60 @@ public static class ConsolidationSqlCompiler
             """;
 
         return new CompiledStatement(sql, StatementBindings.Window(month.SiteId, month.Window));
+    }
+
+    /// <summary>
+    /// Compiles the reading of how each month whose posts were kept for a website was counted.
+    /// </summary>
+    /// <remarks>
+    /// Each month as its newest count, on the terms the calendar reads a month's totals by. Only how a
+    /// month was counted is read, never the posts it holds: that is all choosing what to count again
+    /// needs, and a month of fifty thousand posts is not read on every run to decide nothing.
+    /// </remarks>
+    /// <param name="siteId">The website.</param>
+    /// <returns>The statement and its bound value.</returns>
+    public static CompiledStatement CompilePostSurvey(Guid siteId)
+    {
+        const string sql = """
+            SELECT
+                month,
+                time_zone,
+                posts_fingerprint,
+                ruleset_major,
+                ruleset_minor,
+                ruleset_judged_to,
+                counting_rules,
+                counted_to,
+                judged_to,
+                counted_at
+            FROM consolidated_post_months
+            WHERE site_id = {site_id:UUID}
+            ORDER BY month, counted_at DESC
+            LIMIT 1 BY month
+            """;
+
+        return new CompiledStatement(sql, [new QueryParameter(StatementBindings.SiteId, siteId)]);
+    }
+
+    /// <summary>
+    /// Compiles the count of the pages delivered at every path of a website in one month, for everybody
+    /// or for the visits judged to be people, which the month's posts are read out of.
+    /// </summary>
+    /// <remarks>
+    /// The statement the dashboard counts the same posts' views by, from <see cref="PostViewsStatement"/>,
+    /// ending as every counting statement here ends. It names no post, so a month is counted by this one
+    /// statement however many posts the website lists, and the posts are kept from its answer as it is
+    /// read.
+    /// </remarks>
+    /// <param name="month">The month.</param>
+    /// <param name="population">Who to count.</param>
+    /// <returns>The statement and its bound values.</returns>
+    public static CompiledStatement CompilePostCount(MonthToCount month, Population population)
+    {
+        ArgumentNullException.ThrowIfNull(month);
+
+        return new CompiledStatement(
+            $"{PostViewsStatement.Text(population)}\n{Restraint}",
+            PostViewsStatement.Bound(month.SiteId, month.Window, population));
     }
 }

@@ -384,6 +384,7 @@ public static class InfrastructureRegistration
         ValidatePasses(settings);
 
         builder.Services.AddScoped<ISitePosts, SitePosts>();
+        builder.Services.AddScoped<IPostCatalogue, PostCatalogue>();
 
         builder.Services.AddSingleton<IPublicEndpoints>(new PublicInternetEndpoints(Dns.GetHostAddressesAsync));
         WebsiteHttp.AddClient(builder.Services);

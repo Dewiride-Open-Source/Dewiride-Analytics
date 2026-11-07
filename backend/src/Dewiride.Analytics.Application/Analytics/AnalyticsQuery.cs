@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Domain.Telemetry;
 
@@ -1214,6 +1215,106 @@ public sealed record KeptMonthsQuery : AnalyticsQuery
         : base(new TimeRange(DateTimeOffset.UnixEpoch, asOf))
     {
     }
+
+    /// <summary>Who the kept figures are about.</summary>
+    public Population Population { get; init; } = Population.Everybody;
+}
+
+/// <summary>
+/// The pages delivered at each of a set of paths over a window: the views of a website's posts.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Counted by the arithmetic of <see cref="SitePagesQuery"/> over the whole window and kept to the paths
+/// asked about, so a post's views are its row on the dashboard's list of pages. Asked of people alone,
+/// it is the same arithmetic over the reports the verdicts on people cover.
+/// </para>
+/// <para>
+/// The paths are the website's own, read from its sitemap, which whoever runs the website writes. They
+/// never become part of a statement or a value bound to one: they are what the answer is kept to.
+/// </para>
+/// </remarks>
+public sealed record PostViewsQuery : AnalyticsQuery
+{
+    /// <summary>
+    /// Most paths one question may name: every page a website's sitemap may be read for — fifty thousand
+    /// unless an installation raises it, and a million at the most it may — and where each of them landed.
+    /// </summary>
+    /// <remarks>
+    /// This bounds what may be asked, not what the store is sent: the statement is the same whether one
+    /// path is asked about or all of them.
+    /// </remarks>
+    public const int MostPaths = 2_000_000;
+
+    /// <summary>Asks how many pages were delivered at each of a set of paths.</summary>
+    /// <param name="range">The window to count over.</param>
+    /// <param name="paths">The paths, at least one and at most <see cref="MostPaths"/>.</param>
+    /// <exception cref="ArgumentException">No path was given.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">More paths than <see cref="MostPaths"/>.</exception>
+    public PostViewsQuery(TimeRange range, ImmutableArray<string> paths)
+        : base(range)
+    {
+        if (paths.IsDefaultOrEmpty)
+        {
+            throw new ArgumentException("Ask about at least one path.", nameof(paths));
+        }
+
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(paths.Length, MostPaths);
+
+        Paths = paths;
+    }
+
+    /// <summary>The paths, as the collector stores them.</summary>
+    public ImmutableArray<string> Paths { get; }
+
+    /// <summary>Who the pages were delivered to.</summary>
+    public Population Population { get; init; } = Population.Everybody;
+}
+
+/// <summary>
+/// The months a website's posts were kept for: one row per month, counted with the month's totals and
+/// kept as long as they are.
+/// </summary>
+/// <remarks>
+/// The months, and nothing of what was kept of them, which is what decides where a post's views stop
+/// being read from what was kept and begin to be counted from the reports.
+/// </remarks>
+public sealed record KeptPostMonthsQuery : AnalyticsQuery
+{
+    /// <summary>
+    /// Asks for the months as they stand at a moment.
+    /// </summary>
+    /// <param name="asOf">The moment, which decides which month is the one running now.</param>
+    public KeptPostMonthsQuery(DateTimeOffset asOf)
+        : base(new TimeRange(DateTimeOffset.UnixEpoch, asOf))
+    {
+    }
+}
+
+/// <summary>
+/// The pages delivered at each path kept for a website's posts, added up over every month kept before
+/// a month.
+/// </summary>
+/// <remarks>
+/// Each month is read as its newest count. Every path is read whether or not the website still lists a
+/// post at it, since a month keeps the posts it was counted for; which of them are posts now is for
+/// the caller to say. Asked of people alone, it reads the figures kept for them beside everybody's.
+/// </remarks>
+public sealed record KeptPostViewsQuery : AnalyticsQuery
+{
+    /// <summary>
+    /// Asks for the views kept before a month.
+    /// </summary>
+    /// <param name="asOf">The moment the record is read at.</param>
+    /// <param name="before">The first of the first month not to read: where views begin to be counted from the reports.</param>
+    public KeptPostViewsQuery(DateTimeOffset asOf, DateOnly before)
+        : base(new TimeRange(DateTimeOffset.UnixEpoch, asOf))
+    {
+        Before = before;
+    }
+
+    /// <summary>The first of the first month not to read.</summary>
+    public DateOnly Before { get; }
 
     /// <summary>Who the kept figures are about.</summary>
     public Population Population { get; init; } = Population.Everybody;

@@ -2,7 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Insights } from '@/components/insights/insights';
-import type { Insights as InsightsAnswer } from '@/lib/api/schemas';
+import type { Insights as InsightsAnswer, SitemapStatus } from '@/lib/api/schemas';
 import { engineDoing, respondWith } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
 
@@ -103,6 +103,19 @@ const NEVER: InsightsAnswer = {
   months: [],
 };
 
+/** A website nobody has named a sitemap for, which asks nothing about its posts. */
+const NO_SITEMAP: SitemapStatus = {
+  address: null,
+  state: 'none',
+  problem: null,
+  readAt: null,
+  succeededAt: null,
+  posts: 0,
+  dated: 0,
+  reading: 0,
+  turnedAway: 0,
+};
+
 interface Engine {
   readonly everybody?: InsightsAnswer;
   readonly people?: InsightsAnswer;
@@ -130,6 +143,10 @@ function engineWith({
       return respondWith(500, { status: 500, title: 'The engine is having trouble.' });
     }
 
+    if (path.endsWith('/sitemap')) {
+      return respondWith(200, NO_SITEMAP);
+    }
+
     if (path.includes('/insights')) {
       return respondWith(200, path.includes('only=people') ? people : everybody);
     }
@@ -155,6 +172,10 @@ function engineKeepingBack(kept: 'record' | 'website'): () => void {
   });
 
   engineDoing(async (path) => {
+    if (path.endsWith('/sitemap')) {
+      return respondWith(200, NO_SITEMAP);
+    }
+
     const record = path.includes('/insights');
 
     if (record === (kept === 'record')) {

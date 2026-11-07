@@ -184,6 +184,43 @@ public interface ITelemetryQueries
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Returns the pages delivered at each of a website's posts over a window, counted from its reports.
+    /// </summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The window, the paths, and who the pages were delivered to.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Each path a page was delivered at, in ordinal order; the others are left out.</returns>
+    Task<ImmutableArray<PathViews>> GetPostViewsAsync(
+        TenantScope scope,
+        PostViewsQuery query,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns the months a website's posts were kept for.
+    /// </summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The moment to read them at.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The first of each month, oldest first.</returns>
+    Task<ImmutableArray<DateOnly>> GetKeptPostMonthsAsync(
+        TenantScope scope,
+        KeptPostMonthsQuery query,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns the pages delivered at each path kept for a website's posts, added up over the months
+    /// kept before a month.
+    /// </summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The month to stop before, and who the pages were delivered to.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Each path a page was delivered at, in ordinal order; the others are left out.</returns>
+    Task<ImmutableArray<PathViews>> GetKeptPostViewsAsync(
+        TenantScope scope,
+        KeptPostViewsQuery query,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Returns individual judged visits, each with the evidence behind its verdict and what the
     /// visit itself was.
     /// </summary>

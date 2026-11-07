@@ -261,14 +261,17 @@ public sealed class TelemetrySchemaTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// A website's months are kept until the website is removed, even after it stops being measured,
-    /// or until its closed account's records are deleted: one row per website and month, replaced
-    /// whole by its newest count, with no rule that would ever expire it.
+    /// A website's months, and the months of its posts, are kept until the website is removed, even
+    /// after it stops being measured, or until its closed account's records are deleted: one row per
+    /// website and month, replaced whole by its newest count, with no rule that would ever expire it.
     /// </summary>
-    [Fact]
-    public async Task Kept_Months_Are_One_Row_Per_Month_And_Never_Expire()
+    /// <param name="table">The table the months are kept in.</param>
+    [Theory]
+    [InlineData("consolidated_months")]
+    [InlineData("consolidated_post_months")]
+    public async Task Kept_Months_Are_One_Row_Per_Month_And_Never_Expire(string table)
     {
-        var definition = await TableDefinitionAsync("consolidated_months");
+        var definition = await TableDefinitionAsync(table);
 
         definition.Should().Contain("ENGINE = ReplacingMergeTree(counted_at)");
         definition.Should().Contain("PARTITION BY toYear(month)");

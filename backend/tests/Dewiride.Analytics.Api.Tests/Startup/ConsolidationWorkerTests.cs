@@ -1,5 +1,7 @@
+using System.Collections.Immutable;
 using Dewiride.Analytics.Api.Startup;
 using Dewiride.Analytics.Application.Consolidation;
+using Dewiride.Analytics.Application.Posts;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Sites;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,6 +37,7 @@ public sealed class ConsolidationWorkerTests : IAsyncDisposable
     private readonly ISiteRoster _roster = Substitute.For<ISiteRoster>();
     private readonly IMonthConsolidation _months = Substitute.For<IMonthConsolidation>();
     private readonly IClassificationProgressStore _progress = Substitute.For<IClassificationProgressStore>();
+    private readonly IPostCatalogue _catalogue = Substitute.For<IPostCatalogue>();
     private readonly FakeLogger<ConsolidationWorker> _logger = new();
     private ServiceProvider? _services;
     private ConsolidationWorker? _worker;
@@ -44,6 +47,8 @@ public sealed class ConsolidationWorkerTests : IAsyncDisposable
         _roster.ListAsync(Arg.Any<CancellationToken>()).Returns([First, Second]);
         _months.SurveyAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .Returns(new MonthSurvey(null, []));
+        _catalogue.CountedPathsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray<string>.Empty);
     }
 
     /// <summary>
@@ -201,6 +206,7 @@ public sealed class ConsolidationWorkerTests : IAsyncDisposable
         services.AddSingleton(_roster);
         services.AddSingleton(_months);
         services.AddSingleton(_progress);
+        services.AddSingleton(_catalogue);
         services.AddSingleton(settings);
         services.AddSingleton(Options.Create(new ClassificationOptions()));
         services.AddLogging();

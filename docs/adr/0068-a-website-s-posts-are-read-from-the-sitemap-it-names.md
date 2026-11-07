@@ -16,6 +16,8 @@
   are not read and deleting the account deletes what was read from them; and
   [0067](0067-work-in-the-background-ends-when-the-host-does-and-not-before.md), whose rule for a
   timed service the reader keeps.
+- **Extended by**: [0069](0069-a-post-s-views-are-kept-a-month-at-a-time.md), which reads the posts on
+  Insights and keeps how many times each was read, a month at a time.
 
 ## Context
 
@@ -38,7 +40,7 @@ sitemap's date for it advances. A website gets at most one request a second, on 
 only. robots.txt is obeyed. All of it is free.
 
 This record is the reading, and what Settings says about it. What Insights makes of the posts comes
-under a later record.
+under [0069](0069-a-post-s-views-are-kept-a-month-at-a-time.md).
 
 ## Decision
 

@@ -1,5 +1,6 @@
 using ClickHouse.Driver;
 using Dewiride.Analytics.Application.Analytics;
+using Dewiride.Analytics.Application.Consolidation;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Domain.Telemetry;
@@ -144,6 +145,28 @@ public sealed class TelemetryPurgeTests(AnalyticsStackFixture stack)
 
         (await KeptRecord.WrittenAsync(stack, going.Id)).Should().Be(0);
         (await KeptRecord.WrittenAsync(stack, staying.Id)).Should().Be(1);
+    }
+
+    /// <summary>
+    /// A website's months of posts never expire either, and hold the paths of its posts, so removing
+    /// the website deletes them with everything else it had — and those of that website alone.
+    /// </summary>
+    [Fact]
+    public async Task The_Post_Months_Kept_For_A_Site_Go_With_It_And_Nobody_Elses_Do()
+    {
+        var calendar = new ZoneCalendar("Etc/UTC");
+        var month = ZoneCalendar.FirstOf(calendar.DateOf(Yesterday)).AddMonths(-2);
+        var going = await ControlPlaneSeed.AddSiteAsync(stack, domain: $"{Guid.NewGuid():n}.example.com");
+        var staying = await ControlPlaneSeed.AddSiteAsync(stack, domain: $"{Guid.NewGuid():n}.example.com");
+        var read = new PostMonthViews("/posts/hello/", 3, 1);
+
+        await KeptPosts.KeepAsync(stack, KeptPosts.Counted(going, calendar, month, "listed", Yesterday, read));
+        await KeptPosts.KeepAsync(stack, KeptPosts.Counted(staying, calendar, month, "listed", Yesterday, read));
+
+        await PurgeAsync(going.Id);
+
+        (await KeptPosts.WrittenAsync(stack, going.Id)).Should().Be(0);
+        (await KeptPosts.WrittenAsync(stack, staying.Id)).Should().Be(1);
     }
 
     private DateTimeOffset Yesterday =>

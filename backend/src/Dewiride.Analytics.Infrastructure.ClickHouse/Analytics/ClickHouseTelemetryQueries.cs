@@ -1062,6 +1062,67 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client, Keepi
 
     private static ImmutableArray<long> Signed(ulong[] values) => [.. values.Select(value => (long)value)];
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// One statement however many posts a website lists: the store counts every path a page was delivered
+    /// at over the window, and the posts' rows are kept as they arrive
+    /// (<see cref="PostViewsStatement.ReadAsync"/>), so no post's path is ever sent to it.
+    /// </remarks>
+    public async Task<ImmutableArray<PathViews>> GetPostViewsAsync(
+        TenantScope scope,
+        PostViewsQuery query,
+        CancellationToken cancellationToken)
+    {
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return await PostViewsStatement.ReadAsync(reader, query.Paths, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<ImmutableArray<DateOnly>> GetKeptPostMonthsAsync(
+        TenantScope scope,
+        KeptPostMonthsQuery query,
+        CancellationToken cancellationToken)
+    {
+        var months = ImmutableArray.CreateBuilder<DateOnly>();
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            months.Add(KeptRows.Day(reader, 0));
+        }
+
+        return months.DrainToImmutable();
+    }
+
+    /// <inheritdoc />
+    public async Task<ImmutableArray<PathViews>> GetKeptPostViewsAsync(
+        TenantScope scope,
+        KeptPostViewsQuery query,
+        CancellationToken cancellationToken)
+    {
+        var counted = ImmutableArray.CreateBuilder<PathViews>();
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            counted.Add(new PathViews(reader.GetString(0), reader.GetInt64(1)));
+        }
+
+        return counted.DrainToImmutable();
+    }
+
     private async Task<ClickHouseDataReader> ExecuteAsync(
         CompiledStatement statement,
         CancellationToken cancellationToken)

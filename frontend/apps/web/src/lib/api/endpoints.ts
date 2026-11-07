@@ -18,9 +18,11 @@ import {
   type EngagementRanking,
   engagementSchema,
   type Insights,
+  type InsightsPosts,
   type Installation,
   type InvitationPreview,
   type IssuedServerKey,
+  insightsPostsSchema,
   insightsSchema,
   installationSchema,
   invitationPreviewSchema,
@@ -209,6 +211,18 @@ export function readAllTime(siteId: string, population: Population): Promise<All
  */
 export function readInsights(siteId: string, population: Population): Promise<Insights> {
   return readResource(ofPopulation(`${siteAddress(siteId)}/insights`, population), insightsSchema);
+}
+
+/**
+ * A website's posts as its whole record reads them, for one population: how many there are, the
+ * newest and the one read most with their views, and the days it posted on over the last twelve
+ * months. No window, for the reason all time has none.
+ */
+export function readInsightsPosts(siteId: string, population: Population): Promise<InsightsPosts> {
+  return readResource(
+    ofPopulation(`${siteAddress(siteId)}/insights/posts`, population),
+    insightsPostsSchema,
+  );
 }
 
 /** One measure across all time, month by month or year by year, for one population. */

@@ -1,0 +1,26 @@
+﻿--- statement ---
+SELECT
+    path,
+    toInt64(sum(views)) AS page_views
+FROM
+(
+    SELECT
+        month,
+        paths,
+        people_page_views AS counted
+    FROM consolidated_post_months
+    WHERE site_id = {site_id:UUID}
+      AND month < {before:Date}
+    ORDER BY month, counted_at DESC
+    LIMIT 1 BY month
+)
+ARRAY JOIN
+    paths AS path,
+    counted AS views
+GROUP BY path
+HAVING page_views > 0
+ORDER BY path
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+before = 2026-05-01

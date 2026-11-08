@@ -81,6 +81,16 @@ export function anythingRead(minutes: readonly LiveMinute[]): boolean {
   return minutes.some((minute) => minute.pageViews > 0);
 }
 
+/**
+ * How many pages were read in the half hour: every minute of it, the one running now among them.
+ *
+ * The minutes cover the same stretch the visitors are counted over, so the two figures describe one
+ * half hour.
+ */
+export function pagesReadIn(minutes: readonly LiveMinute[]): number {
+  return minutes.reduce((read, minute) => read + minute.pageViews, 0);
+}
+
 /** One thing that could be named, and how many of the visitors here are it. */
 export interface NamedGroup {
   readonly category: TrafficCategory;

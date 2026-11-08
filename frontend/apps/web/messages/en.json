@@ -889,6 +889,9 @@
       "note": "Anyone who opened a page in the last half hour.",
       "quiet": "Nobody has done anything in the last few minutes."
     },
+    "views": {
+      "label": "Page views"
+    },
     "named": {
       "title": "Recognised right now",
       "watching": "{count, plural, one {# visitor is still being watched} other {# visitors are still being watched}}",

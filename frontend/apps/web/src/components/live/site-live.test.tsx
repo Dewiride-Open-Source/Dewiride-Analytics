@@ -197,6 +197,39 @@ describe('who is here now', () => {
     expect(region).toHaveAttribute('aria-atomic', 'true');
   });
 
+  it('counts every page read in the half hour on the same card, the minute running now among them', async () => {
+    engineReading([
+      reading([visitor({ visitor: 'a1' }), visitor({ visitor: 'a2' })], {
+        minutes: [
+          { start: '2026-08-29T10:28:00.000Z', pageViews: 1_200 },
+          { start: '2026-08-29T10:29:00.000Z', pageViews: 0 },
+          { start: '2026-08-29T10:30:00.000Z', pageViews: 7 },
+        ],
+      }),
+    ]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Visitors');
+
+    const views = within(headline()).getByText('Page views');
+
+    expect(views.parentElement).toHaveTextContent('1,207');
+    expect(views.closest('[aria-live]')).toBeNull();
+  });
+
+  it('counts no pages read where the half hour holds none', async () => {
+    engineReading([reading([visitor()])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Visitors');
+
+    expect(within(headline()).getByText('Page views').parentElement).toHaveTextContent(
+      /^Page views0$/,
+    );
+  });
+
   it('is the only part of the screen that announces itself', async () => {
     engineReading([reading([visitor()])]);
 

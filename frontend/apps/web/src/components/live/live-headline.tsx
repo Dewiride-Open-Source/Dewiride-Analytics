@@ -6,7 +6,7 @@ import { useMemo } from 'react';
 import { VerdictBadge } from '@/components/dashboard/verdict-badge';
 import { Card } from '@/components/ui/card';
 import { Link } from '@/i18n/navigation';
-import { anybodyActive, namedNow } from '@/lib/analytics/live';
+import { anybodyActive, namedNow, pagesReadIn } from '@/lib/analytics/live';
 import type { Live } from '@/lib/api/schemas';
 import { JOURNEYS } from '@/lib/routes';
 
@@ -15,13 +15,14 @@ interface LiveHeadlineProps {
 }
 
 /**
- * How many visitors the half hour holds, and what can be said about them.
+ * How many visitors the half hour holds, how many pages they read, and what can be said about them.
  *
- * The number is the whole reason somebody opened the screen, so it is the largest thing on it and
- * sits on the one card the page is built around. What follows it is deliberately not a breakdown of
- * everybody: most visitors carry no conclusion at all while their visit is still running, and a
- * chart dividing them up would have to invent one. So the named ones are named, the rest are
- * counted, and the screen says in one clause when the rest will be answered.
+ * The visitors are the whole reason somebody opened the screen, so their number is the largest thing
+ * on it and sits on the one card the page is built around, with the pages read across the same half
+ * hour at the card's other edge. What follows them is deliberately not a breakdown of everybody: most
+ * visitors carry no conclusion at all while their visit is still running, and a chart dividing them
+ * up would have to invent one. So the named ones are named, the rest are counted, and the screen says
+ * in one clause when the rest will be answered.
  */
 export function LiveHeadline({ answer }: LiveHeadlineProps) {
   const t = useTranslations('live');
@@ -30,15 +31,17 @@ export function LiveHeadline({ answer }: LiveHeadlineProps) {
     () => namedNow(answer.visitors, answer.visitorsSeen),
     [answer.visitors, answer.visitorsSeen],
   );
+  const read = useMemo(() => pagesReadIn(answer.minutes), [answer.minutes]);
   const busy = anybodyActive(answer.visitors, answer.at);
 
   return (
     // Measured against the card rather than the window, so that the arrangement stays right
-    // wherever the card is put: side by side while it has the width of a screen, stacked again in a
-    // column beside something else.
+    // wherever the card is put: the two figures and what is said about the visitors side by side
+    // while it has the width of a screen, and the figures over the rest in a column beside something
+    // else.
     <Card focal className="@container p-5 sm:p-6">
-      <div className="flex flex-col gap-5 @2xl:flex-row @2xl:items-stretch @2xl:gap-8">
-        <div className="flex flex-col gap-1 @2xl:w-56 @2xl:shrink-0">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-5 @2xl:grid-cols-[14rem_minmax(0,1fr)_auto] @2xl:gap-x-8">
+        <div className="flex flex-col gap-1">
           {/*
             The only part of this screen that announces itself. It holds the label and the figure
             together so that it is read out as "Visitors, seven" rather than as a bare number, and
@@ -62,8 +65,20 @@ export function LiveHeadline({ answer }: LiveHeadlineProps) {
           </p>
         </div>
 
+        {/*
+          A figure beside the heading rather than a heading of its own, so that what is recognised
+          among the visitors stays under the visitors. It is left out of the announcement: it moves
+          with every page anybody opens, and a busy half hour would read itself aloud on every beat.
+        */}
+        <div className="flex flex-col items-end gap-1 text-right @2xl:col-start-3 @2xl:row-start-1 @2xl:border-l @2xl:border-border @2xl:pl-8">
+          <p className="text-sm font-medium text-foreground-muted">{t('views.label')}</p>
+          <p className="text-4xl font-semibold tracking-tight text-foreground tabular-nums sm:text-5xl">
+            {format.number(read)}
+          </p>
+        </div>
+
         {answer.visitorsSeen === 0 ? null : (
-          <div className="flex min-w-0 flex-1 flex-col gap-3 border-t border-border pt-5 @2xl:border-t-0 @2xl:border-l @2xl:pt-0 @2xl:pl-8">
+          <div className="col-span-2 flex min-w-0 flex-col gap-3 border-t border-border pt-5 @2xl:col-span-1 @2xl:col-start-2 @2xl:row-start-1 @2xl:border-t-0 @2xl:border-l @2xl:pt-0 @2xl:pl-8">
             {/*
               The heading belongs to the badges and appears with them. On the great majority of half
               hours nothing has been settled about anybody, and a heading saying something has been

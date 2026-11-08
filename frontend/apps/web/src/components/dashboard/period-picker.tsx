@@ -28,17 +28,18 @@ interface PeriodPickerProps {
    */
   readonly ref?: Ref<HTMLSelectElement>;
   /**
-   * The first day of the website's record, for a screen whose figures reach back to it under all
-   * time — or nothing while that is not known.
+   * The first day of the record all time reaches back to on this screen — a website's, or one
+   * post's — for a screen whose figures reach back to it under all time, or nothing while that is
+   * not known.
    *
    * Left out by a screen that reads only the days still held one by one, which is then shown the
    * days it covers, as under every other period.
    */
   readonly since?: string | null;
   /**
-   * Whether the website has been asked about and nothing of it is held — never measured, or measured
-   * only in months that went before any of them was kept — so all time has no first day to name and
-   * nothing is printed under it.
+   * Whether that record has been read and holds no day for all time to begin on — a website never
+   * measured, or measured only in months that went before any of them was kept — so nothing is
+   * printed under it.
    */
   readonly nothingHeld?: boolean;
   /**
@@ -135,8 +136,9 @@ const CHOSEN = 'chosen';
  * The dates a choice works out to are printed beneath it. That is the one thing a list of names
  * cannot show, and the difference between "Last 30 days" and knowing whether today is in it. All
  * time is printed as the day it began, on a screen whose figures reach back that far — and as
- * nothing at all where nothing of the website is held, so its record has not begun. The line keeps
- * its height either way, so nothing beside or below it moves when the day it names arrives.
+ * nothing at all where the record it reaches back through holds no day, so it has not begun. The
+ * line keeps its height either way, so nothing beside or below it moves when the day it names
+ * arrives.
  *
  * The chooser's refusal of days older than those still kept offers all time instead only on a screen
  * whose all time reaches further back than they do.

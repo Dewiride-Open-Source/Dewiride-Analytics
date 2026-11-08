@@ -406,6 +406,43 @@ public sealed class KeptHistoryTests
         KeptHistory.JudgedTo(months, LiveJudgedTo, AsOf).Should().Be(LiveJudgedTo);
     }
 
+    /// <summary>
+    /// A month counted before judging had finished with it is unsettled while it can still be counted
+    /// again; one judged whole, or one that can no longer be counted again, is not.
+    /// </summary>
+    [Fact]
+    public void A_Kept_Month_Is_Unsettled_While_Judging_Had_Not_Finished_And_It_Can_Still_Be_Counted_Again()
+    {
+        var january = new TimeRange(Midnight(2026, 1), Midnight(2026, 2));
+        var longAgo = new TimeRange(Midnight(2025, 1), Midnight(2025, 2));
+
+        KeptHistory.Unsettled(new DateTimeOffset(2026, 1, 20, 0, 0, 0, TimeSpan.Zero), january, AsOf).Should().BeTrue();
+        KeptHistory.Unsettled(january.To, january, AsOf).Should().BeFalse();
+        KeptHistory.Unsettled(new DateTimeOffset(2025, 1, 20, 0, 0, 0, TimeSpan.Zero), longAgo, AsOf).Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_Kept_Months_Days_Are_The_Days_Kept_With_It()
+    {
+        var kept = Reshaped(Kept(2026, 1), daysMeasured: 17);
+
+        KeptHistory.DaysOf(kept, new DateOnly(2025, 11, 19), Today()).Should().Be(17);
+    }
+
+    /// <summary>
+    /// A month nothing was kept of covers its days from the website's first day, and the month running now
+    /// covers them up to and including today — whatever was kept of it.
+    /// </summary>
+    [Fact]
+    public void A_Months_Days_Where_Nothing_Was_Kept_Run_From_The_First_Day_To_Today()
+    {
+        var firstDay = new DateOnly(2026, 2, 10);
+
+        KeptHistory.DaysOf(Unkept(2026, 2), firstDay, Today()).Should().Be(19);
+        KeptHistory.DaysOf(Unkept(2026, 3), firstDay, Today()).Should().Be(15);
+        KeptHistory.DaysOf(Kept(2026, 3), firstDay, Today()).Should().Be(15);
+    }
+
     [Fact]
     public void Each_Month_Gives_What_Was_Kept_Of_It_What_Its_Reports_Say_Or_Nothing()
     {
@@ -571,4 +608,7 @@ public sealed class KeptHistoryTests
     }
 
     private static DateTimeOffset Midnight(int year, int month) => new(year, month, 1, 0, 0, 0, TimeSpan.Zero);
+
+    /// <summary>The day the record is read on, in UTC.</summary>
+    private static DateOnly Today() => DateOnly.FromDateTime(AsOf.UtcDateTime);
 }

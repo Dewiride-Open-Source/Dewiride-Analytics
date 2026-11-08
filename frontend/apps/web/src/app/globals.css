@@ -202,8 +202,15 @@
     border-color: var(--border);
   }
 
+  /*
+   * Whatever the page is scrolled to — a control the focus is handed to, a field brought into view,
+   * an address's own fragment — stops below the bar across the top rather than under it, where it
+   * would hold the focus with nobody able to see it. The bar says how tall it is once it is drawn;
+   * until then it is taken to be as tall as it is on every signed-in screen.
+   */
   html {
     -webkit-text-size-adjust: 100%;
+    scroll-padding-top: calc(var(--app-bar-height, 6.875rem) + 1rem);
   }
 
   body {

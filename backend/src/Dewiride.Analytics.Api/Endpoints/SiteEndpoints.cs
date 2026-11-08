@@ -2057,14 +2057,6 @@ internal static class SiteEndpoints
         DateTimeOffset? To);
 
     /// <summary>
-    /// What one list allows, and what its rows are called when a request for them is refused.
-    /// </summary>
-    /// <param name="Fallback">How many rows to return when the caller does not say.</param>
-    /// <param name="Most">How many rows one request may ask for.</param>
-    /// <param name="Rows">What the rows are called, for the sentence a refusal answers with.</param>
-    private readonly record struct ListBounds(int Fallback, int Most, string Rows);
-
-    /// <summary>
     /// A checked list request: how much to return, from where, over which window.
     /// </summary>
     /// <param name="Limit">How many rows to return.</param>
@@ -2082,10 +2074,9 @@ internal static class SiteEndpoints
     /// <param name="refusal">Why it was not, where it was not.</param>
     /// <returns><see langword="true"/> when the request can be answered as asked.</returns>
     /// <remarks>
-    /// Every list on the dashboard is read a slice at a time under identical rules, so they are
-    /// written here once. Called before the site is resolved, so a malformed request is refused
-    /// identically whether or not the site exists: checking in the other order would turn a bad
-    /// limit into a way of finding out which identifiers on an install are real.
+    /// The paging is read as every list's is (<see cref="QueryVocabulary.TryReadPaging"/>), and the window
+    /// after it. Called before the site is resolved, so a malformed request is refused identically whether
+    /// or not the site exists.
     /// </remarks>
     private static bool TryReadSlice(
         ListRequest asked,
@@ -2096,20 +2087,8 @@ internal static class SiteEndpoints
     {
         slice = default;
 
-        var limit = asked.Limit ?? bounds.Fallback;
-        var offset = asked.Offset ?? 0;
-
-        if (limit < 1 || limit > bounds.Most)
+        if (!TryReadPaging(asked.Limit, asked.Offset, bounds, out var paging, out refusal))
         {
-            refusal = $"Ask for between 1 and {bounds.Most} {bounds.Rows} at a time.";
-
-            return false;
-        }
-
-        if (offset < 0)
-        {
-            refusal = "Start the list at the beginning or further along it, never before it.";
-
             return false;
         }
 
@@ -2124,7 +2103,7 @@ internal static class SiteEndpoints
             return false;
         }
 
-        slice = new ListSlice(limit, offset, range);
+        slice = new ListSlice(paging.Limit, paging.Offset, range);
 
         return true;
     }

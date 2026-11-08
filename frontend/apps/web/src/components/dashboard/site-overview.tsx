@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
 import { type Ref, type RefObject, useCallback, useMemo, useRef, useState } from 'react';
+import { PeriodMoved } from '@/components/charts/cut-picture';
 import { JudgedTraffic } from '@/components/dashboard/judged-traffic';
 import { MetricCard, MetricCardSkeleton } from '@/components/dashboard/metric-card';
 import { PeriodPicker } from '@/components/dashboard/period-picker';
@@ -27,7 +28,6 @@ import { SiteSources } from '@/components/dashboard/site-sources';
 import { TrackingCode } from '@/components/dashboard/tracking-code';
 import {
   type Activity,
-  type ChartCutting,
   TrafficChart,
   type TrafficComparison,
 } from '@/components/dashboard/traffic-chart';
@@ -35,7 +35,6 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { changeBetween } from '@/lib/analytics/change';
-import { CHART_BYS, type ChartBy } from '@/lib/analytics/chart-by';
 import {
   absence,
   type Breakdown,
@@ -47,12 +46,9 @@ import type { Population } from '@/lib/analytics/people-only';
 import {
   type AllTimeGranularity,
   type AnalyticsWindow,
-  allTimeCutsFor,
-  bucketsIn,
   comparedSpan,
   comparedWindow,
   crossesYears,
-  cutOf,
   cutsFor,
   type DaySpan,
   daysIn,
@@ -60,12 +56,8 @@ import {
   hasEarlier,
   isAllTime,
   keptFrom,
-  namedPeriod,
   type Period,
-  type PeriodPreset,
   previousWindow,
-  samePeriod,
-  shortestPeriodFor,
   spanFor,
   spanInstants,
   todayIn,
@@ -73,11 +65,11 @@ import {
   windowForSpan,
 } from '@/lib/analytics/period';
 import { judgedNoneOf, stillJudgingFrom } from '@/lib/analytics/traffic-series';
-import { useChartBy } from '@/lib/analytics/use-chart-by';
 import { useChartView } from '@/lib/analytics/use-chart-view';
 import { useComparison } from '@/lib/analytics/use-comparison';
 import { usePeopleOnly } from '@/lib/analytics/use-people-only';
 import { usePeriod } from '@/lib/analytics/use-period';
+import { useHandOver, usePickDays, usePicturePlan } from '@/lib/analytics/use-picture-plan';
 import type {
   AllTime,
   AllTimeSeries,
@@ -108,7 +100,6 @@ export function SiteOverview({ site }: SiteOverviewProps) {
   const install = useTranslations('install');
   const serverKeys = useTranslations('serverKeys');
   const settings = useTranslations('siteSettings');
-  const presets = useTranslations('dashboard.period.presets');
   const { period, choose } = usePeriod({ seeding: true });
   const { view, show } = useChartView();
   const { peopleOnly, population, showOnlyPeople } = usePeopleOnly({ seeding: true });
@@ -208,31 +199,7 @@ export function SiteOverview({ site }: SiteOverviewProps) {
   // totals alone, and is not pressed into.
   const pressableFrom = allTime ? firstKept : undefined;
 
-  // The days of a bucket pressed on the picture become the period, which every panel on the screen
-  // then re-reads, since the period is the whole screen's: a day for a day or an hour, and for a
-  // week, a month or a year the days of it the period reaches. On a period that is already one day
-  // there is nothing narrower, so the picture is not offered as something to press.
-  //
-  // Days that are today, yesterday, this month, last month or this year where the website is become
-  // the named period the list already offers for them, so the control calls them what the reader
-  // calls them rather than a stretch of their own choosing, and they are remembered by that name.
-  // The moment is taken at the press, which is when the reader said which days they meant. The
-  // chooser behind the control names days typed into it the same way, on this screen and on the
-  // journeys screen that shares it, so every way of asking for the same days arrives under one name.
-  const pickDays = useMemo(
-    () =>
-      manyDays
-        ? (days: DaySpan) =>
-            moveTo(
-              namedPeriod(
-                { kind: 'chosen', first: days.first, last: days.last },
-                site.timeZoneId,
-                new Date(),
-              ),
-            )
-        : undefined,
-    [manyDays, moveTo, site.timeZoneId],
-  );
+  const pickDays = usePickDays(manyDays, moveTo, site.timeZoneId);
 
   return (
     <div className="flex flex-col gap-6">
@@ -291,15 +258,7 @@ export function SiteOverview({ site }: SiteOverviewProps) {
         <p className="-mt-2 text-sm text-foreground-muted">{t('population.caption')}</p>
       ) : null}
 
-      {/*
-        Heard rather than seen. The way of cutting the picture that moved the period is still what
-        the list beside the picture reads, and somebody choosing from it without looking would not
-        otherwise learn that the days changed with it. Said for as long as the screen is on the
-        period it moved to, so going back to the earlier one and choosing again is said again.
-      */}
-      <p aria-live="polite" className="sr-only">
-        {movedTo === null ? null : movedHere(movedTo, period, t, presets)}
-      </p>
+      <PeriodMoved movedTo={movedTo} period={period} />
 
       {headline.failure === null ? null : <FailureNotice error={headline.failure} />}
 
@@ -813,213 +772,6 @@ function HeadlineCards({
       />
     </>
   );
-}
-
-/**
- * What is said, to anybody listening, of the period a way of cutting the picture moved the screen
- * to — for as long as the screen is on it, so going back to the earlier one and choosing again is
- * said again — or nothing once it has moved on.
- *
- * @param movedTo The period the screen was moved to.
- * @param period The period on screen.
- * @param t The overview's words.
- * @param presets The names of the named periods.
- */
-function movedHere(
-  movedTo: PeriodPreset,
-  period: Period,
-  t: ReturnType<typeof useTranslations<'dashboard'>>,
-  presets: ReturnType<typeof useTranslations<'dashboard.period.presets'>>,
-): string | null {
-  return samePeriod(period, { kind: 'preset', preset: movedTo })
-    ? t('chart.by.moved', { period: presets(movedTo) })
-    : null;
-}
-
-/** The control that names the period, and the way to a period chosen from anywhere else. */
-interface HandOver {
-  readonly control: RefObject<HTMLSelectElement | null>;
-  readonly moveTo: (period: Period) => void;
-}
-
-/**
- * Chooses a period from a bucket of the picture or a row of its table, and hands the reader to the
- * control that names the period.
- *
- * It is the one thing on the screen that says what changed: the row that was pressed has gone with
- * the old period. It is the way to change it again, too. The page follows only where there was a
- * position to move — a row the reader had reached — and stays where it is after a press on the
- * picture, which nothing can hold, so a tap on a phone does not jump the page.
- *
- * @param choose Makes a period the one on screen.
- */
-function useHandOver(choose: (period: Period) => void): HandOver {
-  const control = useRef<HTMLSelectElement>(null);
-
-  const moveTo = useCallback(
-    (next: Period) => {
-      const held = document.activeElement !== null && document.activeElement !== document.body;
-
-      choose(next);
-      control.current?.focus({ preventScroll: !held });
-    },
-    [choose],
-  );
-
-  return { control, moveTo };
-}
-
-/** How finely the picture is cut, and the ways it may be. */
-interface CutPicture {
-  readonly granularity: Granularity;
-  /**
-   * The ways offered, or nothing where there is no choice to make: a period too short to offer any,
-   * or all time while every day of it falls in one calendar year.
-   */
-  readonly cutting: ChartCutting | undefined;
-  /** The period a way of cutting the picture last moved the screen to, or nothing. */
-  readonly movedTo: PeriodPreset | null;
-}
-
-/** The ways the picture on screen can be cut, and the ways its list names. */
-interface Ways {
-  /** What the picture can be cut by, its own way first. */
-  readonly offered: readonly ChartBy[];
-  /** What the list names: the ways offered, and those it would move to another period for. */
-  readonly listed: readonly ChartBy[];
-}
-
-/**
- * The ways a picture can be cut, and the ways its list names.
- *
- * Under all time, the months and — once the record runs across a first of January — the years, and
- * nothing else to list: all time is every period there is, and none is longer to move to. Until the
- * record is known it is the months alone, which every record can be cut by; the picture is not
- * drawn before then, so nothing is asked of a way that would not last. Under any other period, what
- * its length offers, listed beside the days, weeks and months a longer period would show, and beside
- * the years only where the record has some to show.
- *
- * @param allTime Whether the screen is on all time.
- * @param span The days the period on screen covers.
- * @param record The days of the website's record, from its first day to today, or nothing while
- * that is not known.
- */
-function waysToCut(allTime: boolean, span: DaySpan, record: DaySpan | null): Ways {
-  if (allTime) {
-    const offered = allTimeCutsFor(record);
-
-    return { offered, listed: offered };
-  }
-
-  const years = allTimeCutsFor(record).includes('year');
-
-  return {
-    offered: cutsFor(span),
-    listed: CHART_BYS.filter((cut) => cut !== 'year' || years),
-  };
-}
-
-/**
- * How finely the picture of a period is cut: the way somebody chose where the period offers it, and
- * the period's own way where it does not, with the choice kept for a period that does.
- *
- * A way the period offers is drawn at once, and the period's own way leaves the address plain, as
- * every default does. A way the period is too short for moves the screen to the shortest named
- * period that offers it, with the choice kept — somebody looking at a week who asks for weeks is
- * shown the last thirty days a week at a time, and for years all time — and the period it moved to
- * is handed back, to be said rather than shown.
- *
- * The reader stays on the list. A list read with the arrow keys chooses on every key on some
- * systems, so a list that sent the reader to another control on a choice would send them there on
- * the first key, before they had heard what the rest of it offers.
- *
- * No list is offered where it would name a single way, which is a control that can change nothing.
- *
- * @param ways The ways the picture can be cut, and the ways its list names.
- * @param choose Makes a period the one on screen.
- */
-function useCut({ offered, listed }: Ways, choose: (period: Period) => void): CutPicture {
-  const { by, showBy } = useChartBy();
-  const [movedTo, setMovedTo] = useState<PeriodPreset | null>(null);
-
-  const onChoose = useCallback(
-    (cut: ChartBy) => {
-      if (offered.includes(cut)) {
-        showBy(cut === offered[0] ? null : cut);
-
-        return;
-      }
-
-      const shortest = shortestPeriodFor(cut);
-
-      showBy(cut);
-      choose({ kind: 'preset', preset: shortest });
-      setMovedTo(shortest);
-    },
-    [offered, showBy, choose],
-  );
-
-  const cutting = useMemo(
-    () => (offered.length === 0 || listed.length < 2 ? undefined : { offered, listed, onChoose }),
-    [offered, listed, onChoose],
-  );
-
-  return { granularity: cutOf(offered, by), cutting, movedTo };
-}
-
-/** What the picture on screen is planned from. */
-interface PictureFrame {
-  readonly allTime: boolean;
-  /** The days the period on screen covers. */
-  readonly span: DaySpan;
-  /** The window the period's picture is counted over. */
-  readonly window: AnalyticsWindow;
-  /** The record's first day, or nothing while that is not known or where there is none. */
-  readonly firstDay: string | null;
-  /** The days of the record, from its first day to today. */
-  readonly recordDays: DaySpan;
-}
-
-/** How the picture on screen is cut, the days it covers, and how many buckets it is due. */
-interface PicturePlan extends CutPicture {
-  /** The days the picture covers: the period's, or under all time every day of the record. */
-  readonly pictured: DaySpan;
-  /** Whether those days are more than one. */
-  readonly manyDays: boolean;
-  /**
-   * How many buckets the picture is due to have, worked out before its answer is in — or nothing
-   * under all time until the record says where its first month begins.
-   */
-  readonly bucketsDue: number | undefined;
-}
-
-/**
- * How the picture on screen is cut, the days it covers, and how many buckets it is due.
- *
- * The number of buckets is worked out before the picture's answer is in, so whether it can be drawn
- * as anything but columns is settled from the start, rather than offered while the answer is on its
- * way and taken back when it arrives. Under all time it waits for the record, which says where the
- * first month begins.
- *
- * @param frame What the picture is planned from.
- * @param choose Makes a period the one on screen.
- */
-function usePicturePlan(
-  { allTime, span, window, firstDay, recordDays }: PictureFrame,
-  choose: (period: Period) => void,
-): PicturePlan {
-  const pictured = allTime ? recordDays : span;
-  const ways = useMemo(
-    () => waysToCut(allTime, span, firstDay === null ? null : recordDays),
-    [allTime, span, firstDay, recordDays],
-  );
-  const cut = useCut(ways, choose);
-  const bucketsDue = useMemo(
-    () => (allTime && firstDay === null ? undefined : bucketsIn(pictured, window, cut.granularity)),
-    [allTime, firstDay, pictured, window, cut.granularity],
-  );
-
-  return { ...cut, pictured, manyDays: daysIn(pictured) > 1, bucketsDue };
 }
 
 /** No month left out: the same list every time, so nothing is drawn again for it. */

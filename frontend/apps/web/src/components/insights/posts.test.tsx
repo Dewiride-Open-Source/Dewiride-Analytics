@@ -193,14 +193,78 @@ describe('the posts on the insights screen', () => {
     expect(rows[9]).toHaveTextContent('100 views');
   });
 
-  it('opens a post in a tab of its own, passing nothing on about where it was opened from', async () => {
+  /** The list of every post counts the same people as the screen it was opened from. */
+  it.each([
+    ['everybody', '', '/app/insights/posts'],
+    ['people', 'only=people', '/app/insights/posts?only=people'],
+  ])(
+    'offers every post on a screen of its own, carrying who the screen is kept to: %s',
+    async (_, address, href) => {
+      engineWith({});
+
+      renderScreen(<Insights />, { searchParams: address });
+
+      const posts = await screen.findByRole('region', { name: 'Your posts' });
+
+      expect(within(posts).getByRole('link', { name: 'See all 42 posts' })).toHaveAttribute(
+        'href',
+        href,
+      );
+    },
+  );
+
+  /** "See all 1 post" is not how anybody would say it. */
+  it('offers the one post a sitemap lists on the screen of every post, in words that fit one', async () => {
+    const only = post(1);
+
+    engineWith({
+      sitemap: { ...READ, posts: 1, dated: 1 },
+      everybody: { ...POSTS, posts: 1, dated: 1, latest: [only], mostRead: only },
+    });
+
+    renderScreen(<Insights />);
+
+    const posts = await screen.findByRole('region', { name: 'Your posts' });
+
+    expect(within(posts).getByRole('link', { name: 'See your post' })).toHaveAttribute(
+      'href',
+      '/app/insights/posts',
+    );
+  });
+
+  it('opens a post’s own page from its title', async () => {
+    engineWith({});
+
+    renderScreen(<Insights />);
+
+    const [first] = await latestRows();
+    const title = within(first as HTMLElement).getByRole('link', { name: 'Post number 1' });
+
+    expect(title).toHaveAttribute('href', '/app/insights/post?path=%2Fpost-1%2F');
+    expect(title).not.toHaveAttribute('target');
+  });
+
+  /** The post's own page counts the same people as the screen it was opened from. */
+  it('carries the people the screen is kept to into a post’s own page', async () => {
+    engineWith({});
+
+    renderScreen(<Insights />, { searchParams: 'only=people' });
+
+    const [first] = await latestRows();
+
+    expect(
+      within(first as HTMLElement).getByRole('link', { name: 'Post number 1' }),
+    ).toHaveAttribute('href', '/app/insights/post?path=%2Fpost-1%2F&only=people');
+  });
+
+  it('opens the post itself in a tab of its own, passing nothing on about where it was opened from', async () => {
     engineWith({});
 
     renderScreen(<Insights />);
 
     const [first] = await latestRows();
     const link = within(first as HTMLElement).getByRole('link', {
-      name: 'Post number 1 (opens in a new tab)',
+      name: 'Open Post number 1 in a new tab',
     });
 
     expect(link).toHaveAttribute('href', 'https://example.com/post-1/');
@@ -227,30 +291,43 @@ describe('the posts on the insights screen', () => {
     renderScreen(<Insights />);
 
     const [first] = await latestRows();
-    const link = within(first as HTMLElement).getByRole('link');
+    const title = within(first as HTMLElement).getByRole('link', { name: '/post-1/' });
 
-    expect(link).toHaveAccessibleName('/post-1/ (opens in a new tab)');
-    expect(within(link).getByText('/post-1/')).toHaveAttribute('dir', 'ltr');
+    expect(within(title).getByText('/post-1/')).toHaveAttribute('dir', 'ltr');
+    expect(
+      within(first as HTMLElement).getByRole('link', { name: 'Open /post-1/ in a new tab' }),
+    ).toHaveAttribute('href', 'https://example.com/post-1/');
   });
 
-  /** An address from somebody's sitemap that would run something on this screen is never a link. */
+  /**
+   * An address from somebody's sitemap that would run something on this screen is never a link, and
+   * the post is still somewhere its views can be read.
+   */
   it.each([
     'javascript:alert(document.cookie)',
     'data:text/html,<script>alert(1)</script>',
     '/post-1/',
-  ])('leaves a post whose address is %j as text', async (address) => {
-    engineWith({
-      everybody: { ...POSTS, latest: [post(1, { address })], mostRead: post(1, { address }) },
-    });
+  ])(
+    'offers no way to open a post whose address is %j, and still its own page',
+    async (address) => {
+      engineWith({
+        everybody: { ...POSTS, latest: [post(1, { address })], mostRead: post(1, { address }) },
+      });
 
-    renderScreen(<Insights />);
+      renderScreen(<Insights />);
 
-    const [first] = await latestRows();
+      const [first] = await latestRows();
+      const links = (holding: HTMLElement) =>
+        within(holding)
+          .getAllByRole('link')
+          .map((link) => link.getAttribute('href'));
 
-    expect(within(first as HTMLElement).getByText('Post number 1')).toBeInTheDocument();
-    expect(within(first as HTMLElement).queryByRole('link')).not.toBeInTheDocument();
-    expect(within(await card('Most popular post')).queryByRole('link')).not.toBeInTheDocument();
-  });
+      expect(links(first as HTMLElement)).toEqual(['/app/insights/post?path=%2Fpost-1%2F']);
+      expect(links(await card('Most popular post'))).toEqual([
+        '/app/insights/post?path=%2Fpost-1%2F',
+      ]);
+    },
+  );
 
   it('names the post read most of all, with how much it was read', async () => {
     engineWith({});
@@ -260,9 +337,10 @@ describe('the posts on the insights screen', () => {
     const best = await card('Most popular post');
 
     expect(
-      await within(best).findByRole('link', {
-        name: 'The one everybody read (opens in a new tab)',
-      }),
+      await within(best).findByRole('link', { name: 'The one everybody read' }),
+    ).toHaveAttribute('href', '/app/insights/post?path=%2Fpost-20%2F');
+    expect(
+      within(best).getByRole('link', { name: 'Open The one everybody read in a new tab' }),
     ).toHaveAttribute('href', 'https://example.com/post-20/');
     expect(best).toHaveTextContent('Mar 3, 2026');
     expect(best).toHaveTextContent('900 views');

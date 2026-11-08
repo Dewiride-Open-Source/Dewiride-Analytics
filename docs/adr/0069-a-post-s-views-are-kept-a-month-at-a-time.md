@@ -16,6 +16,10 @@
 - **Follows**: [0066](0066-insights-are-read-from-the-months-that-were-kept.md), whose screen the posts
   join and whose way of reading a whole record — what was kept, then the reports — a post's views are
   read by.
+- **Revised by**: [0070](0070-a-post-is-read-on-a-page-of-its-own.md). The two questions about one post
+  bind its paths — its own, and where it landed — as values, compared once the reports are reconciled;
+  every statement that counts or reads every post still names none. Its list of every post gives each
+  the views this decision gives it on Insights.
 
 ## Context
 

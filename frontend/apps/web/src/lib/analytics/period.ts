@@ -77,6 +77,12 @@ export const GRANULARITIES = ['hour', 'day', 'week', 'month', 'year'] as const;
 export type Granularity = (typeof GRANULARITIES)[number];
 
 /**
+ * How finely a period's picture is asked for from the reports: every way but by the year. Years are
+ * all time's alone, and all time is read from what was kept of each month, never from the reports.
+ */
+export type PeriodGranularity = Exclude<Granularity, 'year'>;
+
+/**
  * How finely all time is cut: by the month, and by the year once the months run across one.
  *
  * Nothing finer. All time reaches back past the days a website still holds one by one, and what it
@@ -640,13 +646,14 @@ export function cutOf(offered: readonly ChartBy[], chosen: ChartBy | null): Gran
 
 /**
  * The ways all time may be cut, its own way first: by the month, and by the year as well once the
- * days of the website's record run across a first of January.
+ * days of the record all time is drawn from — a website's, or one post's — run across a first of
+ * January.
  *
  * Never by the day or the week. Of the months the visits themselves have gone from, what is kept is
  * each month's totals, and nothing about the days inside it.
  *
- * @param record The days of the website's record, from its first day to today, or nothing while
- * that is not known — which offers the months alone, the one way any record can be cut.
+ * @param record The days of that record, from its first day to today, or nothing while that is not
+ * known — which offers the months alone, the one way any record can be cut.
  */
 export function allTimeCutsFor(record: DaySpan | null): readonly ChartBy[] {
   return record !== null && crossesYears(record) ? MONTHS_AND_YEARS : MONTHS;

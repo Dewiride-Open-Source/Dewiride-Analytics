@@ -18,7 +18,7 @@ export interface Measure {
   readonly values: readonly (number | null)[];
 }
 
-/** Two measures of how much of a website was read over a period, ready to be drawn. */
+/** One or two measures of how much of a website was read over a period, ready to be drawn. */
 export interface ActivityChart {
   /** What each bucket is called, in the website's own zone. */
   readonly labels: readonly string[];
@@ -26,9 +26,9 @@ export interface ActivityChart {
   readonly titles: readonly string[];
   /** How the period is cut, which for years names every bucket along the axis. */
   readonly granularity: Granularity;
-  /** The two measures, in the order they are keyed and tabled. */
-  readonly measures: readonly [Measure, Measure];
-  /** How the card a hover opens writes a figure of either measure. */
+  /** The one or two measures, in the order they are keyed and tabled. */
+  readonly measures: readonly [Measure] | readonly [Measure, Measure];
+  /** How the card a hover opens writes a figure of any measure. */
   readonly figure: FigureWriter;
   readonly drawing: Drawing;
   /**
@@ -41,7 +41,7 @@ export interface ActivityChart {
   readonly earlier?: readonly [Measure, Measure];
 }
 
-/** Two measures across a period, each in the chart's own colour for it. */
+/** One or two measures across a period, each in the chart's own colour for it. */
 export function activityOption(chart: ActivityChart, palette: ChartPalette): EChartsCoreOption {
   const columns = chart.drawing === 'columns';
   const quiet = chart.quiet ?? UNQUIETENED;
@@ -52,12 +52,20 @@ export function activityOption(chart: ActivityChart, palette: ChartPalette): ECh
       every: chart.granularity === 'year',
     }),
     series: [
-      measure(chart.measures[0], palette.series[0], chart, quiet),
-      measure(chart.measures[1], palette.series[1], chart, quiet),
+      ...chart.measures.map((one, at) => measure(one, colourOf(at, palette), chart, quiet)),
+      // Laid over every measure, so that one measure's area never covers the other's dot.
+      ...(columns
+        ? []
+        : chart.measures.flatMap((one, at) => strandedDots(one, colourOf(at, palette)))),
       ...(wash ? [wash] : []),
       ...ghosts(chart, palette),
     ],
   };
+}
+
+/** The colour a measure is drawn in, by its place among the measures. */
+function colourOf(at: number, palette: ChartPalette): string {
+  return at === 0 ? palette.series[0] : palette.series[1];
 }
 
 /**
@@ -97,6 +105,17 @@ function curve(drawing: Drawing): number | false {
 }
 
 /**
+ * The most buckets a line or an area carries a dot on every one of.
+ *
+ * A dot on every bucket of a quarter is a smear. They earn their place only where there are few
+ * enough of them to point at one and read its figure.
+ */
+const DOTTED_UP_TO = 14;
+
+/** How large a dot on a line or an area is drawn. */
+const DOT = 6;
+
+/**
  * One measure drawn across the period, in whichever style was asked for.
  *
  * Drawn as columns, each quietened bucket is faded on its own; drawn as a line or an area, the
@@ -129,14 +148,60 @@ function measure(
     data: [...one.values],
     smooth: CURVE,
     symbol: 'circle',
-    symbolSize: 6,
-    // A dot on every bucket of a quarter is a smear. They earn their place only where there are
-    // few enough of them to point at one and read its figure.
-    showSymbol: one.values.length <= 14,
+    symbolSize: DOT,
+    showSymbol: one.values.length <= DOTTED_UP_TO,
     lineStyle: { width: 2, color: colour },
     itemStyle: { color: colour },
     areaStyle: drawing === 'area' ? { color: fade(colour) } : undefined,
   };
+}
+
+/**
+ * The figures of a measure drawn as a line or an area that nothing would otherwise draw, as dots of
+ * their own — none where every figure is drawn already.
+ *
+ * A line runs between neighbouring figures, so a figure with none on either side — between two
+ * months never counted, or at an end of the picture beside one — has nothing to run to. Where every
+ * bucket carries a dot it is still drawn as its dot; past that it would be drawn as nothing at all,
+ * and a bucket the table and the hover both give a figure would read on the picture as empty: the
+ * record beginning a month later, or a second month nobody counted.
+ *
+ * Every other bucket is left empty, so the dots draw those figures alone. They take no part in the
+ * card a hover opens, which already writes the measure's own figure for that bucket.
+ */
+function strandedDots(one: Measure, colour: string): Record<string, unknown>[] {
+  const { values } = one;
+
+  if (values.length <= DOTTED_UP_TO) {
+    return [];
+  }
+
+  const alone = values.map((value, at) =>
+    value !== null && (values[at - 1] ?? null) === null && (values[at + 1] ?? null) === null
+      ? value
+      : null,
+  );
+
+  if (alone.every((value) => value === null)) {
+    return [];
+  }
+
+  return [
+    {
+      type: 'line',
+      data: alone,
+      symbol: 'circle',
+      symbolSize: DOT,
+      showSymbol: true,
+      // Every dot, however close the buckets sit: left to itself the engine drops the dots of the
+      // buckets the axis leaves unnamed, which can be the very one this is drawn for.
+      showAllSymbol: true,
+      lineStyle: { opacity: 0 },
+      itemStyle: { color: colour },
+      silent: true,
+      tooltip: { show: false },
+    },
+  ];
 }
 
 /**

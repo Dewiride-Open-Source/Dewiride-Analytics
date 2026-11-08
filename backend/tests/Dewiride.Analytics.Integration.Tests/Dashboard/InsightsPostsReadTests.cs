@@ -258,26 +258,6 @@ public sealed class InsightsPostsReadTests(AnalyticsStackFixture stack)
 
     private static string Domain() => $"insights-posts-{Guid.NewGuid():n}.example";
 
-    /// <summary>
-    /// A telemetry store that refuses every question, and counts how many it was asked.
-    /// </summary>
-    /// <remarks>Public and unsealed because a proxy is generated as a type derived from it.</remarks>
-    public class RefusingTelemetry : DispatchProxy
-    {
-        private int _asked;
-
-        /// <summary>How many questions it was asked.</summary>
-        public int Asked => Volatile.Read(ref _asked);
-
-        /// <inheritdoc />
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
-        {
-            Interlocked.Increment(ref _asked);
-
-            throw new InvalidOperationException($"The telemetry store was asked {targetMethod?.Name}.");
-        }
-    }
-
     /// <summary>What was written, and when.</summary>
     /// <param name="Site">The website.</param>
     /// <param name="Calendar">Its calendar.</param>

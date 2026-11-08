@@ -33,6 +33,14 @@ export class ApiError extends Error {
   }
 
   /**
+   * What was asked about is not there to be read: it does not exist, or it is not anything the
+   * caller may see. The engine answers both alike, so that a refusal never says which.
+   */
+  get missing(): boolean {
+    return this.status === 404;
+  }
+
+  /**
    * What was asked for has already happened — the install is claimed, the account is already
    * closed or already open — so asking again cannot change anything.
    */

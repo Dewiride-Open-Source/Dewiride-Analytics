@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ALL_TIME_GRANULARITIES, GRANULARITIES } from '@/lib/analytics/period';
+import { RECENT_WEEKS } from '@/lib/analytics/recent-weeks';
 
 /**
  * The shapes the engine answers with.
@@ -182,6 +183,16 @@ const leftOut = {
 };
 
 /**
+ * One month of a record: its page views, nothing where it is left out, and how many days its figure
+ * covers, none for such a month.
+ */
+const monthFigures = z.object({
+  month: calendarMonth,
+  pageViews: counted,
+  daysMeasured: z.number().int(),
+});
+
+/**
  * A website's whole record, from its first month kept, or still held, to the month running now: its
  * finished months from the totals kept of each, and the months not kept yet counted from their
  * visits, so it is never behind a period read from the visits themselves.
@@ -223,9 +234,7 @@ export const insightsSchema = z.object({
   busiestWeekdays: z.array(z.number().int()),
   hours: z.array(z.number().int()).length(24),
   busiestHours: z.array(z.number().int()),
-  months: z.array(
-    z.object({ month: calendarMonth, pageViews: counted, daysMeasured: z.number().int() }),
-  ),
+  months: z.array(monthFigures),
   ...leftOut,
 });
 
@@ -522,6 +531,55 @@ export const insightsPostsSchema = z.object({
   calendarFrom: calendarDay,
   calendarTo: calendarDay,
   calendar: z.array(z.object({ day: calendarDay, posts: z.number().int() })),
+});
+
+/** The orders a website's posts are listed in: the most read first, or the newest first. */
+export const postsOrderSchema = z.enum(['most-read', 'newest']);
+
+/**
+ * One page of a website's posts, as its whole record reads them, for one population.
+ *
+ * `posts` is how many its sitemap lists, the figure its settings show, and `matching` how many of
+ * them hold what was searched for, the same figure where nothing was. `viewsFrom` is the first month
+ * the views are counted from, and nothing where the record has no month to count them in or no post
+ * matched. `mostPageViews` is the most any matching post was read, whichever page is asked for, so
+ * a bar is drawn to the same rule on every page; nought where none was read. `shown` is the page
+ * itself, each post exactly as Insights names one, and empty for a page past the end of the list.
+ */
+export const postsPageSchema = z.object({
+  posts: z.number().int(),
+  matching: z.number().int(),
+  viewsFrom: calendarMonth.nullable(),
+  mostPageViews: z.number().int(),
+  shown: z.array(insightsPostSchema),
+});
+
+/**
+ * One post's whole record, for one population, in one answer: the post as Insights names it, every
+ * month of its life, and its recent weeks a day at a time.
+ *
+ * `post.pageViews` is the figure Insights gives the post, counted from the month `viewsFrom` names.
+ * `firstDay` is the website's first day measured, `from` the first day the post's first month is
+ * counted from, and either is nothing where there is no such day. `months` runs oldest first, with no
+ * month missed out, from the post's first month to the month running now, none at all where nothing
+ * of the website is held: `pageViews` is nothing for a month that was never counted for the post, and
+ * `daysMeasured` how many days its figure covers, from the day the post was published in the month it
+ * was. `days` runs from the Monday twelve weeks before this week's to today, on the website's
+ * calendar, `pageViews` nothing for a day before the website was first measured. A month of posts
+ * kept before judging had finished with it is shown as it was kept rather than left out, so no month
+ * of a post is ever `unjudged`; `completeTo` covers the months that can still be counted again.
+ */
+export const postInsightsSchema = z.object({
+  post: insightsPostSchema,
+  viewsFrom: calendarMonth.nullable(),
+  firstDay: calendarDay.nullable(),
+  from: calendarDay.nullable(),
+  to: timestamp,
+  completeTo: timestamp,
+  months: z.array(monthFigures),
+  days: z
+    .array(z.object({ day: calendarDay, pageViews: z.number().int().nullable() }))
+    .max(RECENT_WEEKS * 7),
 });
 
 /**
@@ -1024,6 +1082,12 @@ export type SitemapStatus = z.infer<typeof sitemapStatusSchema>;
 export type InsightsPost = z.infer<typeof insightsPostSchema>;
 
 export type InsightsPosts = z.infer<typeof insightsPostsSchema>;
+
+export type PostsOrder = z.infer<typeof postsOrderSchema>;
+
+export type PostsPage = z.infer<typeof postsPageSchema>;
+
+export type PostInsights = z.infer<typeof postInsightsSchema>;
 
 export type TargetKind = z.infer<typeof targetKindSchema>;
 

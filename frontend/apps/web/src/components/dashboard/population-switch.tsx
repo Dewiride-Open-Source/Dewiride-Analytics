@@ -3,6 +3,7 @@
 import { UserRound } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/styling';
 
 interface PopulationSwitchProps {
   /** Whether every figure on the screen is kept to the visits judged to be people. */
@@ -16,7 +17,7 @@ interface PopulationSwitchProps {
  * Beside the period rather than on the chart, because it changes what every figure on the screen
  * counts, as the period does. Green while it is on, because green is the tone a person is drawn in
  * everywhere else on the dashboard: pressed, it reads as the green band rather than as a second
- * accent beside the one the comparison wears.
+ * accent beside the one the comparison wears. On a phone it is large enough to press with a thumb.
  */
 export function PopulationSwitch({ peopleOnly, onChange }: PopulationSwitchProps) {
   const t = useTranslations('dashboard.population');
@@ -28,7 +29,7 @@ export function PopulationSwitch({ peopleOnly, onChange }: PopulationSwitchProps
       aria-pressed={peopleOnly}
       aria-label={t('label')}
       onClick={() => onChange(!peopleOnly)}
-      className={peopleOnly ? 'border-positive/40 bg-positive/12 text-positive' : undefined}
+      className={cn('h-10 sm:h-9', peopleOnly && 'border-positive/40 bg-positive/12 text-positive')}
     >
       <UserRound aria-hidden className="size-4" />
       {t('action')}

@@ -6,7 +6,7 @@ namespace Dewiride.Analytics.Application.Posts;
 
 /// <summary>
 /// What a website's posts have done: how many it lists, the newest and the most read with their views,
-/// and the days of the last twelve months a post was published on.
+/// the days of the last twelve months a post was published on, and every post a page at a time.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -20,6 +20,11 @@ namespace Dewiride.Analytics.Application.Posts;
 /// it to another of its own paths, because that is where a browser following the link ends and what a
 /// visit is recorded under. A path that is another listed post's own belongs to that post, so a view is
 /// never counted for two posts that way.
+/// </para>
+/// <para>
+/// What each post is credited with, and the two orders posts are listed in, are each worked out in one
+/// place, so a post listed with every other one has the views Insights gives it, and the first post
+/// listed by the most read is the one Insights calls the most read.
 /// </para>
 /// </remarks>
 public static class PostsInsights
@@ -45,10 +50,53 @@ public static class PostsInsights
         return
         [
             .. own
-                .Concat(listed.Select(post => Landed(post, own)).OfType<string>())
+                .Concat(listed.Select(post => Landed(post, own.Contains)).OfType<string>())
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal),
         ];
+    }
+
+    /// <summary>
+    /// Works out the paths one post is read at: its own, and the path its page answered at where that
+    /// is not another listed post's own — the paths <see cref="CountedPaths"/> counts it at among every
+    /// post the website lists.
+    /// </summary>
+    /// <param name="post">The post.</param>
+    /// <returns>Its own path, then where it landed where that counts for it.</returns>
+    public static ImmutableArray<string> PathsOf(FoundPost post)
+    {
+        ArgumentNullException.ThrowIfNull(post);
+
+        return Landed(post.Listed, _ => post.LandedOnAPost) is { } landed
+            ? [post.Listed.Path, landed]
+            : [post.Listed.Path];
+    }
+
+    /// <summary>
+    /// The stretch a post's views are counted from the reports over: from the first instant of the month
+    /// <see cref="LiveFrom"/> decides to the moment of reading.
+    /// </summary>
+    /// <param name="liveFrom">Where views begin to be counted from the reports.</param>
+    /// <param name="asOf">The moment the posts are read at.</param>
+    /// <returns>The stretch, or nothing where that month has not begun.</returns>
+    public static TimeRange? LiveWindow(RecordedMonth liveFrom, DateTimeOffset asOf)
+    {
+        ArgumentNullException.ThrowIfNull(liveFrom);
+
+        return liveFrom.Begins < asOf ? new TimeRange(liveFrom.Begins, asOf) : null;
+    }
+
+    /// <summary>
+    /// The day a post was published, on the website's calendar.
+    /// </summary>
+    /// <param name="post">The post.</param>
+    /// <param name="zone">The website's reporting zone.</param>
+    /// <returns>The day, or nothing where the post did not say.</returns>
+    public static DateOnly? PublishedOn(ListedPost post, TimeZoneInfo zone)
+    {
+        ArgumentNullException.ThrowIfNull(post);
+
+        return post.PublishedAt is { } at ? ZoneDays.Of(at, zone) : null;
     }
 
     /// <summary>
@@ -118,11 +166,7 @@ public static class PostsInsights
         ArgumentNullException.ThrowIfNull(views);
         ArgumentNullException.ThrowIfNull(zone);
 
-        var own = OwnPaths(listed);
-        var counted = Totals(views);
-        var posts = listed
-            .Select(post => new Counted(post, new ShownPost(post.Path, Published(post, zone), ViewsOf(post, own, counted))))
-            .ToList();
+        var posts = Each(listed, views, zone);
         var today = ZoneDays.Of(asOf, zone);
         var calendarFrom = new DateOnly(today.Year, today.Month, 1).AddMonths(1 - CalendarMonths);
 
@@ -136,6 +180,70 @@ public static class PostsInsights
             Calendar(posts, calendarFrom, today));
     }
 
+    /// <summary>
+    /// Lists one page of a website's posts with their views: the most read or the newest first, and kept
+    /// to the posts a search found where one was made.
+    /// </summary>
+    /// <remarks>
+    /// Each post is credited exactly as <see cref="Read"/> credits it, with the paths of every post the
+    /// website lists, before a search narrows them: a post that was searched for is never credited with a
+    /// path another listed post owns because that post was not.
+    /// </remarks>
+    /// <param name="listed">The posts the website lists now.</param>
+    /// <param name="views">
+    /// The pages delivered at each path counted, from what was kept and from the reports; a path may
+    /// come more than once, and its figures are added up.
+    /// </param>
+    /// <param name="zone">The website's reporting zone, which the days a post was published fall on.</param>
+    /// <param name="listing">Which page is asked for, in which order, and of which posts.</param>
+    /// <returns>The page, and how many posts it is a page of.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// A page that starts before the first post, holds no post, or is in no order posts are listed in.
+    /// </exception>
+    public static PostsPage List(
+        IReadOnlyCollection<ListedPost> listed,
+        IEnumerable<PathViews> views,
+        TimeZoneInfo zone,
+        PostsListing listing)
+    {
+        ArgumentNullException.ThrowIfNull(listed);
+        ArgumentNullException.ThrowIfNull(views);
+        ArgumentNullException.ThrowIfNull(zone);
+        ArgumentNullException.ThrowIfNull(listing);
+        ArgumentOutOfRangeException.ThrowIfNegative(listing.Offset);
+        ArgumentOutOfRangeException.ThrowIfLessThan(listing.Limit, 1);
+
+        var wanted = listing.Matching?.ToHashSet(StringComparer.Ordinal);
+        var matching = Each(listed, views, zone)
+            .Where(post => wanted is null || wanted.Contains(post.Post.Path))
+            .ToList();
+        var page = InOrder(listing.Order, matching).Skip(listing.Offset).Take(listing.Limit);
+
+        return new PostsPage(
+            listed.Count,
+            matching.Count,
+            matching.Select(post => post.Shown.PageViews).DefaultIfEmpty().Max(),
+            [.. page.Select(post => post.Shown)]);
+    }
+
+    /// <summary>
+    /// Credits every post the website lists with its views, and says the day it was published on.
+    /// </summary>
+    private static List<Counted> Each(
+        IReadOnlyCollection<ListedPost> listed,
+        IEnumerable<PathViews> views,
+        TimeZoneInfo zone)
+    {
+        var own = OwnPaths(listed);
+        var counted = Totals(views);
+
+        return
+        [
+            .. listed.Select(post =>
+                new Counted(post, new ShownPost(post.Path, PublishedOn(post, zone), ViewsOf(post, own, counted)))),
+        ];
+    }
+
     private static HashSet<string> OwnPaths(IEnumerable<ListedPost> listed) =>
         listed.Select(post => post.Path).ToHashSet(StringComparer.Ordinal);
 
@@ -143,10 +251,12 @@ public static class PostsInsights
     /// The path a post answered at through a redirect, where it counts for that post: not its own path,
     /// and not another listed post's own.
     /// </summary>
-    private static string? Landed(ListedPost post, HashSet<string> own) =>
+    /// <param name="post">The post.</param>
+    /// <param name="isAPostsOwn">Whether a path is the own path of a post the website lists.</param>
+    private static string? Landed(ListedPost post, Func<string, bool> isAPostsOwn) =>
         post.LandedPath is { } landed
         && !string.Equals(landed, post.Path, StringComparison.Ordinal)
-        && !own.Contains(landed)
+        && !isAPostsOwn(landed)
             ? landed
             : null;
 
@@ -157,35 +267,54 @@ public static class PostsInsights
 
     private static long ViewsOf(ListedPost post, HashSet<string> own, Dictionary<string, long> counted) =>
         counted.GetValueOrDefault(post.Path)
-        + (Landed(post, own) is { } landed ? counted.GetValueOrDefault(landed) : 0);
-
-    private static DateOnly? Published(ListedPost post, TimeZoneInfo zone) =>
-        post.PublishedAt is { } at ? ZoneDays.Of(at, zone) : null;
+        + (Landed(post, own.Contains) is { } landed ? counted.GetValueOrDefault(landed) : 0);
 
     /// <summary>The newest posts with a publishing date, and of two published at once, the first by path.</summary>
     private static ImmutableArray<ShownPost> Newest(IEnumerable<Counted> posts) =>
     [
-        .. posts
-            .Where(post => post.Post.PublishedAt is not null)
-            .OrderByDescending(post => post.Post.PublishedAt)
-            .ThenBy(post => post.Post.Path, StringComparer.Ordinal)
+        .. ByNewest(posts.Where(post => post.Post.PublishedAt is not null))
             .Take(NewestShown)
             .Select(post => post.Shown),
     ];
 
+    /// <summary>The post read the most, by the order <see cref="ByMostRead"/> lists them in.</summary>
+    private static ShownPost? MostRead(IEnumerable<Counted> posts) =>
+        ByMostRead(posts.Where(post => post.Shown.PageViews > 0))
+            .Select(post => post.Shown)
+            .FirstOrDefault();
+
+    /// <summary>Puts posts in the order asked for.</summary>
+    private static IOrderedEnumerable<Counted> InOrder(PostsOrder order, IEnumerable<Counted> posts) =>
+        order switch
+        {
+            PostsOrder.MostRead => ByMostRead(posts),
+            PostsOrder.Newest => ByNewest(posts),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(order),
+                order,
+                "Posts are listed by the most read or by the newest."),
+        };
+
     /// <summary>
-    /// The post read the most; of two read as much, the one published first, any with a date before any
+    /// The most read first; of two read as much, the one published first, any with a date before any
     /// without, and then the first by path.
     /// </summary>
-    private static ShownPost? MostRead(IEnumerable<Counted> posts) =>
+    private static IOrderedEnumerable<Counted> ByMostRead(IEnumerable<Counted> posts) =>
         posts
-            .Where(post => post.Shown.PageViews > 0)
             .OrderByDescending(post => post.Shown.PageViews)
             .ThenBy(post => post.Post.PublishedAt is null)
             .ThenBy(post => post.Post.PublishedAt)
-            .ThenBy(post => post.Post.Path, StringComparer.Ordinal)
-            .Select(post => post.Shown)
-            .FirstOrDefault();
+            .ThenBy(post => post.Post.Path, StringComparer.Ordinal);
+
+    /// <summary>
+    /// The newest first, and of two published at once, the first by path; the posts that do not say when
+    /// they were published come last, by path.
+    /// </summary>
+    private static IOrderedEnumerable<Counted> ByNewest(IEnumerable<Counted> posts) =>
+        posts
+            .OrderBy(post => post.Post.PublishedAt is null)
+            .ThenByDescending(post => post.Post.PublishedAt)
+            .ThenBy(post => post.Post.Path, StringComparer.Ordinal);
 
     /// <summary>The days from the first to the last of the calendar a post was published on, the oldest first.</summary>
     private static ImmutableArray<PostingDay> Calendar(IEnumerable<Counted> posts, DateOnly from, DateOnly to) =>
@@ -221,6 +350,44 @@ public sealed record PostsReading(
     DateOnly CalendarFrom,
     DateOnly CalendarTo,
     ImmutableArray<PostingDay> Calendar);
+
+/// <summary>
+/// The orders a website's posts are listed in.
+/// </summary>
+public enum PostsOrder
+{
+    /// <summary>The most read first, by the order Insights picks its most read post by.</summary>
+    MostRead = 1,
+
+    /// <summary>The newest first, and the posts that do not say when they were published last.</summary>
+    Newest = 2,
+}
+
+/// <summary>
+/// Which page of a website's posts is asked for.
+/// </summary>
+/// <param name="Order">The order the posts are listed in.</param>
+/// <param name="Offset">How many of the posts in that order come before the page.</param>
+/// <param name="Limit">How many posts the page holds at most.</param>
+public sealed record PostsListing(PostsOrder Order, int Offset, int Limit)
+{
+    /// <summary>
+    /// The paths of the posts a search found, or nothing where nothing was searched for.
+    /// </summary>
+    public ImmutableArray<string>? Matching { get; init; }
+}
+
+/// <summary>
+/// One page of a website's posts.
+/// </summary>
+/// <param name="Posts">How many posts the website lists.</param>
+/// <param name="Matching">How many of them hold what was searched for: every one of them where nothing was.</param>
+/// <param name="MostPageViews">
+/// The most any of those was read, whatever the page, so every page is drawn to one scale; nought where none
+/// matched.
+/// </param>
+/// <param name="Shown">The page, in the order asked for.</param>
+public sealed record PostsPage(int Posts, int Matching, long MostPageViews, ImmutableArray<ShownPost> Shown);
 
 /// <summary>
 /// One post, as it is shown.

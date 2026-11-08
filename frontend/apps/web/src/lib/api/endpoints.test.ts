@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EVERY_JOURNEY } from '@/lib/analytics/journeys';
 import type { Population } from '@/lib/analytics/people-only';
+import type { PostsListing } from '@/lib/analytics/posts';
 import {
   readActions,
   readAllTime,
@@ -15,6 +16,9 @@ import {
   readOverview,
   readPageEngagement,
   readPages,
+  readPostInsights,
+  readPostSeries,
+  readPostsPage,
   readSeries,
   readSitemapStatus,
   readSoftware,
@@ -59,6 +63,7 @@ const NOTHING_HELD = {
 const NOTHING_RECORDED: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   overview: { pageViews: 0, visitors: 0, events: 0 },
   series: { metric: 'pageviews', granularity: 'day', completeTo: TO, points: [] },
+  'insights/post/series': { metric: 'pageviews', granularity: 'day', completeTo: TO, points: [] },
   pages: { pageViews: 0, totalPaths: 0, mostPageViews: 0, pages: [] },
   locations: { grouping: 'country', visitors: 0, totalPlaces: 0, mostVisitors: 0, places: [] },
   sources: { grouping: 'site', visitors: 0, totalSources: 0, mostVisitors: 0, sources: [] },
@@ -96,6 +101,10 @@ const ACTIVITY: readonly (readonly [string, (population: Population) => Promise<
   [
     'a measure in buckets',
     (population) => readSeries(SITE, 'pageviews', PERIOD, population, 'day'),
+  ],
+  [
+    'a post’s views in buckets',
+    (population) => readPostSeries(SITE, '/hello-world/', PERIOD, population, 'day'),
   ],
   ['the pages', (population) => readPages(SITE, PERIOD, population, 10, 0)],
   ['the places', (population) => readLocations(SITE, PERIOD, population, 'country', 10, 0)],
@@ -594,6 +603,266 @@ describe('asking the engine about a website’s posts', () => {
     engineAnswering(200, { ...POSTS, ...wrong });
 
     await expect(readInsightsPosts(SITE, 'everybody')).rejects.toThrow();
+  });
+});
+
+describe('asking the engine for a page of a website’s posts', () => {
+  const PAGE = {
+    posts: 1234,
+    matching: 12,
+    viewsFrom: '2025-03',
+    mostPageViews: 904,
+    shown: [
+      {
+        path: '/a/',
+        address: 'https://example.com/a/',
+        title: 'A',
+        published: '2026-11-03',
+        pageViews: 904,
+      },
+      {
+        path: '/b/',
+        address: 'https://example.com/b/',
+        title: null,
+        published: null,
+        pageViews: 0,
+      },
+    ],
+  };
+
+  const FIRST: PostsListing = { search: '', order: 'most-read', limit: 25, offset: 0 };
+
+  it('asks for a page of the most read, saying nothing of an empty search or of everybody', async () => {
+    const engine = engineAnswering(200, PAGE);
+
+    await readPostsPage(SITE, 'everybody', FIRST);
+
+    expect(addressOf(engine.first().path)).toBe(`/api/sites/${SITE}/posts`);
+    expect([...askedIn(engine.first().path).entries()]).toStrictEqual([
+      ['limit', '25'],
+      ['offset', '0'],
+    ]);
+  });
+
+  /** What was typed is written by whoever reads the screen, and the engine has to read back exactly that. */
+  it.each(['100% sure', 'snake_case', 'C:\\temp', 'It’s "quoted"', 'a&only=robots#top', 'café +1'])(
+    'carries the search %j as a value, the newest and the people where asked',
+    async (search) => {
+      const engine = engineAnswering(200, PAGE);
+
+      await readPostsPage(SITE, 'people', { search, order: 'newest', limit: 50, offset: 100 });
+
+      expect(addressOf(engine.first().path)).toBe(`/api/sites/${SITE}/posts`);
+      expect([...askedIn(engine.first().path).entries()]).toStrictEqual([
+        ['search', search],
+        ['order', 'newest'],
+        ['limit', '50'],
+        ['offset', '100'],
+        ['only', 'people'],
+      ]);
+    },
+  );
+
+  it('reads a page as the engine gives it, an untitled undated post included', async () => {
+    engineAnswering(200, PAGE);
+
+    await expect(readPostsPage(SITE, 'everybody', FIRST)).resolves.toStrictEqual(PAGE);
+  });
+
+  it('reads a page past the end of the list, and a search that matched nothing', async () => {
+    const pastTheEnd = { ...PAGE, shown: [] };
+    const unmatched = { ...PAGE, matching: 0, viewsFrom: null, mostPageViews: 0, shown: [] };
+
+    engineAnswering(200, pastTheEnd);
+    await expect(readPostsPage(SITE, 'everybody', FIRST)).resolves.toStrictEqual(pastTheEnd);
+
+    engineAnswering(200, unmatched);
+    await expect(readPostsPage(SITE, 'everybody', FIRST)).resolves.toStrictEqual(unmatched);
+  });
+
+  it('refuses an answer that does not say how many match', async () => {
+    const { posts, viewsFrom, mostPageViews, shown } = PAGE;
+
+    engineAnswering(200, { posts, viewsFrom, mostPageViews, shown });
+
+    await expect(readPostsPage(SITE, 'everybody', FIRST)).rejects.toThrow();
+  });
+
+  it.each([
+    ['a publishing day', { shown: [{ ...PAGE.shown[0], published: '2026-11-03T10:00:00Z' }] }],
+    ['the month views are counted from', { viewsFrom: '2025-3' }],
+    ['how many match', { matching: 12.5 }],
+  ])('refuses %s it cannot read as one', async (_, wrong) => {
+    engineAnswering(200, { ...PAGE, ...wrong });
+
+    await expect(readPostsPage(SITE, 'everybody', FIRST)).rejects.toThrow();
+  });
+});
+
+describe('asking the engine about one post', () => {
+  const PATH = '/hello-world/';
+
+  /** Thirteen weeks from a Monday to a Sunday: the most the recent weeks ever hold. */
+  const WEEKS = Array.from({ length: 91 }, (_, at) => ({
+    day: new Date(Date.UTC(2026, 7, 10 + at)).toISOString().slice(0, 10),
+    pageViews: at < 2 ? null : at % 5,
+  }));
+
+  const RECORD = {
+    post: {
+      path: PATH,
+      address: 'https://example.com/hello-world/',
+      title: 'Hello, world',
+      published: '2026-03-12',
+      pageViews: 120,
+    },
+    viewsFrom: '2025-11',
+    firstDay: '2026-08-12',
+    from: '2026-03-12',
+    to: '2026-11-08T09:30:00+00:00',
+    completeTo: '2026-11-08T09:30:00+00:00',
+    months: [
+      { month: '2026-03', pageViews: 20, daysMeasured: 20 },
+      { month: '2026-04', pageViews: null, daysMeasured: 0 },
+    ],
+    days: WEEKS,
+  };
+
+  it('asks about the post by naming it, and nothing else under everybody', async () => {
+    const engine = engineAnswering(200, RECORD);
+
+    await readPostInsights(SITE, PATH, 'everybody');
+
+    const asked = askedIn(engine.first().path);
+
+    expect(addressOf(engine.first().path)).toBe(`/api/sites/${SITE}/insights/post`);
+    expect([...asked.keys()]).toStrictEqual(['path']);
+    expect(asked.get('path')).toBe(PATH);
+  });
+
+  it('asks about the people beside the post by name, and never about a window', async () => {
+    const engine = engineAnswering(200, RECORD);
+
+    await readPostInsights(SITE, PATH, 'people');
+
+    const asked = askedIn(engine.first().path);
+
+    expect([...asked.keys()]).toStrictEqual(['path', 'only']);
+    expect(asked.get('only')).toBe('people');
+  });
+
+  /** A path is written by whoever wrote the website, and the engine has to read back what it listed. */
+  it.each(['/caf%C3%A9/', '/one+two/', '/a?b=c&only=robots/', '/hash#fragment/'])(
+    'asks about %j exactly as it was listed',
+    async (path) => {
+      const engine = engineAnswering(200, RECORD);
+
+      await readPostInsights(SITE, path, 'everybody');
+
+      const asked = askedIn(engine.first().path);
+
+      expect(asked.getAll('path')).toStrictEqual([path]);
+      expect(asked.has('only')).toBe(false);
+    },
+  );
+
+  it('reads the record as the engine gives it', async () => {
+    engineAnswering(200, RECORD);
+
+    await expect(readPostInsights(SITE, PATH, 'everybody')).resolves.toStrictEqual(RECORD);
+  });
+
+  /** Nought would say nobody read the post that day, where nothing was measured at all. */
+  it('reads a day before the website was measured, and a month never counted, as nothing rather than nought', async () => {
+    engineAnswering(200, RECORD);
+
+    const answer = await readPostInsights(SITE, PATH, 'everybody');
+
+    expect(answer.days[0]).toStrictEqual({ day: '2026-08-10', pageViews: null });
+    expect(answer.months[1]).toStrictEqual({ month: '2026-04', pageViews: null, daysMeasured: 0 });
+  });
+
+  it('reads a post whose website has nothing held', async () => {
+    const nothing = {
+      ...RECORD,
+      post: { ...RECORD.post, pageViews: 0 },
+      viewsFrom: null,
+      firstDay: null,
+      from: null,
+      months: [],
+      days: WEEKS.map(({ day }) => ({ day, pageViews: null })),
+    };
+
+    engineAnswering(200, nothing);
+
+    await expect(readPostInsights(SITE, PATH, 'everybody')).resolves.toStrictEqual(nothing);
+  });
+
+  it('refuses an answer with more days than the recent weeks hold', async () => {
+    engineAnswering(200, { ...RECORD, days: [...WEEKS, { day: '2026-11-09', pageViews: 1 }] });
+
+    await expect(readPostInsights(SITE, PATH, 'everybody')).rejects.toThrow();
+  });
+
+  it.each([
+    ['a day', { days: [{ day: '9 November 2026', pageViews: 1 }] }],
+    ['the first day counted', { from: '2026-03' }],
+    ['the month views are counted from', { viewsFrom: '2025-11-01' }],
+  ])('refuses %s it cannot read as one', async (_, wrong) => {
+    engineAnswering(200, { ...RECORD, ...wrong });
+
+    await expect(readPostInsights(SITE, PATH, 'everybody')).rejects.toThrow();
+  });
+});
+
+describe('asking the engine for one post’s views in buckets', () => {
+  const PATH = '/hello-world/';
+
+  const NOTHING_READ = {
+    from: FROM,
+    to: TO,
+    metric: 'pageviews',
+    completeTo: TO,
+    points: [],
+  };
+
+  /**
+   * The post is named first and exactly as Insights listed it, then how finely the period is cut,
+   * then the period itself; the people are asked for by name after it, as on every question about a
+   * period.
+   */
+  it('asks for the post’s views in buckets over a period, naming the post first', async () => {
+    const engine = engineAnswering(200, { ...NOTHING_READ, granularity: 'week' });
+
+    await expect(readPostSeries(SITE, PATH, PERIOD, 'everybody', 'week')).resolves.toMatchObject({
+      granularity: 'week',
+    });
+    await readPostSeries(SITE, PATH, PERIOD, 'people', 'week');
+
+    const [everybody = '', people = ''] = engine.all().map(({ path }) => path);
+
+    expect(addressOf(everybody)).toBe(`/api/sites/${SITE}/insights/post/series`);
+    expect([...askedIn(everybody).entries()]).toStrictEqual([
+      ['path', PATH],
+      ['granularity', 'week'],
+      ['from', FROM],
+      ['to', TO],
+    ]);
+    expect([...askedIn(people).keys()]).toStrictEqual([
+      'path',
+      'granularity',
+      'from',
+      'to',
+      'only',
+    ]);
+    expect(askedIn(people).get('only')).toBe('people');
+  });
+
+  /** A way of cutting this dashboard never asks for is an answer it cannot draw, and is refused. */
+  it('refuses a post’s series cut in a way the dashboard never asks for', async () => {
+    engineAnswering(200, { ...NOTHING_READ, granularity: 'fortnight' });
+
+    await expect(readPostSeries(SITE, PATH, PERIOD, 'everybody', 'week')).rejects.toThrow();
   });
 });
 

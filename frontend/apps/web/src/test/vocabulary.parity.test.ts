@@ -4,6 +4,13 @@ import { describe, expect, it } from 'vitest';
 import { MEASURES } from '@/lib/analytics/all-time';
 import { CHART_BYS } from '@/lib/analytics/chart-by';
 import { GRANULARITIES, hasEarlier, KEPT_MONTHS, PRESETS } from '@/lib/analytics/period';
+import {
+  DEFAULT_POSTS_ORDER,
+  POSTS_ORDERS,
+  POSTS_PAGE_SIZES,
+  POSTS_SEARCH_MOST,
+} from '@/lib/analytics/posts';
+import { RECENT_WEEKS, WEEK_MOVES } from '@/lib/analytics/recent-weeks';
 import { LONGEST_SITEMAP_ADDRESS, SITEMAP_REFUSED } from '@/lib/analytics/sitemap';
 import { reasonKey } from '@/lib/analytics/verdicts';
 import {
@@ -82,6 +89,30 @@ const SITE = path.join(REPOSITORY, 'backend/src/Dewiride.Analytics.Domain/Sites/
 const SITE_SETTINGS_ENDPOINTS = path.join(
   REPOSITORY,
   'backend/src/Dewiride.Analytics.Api/Endpoints/SiteSettingsEndpoints.cs',
+);
+
+/** Where the engine states how many weeks of a post's days it answers with. */
+const POST_RECORD = path.join(
+  REPOSITORY,
+  'backend/src/Dewiride.Analytics.Application/Posts/PostRecord.cs',
+);
+
+/** Where the engine states how long a search of a website's posts it reads may be. */
+const POST_SEARCH = path.join(
+  REPOSITORY,
+  'backend/src/Dewiride.Analytics.Application/Posts/PostSearch.cs',
+);
+
+/** Where the engine states how many of a website's posts one answer may name. */
+const SITE_POSTS = path.join(
+  REPOSITORY,
+  'backend/src/Dewiride.Analytics.Application/Posts/ISitePosts.cs',
+);
+
+/** Where the engine names the words a question about a website's numbers is asked in. */
+const QUERY_VOCABULARY = path.join(
+  REPOSITORY,
+  'backend/src/Dewiride.Analytics.Api/Analytics/QueryVocabulary.cs',
 );
 
 /** Every value a declaration in the engine's source assigns. */
@@ -375,6 +406,17 @@ describe('the ways this dashboard cuts a picture', () => {
       );
     }
   });
+
+  /** A post's picture counts its views alone, so it says where it is cut in words of its own. */
+  it.each(GRANULARITIES)('says where a post’s picture cut by the %s is cut', (granularity) => {
+    expect(isWritten(wordsAt(`insights.post.chart.cut.${granularity}`))).toBe(true);
+  });
+
+  it('writes nothing for a way of cutting a post’s picture that does not exist', () => {
+    expect([...sentencesUnder('insights.post.chart.cut')].sort()).toEqual(
+      [...GRANULARITIES].sort(),
+    );
+  });
 });
 
 /**
@@ -401,6 +443,53 @@ describe('the ways this dashboard reads a month', () => {
 
     expect([...named].sort()).toEqual([...MEASURES].sort());
     expect([...sentencesUnder('insights.months.caption')].sort()).toEqual([...MEASURES].sort());
+  });
+});
+
+/**
+ * A post's recent weeks are laid out from the days the engine answers with, and every week of them
+ * says in words how it moved against the week before.
+ */
+describe('the recent weeks of a post', () => {
+  /**
+   * The answer is refused where it holds more days than the weeks the dashboard lays out, so the two
+   * numbers are one fact kept in two languages.
+   */
+  it('lays out as many recent weeks as the engine answers', () => {
+    const [weeks] = declared(POST_RECORD, /public const int RecentWeeks = (\d+);/g);
+
+    expect(RECENT_WEEKS).toBe(Number(weeks));
+  });
+
+  it('names every way a week can move against the week before, and no other', () => {
+    expect([...sentencesUnder('insights.post.weeks.moved')].sort()).toEqual([...WEEK_MOVES].sort());
+  });
+});
+
+/**
+ * The list of every post is searched, ordered and paged in the engine's own terms: a search the box
+ * lets through is one the engine reads, a page the list offers is one the engine will name whole, and
+ * every order is one the engine lists, each with a name somebody picks it by.
+ */
+describe('the list of every post', () => {
+  it('stops a search in the box exactly where the engine stops reading one', () => {
+    const [most] = declared(POST_SEARCH, /public const int MostCharacters = (\d+);/g);
+
+    expect(POSTS_SEARCH_MOST).toBe(Number(most));
+  });
+
+  it('offers no page longer than the engine will name at once', () => {
+    const [most] = declared(SITE_POSTS, /const int MostNamed = (\d+);/g);
+
+    expect(Math.max(...POSTS_PAGE_SIZES)).toBeLessThanOrEqual(Number(most));
+  });
+
+  it('orders the posts only in the ways the engine lists them, and names each', () => {
+    const orders = declared(QUERY_VOCABULARY, /\["([^"]+)"\] = PostsOrder\.\w+,/g);
+
+    expect([...POSTS_ORDERS].sort()).toEqual([...orders].sort());
+    expect([...sentencesUnder('insights.allPosts.order.by')].sort()).toEqual([...orders].sort());
+    expect(orders).toContain(DEFAULT_POSTS_ORDER);
   });
 });
 

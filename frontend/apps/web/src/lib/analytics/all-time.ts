@@ -1,8 +1,10 @@
 import type { Insights } from '@/lib/api/schemas';
+import type { Formatter } from '@/lib/charts/bucket-names';
 
 /**
- * A website's whole record laid out as years of twelve months, and what stands on the screen about
- * it while that is on its way, refused, or has nothing in it.
+ * A record laid out as years of twelve months, a website's whole record or one post's; how its
+ * figures, its months and the days of its weeks are written; and what stands on the screen about a
+ * website's record while that is on its way, refused, or has nothing in it.
  */
 
 /** What each month can be read as. */
@@ -10,6 +12,14 @@ export const MEASURES = ['total', 'average'] as const;
 
 /** Page views in the month, or page views for each day of it measured. */
 export type Measure = (typeof MEASURES)[number];
+
+/** The months a record holds: a website's whole record, or one post's. */
+export interface MonthsRecord {
+  /** Every month of it, oldest first, the last of them the month running now. */
+  readonly months: Insights['months'];
+  /** Which of them were kept before their visits were all judged. */
+  readonly unjudged: readonly string[];
+}
 
 /**
  * Where a month of a year stands against the website's record: before it began, a finished month with
@@ -72,14 +82,14 @@ function monthWithin(
 }
 
 /**
- * A website's record as years of twelve months, the newest year first, so the month somebody is most
- * likely to want is the first thing they find. Months are compared as they are written, which sorts
- * them in time.
+ * A record as years of twelve months, the newest year first, so the month somebody is most likely to
+ * want is the first thing they find. Months are compared as they are written, which sorts them in
+ * time.
  *
  * @param record The record, as the engine answers it.
  * @returns Every year from the first month's to the running month's, or none for an empty record.
  */
-export function yearsOf({ months, unjudged }: Insights): readonly YearRow[] {
+export function yearsOf({ months, unjudged }: MonthsRecord): readonly YearRow[] {
   const first = months[0]?.month;
   const running = months.at(-1)?.month;
 
@@ -122,6 +132,21 @@ export function writableDay(day: string): Date {
 }
 
 /**
+ * A month on a website's calendar written out in full, as the reader's language writes one:
+ * `August 2026`.
+ *
+ * @param month Written `2026-08`.
+ * @param format The reader's own formatter.
+ */
+export function writtenMonth(month: string, format: Formatter): string {
+  return format.dateTime(writableDay(`${month}-01`), {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/**
  * Views over the days they were counted on, or nothing where there are no days to divide by.
  *
  * @param views How many pages were read.
@@ -147,15 +172,15 @@ export function figureOf(cell: MonthCell, measure: Measure): number | null {
 }
 
 /**
- * The figure one year shows: what its months with figures add up to, or their page views over the
- * days those figures cover. A month left out counts on neither side, since nothing says what it held
- * or how many of its days were measured, and a year with no figures in it has none of its own.
+ * The figure any run of months shows: what its months with figures add up to, or their page views
+ * over the days those figures cover. A month left out counts on neither side, since nothing says what
+ * it held or how many of its days were measured, and a run with no figures in it has none of its own.
  *
- * @param row The year.
- * @param measure What the year is being read as.
+ * @param cells The months.
+ * @param measure What the run is being read as.
  */
-export function yearFigure(row: YearRow, measure: Measure): number | null {
-  const figures = row.months.filter((cell) => cell.pageViews !== null);
+export function figureAcross(cells: readonly MonthCell[], measure: Measure): number | null {
+  const figures = cells.filter((cell) => cell.pageViews !== null);
 
   if (figures.length === 0) {
     return null;
@@ -165,6 +190,70 @@ export function yearFigure(row: YearRow, measure: Measure): number | null {
   const days = figures.reduce((sum, cell) => sum + cell.days, 0);
 
   return measure === 'total' ? views : perDay(views, days);
+}
+
+/**
+ * The figure one year shows, read across its months as any run of them is.
+ *
+ * @param row The year.
+ * @param measure What the year is being read as.
+ */
+export function yearFigure(row: YearRow, measure: Measure): number | null {
+  return figureAcross(row.months, measure);
+}
+
+/** Stands in for a figure that is not there, in a cell or beside a year. */
+export const NO_FIGURE = '–';
+
+/** Below this an average is written with a decimal, since the difference between 1 and 1.4 is real. */
+const WHOLE_FROM = 10;
+
+/**
+ * Below this a decimal rounds an average to nought, on a month somebody read, so it is written to its
+ * first digit instead.
+ */
+const ROUNDS_TO_NOUGHT = 0.05;
+
+/**
+ * A figure as a month, a week or a year shows it.
+ *
+ * @param figure The figure, or nothing where there is none.
+ * @param measure Whether it is a count of views or views for each day.
+ * @param format The reader's own formatter.
+ */
+export function writeFigure(figure: number | null, measure: Measure, format: Formatter): string {
+  if (figure === null) {
+    return NO_FIGURE;
+  }
+
+  if (measure === 'average' && figure > 0 && figure < ROUNDS_TO_NOUGHT) {
+    return format.number(figure, { maximumSignificantDigits: 1 });
+  }
+
+  return measure === 'average' && figure < WHOLE_FROM
+    ? format.number(figure, { maximumFractionDigits: 1 })
+    : format.number(figure, { maximumFractionDigits: 0 });
+}
+
+/** A Monday at midnight, which any day of the week and any hour can be written from. */
+export const A_MONDAY = Date.UTC(2024, 0, 1);
+
+const A_DAY = 86_400_000;
+
+/**
+ * A place in the week written out as the reader's language names the day, however long or short it
+ * is asked for.
+ *
+ * @param place Where the day falls in the week, Monday nought and Sunday six.
+ * @param width How much of the name to write.
+ * @param format The reader's own formatter.
+ */
+export function weekdayName(
+  place: number,
+  width: 'long' | 'short' | 'narrow',
+  format: Formatter,
+): string {
+  return format.dateTime(new Date(A_MONDAY + place * A_DAY), { weekday: width, timeZone: 'UTC' });
 }
 
 /**

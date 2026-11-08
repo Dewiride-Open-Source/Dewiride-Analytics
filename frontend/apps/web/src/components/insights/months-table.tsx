@@ -3,7 +3,7 @@
 import { useFormatter, useTranslations } from 'next-intl';
 import { useId, useMemo } from 'react';
 import { ListSwitch } from '@/components/dashboard/ranked-list';
-import { HeatLegend } from '@/components/insights/heat-legend';
+import { type HeatMarks, HeatLegend } from '@/components/insights/heat-legend';
 import { Card } from '@/components/ui/card';
 import {
   figureOf,
@@ -11,28 +11,19 @@ import {
   MEASURES,
   type Measure,
   type MonthCell,
+  type MonthState,
+  type MonthsRecord,
+  NO_FIGURE,
   type YearRow,
+  writeFigure,
   yearFigure,
   yearsOf,
 } from '@/lib/analytics/all-time';
 import { HEAT_CELLS, heatStep, LEFT_OUT_CELL } from '@/lib/analytics/heat';
-import type { Insights } from '@/lib/api/schemas';
 import { cn } from '@/lib/styling';
 import { useOverflowing } from '@/lib/use-overflowing';
 
 type Format = ReturnType<typeof useFormatter>;
-
-/** Stands in for a figure that is not there, in a cell or beside a year. */
-const NO_FIGURE = '–';
-
-/** Below this an average is written with a decimal, since the difference between 1 and 1.4 is real. */
-const WHOLE_FROM = 10;
-
-/**
- * Below this a decimal rounds an average to nought, on a month somebody read, so it is written to its
- * first digit instead.
- */
-const ROUNDS_TO_NOUGHT = 0.05;
 
 /** A figure longer than this is set smaller, so it stays inside its cell. */
 const LONG_FIGURE = 7;
@@ -67,21 +58,41 @@ const TILE =
  * The shared edge of the sticky columns: the cells scrolling under them would otherwise show through
  * the gaps the table leaves between its rows.
  */
-const STUCK = 'sticky z-10 bg-surface shadow-[0_0_0_3px_var(--surface)]';
+export const STUCK = 'sticky z-10 bg-surface shadow-[0_0_0_3px_var(--surface)]';
 
-/** A figure as a month or a year shows it. */
-function written(figure: number | null, measure: Measure, format: Format): string {
-  if (figure === null) {
-    return NO_FIGURE;
-  }
+/** What a figure from before a record began is called, and what the legend calls its mark. */
+export interface BeforeWords {
+  /** What such a figure says to a screen reader, in a cell or on a tile. */
+  readonly cell: string;
+  /** What the legend says the mark standing in for it means. */
+  readonly legend: string;
+}
 
-  if (measure === 'average' && figure > 0 && figure < ROUNDS_TO_NOUGHT) {
-    return format.number(figure, { maximumSignificantDigits: 1 });
-  }
+/**
+ * The words a table of months is read in, which belong to whatever it is the record of: what its
+ * caption says it holds, read either way, and what each of its months from before the record began is
+ * called.
+ */
+export interface MonthsWords {
+  readonly caption: Readonly<Record<Measure, string>>;
+  /**
+   * What a month from before the record began is called, which need not be the same for every such
+   * month.
+   *
+   * @param month The month, written `2026-08`.
+   */
+  readonly before: (month: string) => BeforeWords;
+}
 
-  return measure === 'average' && figure < WHOLE_FROM
-    ? format.number(figure, { maximumFractionDigits: 1 })
-    : format.number(figure, { maximumFractionDigits: 0 });
+/** The words a website's own record is read in, which call every month before it began one thing. */
+export function useSiteMonthsWords(): MonthsWords {
+  const t = useTranslations('insights.months');
+  const unmeasured: BeforeWords = { cell: t('unmeasured'), legend: t('legend.unmeasured') };
+
+  return {
+    caption: { total: t('caption.total'), average: t('caption.average') },
+    before: () => unmeasured,
+  };
 }
 
 /** The name of a month, which every year shares. */
@@ -111,6 +122,31 @@ function shadeOf(cell: MonthCell, figure: number | null, largest: number): strin
   );
 }
 
+/**
+ * The marks the months hold besides their shades, named in the legend only where a month wears one,
+ * and each thing a month before the record began is called named once.
+ *
+ * @param rows The record, as years.
+ * @param soFar What the legend calls the month still running.
+ * @param before What a month before the record began is called.
+ */
+function marksOf(
+  rows: readonly YearRow[],
+  soFar: string,
+  before: MonthsWords['before'],
+): HeatMarks {
+  const cells = rows.flatMap((row) => row.months);
+  const states = new Set<MonthState>(cells.map((cell) => cell.state));
+  const earlier = cells.filter((cell) => cell.state === 'before');
+
+  return {
+    soFar: states.has('running') ? soFar : undefined,
+    before: [...new Set(earlier.map((cell) => before(cell.month).legend))],
+    notCounted: states.has('notCounted'),
+    notJudged: states.has('notJudged'),
+  };
+}
+
 interface MeasureChoice {
   /** What each month is being read as, which outlives the card. */
   readonly measure: Measure;
@@ -118,12 +154,14 @@ interface MeasureChoice {
 }
 
 interface MonthsTableProps extends MeasureChoice {
-  /** What the record says, or nothing while it is on its way. */
-  readonly insights: Insights | undefined;
+  /** The months of the record, or nothing while they are on their way. */
+  readonly record: MonthsRecord | undefined;
+  /** The words the record is read in. */
+  readonly words: MonthsWords;
 }
 
 /**
- * Every month of a website's record, a year to a row, read as how much it held or how much a day.
+ * Every month of a record, a year to a row, read as how much it held or how much a day.
  *
  * A table on anything wide enough for twelve columns, and on a phone a card to each year with its
  * months as tiles, because a table scrolled sideways on a phone shows three months and hides the rest.
@@ -135,41 +173,53 @@ interface MonthsTableProps extends MeasureChoice {
  * on their way, what it chooses is what they arrive under, and whoever is on it when they land is
  * still on it.
  */
-export function MonthsTable({ insights, measure, onMeasure }: MonthsTableProps) {
+export function MonthsTable({ record, measure, onMeasure, words }: MonthsTableProps) {
+  const t = useTranslations('insights.months.legend');
   const heading = useId();
-  const rows = useMemo(() => (insights === undefined ? NO_YEARS : yearsOf(insights)), [insights]);
+  const rows = useMemo(() => (record === undefined ? NO_YEARS : yearsOf(record)), [record]);
   const largest = useMemo(() => largestOf(rows, measure), [rows, measure]);
 
   return (
     <Card className={CARD}>
       <MonthsHeading id={heading} measure={measure} onMeasure={onMeasure} />
 
-      {insights === undefined ? (
-        <MonthsWaiting measure={measure} />
+      {record === undefined ? (
+        <MonthsWaiting caption={words.caption[measure]} measure={measure} />
       ) : (
         <>
-          <YearsTable rows={rows} measure={measure} largest={largest} heading={heading} />
-          <YearCards rows={rows} measure={measure} largest={largest} />
+          <YearsTable
+            rows={rows}
+            measure={measure}
+            largest={largest}
+            words={words}
+            heading={heading}
+          />
+          <YearCards rows={rows} measure={measure} largest={largest} words={words} />
         </>
       )}
 
-      <HeatLegend rows={rows} />
+      <HeatLegend marks={marksOf(rows, t('soFar'), words.before)} />
     </Card>
   );
+}
+
+interface MonthsWaitingProps {
+  /** What the table will say it holds. */
+  readonly caption: string;
+  readonly measure: Measure;
 }
 
 /**
  * The months while their figures are on their way: a year's worth, since how many years there are
  * cannot be known before the answer. The caption and the names of the months are the card's own.
  */
-function MonthsWaiting({ measure }: { readonly measure: Measure }) {
-  const t = useTranslations('insights.months');
+function MonthsWaiting({ caption, measure }: MonthsWaitingProps) {
   const format = useFormatter();
 
   return (
     <>
       <div className="hidden sm:block">
-        <p className="mb-2 text-sm text-foreground-muted">{t(`caption.${measure}`)}</p>
+        <p className="mb-2 text-sm text-foreground-muted">{caption}</p>
         {/* Inert as well as hidden from a screen reader: a box too narrow for its table is a stop for
             the keyboard, and this one is gone when the figures land. */}
         <div aria-hidden inert className="overflow-x-auto">
@@ -193,7 +243,7 @@ function MonthsWaiting({ measure }: { readonly measure: Measure }) {
       </div>
 
       <div className="flex flex-col gap-3 sm:hidden">
-        <p className="text-sm text-foreground-muted">{t(`caption.${measure}`)}</p>
+        <p className="text-sm text-foreground-muted">{caption}</p>
         <div aria-hidden className={YEAR_CARD}>
           <div className="flex h-5 items-center justify-between gap-3">
             <span className="h-4 w-10 animate-pulse rounded-sm bg-surface-muted" />
@@ -270,6 +320,8 @@ interface YearsProps {
   readonly measure: Measure;
   /** The largest figure any month shows, which every month is shaded against. */
   readonly largest: number;
+  /** The words the record is read in. */
+  readonly words: MonthsWords;
 }
 
 interface YearsTableProps extends YearsProps {
@@ -283,8 +335,7 @@ interface YearsTableProps extends YearsProps {
  * the screen while there is something to scroll to. The box it scrolls in is positioned so that it
  * also holds whatever is written only for a screen reader, which would otherwise widen the page.
  */
-function YearsTable({ rows, measure, largest, heading }: YearsTableProps) {
-  const t = useTranslations('insights.months');
+function YearsTable({ rows, measure, largest, words, heading }: YearsTableProps) {
   const format = useFormatter();
   const [region, overflowing] = useOverflowing<HTMLElement>();
 
@@ -299,7 +350,7 @@ function YearsTable({ rows, measure, largest, heading }: YearsTableProps) {
     >
       <table className={TABLE}>
         <caption className="mb-2 text-left text-sm text-foreground-muted">
-          <span className="sticky left-0 inline-block">{t(`caption.${measure}`)}</span>
+          <span className="sticky left-0 inline-block">{words.caption[measure]}</span>
         </caption>
         <YearsHead measure={measure} />
         <tbody>
@@ -322,7 +373,12 @@ function YearsTable({ rows, measure, largest, heading }: YearsTableProps) {
                       shadeOf(cell, figure, largest),
                     )}
                   >
-                    <MonthFigure cell={cell} figure={figure} measure={measure} />
+                    <MonthFigure
+                      cell={cell}
+                      figure={figure}
+                      measure={measure}
+                      before={words.before}
+                    />
                   </td>
                 );
               })}
@@ -332,7 +388,7 @@ function YearsTable({ rows, measure, largest, heading }: YearsTableProps) {
                   'right-0 px-2 text-right text-sm font-semibold text-foreground',
                 )}
               >
-                {written(yearFigure(row, measure), measure, format)}
+                {writeFigure(yearFigure(row, measure), measure, format)}
               </td>
             </tr>
           ))}
@@ -354,16 +410,18 @@ interface MonthFigureProps {
   readonly cell: MonthCell;
   readonly figure: number | null;
   readonly measure: Measure;
+  /** What a month from before the record began is called. */
+  readonly before: MonthsWords['before'];
 }
 
 /**
  * What a month says, in a cell of the table or on a tile alike.
  *
  * A figure, a figure so far, or in words why there is none: nought in a month nobody read is a
- * different fact from a month before measuring began, one still to come, or one nobody counted, and
+ * different fact from a month before the record began, one still to come, or one nobody counted, and
  * each reads as what it is.
  */
-function MonthFigure({ cell, figure, measure }: MonthFigureProps) {
+function MonthFigure({ cell, figure, measure, before }: MonthFigureProps) {
   const t = useTranslations('insights.months');
   const chart = useTranslations('dashboard.chart');
   const format = useFormatter();
@@ -379,11 +437,11 @@ function MonthFigure({ cell, figure, measure }: MonthFigureProps) {
       return (
         <>
           <span aria-hidden>{NO_FIGURE}</span>
-          <span className="sr-only">{t('unmeasured')}</span>
+          <span className="sr-only">{before(cell.month).cell}</span>
         </>
       );
     default: {
-      const said = written(figure, measure, format);
+      const said = writeFigure(figure, measure, format);
 
       return (
         <>
@@ -399,13 +457,13 @@ function MonthFigure({ cell, figure, measure }: MonthFigureProps) {
  * The record on a phone: a card to each year, its twelve months as tiles, its own figure beside its
  * name. The same months shaded the same way as the table they stand in for.
  */
-function YearCards({ rows, measure, largest }: YearsProps) {
+function YearCards({ rows, measure, largest, words }: YearsProps) {
   const t = useTranslations('insights.months');
   const format = useFormatter();
 
   return (
     <div className="flex flex-col gap-3 sm:hidden">
-      <p className="text-sm text-foreground-muted">{t(`caption.${measure}`)}</p>
+      <p className="text-sm text-foreground-muted">{words.caption[measure]}</p>
       <ul className="flex flex-col gap-3">
         {rows.map((row) => (
           <li key={row.year} className={YEAR_CARD}>
@@ -416,7 +474,7 @@ function YearCards({ rows, measure, largest }: YearsProps) {
               <p className="text-sm text-foreground-muted tabular-nums">
                 {t(measure)}{' '}
                 <span className="font-semibold text-foreground">
-                  {written(yearFigure(row, measure), measure, format)}
+                  {writeFigure(yearFigure(row, measure), measure, format)}
                 </span>
               </p>
             </div>
@@ -428,7 +486,12 @@ function YearCards({ rows, measure, largest }: YearsProps) {
                   <li key={cell.month} className={cn(TILE, shadeOf(cell, figure, largest))}>
                     <span className="text-[11px]">{monthCalled(place, format)}</span>
                     <span className="font-medium">
-                      <MonthFigure cell={cell} figure={figure} measure={measure} />
+                      <MonthFigure
+                        cell={cell}
+                        figure={figure}
+                        measure={measure}
+                        before={words.before}
+                      />
                     </span>
                   </li>
                 );

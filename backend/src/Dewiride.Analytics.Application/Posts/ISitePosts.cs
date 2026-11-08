@@ -37,7 +37,8 @@ public interface ISitePosts
     /// </summary>
     /// <remarks>
     /// Read whole, with nothing a post says about itself but its date: a website lists fifty thousand
-    /// posts at most, and only the few that are shown are named, by <see cref="NamedAsync"/>.
+    /// posts at most. Only the posts that are shown are named, at most <see cref="MostNamed"/> at once, by
+    /// <see cref="NamedAsync"/>, and a search is made where they are kept, by <see cref="MatchingAsync"/>.
     /// </remarks>
     /// <param name="scope">The website, and the proof that the caller may read it.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -59,6 +60,39 @@ public interface ISitePosts
         TenantScope scope,
         IReadOnlyCollection<string> paths,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Finds the posts a website's sitemap lists now whose title or path holds a text.
+    /// </summary>
+    /// <remarks>
+    /// The text is whatever a request searched for, and it is only ever a value: compared with what each
+    /// post of this website alone is called and with its path — the part of its address after the website's
+    /// name, which every address it lists shares — without regard to case, and holding no wildcard: every
+    /// character of it stands for itself. A whole web address searched for is compared by the path it names.
+    /// </remarks>
+    /// <param name="scope">The website, and the proof that the caller may read it.</param>
+    /// <param name="text">The words searched for, as <see cref="PostSearch"/> reads them.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The paths of the posts that hold it, in no particular order; none where no post does.</returns>
+    /// <exception cref="ArgumentException">
+    /// No text, or more than <see cref="PostSearch.MostCharacters"/> characters of it.
+    /// </exception>
+    Task<ImmutableArray<string>> MatchingAsync(TenantScope scope, string text, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Finds one post a website's sitemap lists now, by the path the collector knows its page by.
+    /// </summary>
+    /// <remarks>
+    /// The path is whatever a request named, and it is compared exactly as it is written with the posts of
+    /// this website alone. A path that names no post of it — a page that is not a post, a post no longer
+    /// listed, another website's post, a post's path spelled any other way, or a path no listed post could
+    /// have — finds nothing.
+    /// </remarks>
+    /// <param name="scope">The website, and the proof that the caller may read it.</param>
+    /// <param name="path">The path.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The post, or nothing where the path names no post of this website.</returns>
+    Task<FoundPost?> FindAsync(TenantScope scope, string path, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -80,3 +114,24 @@ public sealed record ListedPost(string Path, string? LandedPath, DateTimeOffset?
 /// <param name="Title">What the page says it is called, or nothing where it said nothing.</param>
 /// <param name="PublishedAt">When the page says it was published, or nothing where it did not say.</param>
 public sealed record NamedPost(string Path, string Address, string? Title, DateTimeOffset? PublishedAt);
+
+/// <summary>
+/// One post a website's sitemap lists now, found to be read on a page of its own.
+/// </summary>
+/// <param name="Listed">The post, as everything that counts the website's posts reads it.</param>
+/// <param name="Address">Its address, to link to. Written by the website, so it is text, never markup.</param>
+/// <param name="Title">What the page says it is called, or nothing where it said nothing.</param>
+/// <param name="LandedOnAPost">
+/// Whether the path its page answered at is the own path of a post the website lists, which makes that
+/// path the other post's rather than this one's.
+/// </param>
+/// <param name="FirstListedAt">
+/// When a sitemap first listed it. A month of posts counted before then was counted without it, so it says
+/// nothing of how much the post was read in that month.
+/// </param>
+public sealed record FoundPost(
+    ListedPost Listed,
+    string Address,
+    string? Title,
+    bool LandedOnAPost,
+    DateTimeOffset FirstListedAt);

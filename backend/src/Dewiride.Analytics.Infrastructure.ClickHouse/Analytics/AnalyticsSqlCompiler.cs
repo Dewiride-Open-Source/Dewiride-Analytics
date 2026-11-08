@@ -31,13 +31,13 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// lets the rest of the system treat them as ordinary data.
 /// </para>
 /// <para>
-/// Thirteen of the questions that read activity may be asked of people alone. Each then has two
+/// Fourteen of the questions that read activity may be asked of people alone. Each then has two
 /// shapes chosen by what was asked, on the terms the visit list's two shapes were chosen: the
 /// everybody shape reads no verdict and binds nothing for one, and the people shape is that
 /// statement with the two expressions <see cref="JudgedPeople"/> writes placed after the settled
-/// identity and its first aggregation reading from them. Two more, a website's kept months and the
-/// views kept for its posts, are asked of people by reading the figures kept for them beside
-/// everybody's.
+/// identity and its first aggregation reading from them. Three more, a website's kept months, the
+/// views kept for its posts and the months kept of one post, are asked of people by reading the
+/// figures kept for them beside everybody's.
 /// </para>
 /// </remarks>
 public static class AnalyticsSqlCompiler
@@ -68,6 +68,19 @@ public static class AnalyticsSqlCompiler
     private const string MostValuesParameter = "most_values";
     private const string MaxRequestsParameter = "max_requests";
     private const string BeforeParameter = "before";
+    private const string PostPathsParameter = "post_paths";
+
+    /// <summary>
+    /// What keeps a series to one post's paths: a line of its own directly after the selection the
+    /// buckets are counted from, where both halves of the measurement have been reconciled across the
+    /// whole window and, about people, the verdicts applied.
+    /// </summary>
+    /// <remarks>
+    /// Kept to any earlier, the window would hold the post's reports alone, and a server's report of
+    /// the post could no longer be told whose it was by the browser that echoed another page of the same
+    /// visit — so the post would count a visitor twice that its row on the list of pages counts once.
+    /// </remarks>
+    private const string KeptToThePostsPaths = "\n        WHERE path IN {post_paths:Array(String)}";
 
     /// <summary>
     /// Aggregate per metric, over one visitor's activity on one page. Visitors excludes activity
@@ -689,7 +702,8 @@ public static class AnalyticsSqlCompiler
     /// <remarks>
     /// A post's views are read as a website's whole record is: from what was kept month by month, and
     /// from the reports of the months nothing was kept of — the one by reading the kept months, the
-    /// other by the arithmetic of the list of pages.
+    /// other by the arithmetic of the list of pages. The two questions about one post read the same two
+    /// sources kept to that post's paths, and are the only ones that bind a path.
     /// </remarks>
     private static CompiledStatement? CompileAboutPosts(TenantScope scope, AnalyticsQuery query) =>
         query switch
@@ -697,6 +711,8 @@ public static class AnalyticsSqlCompiler
             PostViewsQuery posts => CompilePostViews(scope, posts),
             KeptPostMonthsQuery postMonths => CompileKeptPostMonths(scope, postMonths),
             KeptPostViewsQuery postViews => CompileKeptPostViews(scope, postViews),
+            PostSeriesQuery postSeries => CompilePostSeries(scope, postSeries),
+            KeptMonthsOfPostQuery monthsOfPost => CompileKeptMonthsOfPost(scope, monthsOfPost),
             _ => null,
         };
 
@@ -793,6 +809,70 @@ public static class AnalyticsSqlCompiler
             [
                 new QueryParameter(StatementBindings.SiteId, scope.SiteId),
                 new QueryParameter(BeforeParameter, query.Before),
+            ]);
+    }
+
+    /// <summary>
+    /// Reads every month a website's posts were kept for, up to the one running now, with the pages
+    /// delivered at one post's paths in each.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Each month is read as its newest count first, and the post's paths are picked out of that count
+    /// only then, so the count a month is read as is the count every other reading of the month reads.
+    /// They are picked out of the arrays the month keeps rather than spread into a row each, so a month
+    /// that kept no path at all — nobody read any post in it — is still a month, of nought.
+    /// </para>
+    /// <para>
+    /// Whether the month kept any of the post's paths comes back beside the figure, with when it was
+    /// counted: a month counted before the post was listed has nothing at its paths whoever read it. The
+    /// figures for the people a month held are kept beside everybody's, on the same row and from the same
+    /// count, so asking about people reads another column rather than other rows.
+    /// </para>
+    /// </remarks>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement and its bound values.</returns>
+    private static CompiledStatement CompileKeptMonthsOfPost(TenantScope scope, KeptMonthsOfPostQuery query)
+    {
+        var sql = $$"""
+            SELECT
+                month,
+                toInt64(arraySum(arrayMap(
+                    (path, views) -> if(has({post_paths:Array(String)}, path), views, 0),
+                    paths,
+                    counted))) AS page_views,
+                hasAny(paths, {post_paths:Array(String)}) AS named,
+                counted_at,
+                begins_at,
+                ends_at,
+                judged_to
+            FROM
+            (
+                SELECT
+                    month,
+                    paths,
+                    {{KeptPostViewColumns[query.Population]}} AS counted,
+                    counted_at,
+                    begins_at,
+                    ends_at,
+                    judged_to
+                FROM consolidated_post_months
+                WHERE site_id = {site_id:UUID}
+                  AND month <= toStartOfMonth(toDate(fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC'), {time_zone:String}))
+                ORDER BY month, counted_at DESC
+                LIMIT 1 BY month
+            )
+            ORDER BY month
+            """;
+
+        return new CompiledStatement(
+            sql,
+            [
+                new QueryParameter(StatementBindings.SiteId, scope.SiteId),
+                new QueryParameter(ToParameter, query.Range.To.ToUnixTimeMilliseconds()),
+                new QueryParameter(TimeZoneParameter, scope.TimeZoneId),
+                new QueryParameter(PostPathsParameter, query.Paths.ToArray()),
             ]);
     }
 
@@ -2812,13 +2892,61 @@ public static class AnalyticsSqlCompiler
     /// Asked of people alone, it is the same buckets over the reports the verdicts on people
     /// cover, so the buckets add up to the headline asked of the same people.
     /// </remarks>
-    private static CompiledStatement CompileTimeSeries(TenantScope scope, TimeSeriesQuery query)
-    {
-        var holding = CalendarBuckets.Holding(query.Granularity, "server_ts");
-        var metric = MetricExpressions[query.Metric];
-        var kept = JudgedPeople.Among(ReconciledEvents.Identified, query.Population);
+    private static CompiledStatement CompileTimeSeries(TenantScope scope, TimeSeriesQuery query) =>
+        new(
+            SeriesStatement(query.Granularity, query.Metric, query.Population, string.Empty),
+            [
+                .. WindowParameters(scope, query.Range),
+                new QueryParameter(TimeZoneParameter, scope.TimeZoneId),
+                .. PopulationParameters(query.Population),
+            ]);
 
-        var sql = $$"""
+    /// <summary>
+    /// Counts the pages delivered at one post in buckets across a window: the website's series of page
+    /// views, kept to the post's paths.
+    /// </summary>
+    /// <remarks>
+    /// The one line that keeps it to them is <see cref="KeptToThePostsPaths"/>, so each bucket is the
+    /// post's row on the list of pages for the same stretch. The paths are bound as one array, and are
+    /// the control plane's rather than a request's.
+    /// </remarks>
+    private static CompiledStatement CompilePostSeries(TenantScope scope, PostSeriesQuery query) =>
+        new(
+            SeriesStatement(query.Granularity, TimeSeriesMetric.PageViews, query.Population, KeptToThePostsPaths),
+            [
+                .. WindowParameters(scope, query.Range),
+                new QueryParameter(TimeZoneParameter, scope.TimeZoneId),
+                new QueryParameter(PostPathsParameter, query.Paths.ToArray()),
+                .. PopulationParameters(query.Population),
+            ]);
+
+    /// <summary>
+    /// Writes a series of one measure in buckets across a window, by the arithmetic the headline totals
+    /// use.
+    /// </summary>
+    /// <param name="granularity">How wide each bucket is.</param>
+    /// <param name="metric">What each bucket counts.</param>
+    /// <param name="population">Who the buckets count.</param>
+    /// <param name="narrowing">
+    /// Placed directly after the selection the buckets are counted from: nothing for the website's own
+    /// series, and the line that keeps one post's to its paths. Written in this file and never by a
+    /// caller.
+    /// </param>
+    /// <returns>
+    /// The statement. It binds <c>site_id</c>, <c>from_ms</c>, <c>to_ms</c>, <c>time_zone</c>, whatever
+    /// the narrowing names and, asked about people, <c>longest_visit_seconds</c>.
+    /// </returns>
+    private static string SeriesStatement(
+        TimeGranularity granularity,
+        TimeSeriesMetric metric,
+        Population population,
+        string narrowing)
+    {
+        var holding = CalendarBuckets.Holding(granularity, "server_ts");
+        var measured = MetricExpressions[metric];
+        var kept = JudgedPeople.Among(ReconciledEvents.Identified, population);
+
+        return $$"""
             WITH
                 windowed AS
                 (
@@ -2830,36 +2958,28 @@ public static class AnalyticsSqlCompiler
                 ),
                 {{ReconciledEvents.Reconciliation}}{{kept.Following}}
             SELECT
-                {{CalendarBuckets.BeginningOf(query.Granularity, "calendar_bucket")}} AS bucket,
+                {{CalendarBuckets.BeginningOf(granularity, "calendar_bucket")}} AS bucket,
                 value
             FROM
             (
                 SELECT
                     calendar_bucket,
-                    {{metric}} AS value
+                    {{measured}} AS value
                 FROM
                 (
                     SELECT
                         {{holding}} AS calendar_bucket,
                         visitor_key,
                         {{ReconciledEvents.DeliveredPageViews(12)}}
-                    FROM {{kept.Source}}
+                    FROM {{kept.Source}}{{narrowing}}
                     GROUP BY calendar_bucket, visitor_key, path
                 )
                 GROUP BY calendar_bucket
                 ORDER BY calendar_bucket
-                {{FilledBuckets(query.Granularity, 4)}}
+                {{FilledBuckets(granularity, 4)}}
             )
             ORDER BY bucket
             """;
-
-        return new CompiledStatement(
-            sql,
-            [
-                .. WindowParameters(scope, query.Range),
-                new QueryParameter(TimeZoneParameter, scope.TimeZoneId),
-                .. PopulationParameters(query.Population),
-            ]);
     }
 
     /// <summary>

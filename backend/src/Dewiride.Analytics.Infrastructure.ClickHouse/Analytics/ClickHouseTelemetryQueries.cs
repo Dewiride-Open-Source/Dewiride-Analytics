@@ -39,25 +39,11 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client, Keepi
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<TimeSeriesPoint>> GetTimeSeriesAsync(
+    public Task<IReadOnlyList<TimeSeriesPoint>> GetTimeSeriesAsync(
         TenantScope scope,
         TimeSeriesQuery query,
-        CancellationToken cancellationToken)
-    {
-        var points = new List<TimeSeriesPoint>();
-
-        await using var reader = await ExecuteAsync(
-                AnalyticsSqlCompiler.Compile(scope, query),
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            points.Add(new TimeSeriesPoint(reader.GetDateTimeOffset(0), reader.GetInt64(1)));
-        }
-
-        return points;
-    }
+        CancellationToken cancellationToken) =>
+        PointsAsync(AnalyticsSqlCompiler.Compile(scope, query), cancellationToken);
 
     /// <inheritdoc />
     public async Task<SitePages> GetSitePagesAsync(
@@ -1121,6 +1107,62 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client, Keepi
         }
 
         return counted.DrainToImmutable();
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<TimeSeriesPoint>> GetPostSeriesAsync(
+        TenantScope scope,
+        PostSeriesQuery query,
+        CancellationToken cancellationToken) =>
+        PointsAsync(AnalyticsSqlCompiler.Compile(scope, query), cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<ImmutableArray<KeptMonthOfPost>> GetKeptMonthsOfPostAsync(
+        TenantScope scope,
+        KeptMonthsOfPostQuery query,
+        CancellationToken cancellationToken)
+    {
+        var months = ImmutableArray.CreateBuilder<KeptMonthOfPost>();
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            months.Add(new KeptMonthOfPost(
+                KeptRows.Day(reader, 0),
+                reader.GetInt64(1),
+                reader.GetByte(2) == 1,
+                reader.GetDateTimeOffset(3),
+                new TimeRange(reader.GetDateTimeOffset(4), reader.GetDateTimeOffset(5)),
+                reader.GetDateTimeOffset(6)));
+        }
+
+        return months.DrainToImmutable();
+    }
+
+    /// <summary>
+    /// Reads a series: one bucket a row, where it begins and what it counted.
+    /// </summary>
+    /// <param name="statement">The statement, compiled from a question about a series.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The buckets, in the order the statement hands them back.</returns>
+    private async Task<IReadOnlyList<TimeSeriesPoint>> PointsAsync(
+        CompiledStatement statement,
+        CancellationToken cancellationToken)
+    {
+        var points = new List<TimeSeriesPoint>();
+
+        await using var reader = await ExecuteAsync(statement, cancellationToken).ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            points.Add(new TimeSeriesPoint(reader.GetDateTimeOffset(0), reader.GetInt64(1)));
+        }
+
+        return points;
     }
 
     private async Task<ClickHouseDataReader> ExecuteAsync(

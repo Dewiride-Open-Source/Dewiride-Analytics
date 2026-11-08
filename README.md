@@ -69,8 +69,12 @@ and the [master plan](#master-plan) below it says what does not yet.
   request a second and to the website's own addresses. Settings says how many posts it found, how
   many say when they were published, and in plain words anything that got in the way. Insights shows
   them: how many there are, the newest ten with how often each was read, the most read ever, and a
-  calendar of the last twelve months of posting. How it behaves, and how to switch it off, is under
-  [Reading a website's sitemap](#reading-a-websites-sitemap).
+  calendar of the last twelve months of posting. Each post opens on a page of its own: how often it
+  has been read since its views were first counted, on average per day and in its best month, a chart
+  of its views over the period you choose by the hour, day, week, month or year, every month and year
+  by total views or by average per day, and its last thirteen weeks day by day. Every post is listed
+  on a screen of its own, searchable by title or address, the most read or the newest first. How it
+  behaves, and how to switch it off, is under [Reading a website's sitemap](#reading-a-websites-sitemap).
 - Where your readers are, by country, by town, and by the network they arrived over, ranked by how
   many people were in each place rather than by how much browsing they did. Towns are named as an
   estimate, because that is what they are; the network view is there because a hundred rented
@@ -459,6 +463,11 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-07.
   and hour, every month and year by total views or by average per day, and the same for people only.
 - **Done** · Posts from the website's own sitemap: how many, the newest ten with their views, the most
   read ever, and a calendar of the last 12 months of posting.
+- **Done** · A page for each post: its views since they were first counted, on average per day and in
+  its best month, a chart of its views by the hour, day, week, month or year, every month and year by
+  total views or by average per day, and its last 13 weeks day by day, for everybody or people only.
+- **Done** · Every post in one list, with how often each was read: searchable by title or address, the
+  most read or the newest first, a page at a time.
 
 ### Phase 6 — AI analytics
 

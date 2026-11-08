@@ -1319,3 +1319,127 @@ public sealed record KeptPostViewsQuery : AnalyticsQuery
     /// <summary>Who the kept figures are about.</summary>
     public Population Population { get; init; } = Population.Everybody;
 }
+
+/// <summary>
+/// The paths one post is read at: its own, and where its page landed where that counts for it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The two questions about one post are the only questions that bind a post's paths to a statement, and
+/// these are the rules they bind them under. The paths are the control plane's, read from the row the
+/// website's sitemap made, and never the ones a request named: a request finds a post by its path, and
+/// what is asked of the store is the path that row holds.
+/// </para>
+/// <para>
+/// One or two values, compared with the paths the store holds only after both halves of the measurement
+/// have been reconciled, so a post's figure is its row on the list of pages and never a count of the
+/// reports that happened to name it.
+/// </para>
+/// </remarks>
+public static class PostPaths
+{
+    /// <summary>Most paths one post is read at: its own, and where its page landed.</summary>
+    public const int Most = 2;
+
+    /// <summary>
+    /// Checks the paths a question about one post is asked about.
+    /// </summary>
+    /// <param name="paths">The paths.</param>
+    /// <param name="parameterName">The name the caller gave them, for the refusal.</param>
+    /// <returns>The paths, unchanged.</returns>
+    /// <exception cref="ArgumentException">No path was given, or one of them is missing or empty.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">More paths than <see cref="Most"/>.</exception>
+    internal static ImmutableArray<string> Checked(ImmutableArray<string> paths, string parameterName)
+    {
+        if (paths.IsDefaultOrEmpty || paths.Any(string.IsNullOrEmpty))
+        {
+            throw new ArgumentException("Ask about a post by its path, and where it landed.", parameterName);
+        }
+
+        if (paths.Length > Most)
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                paths.Length,
+                "Ask about a post by its own path and where it landed, and nothing more.");
+        }
+
+        return paths;
+    }
+}
+
+/// <summary>
+/// One post's page views, bucketed over time.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The website's series of page views (<see cref="TimeSeriesQuery"/>) kept to the paths one post is read
+/// at, once both halves of the measurement have been reconciled across the whole window. So each bucket
+/// is the post's row on the list of pages for that bucket, and a server's report of the post is still
+/// told whose it was by the browser that echoed another page of the same visit.
+/// </para>
+/// <para>
+/// Unlike <see cref="PostViewsQuery"/>, the paths are bound to the statement, on the terms
+/// <see cref="PostPaths"/> sets.
+/// </para>
+/// </remarks>
+public sealed record PostSeriesQuery : AnalyticsQuery
+{
+    /// <summary>Asks how many pages were delivered at one post in each bucket of a window.</summary>
+    /// <param name="range">The window to cover.</param>
+    /// <param name="granularity">Bucket size.</param>
+    /// <param name="paths">The paths the post is read at, at least one and at most <see cref="PostPaths.Most"/>.</param>
+    /// <exception cref="ArgumentException">No path was given, or one of them is missing or empty.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">More paths than <see cref="PostPaths.Most"/>.</exception>
+    public PostSeriesQuery(TimeRange range, TimeGranularity granularity, ImmutableArray<string> paths)
+        : base(range)
+    {
+        Granularity = granularity;
+        Paths = PostPaths.Checked(paths, nameof(paths));
+    }
+
+    /// <summary>Bucket size.</summary>
+    public TimeGranularity Granularity { get; }
+
+    /// <summary>The paths the post is read at, as the website's sitemap row holds them.</summary>
+    public ImmutableArray<string> Paths { get; }
+
+    /// <summary>Who the pages were delivered to.</summary>
+    public Population Population { get; init; } = Population.Everybody;
+}
+
+/// <summary>
+/// Every month a website's posts were kept for, with what one post was read in it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Each month is read as its newest count, and the post's paths are picked out of that count, so a
+/// month in which nobody read the post is a month with nothing at its paths rather than a month left
+/// out. Every month comes back, which also says which months the website's posts were kept for.
+/// </para>
+/// <para>
+/// The paths are bound on the terms <see cref="PostPaths"/> sets. Asked of people alone, it reads the
+/// figures kept for them beside everybody's.
+/// </para>
+/// </remarks>
+public sealed record KeptMonthsOfPostQuery : AnalyticsQuery
+{
+    /// <summary>
+    /// Asks for the months as they stand at a moment.
+    /// </summary>
+    /// <param name="asOf">The moment, which decides which month is the one running now.</param>
+    /// <param name="paths">The paths the post is read at, at least one and at most <see cref="PostPaths.Most"/>.</param>
+    /// <exception cref="ArgumentException">No path was given, or one of them is missing or empty.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">More paths than <see cref="PostPaths.Most"/>.</exception>
+    public KeptMonthsOfPostQuery(DateTimeOffset asOf, ImmutableArray<string> paths)
+        : base(new TimeRange(DateTimeOffset.UnixEpoch, asOf))
+    {
+        Paths = PostPaths.Checked(paths, nameof(paths));
+    }
+
+    /// <summary>The paths the post is read at, as the website's sitemap row holds them.</summary>
+    public ImmutableArray<string> Paths { get; }
+
+    /// <summary>Who the kept figures are about.</summary>
+    public Population Population { get; init; } = Population.Everybody;
+}

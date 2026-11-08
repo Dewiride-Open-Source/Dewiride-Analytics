@@ -3,11 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type Activity,
-  type ChartCutting,
   TrafficChart,
   type TrafficPoint,
 } from '@/components/dashboard/traffic-chart';
-import type { ChartBy } from '@/lib/analytics/chart-by';
+import type { ChartBy, ChartCutting } from '@/lib/analytics/chart-by';
 import type { ChartView } from '@/lib/analytics/chart-view';
 import type { Granularity } from '@/lib/analytics/period';
 import type { TrafficPicture, TrafficSeries } from '@/lib/api/schemas';

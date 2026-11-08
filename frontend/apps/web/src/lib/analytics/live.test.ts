@@ -7,6 +7,7 @@ import {
   type LiveRow,
   minutesSince,
   namedNow,
+  pagesReadIn,
   rowsToShow,
   runningMinute,
 } from '@/lib/analytics/live';
@@ -346,5 +347,15 @@ describe('whether the half hour is worth drawing', () => {
 
   it('is not worth drawing when there are no minutes at all', () => {
     expect(anythingRead([])).toBe(false);
+  });
+});
+
+describe('how many pages the half hour holds', () => {
+  it('counts every page read in every minute of it, the one running now among them', () => {
+    expect(pagesReadIn(MINUTES)).toBe(11);
+  });
+
+  it('counts none where the half hour has no minutes', () => {
+    expect(pagesReadIn([])).toBe(0);
   });
 });

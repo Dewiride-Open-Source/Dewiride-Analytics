@@ -597,9 +597,9 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-07.
 
 **8.4 Live**
 
-- **Done** · Visitors now, pages being read, a trail per visitor. Only confirmed or self-declared
-  machinery is named while a visit is under way — by design, so a person is never guessed at
-  mid-read.
+- **Done** · Visitors now and the page views of the same half hour, pages being read, a trail per
+  visitor. Only confirmed or self-declared machinery is named while a visit is under way — by
+  design, so a person is never guessed at mid-read.
 - **Done** · Each row says on its first line how the visitor arrived: the site that sent them,
   "Came straight here", or "Arrived earlier" where the half hour did not see them arrive.
 - **Done** · A page left open keeps nobody on the list: a visitor is shown while a page they opened

@@ -8,8 +8,24 @@
 /** One place in the row of page numbers: a page to jump to, or a break where pages were left out. */
 export type PageStep = number | 'gap';
 
-/** How many pages either side of the current one are always offered. */
+/**
+ * One place in the row of page numbers, and the screens it is offered on: every screen; only a
+ * screen with room for the pages either side of the current one; or only a screen without it, as
+ * the break standing for the pages it leaves out.
+ */
+export interface PageSlot {
+  readonly step: PageStep;
+  readonly on: 'every' | 'wide' | 'narrow';
+}
+
+/** How many pages either side of the current one are offered where there is room for them. */
 const NEIGHBOURS = 1;
+
+/**
+ * How many places a phone has room for between the steps to the page before and the page after,
+ * with every place in the row large enough to press with a thumb.
+ */
+const PHONE_PLACES = 5;
 
 /** How many pages a list has, or none when it is empty. */
 export function pageCount(total: number, perPage: number): number {
@@ -39,10 +55,15 @@ export function offsetOf(page: number, perPage: number): number {
  *
  * @param current The page on screen, counting from one.
  * @param count How many pages there are.
+ * @param neighbours How many pages either side of the current one are offered.
  * @returns The row, in order.
  */
-export function pagesFor(current: number, count: number): readonly PageStep[] {
-  const offered = [...new Set([1, current - NEIGHBOURS, current, current + NEIGHBOURS, count])]
+export function pagesFor(
+  current: number,
+  count: number,
+  neighbours = NEIGHBOURS,
+): readonly PageStep[] {
+  const offered = [...new Set([1, current - neighbours, current, current + neighbours, count])]
     .filter((page) => page >= 1 && page <= count)
     .sort((first, second) => first - second);
 
@@ -58,6 +79,62 @@ export function pagesFor(current: number, count: number): readonly PageStep[] {
     }
 
     row.push(page);
+  }
+
+  return row;
+}
+
+/**
+ * The page numbers to offer on a phone.
+ *
+ * The row {@link pagesFor} offers wherever it fits in the places a phone has room for, so a short
+ * list is offered whole. Beyond that only the current page and both ends: the pages either side of
+ * the current one, and the breaks around them, would make a row a phone cannot hold.
+ *
+ * @param current The page on screen, counting from one.
+ * @param count How many pages there are.
+ * @returns The row, in order.
+ */
+export function phonePagesFor(current: number, count: number): readonly PageStep[] {
+  const wide = pagesFor(current, count);
+
+  return wide.length <= PHONE_PLACES ? wide : pagesFor(current, count, 0);
+}
+
+/**
+ * The page numbers to offer on a screen of either width, as one row.
+ *
+ * Where there is room, the row {@link pagesFor} offers, and on a phone the row
+ * {@link phonePagesFor} offers. Written as one row rather than two, so every page is in it once and
+ * the screen only leaves out what a width does not offer. A break where there is room stands for the
+ * pages a phone leaves out as well, and a phone is given a break of its own only where there is none.
+ *
+ * @param current The page on screen, counting from one.
+ * @param count How many pages there are.
+ * @returns The row, in order.
+ */
+export function pageRow(current: number, count: number): readonly PageSlot[] {
+  const narrow = new Set(phonePagesFor(current, count));
+  const row: PageSlot[] = [];
+  // The last page a phone offers, and whether a break both widths offer has come since it.
+  let lastOffered: number | undefined;
+  let brokenSince = false;
+
+  for (const step of pagesFor(current, count)) {
+    if (step === 'gap') {
+      row.push({ step, on: 'every' });
+      brokenSince = true;
+    } else if (narrow.has(step)) {
+      if (lastOffered !== undefined && step - lastOffered > 1 && !brokenSince) {
+        row.push({ step: 'gap', on: 'narrow' });
+      }
+
+      row.push({ step, on: 'every' });
+      lastOffered = step;
+      brokenSince = false;
+    } else {
+      row.push({ step, on: 'wide' });
+    }
   }
 
   return row;

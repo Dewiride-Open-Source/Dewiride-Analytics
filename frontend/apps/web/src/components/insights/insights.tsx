@@ -9,7 +9,8 @@ import { PopulationSwitch } from '@/components/dashboard/population-switch';
 import { ListEmpty, ListWaiting } from '@/components/dashboard/ranked-list';
 import { SiteSettings } from '@/components/dashboard/site-settings';
 import { TrackingCode } from '@/components/dashboard/tracking-code';
-import { MonthsTable } from '@/components/insights/months-table';
+import { KeptToPeople } from '@/components/insights/kept-to-people';
+import { MonthsTable, useSiteMonthsWords } from '@/components/insights/months-table';
 import { PopularTimes } from '@/components/insights/popular-times';
 import { Posts, PostsCard } from '@/components/insights/posts';
 import { Button } from '@/components/ui/button';
@@ -25,7 +26,7 @@ import { everJudged, reachedBy } from '@/lib/analytics/people-absence';
 import type { Population } from '@/lib/analytics/people-only';
 import { usePeopleOnly } from '@/lib/analytics/use-people-only';
 import type { Insights as InsightsAnswer, Site } from '@/lib/api/schemas';
-import { sentences, useLeftOut } from '@/lib/charts/use-left-out';
+import { useLeftOut } from '@/lib/charts/use-left-out';
 import { useAllTimeTraffic, useInsights } from '@/lib/queries/sites';
 import { readableZone } from '@/lib/time-zones';
 
@@ -222,23 +223,6 @@ function RecordCaption({ site, firstDay }: RecordCaptionProps) {
   );
 }
 
-interface KeptToPeopleProps {
-  /** Whether the figures are further behind than visits waiting their turn explains. */
-  readonly fallenBehind: boolean;
-}
-
-/** The one clause every figure below is read under. Said once, here, rather than on each card. */
-function KeptToPeople({ fallenBehind }: KeptToPeopleProps) {
-  const words = useTranslations('dashboard.population');
-  const chart = useTranslations('dashboard.chart');
-
-  return (
-    <p className="-mt-2 text-sm text-foreground-muted">
-      {sentences(words('caption'), fallenBehind ? chart('people.judging') : null)}
-    </p>
-  );
-}
-
 interface RecordPlaceProps {
   readonly shown: RecordShown;
   /** The website, or nothing while which one it is has still to be read. */
@@ -359,6 +343,8 @@ interface WholeRecordProps {
  * went.
  */
 function WholeRecord({ insights, site, peopleOnly, reading, posts }: WholeRecordProps) {
+  const words = useSiteMonthsWords();
+
   return (
     <>
       <Highlights
@@ -376,7 +362,12 @@ function WholeRecord({ insights, site, peopleOnly, reading, posts }: WholeRecord
         onFiguresToggle={reading.onFiguresToggle}
       />
       <Posts site={site} firstMonth={insights?.months[0]?.month} {...posts} />
-      <MonthsTable insights={insights} measure={reading.measure} onMeasure={reading.onMeasure} />
+      <MonthsTable
+        record={insights}
+        measure={reading.measure}
+        onMeasure={reading.onMeasure}
+        words={words}
+      />
     </>
   );
 }

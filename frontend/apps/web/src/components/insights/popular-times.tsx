@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { CELL, FIGURE, Figures } from '@/components/charts/figures';
 import { writeShare } from '@/components/dashboard/ranked-list';
 import { Card } from '@/components/ui/card';
-import { writableDay } from '@/lib/analytics/all-time';
+import { A_MONDAY, weekdayName, writableDay } from '@/lib/analytics/all-time';
 import { shareOf } from '@/lib/analytics/share';
 import type { Insights } from '@/lib/api/schemas';
 import { cn } from '@/lib/styling';
@@ -24,10 +24,6 @@ const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 /** The hours named under the picture of the day, which has no room to name them all. */
 const NAMED_HOURS: ReadonlySet<number> = new Set([0, 6, 12, 18]);
 
-/** A Monday at midnight, which any day of the week and any hour can be written from. */
-const A_MONDAY = Date.UTC(2024, 0, 1);
-
-const DAY = 86_400_000;
 const HOUR = 3_600_000;
 const FIFTY_NINE_MINUTES = 59 * 60_000;
 
@@ -80,11 +76,6 @@ interface Stretch {
 interface Run {
   readonly figures: readonly number[];
   readonly busiest: readonly number[];
-}
-
-/** A place in the week written out: the day's name, however long or short it is asked for. */
-function weekdayCalled(place: number, weekday: 'long' | 'narrow', format: Format): string {
-  return format.dateTime(new Date(A_MONDAY + place * DAY), { weekday, timeZone: 'UTC' });
 }
 
 /**
@@ -144,8 +135,8 @@ export function PopularTimes({ insights, zone, figuresOpen, onFiguresToggle }: P
   const format = useFormatter();
   const week: Stretch = {
     places: WEEKDAYS,
-    called: (place) => weekdayCalled(place, 'long', format),
-    mark: (place) => weekdayCalled(place, 'narrow', format),
+    called: (place) => weekdayName(place, 'long', format),
+    mark: (place) => weekdayName(place, 'narrow', format),
     centred: true,
     typical: TYPICAL_WEEKDAY,
   };

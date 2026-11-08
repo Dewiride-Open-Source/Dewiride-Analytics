@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ArrowRight,
   CalendarX,
   CirclePause,
   Hourglass,
@@ -18,13 +19,17 @@ import { LatestPosts } from '@/components/insights/post-list';
 import { PostingCalendar } from '@/components/insights/posting-calendar';
 import { Button } from '@/components/ui/button';
 import { FailureNotice } from '@/components/ui/failure-notice';
-import { writableDay } from '@/lib/analytics/all-time';
+import { Link } from '@/i18n/navigation';
+import { writtenMonth } from '@/lib/analytics/all-time';
 import type { Population } from '@/lib/analytics/people-only';
+import { withChoices } from '@/lib/analytics/period';
 import { type PostsLook, postsLook, postsNote, viewsCountedSince } from '@/lib/analytics/posts';
 import type { InsightsPosts, Site, SitemapStatus } from '@/lib/api/schemas';
+import type { Formatter } from '@/lib/charts/bucket-names';
 import { sentences } from '@/lib/charts/use-left-out';
 import { useSitemapStatus } from '@/lib/queries/site-settings';
 import { useInsightsPosts } from '@/lib/queries/sites';
+import { ALL_POSTS } from '@/lib/routes';
 
 type PostsWords = ReturnType<typeof useTranslations<'insights.posts'>>;
 type SitemapWords = ReturnType<typeof useTranslations<'siteSettings.sitemap'>>;
@@ -127,6 +132,7 @@ function SitePosts({ site, population, firstMonth, onCheckAddress, headingRef }:
       status={status}
       answer={posts.data}
       error={posts.data === undefined ? posts.error : null}
+      population={population}
       firstMonth={firstMonth}
       mayChange={mayChange}
       onCheckAddress={onCheckAddress}
@@ -219,8 +225,18 @@ interface NoPostsProps {
   readonly headingRef: RefObject<HTMLHeadingElement | null>;
 }
 
-/** The one card standing where the posts would be. */
-function NoPosts({ look, status, site, mayChange, onCheckAddress, headingRef }: NoPostsProps) {
+/**
+ * The one card standing where the posts would be, for each reason there are none, with the one thing
+ * somebody who manages the website can do about it.
+ */
+export function NoPosts({
+  look,
+  status,
+  site,
+  mayChange,
+  onCheckAddress,
+  headingRef,
+}: NoPostsProps) {
   const t = useTranslations('insights.posts');
   const sitemap = useTranslations('siteSettings.sitemap');
   const { icon, title, body, asks } = absence(
@@ -254,6 +270,8 @@ interface ListedPostsProps {
   readonly answer: InsightsPosts | undefined;
   /** What went wrong asking for it, where nothing was had. */
   readonly error: Error | null;
+  /** Whose views are counted, which the way to every post carries. */
+  readonly population: Population;
   readonly firstMonth: string | undefined;
   readonly mayChange: boolean;
   readonly onCheckAddress: () => void;
@@ -263,8 +281,11 @@ interface ListedPostsProps {
 /**
  * What may be missing from the posts shown, where the last reading of the sitemap went wrong: part
  * of it could not be read, or none of it could, when the posts are those an earlier reading found.
+ *
+ * @param state How the last reading of the sitemap stands.
+ * @param t The words posts are written about in.
  */
-function mayBeMissing(state: SitemapStatus['state'], t: PostsWords): string | null {
+export function mayBeMissing(state: SitemapStatus['state'], t: PostsWords): string | null {
   switch (state) {
     case 'partly-read':
       return t('partly');
@@ -276,14 +297,27 @@ function mayBeMissing(state: SitemapStatus['state'], t: PostsWords): string | nu
 }
 
 /**
+ * The sentence saying since when posts' views are counted, or nothing where none is said.
+ *
+ * @param month The month they are counted from, written `2026-08`, or nothing where it goes unsaid.
+ * @param t The words posts are written about in.
+ * @param format The reader's own formatter.
+ */
+export function viewsSince(month: string | null, t: PostsWords, format: Formatter): string | null {
+  return month === null ? null : t('viewsSince', { month: writtenMonth(month, format) });
+}
+
+/**
  * The posts themselves, under one heading carrying whatever qualifies all of them: since when their
  * views are counted, where that is later than the record begins, and that some may be missing where
- * the last reading of the sitemap went wrong or its pages are still being read.
+ * the last reading of the sitemap went wrong or its pages are still being read. Beside it, the way to
+ * every post the sitemap lists, which a phone sets beneath the heading.
  */
 function ListedPosts({
   status,
   answer,
   error,
+  population,
   firstMonth,
   mayChange,
   onCheckAddress,
@@ -296,15 +330,7 @@ function ListedPosts({
   const since = answer === undefined ? null : viewsCountedSince(answer.viewsFrom, firstMonth);
   const missing = mayBeMissing(status.state, t);
   const notes = sentences(
-    since === null
-      ? null
-      : t('viewsSince', {
-          month: format.dateTime(writableDay(`${since}-01`), {
-            month: 'long',
-            year: 'numeric',
-            timeZone: 'UTC',
-          }),
-        }),
+    viewsSince(since, t, format),
     missing,
     status.reading > 0 ? sitemap('left', { reading: status.reading }) : null,
   );
@@ -312,7 +338,7 @@ function ListedPosts({
   return (
     <section aria-labelledby={heading} className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
-        <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="flex w-full min-w-0 flex-col gap-0.5 sm:w-auto">
           <h2
             ref={headingRef}
             id={heading}
@@ -323,11 +349,14 @@ function ListedPosts({
           </h2>
           {notes === '' ? null : <p className="text-sm text-foreground-muted">{notes}</p>}
         </div>
-        {missing !== null && mayChange ? (
-          <Button tone="secondary" size="sm" onClick={onCheckAddress}>
-            {t('check')}
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {missing !== null && mayChange ? (
+            <Button tone="secondary" size="sm" onClick={onCheckAddress}>
+              {t('check')}
+            </Button>
+          ) : null}
+          <EveryPost posts={status.posts} population={population} />
+        </div>
       </div>
 
       {error === null ? (
@@ -336,6 +365,28 @@ function ListedPosts({
         <FailureNotice error={error} />
       )}
     </section>
+  );
+}
+
+interface EveryPostProps {
+  /** How many posts the sitemap lists. */
+  readonly posts: number;
+  /** Whose views are counted, which the screen of every post goes on counting. */
+  readonly population: Population;
+}
+
+/** The way to every post the sitemap lists, on a screen of its own, counting the same people. */
+function EveryPost({ posts, population }: EveryPostProps) {
+  const t = useTranslations('insights.posts');
+
+  return (
+    <Link
+      href={withChoices(ALL_POSTS, { population })}
+      className="inline-flex min-h-10 items-center gap-1.5 rounded-md text-sm font-medium text-accent-strong transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong"
+    >
+      {t('seeAll', { count: posts })}
+      <ArrowRight aria-hidden className="size-4" />
+    </Link>
   );
 }
 

@@ -10,7 +10,13 @@ import {
 } from '@tanstack/react-query';
 import { EVERY_JOURNEY, type JourneyFilters } from '@/lib/analytics/journeys';
 import type { Population } from '@/lib/analytics/people-only';
-import type { AllTimeGranularity, AnalyticsWindow, Granularity } from '@/lib/analytics/period';
+import type {
+  AllTimeGranularity,
+  AnalyticsWindow,
+  Granularity,
+  PeriodGranularity,
+} from '@/lib/analytics/period';
+import type { PostsListing } from '@/lib/analytics/posts';
 import type { NewSite } from '@/lib/api/endpoints';
 import {
   addSite,
@@ -30,6 +36,9 @@ import {
   readOverview,
   readPageEngagement,
   readPages,
+  readPostInsights,
+  readPostSeries,
+  readPostsPage,
   readSeries,
   readSoftware,
   readSources,
@@ -66,8 +75,12 @@ import {
   liveTrailKey,
   locationsKey,
   overviewKey,
+  type PostsReadingStage,
   pageEngagementKey,
   pagesKey,
+  postInsightsKey,
+  postSeriesKey,
+  postsPageKey,
   seriesKey,
   sitesKey,
   softwareKey,
@@ -238,17 +251,14 @@ export function useInsightsPosts(
   population: Population,
   reading: SitemapStatus | undefined,
 ) {
-  const listed = reading !== undefined && reading.posts > 0;
-  const key = insightsPostsKey(site.id, site.timeZoneId, population, {
-    readAt: reading?.readAt ?? null,
-    pagesRead: (reading?.reading ?? 0) === 0,
-  });
+  const key = insightsPostsKey(site.id, site.timeZoneId, population, stageOf(reading));
 
   return useQuery({
     queryKey: key,
-    queryFn: listed ? () => readInsightsPosts(site.id, population) : skipToken,
+    queryFn: listsPosts(reading) ? () => readInsightsPosts(site.id, population) : skipToken,
+    // Everything in the name but how far reading had got: the same lists, as of an earlier stage.
     placeholderData: (previous, previousQuery) =>
-      previousQuery !== undefined && sameListsAs(key, previousQuery.queryKey)
+      previousQuery !== undefined && namedAlike(key, previousQuery.queryKey, key.length - 1)
         ? previous
         : undefined,
     retry: false,
@@ -257,13 +267,129 @@ export function useInsightsPosts(
 }
 
 /**
- * Whether an answer filed under one name is the same lists as another, as of an earlier stage of
- * reading the sitemap: everything in the two names but how far reading had got is the same.
+ * How many parts at the start of the name of a page of a website's posts say which list it is a page
+ * of: the website, its zone and the population.
  */
-function sameListsAs(key: readonly unknown[], earlier: readonly unknown[]): boolean {
+const POSTS_LIST_NAMED_BY = 5;
+
+/**
+ * One page of a website's posts, for one population, searched, ordered and paged as asked.
+ *
+ * Asked only once its sitemap is known to list some, for the reason the posts on Insights are, and
+ * afresh as each reading finishes and again once every page it lists has been read. While another
+ * page of the same list is on its way — another page, another order, another search, or the same one
+ * as of a later reading — the page already on the screen stays there until the answer lands. Only a
+ * page of the same list is kept like that: a page about other people, another zone or another
+ * website is never shown in the meantime.
+ *
+ * @param site The website.
+ * @param population Whose views are counted.
+ * @param listing The page, and what it is a page of.
+ * @param reading How reading its sitemap stands, or nothing while that is still being asked.
+ */
+export function usePostsPage(
+  site: Pick<Site, 'id' | 'timeZoneId'>,
+  population: Population,
+  listing: PostsListing,
+  reading: SitemapStatus | undefined,
+) {
+  const key = postsPageKey(site.id, site.timeZoneId, population, listing, stageOf(reading));
+
+  return useQuery({
+    queryKey: key,
+    queryFn: listsPosts(reading) ? () => readPostsPage(site.id, population, listing) : skipToken,
+    placeholderData: (previous, previousQuery) =>
+      previousQuery !== undefined && namedAlike(key, previousQuery.queryKey, POSTS_LIST_NAMED_BY)
+        ? previous
+        : undefined,
+    retry: false,
+    staleTime: ALL_TIME_FRESH_FOR,
+  });
+}
+
+/**
+ * How far reading a website's sitemap has got, as far as its posts are concerned.
+ *
+ * @param reading How reading it stands, or nothing while that is still being asked.
+ */
+function stageOf(reading: SitemapStatus | undefined): PostsReadingStage {
+  return { readAt: reading?.readAt ?? null, pagesRead: (reading?.reading ?? 0) === 0 };
+}
+
+/**
+ * Whether a reading of a website's sitemap lists any posts to ask about.
+ *
+ * @param reading How reading it stands, or nothing while that is still being asked.
+ */
+function listsPosts(reading: SitemapStatus | undefined): boolean {
+  return reading !== undefined && reading.posts > 0;
+}
+
+/**
+ * Whether two names of cached answers are as long as each other and begin with the same parts.
+ *
+ * @param key One name.
+ * @param earlier The other.
+ * @param parts How many parts at the start of them have to be the same.
+ */
+function namedAlike(key: readonly unknown[], earlier: readonly unknown[], parts: number): boolean {
   return (
-    key.length === earlier.length && key.slice(0, -1).every((part, at) => part === earlier[at])
+    key.length === earlier.length && key.slice(0, parts).every((part, at) => part === earlier[at])
   );
+}
+
+/**
+ * One post's whole record, for one population.
+ *
+ * Nothing is asked until both the website and the post are known, which lets the screen about the
+ * post be the same screen before either is known and after. Under everybody it is the same question
+ * the screen checks a population against, filed under the same name, so that check costs nothing.
+ *
+ * @param site The website, or nothing while which one it is has still to be read.
+ * @param path The post the screen's address names, or nothing where it names none.
+ * @param population Whose views are counted.
+ * @param enabled Whether to ask at all.
+ */
+export function usePostInsights(
+  site: Pick<Site, 'id' | 'timeZoneId'> | undefined,
+  path: string | null,
+  population: Population,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: postInsightsKey(site?.id, site?.timeZoneId, path, population),
+    queryFn:
+      site === undefined || path === null || !enabled
+        ? skipToken
+        : () => readPostInsights(site.id, path, population),
+    retry: false,
+    staleTime: ALL_TIME_FRESH_FOR,
+  });
+}
+
+/**
+ * One post's views across a period, counted in buckets of the given size, for one population.
+ *
+ * Asked only while it is drawn: all time's picture of a post is drawn from the months of its record,
+ * which the screen already holds.
+ *
+ * @param enabled Whether to ask at all.
+ */
+export function usePostSeries(
+  siteId: string,
+  path: string,
+  window: AnalyticsWindow,
+  population: Population,
+  granularity: PeriodGranularity,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: postSeriesKey(siteId, path, window, population, granularity),
+    queryFn: () => readPostSeries(siteId, path, window, population, granularity),
+    enabled,
+    retry: false,
+    staleTime: FRESH_FOR,
+  });
 }
 
 /**

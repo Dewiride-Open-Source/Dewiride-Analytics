@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from 'next-themes';
 import type { OnUrlUpdateFunction } from 'nuqs/adapters/testing';
@@ -28,6 +28,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   window.localStorage.clear();
 });
 
@@ -250,6 +251,43 @@ describe('the bar across the top', () => {
     );
     expect(within(sections).getByRole('link', { name: 'Overview' })).not.toHaveAttribute(
       'aria-current',
+    );
+  });
+
+  /** A post's own screen is a part of Insights, reached from it and led back to it. */
+  it('marks Insights while one post’s screen is being looked at', async () => {
+    pathname.mockReturnValue('/app/insights/post');
+    engineWith([SITE]);
+
+    withTheme(<AppHeader />, { at: '?path=%2Fhello-world%2F' });
+
+    const sections = await screen.findByRole('navigation', { name: 'Sections' });
+
+    expect(within(sections).getByRole('link', { name: 'Insights' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
+  /**
+   * The post a screen is about is that screen's alone: Insights, and every other screen, is handed
+   * whose figures are being read and nothing about which post.
+   */
+  it('hands the people, and never the post, to Insights from a post’s screen', async () => {
+    pathname.mockReturnValue('/app/insights/post');
+    engineWith([SITE]);
+
+    withTheme(<AppHeader />, { at: '?path=%2Fhello-world%2F&only=people' });
+
+    const sections = await screen.findByRole('navigation', { name: 'Sections' });
+
+    expect(within(sections).getByRole('link', { name: 'Insights' })).toHaveAttribute(
+      'href',
+      '/app/insights?only=people',
+    );
+    expect(within(sections).getByRole('link', { name: 'Overview' })).toHaveAttribute(
+      'href',
+      '/app?only=people',
     );
   });
 
@@ -697,5 +735,41 @@ describe('the bar for somebody with a closed account beside an open one', () => 
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.queryByText(/is closed/)).not.toBeInTheDocument();
+  });
+});
+
+describe('the height the bar tells the page', () => {
+  /**
+   * Whatever the page is scrolled to stops below the bar. A control handed the focus beneath a bar
+   * taller than the page was told — one that has grown a line about a closed account — would hold
+   * the focus where nobody can see it, so the bar says how tall it is whenever that changes.
+   */
+  it('tells the page how tall it is, again whenever that changes, and nothing once it has gone', async () => {
+    let tall = 110;
+    let resized: () => void = () => {};
+
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(() => tall);
+    // Told of a change in size by hand, since this document lays nothing out to change.
+    vi.stubGlobal('ResizeObserver', function watchSize(told: () => void) {
+      resized = told;
+
+      return { observe: () => {}, disconnect: () => {} };
+    });
+    engineWith([SITE], CLOSED_BESIDE_AN_OPEN_ONE);
+
+    const { unmount } = withTheme(<AppHeader />);
+    const told = () => document.documentElement.style.getPropertyValue('--app-bar-height');
+
+    await waitFor(() => expect(told()).toBe('110px'));
+
+    await screen.findByRole('status');
+    tall = 152;
+    act(() => resized());
+
+    expect(told()).toBe('152px');
+
+    unmount();
+
+    expect(told()).toBe('');
   });
 });

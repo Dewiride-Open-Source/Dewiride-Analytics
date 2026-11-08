@@ -4,12 +4,14 @@ import { describe, expect, it } from 'vitest';
 import { routing } from '@/i18n/routing';
 import type { ClosedAccount, Session } from '@/lib/api/schemas';
 import {
+  ALL_POSTS,
   CLOSED,
   currentSection,
   DASHBOARD,
   destinationFor,
   FORGOT_PASSWORD,
   INSIGHTS,
+  INSIGHTS_POST,
   isEngineAddress,
   isScreen,
   isSiteFile,
@@ -179,6 +181,8 @@ describe('which addresses name a screen', () => {
   it.each([
     DASHBOARD,
     INSIGHTS,
+    INSIGHTS_POST,
+    ALL_POSTS,
     LIVE,
     SIGN_IN,
     SIGN_UP,
@@ -252,6 +256,8 @@ describe('which part of the product an address is in', () => {
   it.each([
     [DASHBOARD, DASHBOARD],
     [INSIGHTS, INSIGHTS],
+    [INSIGHTS_POST, INSIGHTS],
+    [ALL_POSTS, INSIGHTS],
     [LIVE, LIVE],
     [JOURNEYS, JOURNEYS],
     [SETTINGS, SETTINGS],

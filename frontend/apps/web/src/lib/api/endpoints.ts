@@ -1,6 +1,12 @@
 import { EVERY_JOURNEY, type JourneyFilters, narrowingParams } from '@/lib/analytics/journeys';
 import { type Population, withPopulation } from '@/lib/analytics/people-only';
-import type { AllTimeGranularity, AnalyticsWindow, Granularity } from '@/lib/analytics/period';
+import type {
+  AllTimeGranularity,
+  AnalyticsWindow,
+  Granularity,
+  PeriodGranularity,
+} from '@/lib/analytics/period';
+import { DEFAULT_POSTS_ORDER, type PostsListing } from '@/lib/analytics/posts';
 import { discardResource, readResource, submitResource } from './client';
 import {
   type ActionGrouping,
@@ -43,8 +49,12 @@ import {
   overviewSchema,
   type PageEngagement,
   type Pages,
+  type PostInsights,
+  type PostsPage,
   pageEngagementSchema,
   pagesSchema,
+  postInsightsSchema,
+  postsPageSchema,
   type Series,
   type SeriesMetric,
   type ServerKey,
@@ -222,6 +232,79 @@ export function readInsightsPosts(siteId: string, population: Population): Promi
   return readResource(
     ofPopulation(`${siteAddress(siteId)}/insights/posts`, population),
     insightsPostsSchema,
+  );
+}
+
+/**
+ * One page of a website's posts, for one population: each with its views across the whole record,
+ * how many the sitemap lists and how many hold what was searched for. No window, for the reason all
+ * time has none.
+ *
+ * What was searched for is only ever a value in the question, written by the browser's own rules
+ * for an address, so whatever was typed reads back exactly as it was. A search of nothing and the
+ * order a list is read in by default are left unsaid, as everybody is; where the page begins and how
+ * many it holds are always said.
+ */
+export function readPostsPage(
+  siteId: string,
+  population: Population,
+  { search, order, limit, offset }: PostsListing,
+): Promise<PostsPage> {
+  const asked = new URLSearchParams();
+
+  if (search !== '') {
+    asked.set('search', search);
+  }
+
+  if (order !== DEFAULT_POSTS_ORDER) {
+    asked.set('order', order);
+  }
+
+  asked.set('limit', String(limit));
+  asked.set('offset', String(offset));
+
+  return readResource(
+    `${siteAddress(siteId)}/posts?${withPopulation(asked, population)}`,
+    postsPageSchema,
+  );
+}
+
+/**
+ * One post's whole record, for one population: the post as Insights names it, every month of its
+ * life, and its recent weeks a day at a time. No window, for the reason all time has none.
+ *
+ * The post is named by the path Insights listed it under, written into the question by the
+ * browser's own rules for an address, so the engine reads back exactly what was listed.
+ */
+export function readPostInsights(
+  siteId: string,
+  path: string,
+  population: Population,
+): Promise<PostInsights> {
+  const asked = withPopulation(new URLSearchParams({ path }), population);
+
+  return readResource(`${siteAddress(siteId)}/insights/post?${asked}`, postInsightsSchema);
+}
+
+/**
+ * One post's views across a period, counted in buckets of the given size, for one population.
+ *
+ * Named first, by the path Insights listed it under, as its record is. Never asked by the year: all
+ * time is the one period cut by the year, and its picture of a post is drawn from the months the
+ * post's record already holds.
+ */
+export function readPostSeries(
+  siteId: string,
+  path: string,
+  window: AnalyticsWindow,
+  population: Population,
+  granularity: PeriodGranularity,
+): Promise<Series> {
+  const asked = new URLSearchParams({ path, granularity });
+
+  return readResource(
+    `${siteAddress(siteId)}/insights/post/series?${asked}&${asking(window, population)}`,
+    seriesSchema,
   );
 }
 

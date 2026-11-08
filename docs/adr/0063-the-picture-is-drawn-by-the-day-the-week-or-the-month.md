@@ -25,6 +25,8 @@
   full strength, and a picture of fewer than three buckets is drawn as columns, with no choice of
   drawing. Its kept months are cut by this record's month buckets and can be opened in detail from
   its first day still kept.
+- **Followed by**: [0070](0070-a-post-is-read-on-a-page-of-its-own.md), whose picture of one post is
+  cut, drawn, pressed into and remembered as this picture is.
 
 ## Context
 

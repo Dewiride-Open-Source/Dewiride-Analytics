@@ -45,6 +45,40 @@ internal static class KeptPosts
         };
 
     /// <summary>
+    /// A page the website's sitemap lists that is not a post: listed outside its posts, and saying nothing
+    /// of itself.
+    /// </summary>
+    /// <param name="siteId">The website.</param>
+    /// <param name="path">Its path.</param>
+    /// <param name="listedAt">When a sitemap first listed it.</param>
+    /// <returns>The row, not yet saved.</returns>
+    public static SitePost NotAPost(Guid siteId, string path, DateTimeOffset listedAt) =>
+        new()
+        {
+            SiteId = siteId,
+            Path = path,
+            Address = $"https://example.com{path}",
+            ListedInPostsPart = false,
+            FirstListedAt = listedAt,
+        };
+
+    /// <summary>A post a complete reading of the website's sitemap found gone.</summary>
+    /// <param name="siteId">The website.</param>
+    /// <param name="path">Its path.</param>
+    /// <param name="listedAt">When a sitemap first listed it, and when it was found gone.</param>
+    /// <returns>The row, not yet saved.</returns>
+    public static SitePost Gone(Guid siteId, string path, DateTimeOffset listedAt) =>
+        new()
+        {
+            SiteId = siteId,
+            Path = path,
+            Address = $"https://example.com{path}",
+            ListedInPostsPart = true,
+            FirstListedAt = listedAt,
+            UnlistedAt = listedAt,
+        };
+
+    /// <summary>
     /// A month of posts as an engine kept it, judged whole under the rules running now.
     /// </summary>
     /// <param name="site">The website.</param>

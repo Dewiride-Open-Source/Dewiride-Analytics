@@ -2,7 +2,13 @@
 
 import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
-import { POSTS_CARD, POSTS_HEADING, PostFacts, PostTitle } from '@/components/insights/post-list';
+import {
+  OpenPost,
+  POSTS_CARD,
+  POSTS_HEADING,
+  PostFacts,
+  PostTitle,
+} from '@/components/insights/post-list';
 import { Card } from '@/components/ui/card';
 import type { InsightsPost } from '@/lib/api/schemas';
 
@@ -43,8 +49,9 @@ function BestPostBody({ post }: BestPostProps) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
       <div className="flex min-w-0 flex-1 basis-64 flex-col gap-1">
-        <p className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">
+        <p className="flex items-start text-lg font-semibold tracking-tight text-foreground sm:text-xl">
           <PostTitle post={post} featured />
+          <OpenPost post={post} className="-my-1.5" />
         </p>
         <PostFacts post={post} />
       </div>

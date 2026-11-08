@@ -1,6 +1,12 @@
 import { type JourneyFilters, narrowingParams } from '@/lib/analytics/journeys';
 import type { Population } from '@/lib/analytics/people-only';
-import type { AllTimeGranularity, AnalyticsWindow, Granularity } from '@/lib/analytics/period';
+import type {
+  AllTimeGranularity,
+  AnalyticsWindow,
+  Granularity,
+  PeriodGranularity,
+} from '@/lib/analytics/period';
+import type { PostsListing } from '@/lib/analytics/posts';
 import type {
   ActionGrouping,
   EngagementRanking,
@@ -116,6 +122,74 @@ export function insightsPostsKey(
   stage: PostsReadingStage,
 ) {
   return ['sites', siteId, 'insights', 'posts', timeZoneId, population, stage] as const;
+}
+
+/**
+ * One page of a website's posts, for one population, in its zone, as of how far reading its sitemap
+ * has got. What was searched for, the order and the page are each a different question; the zone and
+ * how far reading has got are in the name for the reasons they are in the posts' own. The list a page
+ * belongs to — the website, its zone and the population — is named first, so a page can be told from
+ * a page of another list by the start of its name.
+ */
+export function postsPageKey(
+  siteId: string,
+  timeZoneId: string,
+  population: Population,
+  { search, order, limit, offset }: PostsListing,
+  stage: PostsReadingStage,
+) {
+  return [
+    'sites',
+    siteId,
+    'posts',
+    timeZoneId,
+    population,
+    search,
+    order,
+    limit,
+    offset,
+    stage,
+  ] as const;
+}
+
+/**
+ * One post's whole record, for one population, in its website's zone: the months and the days of a
+ * post are the website's own, so the zone is in the name for the reason it is in the record's. The
+ * post is named by its path. A website not yet known, or an address naming no post, has a name here
+ * as well, under which nothing is ever asked.
+ */
+export function postInsightsKey(
+  siteId: string | undefined,
+  timeZoneId: string | undefined,
+  path: string | null,
+  population: Population,
+) {
+  return ['sites', siteId, 'insights', 'post', timeZoneId, path, population] as const;
+}
+
+/**
+ * One post's views across a period, at one size of bucket, for one population. The post is named by
+ * its path, and the size of the bucket is in the name for the reason it is in a website's series.
+ */
+export function postSeriesKey(
+  siteId: string,
+  path: string,
+  window: AnalyticsWindow,
+  population: Population,
+  granularity: PeriodGranularity,
+) {
+  return [
+    'sites',
+    siteId,
+    'insights',
+    'post',
+    'series',
+    path,
+    window.from,
+    window.to,
+    population,
+    granularity,
+  ] as const;
 }
 
 /** One measure across all time, at one size of bucket, for one population, in the website's zone. */

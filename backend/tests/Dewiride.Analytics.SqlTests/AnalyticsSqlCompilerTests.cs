@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.RegularExpressions;
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Consolidation;
@@ -35,6 +36,9 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// <summary>The last instant of that window, a millisecond before its exclusive end.</summary>
     private const string WindowLastInstant = "fromUnixTimestamp64Milli({to_ms:Int64} - 1, 'UTC')";
 
+    /// <summary>The line that keeps a series to one post's paths, as it stands in the statement.</summary>
+    private const string KeptToThePostsPaths = "WHERE path IN {post_paths:Array(String)}";
+
     private static readonly Guid SiteId = Guid.Parse("0197c0de-0000-7000-8000-000000000001");
     private static readonly Guid SecondSiteId = Guid.Parse("0197c0de-0000-7000-8000-000000000002");
     private static readonly Guid OrganizationId = Guid.Parse("0197c0de-0000-7000-8000-0000000000ff");
@@ -56,6 +60,9 @@ public sealed partial class AnalyticsSqlCompilerTests
 
     /// <summary>The first month whose kept posts are not read: where their views begin to be counted from the reports.</summary>
     private static readonly DateOnly PostsKeptBefore = new(2026, 5, 1);
+
+    /// <summary>The paths one post is read at: its own, and the path its page landed at.</summary>
+    private static readonly ImmutableArray<string> OnePostsPaths = ["/posts/a-first-post/", "/posts/first-post-moved/"];
 
     /// <summary>The free-text narrowings a hostile value is proved to reach the store as a value.</summary>
     private static readonly string[] FreeTextNarrowings = ["towns", "browsers", "entry_pages"];
@@ -166,6 +173,54 @@ public sealed partial class AnalyticsSqlCompilerTests
         Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
+    [Fact]
+    public void Post_Page_Views_By_Day()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), PostSeries(TimeGranularity.Day, Population.Everybody));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Post_Page_Views_By_Day_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), PostSeries(TimeGranularity.Day, Population.People));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Post_Page_Views_By_Month()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), PostSeries(TimeGranularity.Month, Population.Everybody));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Post_Page_Views_By_Month_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), PostSeries(TimeGranularity.Month, Population.People));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Kept_Months_Of_Post()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), KeptMonthsOfPost(Population.Everybody));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Kept_Months_Of_Post_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), KeptMonthsOfPost(Population.People));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
     /// <summary>
     /// Two engines can count one month twice, and the store replaces one row with the other only
     /// when it next merges. A month is read as its newest count, whatever has been merged so far — its
@@ -183,15 +238,18 @@ public sealed partial class AnalyticsSqlCompilerTests
 
     /// <summary>
     /// A post's path comes from the website's sitemap, which whoever runs the website writes. However it
-    /// is spelled, it never reaches the store — for the dashboard's count and the count kept for a month
-    /// alike: not as part of a statement and not as a value bound to one. What is bound is the website,
-    /// the window and, about people, how far back their verdicts are read, none of them text.
+    /// is spelled, it never reaches the store from a statement that counts or reads every post — the
+    /// dashboard's count, the count kept for a month, and the readings of what was kept alike: not as part
+    /// of a statement and not as a value bound to one. What is bound is the website, the window or the
+    /// month, the zone and, about people, how far back their verdicts are read, none of them a path. The
+    /// two questions about one post, <see cref="PostSeriesQuery"/> and <see cref="KeptMonthsOfPostQuery"/>,
+    /// are the exceptions: each binds that post's paths as values.
     /// </summary>
     [Fact]
     public void No_Posts_Path_Enters_A_Statement_Or_Its_Bound_Values()
     {
         string[] hostile = ["/posts/it's-here/') OR 1=1 --", "/{paths:Array(String)}/", "/posts/x/\nSELECT 1"];
-        string[] windowAndPeople = ["site_id", "from_ms", "to_ms", "longest_visit_seconds"];
+        string[] pathless = ["site_id", "from_ms", "to_ms", "time_zone", "before", "longest_visit_seconds"];
         var month = new MonthToCount(SiteId, "Europe/London", new DateOnly(2026, 5, 1), Window());
 
         CompiledStatement[] statements =
@@ -200,6 +258,9 @@ public sealed partial class AnalyticsSqlCompilerTests
                 AnalyticsSqlCompiler.Compile(Scope(), new PostViewsQuery(Window(), [.. hostile]) { Population = population })),
             .. Enum.GetValues<Population>().Select(population =>
                 ConsolidationSqlCompiler.CompilePostCount(month, population)),
+            AnalyticsSqlCompiler.Compile(Scope(), new KeptPostMonthsQuery(To)),
+            .. Enum.GetValues<Population>().Select(population =>
+                AnalyticsSqlCompiler.Compile(Scope(), new KeptPostViewsQuery(To, PostsKeptBefore) { Population = population })),
         ];
 
         foreach (var statement in statements)
@@ -210,8 +271,181 @@ public sealed partial class AnalyticsSqlCompilerTests
             }
 
             statement.Sql.Should().NotContain("{paths:");
-            statement.Parameters.Should().OnlyContain(parameter => windowAndPeople.Contains(parameter.Name));
-            statement.Parameters.Should().NotContain(parameter => parameter.Value is string || parameter.Value is IEnumerable<string>);
+            statement.Sql.Should().NotContain("post_paths");
+            statement.Parameters.Should().OnlyContain(parameter => pathless.Contains(parameter.Name));
+            statement.Parameters.Where(parameter => parameter.Name != "time_zone")
+                .Should().NotContain(parameter => parameter.Value is string || parameter.Value is IEnumerable<string>);
+        }
+    }
+
+    /// <summary>
+    /// One post's series is the website's series of page views and one line more, which keeps it to the
+    /// post's paths — at every bucket size, for everybody and for people alike — so each bucket is counted
+    /// as the website's bucket is, by the same values.
+    /// </summary>
+    [Fact]
+    public void One_Posts_Series_Is_The_Websites_Series_Kept_To_Its_Paths()
+    {
+        foreach (var granularity in Enum.GetValues<TimeGranularity>())
+        {
+            foreach (var population in Enum.GetValues<Population>())
+            {
+                var website = AnalyticsSqlCompiler.Compile(
+                    Scope(),
+                    new TimeSeriesQuery(Window(), granularity, TimeSeriesMetric.PageViews) { Population = population });
+                var post = AnalyticsSqlCompiler.Compile(Scope(), PostSeries(granularity, population));
+                var lines = post.Sql.Split('\n');
+                var others = lines.Where(line => line.Trim() != KeptToThePostsPaths).ToArray();
+
+                (lines.Length - others.Length).Should().Be(1);
+                string.Join('\n', others).Should().Be(website.Sql);
+                post.Parameters.Where(parameter => parameter.Name != "post_paths").Should().Equal(website.Parameters);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A post's paths are kept to only once both halves of the measurement have been reconciled across the
+    /// whole window — and, about people, once the verdicts have been applied — so a server's report of the
+    /// post is still told whose it was by the browser that echoed another page of the same visit. Nothing
+    /// the reconciliation reads names them.
+    /// </summary>
+    [Fact]
+    public void One_Posts_Paths_Are_Kept_To_Only_Once_Both_Halves_Are_Reconciled()
+    {
+        foreach (var population in Enum.GetValues<Population>())
+        {
+            var sql = AnalyticsSqlCompiler.Compile(Scope(), PostSeries(TimeGranularity.Day, population)).Sql;
+            var kept = sql.IndexOf(KeptToThePostsPaths, StringComparison.Ordinal);
+            var source = population == Population.People ? "attributed" : "identified";
+
+            Regex.Count(sql, "post_paths").Should().Be(1);
+            sql[sql.LastIndexOf("FROM ", kept, StringComparison.Ordinal)..kept].Trim().Should().Be($"FROM {source}");
+            sql[..sql.IndexOf("\nSELECT\n", StringComparison.Ordinal)].Should().NotContain("post_paths");
+        }
+    }
+
+    /// <summary>
+    /// A post's path is written by whoever runs the website. Whatever it holds — text written to end a
+    /// string literal, a placeholder's own spelling, a new line, or as many characters as any path a post
+    /// may be listed at — it reaches the store as a value bound to the statement, exactly as written, and
+    /// never as part of the statement.
+    /// </summary>
+    [Fact]
+    public void A_Posts_Paths_Are_Bound_Rather_Than_Written_Into_The_Statement()
+    {
+        string[] hostile =
+        [
+            "/posts/it's-here/') OR 1=1 --",
+            "/{post_paths:Array(String)}/",
+            "/posts/x/\nSELECT 1",
+            $"/{new string('a', Site.MaxSitemapAddressLength - 1)}",
+        ];
+
+        foreach (var path in hostile)
+        {
+            string[] paths = [path, "/posts/landed/"];
+
+            foreach (var statement in EveryStatementAboutOnePost([.. paths]))
+            {
+                statement.Sql.Should().NotContain(path);
+                statement.Parameters.Should().ContainSingle(parameter => parameter.Name == "post_paths")
+                    .Which.Value.Should().BeEquivalentTo(paths, options => options.WithStrictOrdering());
+            }
+        }
+    }
+
+    /// <summary>
+    /// The two questions about one post are the only ones that bind a post's paths. Every other statement
+    /// a reader can be answered by — the counts of every post, what was kept of them, and everything else
+    /// on the dashboard — names none and binds none.
+    /// </summary>
+    [Fact]
+    public void Only_The_Questions_About_One_Post_Bind_A_Posts_Paths()
+    {
+        AnalyticsQuery[] questions =
+        [
+            .. Enum.GetValues<Population>().SelectMany(EveryQuestion),
+            .. Enum.GetValues<Population>().Select(KeptMonthsOfPost),
+            new KeptMonthsQuery(To),
+            new KeptMonthsQuery(To) { Population = Population.People },
+            new KeptPostMonthsQuery(To),
+            new KeptPostViewsQuery(To, PostsKeptBefore),
+            new KeptPostViewsQuery(To, PostsKeptBefore) { Population = Population.People },
+            new TrafficBreakdownQuery(Window()),
+            new TrafficSeriesQuery(Window(), TimeGranularity.Day),
+            Judged(10),
+            JudgedByDetail(),
+            Facets(),
+            new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200),
+            LiveVisitors(),
+            new SiteLiveActivityQuery(HalfHour()),
+            new SiteLivePagesQuery(HalfHour(), 10),
+            LiveTrail(),
+        ];
+
+        foreach (var question in questions)
+        {
+            var statement = AnalyticsSqlCompiler.Compile(Scope(), question);
+            var aboutOnePost = question is PostSeriesQuery or KeptMonthsOfPostQuery;
+
+            statement.Parameters.Any(parameter => parameter.Name == "post_paths")
+                .Should().Be(aboutOnePost, "{0} binds a post's paths only if it is about one post", question.GetType().Name);
+            statement.Sql.Contains("{post_paths:", StringComparison.Ordinal)
+                .Should().Be(aboutOnePost, "{0} names a post's paths only if it is about one post", question.GetType().Name);
+        }
+    }
+
+    /// <summary>
+    /// Each month is read as its newest count before the post's paths are picked out of it, so the post is
+    /// read from the count every other reading of the month reads. They are picked out of the arrays the
+    /// month keeps rather than spread into a row each, so a month that kept no path at all is still a
+    /// month.
+    /// </summary>
+    [Fact]
+    public void A_Posts_Kept_Paths_Are_Picked_Out_Of_The_Newest_Count_Of_Each_Month()
+    {
+        foreach (var population in Enum.GetValues<Population>())
+        {
+            var sql = AnalyticsSqlCompiler.Compile(Scope(), KeptMonthsOfPost(population)).Sql;
+            var opens = sql.IndexOf("FROM\n(", StringComparison.Ordinal);
+            var closes = sql.IndexOf("LIMIT 1 BY month\n)", StringComparison.Ordinal);
+
+            opens.Should().BePositive();
+            closes.Should().BeGreaterThan(opens);
+            sql[opens..closes].Should().NotContain("{post_paths:");
+            sql[..opens].Should().Contain("{post_paths:");
+            sql.Should().NotContain("ARRAY JOIN");
+        }
+    }
+
+    [Fact]
+    public void Asking_About_No_Path_Or_More_Paths_Than_One_Post_Is_Read_At_Is_Refused()
+    {
+        ImmutableArray<string> tooMany = [.. Enumerable.Range(0, PostPaths.Most + 1).Select(post => $"/posts/{post}/")];
+        Func<AnalyticsQuery>[] unnamed =
+        [
+            () => new PostSeriesQuery(Window(), TimeGranularity.Day, []),
+            () => new PostSeriesQuery(Window(), TimeGranularity.Day, default),
+            () => new PostSeriesQuery(Window(), TimeGranularity.Day, ["/posts/a/", ""]),
+            () => new KeptMonthsOfPostQuery(To, []),
+            () => new KeptMonthsOfPostQuery(To, default),
+            () => new KeptMonthsOfPostQuery(To, [null!]),
+        ];
+        Func<AnalyticsQuery>[] overreaching =
+        [
+            () => new PostSeriesQuery(Window(), TimeGranularity.Day, tooMany),
+            () => new KeptMonthsOfPostQuery(To, tooMany),
+        ];
+
+        foreach (var ask in unnamed)
+        {
+            ask.Should().ThrowExactly<ArgumentException>();
+        }
+
+        foreach (var ask in overreaching)
+        {
+            ask.Should().ThrowExactly<ArgumentOutOfRangeException>();
         }
     }
 
@@ -1523,9 +1757,11 @@ public sealed partial class AnalyticsSqlCompilerTests
         const TimeGranularity untaught = (TimeGranularity)7;
 
         var series = () => Compile(untaught, TimeSeriesMetric.PageViews);
+        var post = () => AnalyticsSqlCompiler.Compile(Scope(), PostSeries(untaught, Population.Everybody));
         var traffic = () => AnalyticsSqlCompiler.Compile(Scope(), new TrafficSeriesQuery(Window(), untaught));
 
         series.Should().Throw<ArgumentOutOfRangeException>();
+        post.Should().Throw<ArgumentOutOfRangeException>();
         traffic.Should().Throw<ArgumentOutOfRangeException>();
     }
 
@@ -3288,18 +3524,46 @@ public sealed partial class AnalyticsSqlCompilerTests
         AnalyticsSqlCompiler.Compile(Scope(), new KeptMonthsQuery(To) { Population = Population.People }),
     ];
 
-    /// <summary>The questions about what was kept of a website's posts, the views asked of both populations.</summary>
-    /// <returns>The three statements.</returns>
+    /// <summary>
+    /// The questions about what was kept of a website's posts: the months, the views asked of both
+    /// populations, and the months kept of one post asked of both.
+    /// </summary>
+    /// <returns>The five statements.</returns>
     private static CompiledStatement[] EveryQuestionAboutKeptPosts() =>
     [
         AnalyticsSqlCompiler.Compile(Scope(), new KeptPostMonthsQuery(To)),
         AnalyticsSqlCompiler.Compile(Scope(), new KeptPostViewsQuery(To, PostsKeptBefore)),
         AnalyticsSqlCompiler.Compile(Scope(), new KeptPostViewsQuery(To, PostsKeptBefore) { Population = Population.People }),
+        AnalyticsSqlCompiler.Compile(Scope(), KeptMonthsOfPost(Population.Everybody)),
+        AnalyticsSqlCompiler.Compile(Scope(), KeptMonthsOfPost(Population.People)),
     ];
 
     /// <summary>How many pages were delivered at two of the website's posts over the standard window.</summary>
     private static PostViewsQuery PostViews(Population population) =>
         new(Window(), ["/posts/a-first-post/", "/posts/another/"]) { Population = population };
+
+    /// <summary>How many pages were delivered at one post in each bucket of the standard window.</summary>
+    private static PostSeriesQuery PostSeries(TimeGranularity granularity, Population population) =>
+        new(Window(), granularity, OnePostsPaths) { Population = population };
+
+    /// <summary>Every month the website's posts were kept for, with what one post was read in it.</summary>
+    private static KeptMonthsOfPostQuery KeptMonthsOfPost(Population population) =>
+        new(To, OnePostsPaths) { Population = population };
+
+    /// <summary>
+    /// Both questions about one post, asked at given paths of both populations and the series at every
+    /// bucket size.
+    /// </summary>
+    /// <param name="paths">The paths the post is read at.</param>
+    /// <returns>The statements.</returns>
+    private static CompiledStatement[] EveryStatementAboutOnePost(ImmutableArray<string> paths) =>
+    [
+        .. Enum.GetValues<Population>().SelectMany(population =>
+            Enum.GetValues<TimeGranularity>()
+                .Select(granularity => (AnalyticsQuery)new PostSeriesQuery(Window(), granularity, paths) { Population = population })
+                .Append(new KeptMonthsOfPostQuery(To, paths) { Population = population })
+                .Select(question => AnalyticsSqlCompiler.Compile(Scope(), question))),
+    ];
 
     /// <summary>
     /// Which stored column a question about kept months reads a figure from.
@@ -3314,14 +3578,14 @@ public sealed partial class AnalyticsSqlCompilerTests
             .Split(' ')[0];
 
     /// <summary>
-    /// One question of each of the thirteen shapes that may be asked about a population from activity.
+    /// One question of each of the fourteen shapes that may be asked about a population from activity.
     /// </summary>
     /// <remarks>
     /// Held together so that a property every one of them has to have is asserted over all of
     /// them, and so that the next question given a population cannot be added without it.
     /// </remarks>
     /// <param name="population">Who to ask about.</param>
-    /// <returns>The thirteen questions.</returns>
+    /// <returns>The fourteen questions.</returns>
     private static AnalyticsQuery[] EveryQuestion(Population population) =>
     [
         new OverviewQuery(Window()) { Population = population },
@@ -3337,9 +3601,10 @@ public sealed partial class AnalyticsSqlCompilerTests
         new SiteVisitShapeQuery(Window(), Visits()) { Population = population },
         new SiteVisitFlowQuery(Window(), Visits(), VisitPosition.Entry, 10) { Population = population },
         PostViews(population),
+        PostSeries(TimeGranularity.Day, population),
     ];
 
-    /// <summary>The thirteen, compiled.</summary>
+    /// <summary>The fourteen, compiled.</summary>
     /// <param name="population">Who to ask about.</param>
     /// <returns>The statements.</returns>
     private static CompiledStatement[] EveryStatementAbout(Population population) =>
@@ -3372,6 +3637,9 @@ public sealed partial class AnalyticsSqlCompilerTests
         Compile(TimeGranularity.Hour, TimeSeriesMetric.Visitors),
         Compile(TimeGranularity.Week, TimeSeriesMetric.PageViews),
         Compile(TimeGranularity.Month, TimeSeriesMetric.Visitors),
+        AnalyticsSqlCompiler.Compile(Scope(), PostSeries(TimeGranularity.Hour, Population.Everybody)),
+        AnalyticsSqlCompiler.Compile(Scope(), PostSeries(TimeGranularity.Week, Population.Everybody)),
+        AnalyticsSqlCompiler.Compile(Scope(), PostSeries(TimeGranularity.Month, Population.Everybody)),
         AnalyticsSqlCompiler.Compile(Scope(), new TrafficSeriesQuery(Window(), TimeGranularity.Day)),
         AnalyticsSqlCompiler.Compile(Scope(), new TrafficSeriesQuery(Window(), TimeGranularity.Week)),
         AnalyticsSqlCompiler.Compile(Scope(), new TrafficSeriesQuery(Window(), TimeGranularity.Month)),
@@ -3384,15 +3652,16 @@ public sealed partial class AnalyticsSqlCompilerTests
     ];
 
     /// <summary>
-    /// Both series cut into buckets of one size, each beside the instant its buckets are cut from:
-    /// when a report arrived, for the series counted from activity, and when a visit began by its
-    /// newest verdict, for the series counted from verdicts.
+    /// Every series cut into buckets of one size, each beside the instant its buckets are cut from:
+    /// when a report arrived, for the website's series and one post's, counted from activity, and when
+    /// a visit began by its newest verdict, for the series counted from verdicts.
     /// </summary>
     /// <param name="granularity">How wide each bucket is.</param>
-    /// <returns>The two statements.</returns>
+    /// <returns>The three statements.</returns>
     private static (CompiledStatement Statement, string CutFrom)[] SeriesCutInto(TimeGranularity granularity) =>
     [
         (Compile(granularity, TimeSeriesMetric.PageViews), ReportArrived),
+        (AnalyticsSqlCompiler.Compile(Scope(), PostSeries(granularity, Population.Everybody)), ReportArrived),
         (AnalyticsSqlCompiler.Compile(Scope(), new TrafficSeriesQuery(Window(), granularity)), VisitBegan),
     ];
 

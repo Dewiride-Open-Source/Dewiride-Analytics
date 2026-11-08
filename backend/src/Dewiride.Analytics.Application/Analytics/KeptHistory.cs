@@ -228,8 +228,7 @@ public static class KeptHistory
             {
                 MonthSource.Live => liveJudgedTo,
                 MonthSource.Kept when month.Month.Kept is { } kept
-                    && kept.JudgedTo < kept.Counted.To
-                    && asOf < Retention.CountableUntil(kept.Counted.From) => kept.JudgedTo,
+                    && Unsettled(kept.JudgedTo, kept.Counted, asOf) => kept.JudgedTo,
                 _ => asOf,
             };
 
@@ -237,6 +236,38 @@ public static class KeptHistory
         }
 
         return reached;
+    }
+
+    /// <summary>
+    /// Whether a month was kept before judging had finished with it and can still be counted again, so
+    /// that what it says of people is not yet settled.
+    /// </summary>
+    /// <remarks>
+    /// A month that can no longer be counted again is either whole or missing, and is never unsettled.
+    /// </remarks>
+    /// <param name="judgedTo">How far judging had reached when the month was counted.</param>
+    /// <param name="counted">The stretch it was counted over.</param>
+    /// <param name="asOf">The moment the record is read at.</param>
+    /// <returns><see langword="true"/> where its people are still to be settled.</returns>
+    public static bool Unsettled(DateTimeOffset judgedTo, TimeRange counted, DateTimeOffset asOf) =>
+        judgedTo < counted.To && asOf < Retention.CountableUntil(counted.From);
+
+    /// <summary>
+    /// How many of a month's days the website was measured on: the days kept with it, where it is
+    /// finished and was kept; otherwise from the website's first day, and up to and including today in
+    /// the month running now.
+    /// </summary>
+    /// <param name="month">The month.</param>
+    /// <param name="firstDay">The day the record begins on.</param>
+    /// <param name="today">Today, on the website's calendar.</param>
+    /// <returns>The number of days.</returns>
+    public static int DaysOf(RecordedMonth month, DateOnly? firstDay, DateOnly today)
+    {
+        ArgumentNullException.ThrowIfNull(month);
+
+        return month.Kept is { } kept && month.Month.AddMonths(1) <= today
+            ? kept.DaysMeasured
+            : DaysMeasured.In(month.Month, firstDay, today);
     }
 
     /// <summary>
@@ -442,11 +473,11 @@ public static class KeptHistory
         month.Source switch
         {
             MonthSource.Kept when month.Month.Kept is { } kept =>
-                new MonthReading(month.Month.Month, kept.Figures.PageViews, kept.DaysMeasured),
+                new MonthReading(month.Month.Month, kept.Figures.PageViews, DaysOf(month.Month, firstDay, today)),
             MonthSource.Live => new MonthReading(
                 month.Month.Month,
                 live.GetValueOrDefault(month.Month.Begins),
-                DaysMeasured.In(month.Month.Month, firstDay, today)),
+                DaysOf(month.Month, firstDay, today)),
             _ => new MonthReading(month.Month.Month, null, 0),
         };
 

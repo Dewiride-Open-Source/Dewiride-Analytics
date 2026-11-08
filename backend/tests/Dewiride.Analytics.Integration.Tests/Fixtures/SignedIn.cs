@@ -22,8 +22,28 @@ internal static class SignedIn
     /// <param name="role">The role to grant on every one of them.</param>
     /// <param name="siteIds">The sites to grant it on.</param>
     /// <returns>The browser, signed in and holding a proof-of-origin token.</returns>
+    public static Task<Browser> AsAsync(
+        AnalyticsStackFixture stack,
+        SiteRole role,
+        params Guid[] siteIds) =>
+        AsAsync(stack, stack, role, siteIds);
+
+    /// <summary>
+    /// Creates an account, grants it a role on each site named, and signs it in on a host built for
+    /// the test.
+    /// </summary>
+    /// <remarks>
+    /// The account and its roles are written through the running stack, whose stores the host shares,
+    /// so a host that puts something of its own in place of a store can still be signed in to.
+    /// </remarks>
+    /// <param name="stack">The running stack.</param>
+    /// <param name="host">The host to sign in on.</param>
+    /// <param name="role">The role to grant on every site named.</param>
+    /// <param name="siteIds">The sites to grant it on.</param>
+    /// <returns>The browser, signed in and holding a proof-of-origin token.</returns>
     public static async Task<Browser> AsAsync(
         AnalyticsStackFixture stack,
+        WebApplicationFactory<Program> host,
         SiteRole role,
         params Guid[] siteIds)
     {
@@ -41,7 +61,7 @@ internal static class SignedIn
             await ControlPlaneSeed.GrantAsync(stack, siteId, account.Id, role).ConfigureAwait(false);
         }
 
-        return await AsAccountAsync(stack, address).ConfigureAwait(false);
+        return await AsAccountAsync(host, address).ConfigureAwait(false);
     }
 
     /// <summary>

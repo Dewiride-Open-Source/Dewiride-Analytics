@@ -10,6 +10,8 @@ import type { Session } from '@/lib/api/schemas';
  */
 export const DASHBOARD = '/app';
 export const INSIGHTS = '/app/insights';
+export const INSIGHTS_POST = '/app/insights/post';
+export const ALL_POSTS = '/app/insights/posts';
 export const LIVE = '/app/live';
 export const JOURNEYS = '/app/journeys';
 export const SIGN_IN = '/app/sign-in';
@@ -57,6 +59,8 @@ const SITE_FILES: ReadonlySet<string> = new Set(['/robots.txt', '/sitemap.xml'])
 export const SCREENS: ReadonlySet<string> = new Set([
   DASHBOARD,
   INSIGHTS,
+  INSIGHTS_POST,
+  ALL_POSTS,
   LIVE,
   JOURNEYS,
   SIGN_IN,

@@ -52,8 +52,8 @@ export function MetricCard({ label, value, change, comparedWith, note }: MetricC
   );
 }
 
-/** The mark each direction is drawn with. */
-const ARROWS: Readonly<Record<Direction, LucideIcon>> = {
+/** The mark each direction is drawn with, wherever a figure is said to have moved. */
+export const CHANGE_ARROWS: Readonly<Record<Direction, LucideIcon>> = {
   up: ArrowUpRight,
   down: ArrowDownRight,
   level: Minus,
@@ -66,7 +66,7 @@ const ARROWS: Readonly<Record<Direction, LucideIcon>> = {
  * says which way the figure went and nothing about whether that is good news: what the traffic
  * actually was is the drawing below, and that is where a rise turns out to be readers or crawlers.
  */
-const TONES: Readonly<Record<Direction, string>> = {
+export const CHANGE_TONES: Readonly<Record<Direction, string>> = {
   up: 'text-positive',
   down: 'text-danger',
   level: 'text-foreground-subtle',
@@ -87,15 +87,15 @@ interface MovedProps {
 function Moved({ change, comparedWith }: MovedProps) {
   const t = useTranslations('dashboard.metrics.change');
   const format = useFormatter();
-  const Arrow = ARROWS[change.direction];
-  const tone = TONES[change.direction];
+  const Arrow = CHANGE_ARROWS[change.direction];
+  const tone = CHANGE_TONES[change.direction];
 
   return (
     <p className={`${MOVED_LINE} text-foreground-subtle`}>
       <Arrow aria-hidden className={`size-3.5 shrink-0 ${tone}`} />
       <span>
         {t.rich(change.fraction === null ? 'none' : change.direction, {
-          amount: written(change.fraction, format),
+          amount: writtenMove(change.fraction, format),
           period: comparedWith,
           strong: (words) => <span className={`font-medium ${tone}`}>{words}</span>,
         })}
@@ -104,8 +104,17 @@ function Moved({ change, comparedWith }: MovedProps) {
   );
 }
 
-/** How far a figure moved, written as a share of what it was. */
-function written(fraction: number | null, format: ReturnType<typeof useFormatter>): string {
+/**
+ * How far a figure moved, written as a share of what it was; nothing where it had nothing to move
+ * from.
+ *
+ * @param fraction How far it moved, as a fraction of the earlier figure.
+ * @param format The reader's own formatter.
+ */
+export function writtenMove(
+  fraction: number | null,
+  format: ReturnType<typeof useFormatter>,
+): string {
   return fraction === null
     ? ''
     : format.number(Math.abs(fraction), { style: 'percent', maximumFractionDigits: 0 });
@@ -165,7 +174,7 @@ export function MetricCardSkeleton({ label, comparedWith, note }: MetricCardSkel
             <span className="size-3.5 shrink-0" />
             <span>
               {t.rich('up', {
-                amount: written(TYPICAL_MOVE, format),
+                amount: writtenMove(TYPICAL_MOVE, format),
                 period: comparedWith,
                 strong: emphasised,
               })}

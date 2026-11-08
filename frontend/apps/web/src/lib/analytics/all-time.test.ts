@@ -1,14 +1,21 @@
+import { createFormatter } from 'next-intl';
 import { describe, expect, it } from 'vitest';
 import {
+  figureAcross,
   figureOf,
   largestOf,
   type MonthCell,
   recordShown,
+  weekdayName,
   writableDay,
+  writeFigure,
+  writtenMonth,
   yearFigure,
   yearsOf,
 } from '@/lib/analytics/all-time';
 import type { Insights } from '@/lib/api/schemas';
+
+const format = createFormatter({ locale: 'en' });
 
 const TO = '2026-10-30T09:30:00+00:00';
 
@@ -180,11 +187,52 @@ describe('what a month and a year show', () => {
   it('has nothing to shade against in an empty record', () => {
     expect(largestOf([], 'total')).toBe(0);
   });
+
+  /** One post's months are read exactly as a year of the table is, wherever they fall. */
+  it('adds the figures of any run of months up as a year does', () => {
+    const months = rows.flatMap((row) => row.months);
+
+    expect(figureAcross(months, 'total')).toBe(800);
+    expect(figureAcross(months, 'average')).toBe(800 / 80);
+    expect(figureAcross([cellOf(rows, '2026-01')], 'total')).toBeNull();
+    expect(figureAcross([], 'average')).toBeNull();
+  });
+});
+
+describe('a figure as a month, a week or a year shows it', () => {
+  it('writes a count whole', () => {
+    expect(writeFigure(5180, 'total', format)).toBe('5,180');
+  });
+
+  /** The difference between 1 and 1.4 a day is real, and between 41 and 41.4 it is not. */
+  it('writes an average under ten with a decimal, and one too small to round as its first digit', () => {
+    expect(writeFigure(9.66, 'average', format)).toBe('9.7');
+    expect(writeFigure(41.4, 'average', format)).toBe('41');
+    expect(writeFigure(0.032, 'average', format)).toBe('0.03');
+    expect(writeFigure(0, 'average', format)).toBe('0');
+  });
+
+  it('marks a figure that is not there', () => {
+    expect(writeFigure(null, 'total', format)).toBe('–');
+  });
 });
 
 describe('a day on the calendar, to be written', () => {
   it('stays the day it is, in the zone it is written in', () => {
     expect(writableDay('2026-09-16').toISOString()).toBe('2026-09-16T00:00:00.000Z');
+  });
+
+  it('writes a month out in full, as the reader’s language writes one', () => {
+    expect(writtenMonth('2026-08', format)).toBe('August 2026');
+  });
+
+  it.each([
+    [0, 'long', 'Monday'],
+    [6, 'long', 'Sunday'],
+    [2, 'short', 'Wed'],
+    [4, 'narrow', 'F'],
+  ] as const)('names place %s in the week, written %s, as %s', (place, width, name) => {
+    expect(weekdayName(place, width, format)).toBe(name);
   });
 });
 

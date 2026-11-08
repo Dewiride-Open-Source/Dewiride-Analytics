@@ -1034,8 +1034,8 @@ public sealed record InsightsBestDay(string Day, long PageViews);
 /// <param name="Month">The month, as <c>yyyy-MM</c> on the website's calendar.</param>
 /// <param name="PageViews">Pages delivered in it, or nothing where it cannot be said.</param>
 /// <param name="DaysMeasured">
-/// How many of its days those pages cover: from the website's first day, and up to and including today
-/// in the month running now. None where the month has no figure.
+/// How many of its days those pages cover: from the website's first day — for a post, from the day it was
+/// published — and up to and including today in the month running now. None where the month has no figure.
 /// </param>
 public readonly record struct InsightsMonth(string Month, long? PageViews, int DaysMeasured);
 
@@ -1082,10 +1082,89 @@ public sealed record InsightsPostsResponse(
 /// say.
 /// </param>
 /// <param name="PageViews">
-/// Pages delivered at it since <see cref="InsightsPostsResponse.ViewsFrom"/>, at its own path and where it
-/// landed, to whoever the reading is about.
+/// Pages delivered at it since the answer's <c>viewsFrom</c>, at its own path and where it landed, to
+/// whoever the reading is about.
 /// </param>
 public sealed record InsightsPost(string Path, string Address, string? Title, string? Published, long PageViews);
+
+/// <summary>
+/// One page of a website's posts, each with how much it was read, all from one reading.
+/// </summary>
+/// <remarks>
+/// Read a page at a time on the terms <see cref="PagesResponse"/> is: ask again with <c>offset</c> advanced
+/// by the <c>limit</c> asked for, and an offset past the end answers with an empty page rather than an error.
+/// Each order is total, so successive pages of one reading neither repeat a post nor skip one.
+/// </remarks>
+/// <param name="Posts">Posts its sitemap lists now: the figure Settings gives.</param>
+/// <param name="Matching">
+/// How many of them hold what was searched for in their title or their address; every one of them where
+/// nothing was.
+/// </param>
+/// <param name="ViewsFrom">
+/// The month, as <c>yyyy-MM</c> on the website's calendar, the posts' views are counted from, on the terms
+/// <see cref="InsightsPostsResponse"/> gives. Nothing where nothing of the website is held, or where no post
+/// matched.
+/// </param>
+/// <param name="MostPageViews">
+/// Pages delivered at the most read of the posts that matched, whatever the page, so every page can be drawn
+/// to the same scale. Nought where none matched.
+/// </param>
+/// <param name="Shown">The page, in the order asked for, each post with the figure Insights gives it.</param>
+public sealed record PostsPageResponse(
+    int Posts,
+    int Matching,
+    string? ViewsFrom,
+    long MostPageViews,
+    IReadOnlyList<InsightsPost> Shown);
+
+/// <summary>
+/// What one of a website's posts has done, all from one reading: its views, every month it was read in,
+/// and its recent weeks day by day.
+/// </summary>
+/// <param name="Post">The post, with the figure Insights gives it.</param>
+/// <param name="ViewsFrom">
+/// The month, as <c>yyyy-MM</c> on the website's calendar, the post's views are counted from, on the terms
+/// <see cref="InsightsPostsResponse"/> gives. Nothing where nothing of the website is held.
+/// </param>
+/// <param name="FirstDay">
+/// The first day of the website's record, as <see cref="AllTimeResponse"/> says; nothing where nothing of
+/// the website is held.
+/// </param>
+/// <param name="From">
+/// The first day, as <c>yyyy-MM-dd</c>, the post's first month counts its days from: the first of it, or
+/// the website's first day or the day the post was published where either falls later in it, and never
+/// later than today. Nothing where the post has no months.
+/// </param>
+/// <param name="To">The moment the post was read at.</param>
+/// <param name="CompleteTo">
+/// The instant the answer is complete up to: <paramref name="To"/> for everybody, and for people as far as
+/// the verdicts beneath every figure reach.
+/// </param>
+/// <param name="Months">
+/// Every month from the post's first to the one running now, oldest first. A month nothing can say how much
+/// the post was read in has no figure and no days; a month it was not read in is nought.
+/// </param>
+/// <param name="Days">
+/// Every day from the Monday of the first of its recent weeks to today, on the website's calendar.
+/// </param>
+public sealed record InsightsPostResponse(
+    InsightsPost Post,
+    string? ViewsFrom,
+    string? FirstDay,
+    string? From,
+    DateTimeOffset To,
+    DateTimeOffset CompleteTo,
+    IReadOnlyList<InsightsMonth> Months,
+    IReadOnlyList<InsightsPostDay> Days);
+
+/// <summary>
+/// One day of a post's recent weeks.
+/// </summary>
+/// <param name="Day">The day, as <c>yyyy-MM-dd</c> on the website's calendar.</param>
+/// <param name="PageViews">
+/// Pages delivered at the post on it, or nothing where it falls before the website was first measured.
+/// </param>
+public readonly record struct InsightsPostDay(string Day, long? PageViews);
 
 /// <summary>
 /// One day posts were published on.

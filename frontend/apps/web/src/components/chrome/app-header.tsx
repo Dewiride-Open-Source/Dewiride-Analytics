@@ -2,7 +2,7 @@
 
 import { ArrowRight, LogOut } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { type RefObject, useEffect, useRef, useState } from 'react';
 import { BrandMark } from '@/components/chrome/brand-mark';
 import { ThemeSwitch } from '@/components/chrome/theme-switch';
 import { AddSite } from '@/components/dashboard/add-site';
@@ -31,6 +31,41 @@ function carriedBy(carries: readonly Carried[], choices: ScreenChoices): Partial
   };
 }
 
+/** What the page calls the bar's height, which whatever it is scrolled to stops below. */
+const BAR_HEIGHT = '--app-bar-height';
+
+/**
+ * Tells the page how tall the bar is for as long as it is drawn, so that whatever the page is
+ * scrolled to — a control the focus is handed to among them — stops below it rather than under it.
+ *
+ * Measured rather than written down. The bar gains the row of screens once somebody is signed in,
+ * and a line about a closed account that wraps on a phone, and a control handed the focus beneath a
+ * bar taller than the page was told would hold the focus where nobody can see it.
+ *
+ * @param bar The bar.
+ */
+function useBarHeight(bar: RefObject<HTMLElement | null>): void {
+  useEffect(() => {
+    const node = bar.current;
+
+    if (!node) {
+      return;
+    }
+
+    const page = document.documentElement;
+    const measure = () => page.style.setProperty(BAR_HEIGHT, `${node.offsetHeight}px`);
+    const watcher = new ResizeObserver(measure);
+
+    measure();
+    watcher.observe(node);
+
+    return () => {
+      watcher.disconnect();
+      page.style.removeProperty(BAR_HEIGHT);
+    };
+  }, [bar]);
+}
+
 /**
  * The bar across the top of every screen, signed in or not.
  *
@@ -57,6 +92,9 @@ export function AppHeader() {
   const here = usePathname();
   const { period } = usePeriod();
   const { population } = usePeopleOnly();
+  const bar = useRef<HTMLElement>(null);
+
+  useBarHeight(bar);
 
   function show(siteId: string) {
     choose(siteId);
@@ -64,7 +102,10 @@ export function AppHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-20 border-b border-border/70 bg-background/75 backdrop-blur-md">
+    <header
+      ref={bar}
+      className="sticky top-0 z-20 border-b border-border/70 bg-background/75 backdrop-blur-md"
+    >
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
         {/*
           The picker takes whatever room is left rather than a width of its own, and everything to

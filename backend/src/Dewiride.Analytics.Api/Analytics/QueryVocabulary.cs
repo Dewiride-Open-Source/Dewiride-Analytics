@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using Dewiride.Analytics.Application.Analytics;
+using Dewiride.Analytics.Application.Posts;
 using Dewiride.Analytics.Application.Sessions;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
@@ -32,6 +33,15 @@ internal static class QueryVocabulary
 
     /// <summary>What is said when a series is asked for a measure this product does not count.</summary>
     public const string UnknownMetric = "Ask for either page views or visitors.";
+
+    /// <summary>What is said when a question about one post names no post.</summary>
+    public const string NoPost = "Ask about a post by the path Insights lists it at.";
+
+    /// <summary>What is said when a website's posts are asked for in an order they are not listed in.</summary>
+    public const string UnknownPostsOrder = "List the posts by the most read or by the newest.";
+
+    /// <summary>What is said when a website's posts are searched for more than a search may hold.</summary>
+    public static readonly string SearchTooLong = $"Search for at most {PostSearch.MostCharacters} characters.";
 
     /// <summary>Which measure a series counts, by the word used on the wire.</summary>
     public static readonly FrozenDictionary<string, TimeSeriesMetric> Metrics =
@@ -101,6 +111,19 @@ internal static class QueryVocabulary
         KeptGranularities.ToFrozenDictionary(entry => entry.Value, entry => entry.Key);
 
     /// <summary>
+    /// The orders a website's posts may be listed in, by the word used on the wire.
+    /// </summary>
+    /// <remarks>
+    /// The most read is what a list means when no order is named.
+    /// </remarks>
+    public static readonly FrozenDictionary<string, PostsOrder> PostsOrders =
+        new Dictionary<string, PostsOrder>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["most-read"] = PostsOrder.MostRead,
+            ["newest"] = PostsOrder.Newest,
+        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Reads who a question is asked about.
     /// </summary>
     /// <remarks>
@@ -121,6 +144,75 @@ internal static class QueryVocabulary
         }
 
         return Populations.TryGetValue(asked, out population);
+    }
+
+    /// <summary>
+    /// Reads the order a website's posts are asked for in.
+    /// </summary>
+    /// <remarks>
+    /// Nothing named is the most read. Called before the site is resolved, like every other check, so a
+    /// word naming no order is refused identically whether or not the site exists.
+    /// </remarks>
+    /// <param name="asked">What the caller supplied, or nothing.</param>
+    /// <param name="order">The order it names, where it names one posts are listed in.</param>
+    /// <returns><see langword="true"/> when the request can be answered as asked.</returns>
+    public static bool TryReadPostsOrder(string? asked, out PostsOrder order)
+    {
+        if (string.IsNullOrEmpty(asked))
+        {
+            order = PostsOrder.MostRead;
+
+            return true;
+        }
+
+        return PostsOrders.TryGetValue(asked, out order);
+    }
+
+    /// <summary>
+    /// Reads how much of a list a question asks for, and from where along it.
+    /// </summary>
+    /// <remarks>
+    /// Every list on the dashboard is read a page at a time under identical rules, so they are written here
+    /// once. Called before the site is resolved, so a malformed request is refused identically whether or not
+    /// the site exists: checking in the other order would turn a bad limit into a way of finding out which
+    /// identifiers on an install are real.
+    /// </remarks>
+    /// <param name="limit">How many rows the caller asked for, or nothing to take the list's own default.</param>
+    /// <param name="offset">How many leading rows to pass over, or nothing for none.</param>
+    /// <param name="bounds">What this particular list allows.</param>
+    /// <param name="paging">The checked request, where it was usable.</param>
+    /// <param name="refusal">Why it was not, where it was not.</param>
+    /// <returns><see langword="true"/> when the request can be answered as asked.</returns>
+    public static bool TryReadPaging(
+        int? limit,
+        int? offset,
+        ListBounds bounds,
+        out Paging paging,
+        out string? refusal)
+    {
+        paging = default;
+
+        var rows = limit ?? bounds.Fallback;
+        var passed = offset ?? 0;
+
+        if (rows < 1 || rows > bounds.Most)
+        {
+            refusal = $"Ask for between 1 and {bounds.Most} {bounds.Rows} at a time.";
+
+            return false;
+        }
+
+        if (passed < 0)
+        {
+            refusal = "Start the list at the beginning or further along it, never before it.";
+
+            return false;
+        }
+
+        paging = new Paging(rows, passed);
+        refusal = null;
+
+        return true;
     }
 
     /// <summary>
@@ -177,4 +269,19 @@ internal static class QueryVocabulary
 
         return JudgingReach.Settled(caughtUp, clock.GetUtcNow(), settings.IdleTimeout);
     }
+
+    /// <summary>
+    /// What one list allows, and what its rows are called when a request for them is refused.
+    /// </summary>
+    /// <param name="Fallback">How many rows to return when the caller does not say.</param>
+    /// <param name="Most">How many rows one request may ask for.</param>
+    /// <param name="Rows">What the rows are called, for the sentence a refusal answers with.</param>
+    internal readonly record struct ListBounds(int Fallback, int Most, string Rows);
+
+    /// <summary>
+    /// A checked request for part of a list: how much of it, and from where along it.
+    /// </summary>
+    /// <param name="Limit">How many rows to return.</param>
+    /// <param name="Offset">How many leading rows to pass over.</param>
+    internal readonly record struct Paging(int Limit, int Offset);
 }

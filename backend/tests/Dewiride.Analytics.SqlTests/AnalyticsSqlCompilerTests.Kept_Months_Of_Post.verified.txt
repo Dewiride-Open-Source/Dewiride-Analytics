@@ -1,0 +1,35 @@
+﻿--- statement ---
+SELECT
+    month,
+    toInt64(arraySum(arrayMap(
+        (path, views) -> if(has({post_paths:Array(String)}, path), views, 0),
+        paths,
+        counted))) AS page_views,
+    hasAny(paths, {post_paths:Array(String)}) AS named,
+    counted_at,
+    begins_at,
+    ends_at,
+    judged_to
+FROM
+(
+    SELECT
+        month,
+        paths,
+        page_views AS counted,
+        counted_at,
+        begins_at,
+        ends_at,
+        judged_to
+    FROM consolidated_post_months
+    WHERE site_id = {site_id:UUID}
+      AND month <= toStartOfMonth(toDate(fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC'), {time_zone:String}))
+    ORDER BY month, counted_at DESC
+    LIMIT 1 BY month
+)
+ORDER BY month
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+to_ms = 1778198400000
+time_zone = 'Europe/London'
+post_paths = ['/posts/a-first-post/', '/posts/first-post-moved/']

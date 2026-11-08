@@ -1,9 +1,110 @@
-import type { SitemapStatus } from '@/lib/api/schemas';
+import { type PostsOrder, postsOrderSchema, type SitemapStatus } from '@/lib/api/schemas';
 
 /**
  * What the screen about a website's record says about its posts, from how reading its sitemap stands,
- * and where a post can be opened from.
+ * where a post can be opened from, and how the list of every post is searched, ordered and paged.
  */
+
+/** The orders the list of every post can be read in, as the engine names them. */
+export const POSTS_ORDERS = postsOrderSchema.options;
+
+/** The order a list says nothing about is read in: the most read first. */
+export const DEFAULT_POSTS_ORDER: PostsOrder = 'most-read';
+
+/**
+ * How many posts a page of the list can hold, smallest first. A hundred is the most the engine names
+ * in one answer.
+ */
+export const POSTS_PAGE_SIZES = [25, 50, 100] as const;
+
+/** One of them. */
+export type PostsPageSize = (typeof POSTS_PAGE_SIZES)[number];
+
+/** How many posts a page holds where nobody has chosen. */
+export const POSTS_PAGE_SIZE: PostsPageSize = 25;
+
+/**
+ * The longest search the engine reads, in the units a browser counts a box's length in. A search is
+ * stopped here rather than refused there.
+ */
+export const POSTS_SEARCH_MOST = 100;
+
+/**
+ * How long typing has to stop for, in milliseconds, before what was typed is searched for: long
+ * enough to pass between the letters of a word, short enough that the list follows as soon as the
+ * word is down.
+ */
+export const SEARCH_SETTLES_AFTER = 300;
+
+/**
+ * The furthest page an address is read as naming. Far past the end of the longest list any sitemap is
+ * read to, and near enough that where it begins is a whole number the engine reads.
+ */
+const FURTHEST_PAGE = 1_000_000;
+
+/** One page of the list of every post: what it holds, in which order, and where it begins. */
+export interface PostsListing {
+  /** What the posts on it hold in their title or their address, or nothing where all of them are. */
+  readonly search: string;
+  readonly order: PostsOrder;
+  /** How many posts the page holds. */
+  readonly limit: number;
+  /** How many posts are passed over to reach it. */
+  readonly offset: number;
+}
+
+/** A run of what a search reads as the space between two words: any kind of space, or any control. */
+const BETWEEN_WORDS = /[\p{Z}\p{Cc}]+/u;
+
+/**
+ * A search, read as the engine reads one: as words, each run of space or control characters between
+ * them one space, with none before the first or after the last; and no longer than the engine reads,
+ * cut where a character ends rather than between the two halves of one written in a pair.
+ *
+ * Read this way wherever a search comes from, so the box, the address and the question put to the
+ * engine say one search the same way, and none of them can say one the engine would refuse.
+ *
+ * @param typed What was typed in the box, or what an address says was.
+ * @returns The search, or nothing where it holds no word.
+ */
+export function searchFrom(typed: string): string {
+  const words = typed
+    .split(BETWEEN_WORDS)
+    .filter((word) => word !== '')
+    .join(' ');
+
+  if (words.length <= POSTS_SEARCH_MOST) {
+    return words;
+  }
+
+  const cutHalfway = isFirstHalf(words.charCodeAt(POSTS_SEARCH_MOST - 1));
+  const cut = words.slice(0, cutHalfway ? POSTS_SEARCH_MOST - 1 : POSTS_SEARCH_MOST);
+
+  return cut.endsWith(' ') ? cut.slice(0, -1) : cut;
+}
+
+/** Whether a unit of text is the first half of a character written in a pair of them. */
+function isFirstHalf(unit: number): boolean {
+  return unit >= 0xd800 && unit <= 0xdbff;
+}
+
+/**
+ * The page an address names, counting from one, or nothing where it names none.
+ *
+ * Only a whole number is a page, written as one is: an address is written by whoever sent the link,
+ * and anything else in it opens the list at its beginning.
+ *
+ * @param written What the address says.
+ */
+export function pageFrom(written: string): number | null {
+  if (!/^[1-9]\d*$/.test(written)) {
+    return null;
+  }
+
+  const page = Number(written);
+
+  return page <= FURTHEST_PAGE ? page : null;
+}
 
 /**
  * What stands where a website's posts are shown.

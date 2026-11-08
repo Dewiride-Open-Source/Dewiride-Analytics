@@ -17,6 +17,8 @@
   whose rule for saying why there are no people, apply here.
 - **Followed by**: [0069](0069-a-post-s-views-are-kept-a-month-at-a-time.md), whose posts join this
   screen and whose views are read the way this screen reads a whole record.
+- **Followed by**: [0070](0070-a-post-is-read-on-a-page-of-its-own.md), whose page lays one post's
+  months and years out in this screen's table, read as this screen reads a whole record.
 
 ## Context
 

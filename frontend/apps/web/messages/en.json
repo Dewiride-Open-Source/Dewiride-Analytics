@@ -362,7 +362,7 @@
     "list": {
       "previous": "Previous",
       "next": "Next",
-      "showing": "{first}–{last} of {total}",
+      "showing": "{first, number}–{last, number} of {total, number}",
       "page": "Page {number}",
       "perPage": "Show"
     },
@@ -713,9 +713,12 @@
       "failed": "We couldn't read your sitemap the last time we tried, so your newest posts may be missing.",
       "check": "Check the address",
       "newTab": "(opens in a new tab)",
+      "open": "Open the post",
+      "openNamed": "Open {title} in a new tab",
       "views": "{count, plural, one {# view} other {# views}}",
       "undated": "{count, plural, one {# post has no publishing date, so it isn't shown here.} other {# posts have no publishing dates, so they aren't shown here.}}",
       "latest": "Latest posts",
+      "seeAll": "{count, plural, one {See your post} other {See all # posts}}",
       "best": {
         "title": "Most popular post",
         "views": "{count, plural, one {<figure>#</figure> view} other {<figure>#</figure> views}}",
@@ -746,6 +749,120 @@
       },
       "waiting": "Your posts appear here once they're found.",
       "unexplained": "Check that the address opens in a browser."
+    },
+    "post": {
+      "heading": "Post insights",
+      "back": "Back to Insights",
+      "backToList": "Back to All posts",
+      "published": "Published {date}",
+      "undated": "No publishing date",
+      "highlights": {
+        "views": "Views",
+        "viewsPeople": "Views by people",
+        "perDay": "Average per day",
+        "bestMonth": "Best month",
+        "bestMonthViews": "{count, plural, one {# view} other {# views}}",
+        "bestMonthSoFar": "{count, plural, one {# view so far} other {# views so far}}"
+      },
+      "chart": {
+        "title": "Views over time",
+        "measure": "Views",
+        "measurePeople": "Views by people",
+        "summary": "Views of this post over the chosen period.",
+        "summaryPeople": "Views by people of this post over the chosen period.",
+        "none": "Nobody read this post in this period.",
+        "nonePeople": "No people read this post in this period.",
+        "after": "This post was published on {date}, after this period.",
+        "opens": "It begins on {date}, the day the post was published.",
+        "cut": {
+          "hour": "Times are the clock in {zone}.",
+          "day": "Days run midnight to midnight in {zone}.",
+          "week": "Weeks run Monday to Sunday in {zone}.",
+          "month": "Months follow the calendar in {zone}.",
+          "year": "Years follow the calendar in {zone}."
+        }
+      },
+      "months": {
+        "caption": {
+          "total": "Views of this post in each month, newest year first.",
+          "average": "Views per day in each month, counting only the days measured since it was published.",
+          "averageUndated": "Views per day in each month, counting only the days measured."
+        },
+        "unpublished": "Not yet published",
+        "unread": "No views yet",
+        "legend": {
+          "unpublished": "Before it was published",
+          "unread": "Before its first view"
+        }
+      },
+      "weeks": {
+        "title": "Recent weeks",
+        "caption": "Views each day, newest week first. Change compares views per day with the week before.",
+        "week": "Week",
+        "total": "Total",
+        "perDay": "Average per day",
+        "change": "Change",
+        "perDayShort": "{figure} a day",
+        "first": "Nothing to compare with",
+        "againstBefore": "on the week before",
+        "running": "Still running",
+        "moved": {
+          "up": "Up {amount}",
+          "down": "Down {amount}",
+          "level": "Level",
+          "none": "Up from none"
+        },
+        "legend": {
+          "today": "Today so far"
+        }
+      },
+      "missing": {
+        "title": "We can't find this post",
+        "body": "{site}'s sitemap doesn't list this post. It may have been taken off, or it may be on another website.",
+        "unnamed": "This link doesn't say which post to show."
+      },
+      "unread": {
+        "title": "Nobody has read this post yet",
+        "titleSince": "Nobody has read this post since {month}",
+        "body": "Its views appear here, day by day and month by month, as soon as somebody reads it."
+      },
+      "absent": {
+        "title": "No people yet",
+        "body": "None of this post's readers so far has been judged to be a person."
+      }
+    },
+    "allPosts": {
+      "title": "All posts",
+      "caption": "Every post on {site}, and how often each one has been read.",
+      "back": "Back to Insights",
+      "search": {
+        "label": "Search your posts",
+        "placeholder": "Search by title or address",
+        "clear": "Clear search"
+      },
+      "order": {
+        "label": "Order your posts",
+        "by": {
+          "most-read": "Most read",
+          "newest": "Newest"
+        }
+      },
+      "count": "{posts, plural, one {# post} other {# posts}}",
+      "found": "{matching, plural, =0 {No posts match your search} one {# post matches your search} other {# posts match your search}}",
+      "spoken": "{counted}, showing {first, number} to {last, number}",
+      "nav": {
+        "label": "Pages of posts"
+      },
+      "noMatch": {
+        "title": "No posts match your search",
+        "body": "Try fewer words, or part of a post's address.",
+        "action": "Clear search"
+      },
+      "pastTheEnd": {
+        "title": "Nothing on this page",
+        "body": "Your list of posts ends before this page.",
+        "action": "Go to the first page"
+      }
     },
     "empty": {
       "title": "Nothing to look back on yet",

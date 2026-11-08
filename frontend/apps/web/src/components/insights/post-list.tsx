@@ -4,10 +4,13 @@ import { ExternalLink } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 import { Card } from '@/components/ui/card';
+import { Link } from '@/i18n/navigation';
 import { writableDay } from '@/lib/analytics/all-time';
 import { readablePath } from '@/lib/analytics/pages';
+import { postCalled, postScreen } from '@/lib/analytics/post';
 import { postLink } from '@/lib/analytics/posts';
 import { shareOf } from '@/lib/analytics/share';
+import { usePeopleOnly } from '@/lib/analytics/use-people-only';
 import type { InsightsPost } from '@/lib/api/schemas';
 import { cn } from '@/lib/styling';
 
@@ -24,40 +27,71 @@ interface PostTitleProps {
   readonly post: InsightsPost;
   /**
    * Whether the title has the room of a card to itself, and is set large; otherwise it is a row of a
-   * list. Either way it takes two lines at most, which on a phone is what a title needs to be told
-   * from the next, and is cut short beyond them.
+   * list, and the whole row is the way to the post's page. Either way it takes two lines at most,
+   * which on a phone is what a title needs to be told from the next, and is cut short beyond them.
    */
   readonly featured?: boolean;
+  /**
+   * The list of every post it is opened from, as that list's own address writes it, where it is
+   * opened from there: the post's page then leads back to it.
+   */
+  readonly list?: string;
 }
 
 /**
- * A post's title, or its address where its page gave none, as a link to the post.
+ * A post's title, or its address where its page gave none, as the way to the post's own page here,
+ * which counts the same people the screen it is on counts.
+ *
+ * A post's title comes from the website's own pages, so it is only ever text, written in its own
+ * direction and cut off from whatever is beside it. An address reads left to right, whatever it is
+ * written in.
+ */
+export function PostTitle({ post, featured = false, list }: PostTitleProps) {
+  const { population } = usePeopleOnly();
+  const words = postCalled(post);
+
+  return (
+    <Link
+      href={postScreen(post.path, population, list)}
+      prefetch={false}
+      title={words}
+      className={cn(
+        'min-w-0 rounded-sm decoration-accent/60 underline-offset-2 hover:text-accent-strong hover:underline',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong',
+        featured ? 'line-clamp-2' : 'flex after:absolute after:inset-0 after:rounded-md',
+      )}
+    >
+      <bdi
+        dir={post.title === null ? 'ltr' : 'auto'}
+        className={featured ? 'wrap-break-word' : 'line-clamp-2 min-w-0 wrap-break-word'}
+      >
+        {words}
+      </bdi>
+    </Link>
+  );
+}
+
+interface OpenPostProps {
+  readonly post: InsightsPost;
+  /** Anything the place it stands needs beyond its own layout. */
+  readonly className?: string;
+}
+
+/**
+ * The way to the post itself, on the website, beside its title.
  *
  * Opened in a tab of its own, so the screen it was opened from is still there, and with nothing
- * passed on about where it was opened from. A post's address and title come from the website's own
- * pages, so both are only ever text: the address is a link only where it is a web page's, and the
- * title is written in its own direction, cut off from whatever is beside it.
+ * passed on about where it was opened from. A post's address comes from the website's own sitemap,
+ * so it is a link only where it is a web page's, and nothing at all otherwise. A mark too small to
+ * press on a phone is pressed anywhere in the square around it, which is drawn above the line beneath
+ * it where the two overlap, and above a row that is a way to the post's page everywhere else.
  */
-export function PostTitle({ post, featured = false }: PostTitleProps) {
+export function OpenPost({ post, className }: OpenPostProps) {
   const t = useTranslations('insights.posts');
   const href = postLink(post.address);
-  const words = post.title ?? readablePath(post.path);
-  const title = (
-    <bdi
-      // An address reads left to right, whatever it is written in.
-      dir={post.title === null ? 'ltr' : 'auto'}
-      className={featured ? 'wrap-break-word' : 'line-clamp-2 min-w-0 wrap-break-word'}
-    >
-      {words}
-    </bdi>
-  );
 
   if (href === null) {
-    return (
-      <span title={words} className={cn('min-w-0', featured ? 'line-clamp-2' : 'flex')}>
-        {title}
-      </span>
-    );
+    return null;
   }
 
   return (
@@ -65,22 +99,15 @@ export function PostTitle({ post, featured = false }: PostTitleProps) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      title={words}
+      aria-label={t('openNamed', { title: postCalled(post) })}
+      title={t('open')}
       className={cn(
-        'min-w-0 rounded-sm decoration-accent/60 underline-offset-2 hover:text-accent-strong hover:underline',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong',
-        featured ? 'line-clamp-2' : 'flex items-start gap-1.5',
+        'relative z-10 inline-flex size-10 shrink-0 items-center justify-center rounded-md text-foreground-subtle transition-colors hover:bg-accent-soft hover:text-accent-strong',
+        'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent-strong',
+        className,
       )}
     >
-      {title}
-      <ExternalLink
-        aria-hidden
-        className={cn(
-          'shrink-0 text-foreground-subtle',
-          featured ? 'ml-1.5 inline size-4 align-[-0.125em]' : 'mt-[3px] size-3.5',
-        )}
-      />{' '}
-      <span className="sr-only">{t('newTab')}</span>
+      <ExternalLink aria-hidden className="size-3.5" />
     </a>
   );
 }
@@ -137,15 +164,11 @@ export function LatestPosts({ posts, leftOut }: LatestPostsProps) {
       <h3 className={POSTS_HEADING}>{t('latest')}</h3>
 
       {posts === undefined ? (
-        <div aria-hidden className="flex flex-col gap-1.5">
-          {Array.from({ length: ROWS_WAITING }, (_, row) => (
-            <div key={row} className="h-14 animate-pulse rounded-md bg-surface-muted" />
-          ))}
-        </div>
+        <PostRowsWaiting rows={ROWS_WAITING} />
       ) : (
         <ol className="flex flex-col gap-0.5">
           {posts.map((post) => (
-            <LatestPost key={post.path} post={post} most={most} />
+            <PostRow key={post.path} post={post} most={most} />
           ))}
         </ol>
       )}
@@ -155,14 +178,32 @@ export function LatestPosts({ posts, leftOut }: LatestPostsProps) {
   );
 }
 
-interface LatestPostProps {
-  readonly post: InsightsPost;
-  /** The most any of the newest posts has been read, which every bar is drawn against. */
-  readonly most: number;
+/** What stands in for rows of posts while they are on their way, kept from a screen reader. */
+export function PostRowsWaiting({ rows }: { readonly rows: number }) {
+  return (
+    <div aria-hidden className="flex flex-col gap-1.5">
+      {Array.from({ length: rows }, (_, row) => (
+        <div key={row} className="h-14 animate-pulse rounded-md bg-surface-muted" />
+      ))}
+    </div>
+  );
 }
 
-/** One of the newest posts: its title, when it was published and where, and how much it was read. */
-function LatestPost({ post, most }: LatestPostProps) {
+interface PostRowProps {
+  readonly post: InsightsPost;
+  /** The most any post of the list has been read, which every bar is drawn against. */
+  readonly most: number;
+  /** The list of every post the row stands in, as that list's own address writes it, where it does. */
+  readonly list?: string;
+}
+
+/**
+ * One post of a list: its title, when it was published and where, and how much it was read.
+ *
+ * Pressing anywhere on it opens the post's own page, since a title on a phone is a line of small
+ * words, and the row is what somebody aims at.
+ */
+export function PostRow({ post, most, list }: PostRowProps) {
   const t = useTranslations('insights.posts');
 
   return (
@@ -174,7 +215,10 @@ function LatestPost({ post, most }: LatestPostProps) {
       />
       <div className="flex items-center gap-4 px-3 py-2.5">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm font-medium text-foreground">
-          <PostTitle post={post} />
+          <div className="flex items-start">
+            <PostTitle post={post} list={list} />
+            <OpenPost post={post} className="-my-2.5" />
+          </div>
           <PostFacts post={post} />
         </div>
         <span className="shrink-0 whitespace-nowrap text-sm font-medium text-foreground tabular-nums">

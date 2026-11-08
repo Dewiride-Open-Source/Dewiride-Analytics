@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Dewiride.Analytics.Application.Posts;
 using Dewiride.Analytics.Application.Tenancy;
+using Dewiride.Analytics.Domain.Sites;
 using Dewiride.Analytics.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -90,6 +91,95 @@ internal sealed class SitePosts(ControlPlaneDbContext database, IOptions<Sitemap
             .ConfigureAwait(false);
 
         return [.. named];
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// Compared by the database over this website's rows alone, reached by the post's key, so only the paths
+    /// that match come back rather than every post's title and address. A post's path is compared rather
+    /// than its whole address, which begins with the website's name, and a whole address searched for is
+    /// compared by the path it names (<see cref="PostMatch.PathIn"/>). The text travels as a value bound to
+    /// the statement, in a pattern whose every wildcard is escaped (<see cref="PostMatch"/>), and case is set
+    /// aside as far as the database's locale sets it aside.
+    /// </para>
+    /// <para>
+    /// A text holding a character no title or address can hold matches nothing, and is answered so without
+    /// asking: the database refuses that character outright rather than finding nothing.
+    /// </para>
+    /// </remarks>
+    public async Task<ImmutableArray<string>> MatchingAsync(
+        TenantScope scope,
+        string text,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(text.Length, PostSearch.MostCharacters);
+
+        if (text.Contains('\0', StringComparison.Ordinal))
+        {
+            return [];
+        }
+
+        var named = PostMatch.Holding(text);
+        var spelled = PostMatch.Holding(PostMatch.PathIn(text));
+        var matching = await ListedPosts.Of(database, scope.SiteId)
+            .Where(post =>
+                (post.Title != null && EF.Functions.ILike(post.Title, named, PostMatch.Escape))
+                || EF.Functions.ILike(post.Path, spelled, PostMatch.Escape))
+            .Select(post => post.Path)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return [.. matching];
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// Matched on the post's key, the website and the path exactly as written, so a path differing in
+    /// a single character — its case, a slash, how it is escaped — is another path. A path longer than
+    /// any a post can be listed at, or holding a character no listed path can hold, names no post and is
+    /// answered so without asking: the database refuses that character outright rather than finding
+    /// nothing.
+    /// </para>
+    /// <para>
+    /// Where the post's page landed at another path, a second lookup says whether that path is another
+    /// listed post's own.
+    /// </para>
+    /// </remarks>
+    public async Task<FoundPost?> FindAsync(TenantScope scope, string path, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        ArgumentNullException.ThrowIfNull(path);
+
+        if (path.Length > Site.MaxSitemapAddressLength || path.Contains('\0', StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var found = await ListedPosts.Of(database, scope.SiteId)
+            .Where(post => post.Path == path)
+            .Select(post => new FoundPost(
+                new ListedPost(post.Path, post.LandedPath, post.PublishedAt),
+                post.Address,
+                post.Title,
+                false,
+                post.FirstListedAt))
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (found?.Listed.LandedPath is not { } landed)
+        {
+            return found;
+        }
+
+        var landedOnAPost = await ListedPosts.Of(database, scope.SiteId)
+            .AnyAsync(post => post.Path == landed, cancellationToken)
+            .ConfigureAwait(false);
+
+        return found with { LandedOnAPost = landedOnAPost };
     }
 
     /// <summary>

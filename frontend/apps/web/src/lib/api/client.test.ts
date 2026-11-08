@@ -58,6 +58,18 @@ describe('reading from the engine', () => {
 
     await expect(readResource('/api/thing', shape)).rejects.toMatchObject({ status: 500 });
   });
+
+  it('knows a refusal saying there is nothing there, and no other refusal for one', async () => {
+    engineAnswering(404, { title: 'Not Found', status: 404 });
+
+    await expect(readResource('/api/thing', shape)).rejects.toMatchObject({ missing: true });
+
+    for (const status of [400, 401, 409, 500]) {
+      engineAnswering(status, { status });
+
+      await expect(readResource('/api/thing', shape)).rejects.toMatchObject({ missing: false });
+    }
+  });
 });
 
 describe('submitting to the engine', () => {

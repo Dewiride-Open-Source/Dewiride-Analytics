@@ -262,7 +262,8 @@ interface ListSwitchProps<TValue extends string> {
  *
  * One card read several ways rather than several cards, because they answer the same question at
  * different levels of detail and nobody wants all of them on screen at once. A radio group rather
- * than tabs: what changes is which answer is shown, not which panel is open.
+ * than tabs: what changes is which answer is shown, not which panel is open. On a phone every way
+ * is large enough to press with a thumb.
  */
 export function ListSwitch<TValue extends string>({
   label,
@@ -290,8 +291,8 @@ export function ListSwitch<TValue extends string>({
             title={Picture ? option.label : undefined}
             onClick={() => onChange(option.value)}
             className={cn(
-              'rounded-sm py-1.5 text-sm font-medium transition-colors',
-              Picture ? 'px-2.5' : 'px-3',
+              'inline-flex min-h-10 items-center justify-center rounded-sm py-1.5 text-sm font-medium transition-colors sm:min-h-0',
+              Picture ? 'min-w-10 px-2.5 sm:min-w-0' : 'px-3',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong',
               // In forced colours the shade that marks the choice is painted out, and only colours of
               // the system's own, with its backplate off, show which one it is.

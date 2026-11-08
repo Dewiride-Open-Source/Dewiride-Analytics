@@ -220,6 +220,28 @@ public interface ITelemetryQueries
         KeptPostViewsQuery query,
         CancellationToken cancellationToken);
 
+    /// <summary>Returns one post's page views bucketed over time.</summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The window, the bucket size, the post's paths and who the pages were delivered to.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The buckets, in ascending time order, with empty buckets present and zeroed.</returns>
+    Task<IReadOnlyList<TimeSeriesPoint>> GetPostSeriesAsync(
+        TenantScope scope,
+        PostSeriesQuery query,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns every month a website's posts were kept for, with what one post was read in each.
+    /// </summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The moment to read them at, the post's paths, and who the pages were delivered to.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Each month, oldest first, as its newest count.</returns>
+    Task<ImmutableArray<KeptMonthOfPost>> GetKeptMonthsOfPostAsync(
+        TenantScope scope,
+        KeptMonthsOfPostQuery query,
+        CancellationToken cancellationToken);
+
     /// <summary>
     /// Returns individual judged visits, each with the evidence behind its verdict and what the
     /// visit itself was.
@@ -301,6 +323,31 @@ public interface ITelemetryQueries
         SiteLiveTrailQuery query,
         CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// One month a website's posts were kept for, and what one post was read in it.
+/// </summary>
+/// <remarks>
+/// A month keeps the paths of the posts the website listed when it was counted, and of those only the
+/// paths somebody read. So a month without the post's paths says nothing at all where it was counted
+/// before the post was listed, and says nobody read it where it was counted afterwards.
+/// </remarks>
+/// <param name="Month">The first of the month, on the calendar it was counted on.</param>
+/// <param name="PageViews">
+/// Pages delivered at the post's paths in the month's newest count, to whoever the question is about;
+/// nought where none of them is among the paths it kept.
+/// </param>
+/// <param name="Named">Whether the count kept any of the post's paths.</param>
+/// <param name="CountedAt">When that count was taken.</param>
+/// <param name="Counted">The stretch it was counted over, in the zone it was counted in.</param>
+/// <param name="JudgedTo">How far judging had reached when it was counted, no further than the month.</param>
+public sealed record KeptMonthOfPost(
+    DateOnly Month,
+    long PageViews,
+    bool Named,
+    DateTimeOffset CountedAt,
+    TimeRange Counted,
+    DateTimeOffset JudgedTo);
 
 /// <summary>
 /// One slice of a window's judged visits, newest first.

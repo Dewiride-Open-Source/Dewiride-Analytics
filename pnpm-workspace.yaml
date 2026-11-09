@@ -79,12 +79,12 @@ catalog:
   esbuild: 0.28.2
 
   # Quality
-  eslint: 10.13.0
+  eslint: 10.14.0
   "@next/eslint-plugin-next": 16.4.2
   eslint-plugin-react-hooks: 7.1.1
   eslint-plugin-jsx-a11y: 6.10.2
   typescript-eslint: 8.72.0
-  "@biomejs/biome": 2.6.2
+  "@biomejs/biome": 2.6.4
   prettier: 3.9.10
 
   # Tests

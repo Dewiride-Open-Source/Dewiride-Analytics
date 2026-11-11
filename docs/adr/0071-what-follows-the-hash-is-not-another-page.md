@@ -104,7 +104,7 @@ the page it records ([Google Analytics](https://developers.google.com/analytics/
   the hash.
 - The tracker grows by six bytes, to 1,942 compressed against its budget of 2,048.
 - An installation's history from before it ran this tracker keeps the extra views. The hosted
-  installation's was corrected once, by its operator, as below.
+  installation's was corrected by its operator, as below.
 
 ## Correcting the hosted installation's history
 
@@ -135,9 +135,11 @@ in front of somebody, read in each browser's own order, was the same to the hund
 before and after on every website — 768.24 minutes across the blog's affected readings. Two views had
 begun visits holding nothing else, and those visits went with them: six verdict rows under five
 rulesets. 454 verdict rows across six rulesets had their page count lowered, none below one page. Eight
-were kept: two that began a visit holding other pages, and six in visits not yet judged. Browsers
-still holding the old tracker sent a few more in the hour after the release, and those stand. The six
-months already kept on three websites were counted again within seconds. The blog's August, September
+were kept: two that began a visit holding other pages, and six in visits not yet judged. Two later
+runs, each after the owner had agreed to its exact number, removed six more as their visits were
+judged: five of those six at 05:12 UTC, and at 05:20 one sent at 04:38 by a browser still holding the
+old tracker. The history keeps the two that began a visit, and one in a visit still open at 05:20. The
+six months already kept on three websites were counted again within seconds. The blog's August, September
 and October now read 924, 2,427 and 4,697 page views (from 932, 2,455 and 4,779), and its people's
 page views fell by 8, 28 and 77.
 

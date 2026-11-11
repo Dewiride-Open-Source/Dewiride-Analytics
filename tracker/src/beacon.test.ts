@@ -482,6 +482,27 @@ describe('what the beacon reports when a reading ends', () => {
     expect(exit['pointerInteraction']).toBe(false);
     expect(exit['keyboardInteraction']).toBe(false);
   });
+
+  /**
+   * A page the site moves itself to is a reading of its own. It starts out untouched, and a touch
+   * there is that reading's as much as the first page's touch was the first page's.
+   */
+  it('carries a touch made on a page the site moved itself to', () => {
+    page.open();
+
+    window.dispatchEvent(new Event('pointerdown'));
+    window.dispatchEvent(new Event('keydown'));
+    goTo('/posts/second');
+    window.dispatchEvent(new Event('pointerdown'));
+    window.dispatchEvent(new Event('keydown'));
+    visibility('hidden');
+
+    const exits = page.sent.filter((report) => report['kind'] === 'exit');
+
+    expect(exits).toHaveLength(2);
+    expect(exits[1]?.['pointerInteraction']).toBe(true);
+    expect(exits[1]?.['keyboardInteraction']).toBe(true);
+  });
 });
 
 describe('a page that moves itself to another address', () => {
@@ -529,6 +550,68 @@ describe('a page that moves itself to another address', () => {
     window.history.replaceState({}, '', '/posts/hello');
 
     expect(page.sent.filter((report) => report['kind'] === 'pageview')).toHaveLength(1);
+  });
+
+  /**
+   * What follows the hash marks a place on the page — a heading, a comment — and never reaches the
+   * website's server. A site that moves between its pages by changing only that part is measured
+   * as the page it was loaded at.
+   */
+  it.each(['#google_vignette', '#comments', '#', '#/settings'])(
+    'says nothing when only what follows the hash becomes %s',
+    (mark) => {
+      page.open();
+
+      goTo(mark);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+
+      expect(page.sent.filter((report) => report['kind'] === 'pageview')).toHaveLength(1);
+      expect(page.sent.filter((report) => report['kind'] === 'exit')).toHaveLength(0);
+    },
+  );
+
+  /**
+   * A full-screen advertisement shown while somebody reads puts its own mark after the hash when it
+   * opens, and takes it away when it is closed — by rewriting the address, or by going back.
+   */
+  it('reads on through an advertisement that marks the address while it covers the page', () => {
+    page.open();
+
+    goTo('#google_vignette');
+    window.history.replaceState({}, '', '/posts/hello');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    visibility('hidden');
+
+    expect(only(page.sent, 'pageview')['url']).toBe(`${window.location.origin}/posts/hello`);
+    expect(only(page.sent, 'exit')).toBeDefined();
+  });
+
+  /**
+   * What follows the hash can carry what nobody should be sent: some sign-in services hand their
+   * token back to the page there.
+   */
+  it('reports the page without what follows its hash', () => {
+    window.history.replaceState({}, '', '/posts/hello#access_token=secret');
+    page.open();
+
+    visibility('hidden');
+
+    expect(only(page.sent, 'pageview')['url']).toBe(`${window.location.origin}/posts/hello`);
+    expect(only(page.sent, 'exit')['url']).toBe(`${window.location.origin}/posts/hello`);
+    expect(JSON.stringify(page.sent)).not.toContain('secret');
+  });
+
+  it('opens a new reading when the path changes as well as what follows the hash', () => {
+    page.open();
+
+    goTo('/posts/second#intro');
+
+    const views = page.sent.filter((report) => report['kind'] === 'pageview');
+
+    expect(views).toHaveLength(2);
+    expect(page.sent.filter((report) => report['kind'] === 'exit')).toHaveLength(1);
+    expect(views[1]?.['url']).toBe(`${window.location.origin}/posts/second`);
+    expect(views[1]?.['referrer']).toBe(`${window.location.origin}/posts/hello`);
   });
 });
 

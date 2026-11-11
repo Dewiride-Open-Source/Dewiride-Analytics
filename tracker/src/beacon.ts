@@ -402,16 +402,24 @@ export function start(settings: Settings): void {
     keepTime();
   }
 
-  /** The address changed without the page being fetched again. */
+  /**
+   * The address changed without the page being fetched again.
+   *
+   * A change after the hash alone leaves the reader on the same page — a jump to a heading, or an
+   * advertisement marking the address while it covers the page and taking the mark away again — so
+   * it is not a move, and the reading goes on.
+   */
   function navigated(): void {
-    if (window.location.href === address) {
+    const next = pageAddress();
+
+    if (next === address) {
       return;
     }
 
     const previous = address;
 
     endView();
-    beginView(window.location.href, previous);
+    beginView(next, previous);
   }
 
   /**
@@ -473,12 +481,14 @@ export function start(settings: Settings): void {
 
     window.addEventListener('scroll', watch, { passive: true });
 
+    // Every reading starts out untouched, a page the site moves itself to included, so a touch is
+    // watched for through the whole life of the page and not only until the first one.
     window.addEventListener(
       'pointerdown',
       () => {
         pointer = true;
       },
-      { passive: true, once: true },
+      { passive: true },
     );
 
     window.addEventListener(
@@ -486,15 +496,16 @@ export function start(settings: Settings): void {
       () => {
         keyboard = true;
       },
-      { passive: true, once: true },
+      { passive: true },
     );
 
+    // Going back or forward, and a page moving itself. A change after the hash alone is never a
+    // move, so the browser's own announcement of one is not listened for.
     window.addEventListener('popstate', navigated);
-    window.addEventListener('hashchange', navigated);
     window.addEventListener(MOVED, navigated);
     announceHistory();
 
-    beginView(window.location.href, document.referrer);
+    beginView(pageAddress(), document.referrer);
   }
 
   // A page rendered in advance has never been in front of anybody, and reports itself as hidden
@@ -505,6 +516,19 @@ export function start(settings: Settings): void {
   } else {
     observe();
   }
+}
+
+/**
+ * The address of the page being read, up to its hash.
+ *
+ * What follows the hash is never sent to the website's server, so it never names another page: it
+ * marks a place on this one — a heading, a comment — or whatever a script on the page wanted
+ * remembered, and an advertisement covering the page marks it there while it shows. The engine
+ * knows a page by its path for the same reason. It can also carry what nobody should be sent, such
+ * as a sign-in token handed back to the page, so it is never reported.
+ */
+function pageAddress(): string {
+  return window.location.href.replace(/#.*/, '');
 }
 
 /**

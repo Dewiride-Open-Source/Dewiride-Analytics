@@ -44,9 +44,10 @@ recording is switched off goes on sending presses, and the collector drops them 
 
 ## What it reports
 
-A **page view** when the reading starts — the address, the referring page without anything after its
-path (a search box puts what was searched for there), the size of the window, the declared
-language, the offset from UTC, and whether the browser says it is being driven by automation.
+A **page view** when the reading starts — the address up to its `#`, the referring page without
+anything after its path (a search box puts what was searched for there), the size of the window, the
+declared language, the offset from UTC, and whether the browser says it is being driven by
+automation.
 
 **Progress** while the reading goes on, less often the longer somebody stays. A page whose browser
 is killed outright — the tab dismissed on a phone, the machine put to sleep — announces nothing when
@@ -75,9 +76,10 @@ and "we were not watching yet" are different facts and the store keeps them apar
 
 No cookie and no stored identifier of any kind. No canvas, font list, or device fingerprint. No
 form contents and no keystrokes — only whether a key was pressed at all, and never the contents of a
-field somebody clicked into. Nothing after the path of the page somebody came from. Nothing whatever about a press beyond what was pressed: no coordinates,
-no button, no modifier keys, no element identifier and no selector path. Nothing about the reader
-that outlives the page.
+field somebody clicked into. Nothing after the `#` of the page being read, and nothing after the path
+of the page somebody came from. Nothing whatever about a press beyond what was pressed: no
+coordinates, no button, no modifier keys, no element identifier and no selector path. Nothing about
+the reader that outlives the page.
 
 ### When it stays quiet
 
@@ -86,6 +88,10 @@ that outlives the page.
 - When the page comes back from the browser's own store of kept pages. That is a reading resuming,
   not a new one.
 - When a second copy of the script is already running on the page.
+- When only what follows the `#` in the address changes — a jump to a heading or to the comments, or
+  a full-screen advertisement marking the address while it covers the page. That part of an address
+  never reaches the website's server and never names another page, so the reading goes on. A website
+  that moves between its pages by changing only that part is measured as the page it was loaded at.
 
 ## The image fallback
 

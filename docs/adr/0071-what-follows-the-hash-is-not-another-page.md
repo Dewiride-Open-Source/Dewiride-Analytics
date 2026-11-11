@@ -127,6 +127,20 @@ The months already kept that held one are then counted again from their reports
 ([0064](0064-a-month-outlives-the-reports-it-was-counted-from.md)); the month running now has not been
 kept and needs nothing.
 
+**Measured.** Carried out on 2026-11-11 at 04:14 UTC, fifteen minutes after the release reached the
+server, after a backup taken by the release. 280 extra views were removed: 252 on the blog (8 in
+August, 28 in September, 83 in October, 133 in November), 24 on a second website, and 2 each on a
+third and a fourth. 870 reports were given back the time of the readings they continued, and the time
+in front of somebody, read in each browser's own order, was the same to the hundredth of a minute
+before and after on every website — 768.24 minutes across the blog's affected readings. Two views had
+begun visits holding nothing else, and those visits went with them: six verdict rows under five
+rulesets. 454 verdict rows across six rulesets had their page count lowered, none below one page. Eight
+were kept: two that began a visit holding other pages, and six in visits not yet judged. Browsers
+still holding the old tracker sent a few more in the hour after the release, and those stand. The six
+months already kept on three websites were counted again within seconds. The blog's August, September
+and October now read 924, 2,427 and 4,697 page views (from 932, 2,455 and 4,779), and its people's
+page views fell by 8, 28 and 77.
+
 ## Rolling back
 
 An earlier release starts a new reading at every change after the hash again, and reports what follows

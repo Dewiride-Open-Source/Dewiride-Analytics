@@ -112,6 +112,13 @@ describe('the keys a website’s own server reports with', () => {
     expect(screen.getByText(/Not used yet/)).toBeInTheDocument();
   });
 
+  /** The ending is what the place the key was pasted into shows too, so the two can be matched. */
+  it('tells keys apart by how they end', async () => {
+    show([EXISTING]);
+
+    expect(await screen.findByText(/Ends in wxyz/)).toBeInTheDocument();
+  });
+
   /**
    * The question somebody is actually asking before they take a key away: is anything still
    * using it?

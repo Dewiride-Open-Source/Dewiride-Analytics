@@ -63,6 +63,20 @@ export const SHIPPED = Object.freeze([
   'includes/class-optimiser-exclusions.php',
   'includes/class-no-script-image.php',
   'includes/class-tag-check.php',
+  'includes/class-request-headers.php',
+  'includes/class-address-range.php',
+  'includes/class-own-request.php',
+  'includes/class-server-key.php',
+  'includes/class-cloudflare-ranges.php',
+  'includes/class-visitor-address.php',
+  'includes/class-stored-option.php',
+  'includes/class-reporting-status.php',
+  'includes/class-collector-client.php',
+  'includes/class-request-report.php',
+  'includes/class-server-reporting.php',
+  'includes/class-connection-check.php',
+  'includes/class-privacy-policy.php',
+  'includes/class-server-settings.php',
 ]);
 
 /**

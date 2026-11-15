@@ -8,6 +8,10 @@
 namespace Dewiride\Analytics\WordPress\Tests\Unit;
 
 use Brain\Monkey\Functions;
+use Dewiride\Analytics\WordPress\Cloudflare_Ranges;
+use Dewiride\Analytics\WordPress\Connection_Check;
+use Dewiride\Analytics\WordPress\Reporting_Status;
+use Dewiride\Analytics\WordPress\Server_Key;
 use Dewiride\Analytics\WordPress\Settings;
 use Dewiride\Analytics\WordPress\Tag_Check;
 
@@ -15,6 +19,18 @@ use Dewiride\Analytics\WordPress\Tag_Check;
  * Deleting the plugin removes everything it stored, on every site, and sends nothing anywhere.
  */
 final class Uninstall_Test extends Test_Case {
+
+	/**
+	 * Every option the plugin keeps.
+	 */
+	private const OPTIONS = array(
+		Settings::OPTION,
+		Tag_Check::OPTION,
+		Server_Key::OPTION,
+		Reporting_Status::OPTION,
+		Connection_Check::OPTION,
+		Cloudflare_Ranges::OPTION,
+	);
 
 	/**
 	 * Starts each test with no request leaving the site.
@@ -27,13 +43,17 @@ final class Uninstall_Test extends Test_Case {
 	}
 
 	/**
-	 * On a single site, both options and the daily event are removed.
+	 * On a single site, every option and both events are removed.
 	 */
 	public function test_a_single_site_forgets_everything(): void {
 		Functions\when( 'is_multisite' )->justReturn( false );
-		Functions\expect( 'delete_option' )->once()->with( Settings::OPTION );
-		Functions\expect( 'delete_option' )->once()->with( Tag_Check::OPTION );
+
+		foreach ( self::OPTIONS as $option ) {
+			Functions\expect( 'delete_option' )->once()->with( $option );
+		}
+
 		Functions\expect( 'wp_clear_scheduled_hook' )->once()->with( Tag_Check::EVENT );
+		Functions\expect( 'wp_clear_scheduled_hook' )->once()->with( Cloudflare_Ranges::EVENT );
 		Functions\expect( 'switch_to_blog' )->never();
 
 		$this->uninstall();
@@ -55,9 +75,12 @@ final class Uninstall_Test extends Test_Case {
 			->andReturn( array( 1, 2, 3 ) );
 		Functions\expect( 'switch_to_blog' )->times( 3 );
 		Functions\expect( 'restore_current_blog' )->times( 3 );
-		Functions\expect( 'delete_option' )->times( 3 )->with( Settings::OPTION );
-		Functions\expect( 'delete_option' )->times( 3 )->with( Tag_Check::OPTION );
+		foreach ( self::OPTIONS as $option ) {
+			Functions\expect( 'delete_option' )->times( 3 )->with( $option );
+		}
+
 		Functions\expect( 'wp_clear_scheduled_hook' )->times( 3 )->with( Tag_Check::EVENT );
+		Functions\expect( 'wp_clear_scheduled_hook' )->times( 3 )->with( Cloudflare_Ranges::EVENT );
 
 		$this->uninstall();
 	}

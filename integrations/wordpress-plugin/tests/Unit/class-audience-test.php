@@ -62,6 +62,24 @@ final class Audience_Test extends Test_Case {
 	}
 
 	/**
+	 * Whether the person is counted does not depend on how the page was asked for, only on who is
+	 * signed in.
+	 *
+	 * @dataProvider pages_not_read_as_themselves
+	 *
+	 * @param string $conditional The conditional tag that is true on such a page.
+	 */
+	public function test_a_person_is_counted_however_the_page_was_asked_for( string $conditional ): void {
+		Functions\when( $conditional )->justReturn( true );
+
+		self::assertTrue( $this->audience()->counts_person() );
+
+		$this->given_signed_in( array( 'administrator' ) );
+
+		self::assertFalse( $this->audience()->counts_person() );
+	}
+
+	/**
 	 * The AMP copy of a page, which the AMP plugin serves, is never counted.
 	 *
 	 * Each test of the AMP plugin runs in a process of its own: stubbing `amp_is_request()`

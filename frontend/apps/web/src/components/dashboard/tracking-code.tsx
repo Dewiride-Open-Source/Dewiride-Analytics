@@ -1,13 +1,17 @@
 'use client';
 
 import { Download } from 'lucide-react';
-import { useTranslations } from 'next-intl';
-import { type ReactNode, useState, useSyncExternalStore } from 'react';
+import { useFormatter, useTranslations } from 'next-intl';
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ListSwitch } from '@/components/dashboard/ranked-list';
-import { buttonStyle } from '@/components/ui/button';
+import { IssuedKey } from '@/components/dashboard/server-keys';
+import { Button, buttonStyle } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy-button';
 import { Dialog } from '@/components/ui/dialog';
+import { FailureNotice } from '@/components/ui/failure-notice';
+import type { ServerKey, SiteRole } from '@/lib/api/schemas';
 import { WORDPRESS_PLUGIN } from '@/lib/downloads';
+import { useCreateServerKey, useServerKeys } from '@/lib/queries/server-keys';
 import { cn } from '@/lib/styling';
 import { trackingSnippet } from '@/lib/tracker/snippet';
 
@@ -16,10 +20,20 @@ interface TrackingCodeProps {
   readonly onClose: () => void;
   readonly siteId: string;
   readonly siteDomain: string;
+  /** What the reader may do with the website, which decides whether they can create a key. */
+  readonly siteRole: SiteRole;
+  /** IANA zone the website's days are counted in, so dates read the same everywhere. */
+  readonly timeZoneId: string;
 }
 
 /** The ways of putting the tracking code on a website, in the order they are offered. */
 type Route = 'any' | 'wordpress';
+
+/**
+ * The name a key for the plugin is created under, which is how the steps find it again: the same
+ * in every language, as a product's name is.
+ */
+const WORDPRESS_KEY_NAME = 'WordPress';
 
 /**
  * Everything somebody needs to start counting a website, for whatever it is built with.
@@ -28,13 +42,36 @@ type Route = 'any' | 'wordpress';
  * needs both on screen at once. The choice is kept while the screen is, so somebody who closes the
  * panel half-way through and opens it again finds the steps they were following.
  */
-export function TrackingCode({ open, onClose, siteId, siteDomain }: TrackingCodeProps) {
+export function TrackingCode({
+  open,
+  onClose,
+  siteId,
+  siteDomain,
+  siteRole,
+  timeZoneId,
+}: TrackingCodeProps) {
   const t = useTranslations('install');
   const [route, setRoute] = useState<Route>('any');
+  const [issued, setIssued] = useState<string | null>(null);
+  const creating = useCreateServerKey(siteId);
   const origin = useDashboardOrigin();
 
+  /**
+   * Closes the panel, taking the one secret it may hold with it, and any refusal of an attempt to
+   * create one.
+   *
+   * Cleared as the panel is dismissed, as the server keys panel clears its own, so that opening
+   * the steps again cannot show a key somebody has already walked away from. The panel stays
+   * mounted while it is closed, so nothing else would clear them.
+   */
+  function close() {
+    setIssued(null);
+    creating.reset();
+    onClose();
+  }
+
   return (
-    <Dialog open={open} onClose={onClose} title={t('title')} closeLabel={t('close')}>
+    <Dialog open={open} onClose={close} title={t('title')} closeLabel={t('close')}>
       <div className="flex flex-col gap-5">
         {/* Held to its own width: stretched across the panel, the choices sit in a bar of nothing. */}
         <div className="self-start">
@@ -52,7 +89,18 @@ export function TrackingCode({ open, onClose, siteId, siteDomain }: TrackingCode
         {route === 'any' ? (
           <AnyWebsite origin={origin} siteId={siteId} siteDomain={siteDomain} />
         ) : (
-          <WordPress origin={origin} siteId={siteId} siteDomain={siteDomain} />
+          <WordPress origin={origin} siteId={siteId} siteDomain={siteDomain}>
+            <RobotsStep
+              open={open}
+              siteId={siteId}
+              siteDomain={siteDomain}
+              siteRole={siteRole}
+              timeZoneId={timeZoneId}
+              creating={creating}
+              issued={issued}
+              onIssued={setIssued}
+            />
+          </WordPress>
         )}
       </div>
     </Dialog>
@@ -117,13 +165,19 @@ function AnyWebsite({ origin, siteId, siteDomain }: RouteProps) {
   );
 }
 
+interface WordPressProps extends RouteProps {
+  /** The step that adds robots to what is counted, last because nothing before it needs it. */
+  readonly children: ReactNode;
+}
+
 /**
- * The plugin, and the four steps between downloading it and a counted website.
+ * The plugin, the four steps between downloading it and a counted website, and the one that adds
+ * robots to what is counted.
  *
  * Every name of something to press on the WordPress side is the one WordPress prints, so it can be
  * found on that screen by reading it off this one.
  */
-function WordPress({ origin, siteId, siteDomain }: RouteProps) {
+function WordPress({ origin, siteId, siteDomain, children }: WordPressProps) {
   const t = useTranslations('install.wordpress');
 
   return (
@@ -160,6 +214,8 @@ function WordPress({ origin, siteId, siteDomain }: RouteProps) {
         <Step number={4} title={t('tidy.title')}>
           <p className="text-sm text-foreground-muted">{t('tidy.body')}</p>
         </Step>
+
+        {children}
       </ol>
 
       <div className="flex flex-col gap-2 border-t border-border pt-4 text-sm text-foreground-muted">
@@ -168,6 +224,127 @@ function WordPress({ origin, siteId, siteDomain }: RouteProps) {
       </div>
     </div>
   );
+}
+
+interface RobotsStepProps {
+  readonly open: boolean;
+  readonly siteId: string;
+  readonly siteDomain: string;
+  readonly siteRole: SiteRole;
+  readonly timeZoneId: string;
+  /** The attempt to create a key, kept by the panel so that closing it clears a refusal. */
+  readonly creating: ReturnType<typeof useCreateServerKey>;
+  /** The secret of a key created here, at the only moment it is shown. */
+  readonly issued: string | null;
+  readonly onIssued: (secret: string) => void;
+}
+
+/**
+ * The key that lets the plugin report what never runs the tracking code, made where somebody
+ * setting up WordPress already is.
+ *
+ * The key is named for what uses it, and its secret is shown once, as on the server keys panel.
+ * Somebody who may only view the website is told who can make one rather than shown a button that
+ * would be refused. Once a key for WordPress exists, when it was last used is how somebody tells
+ * the plugin is reporting — the dashboard has no other way to know. Until the keys have been read,
+ * the button waits, so that a key that already exists is not made again by somebody who could not
+ * see it yet. A new key takes focus as it appears, in place of the button that made it.
+ */
+function RobotsStep({
+  open,
+  siteId,
+  siteDomain,
+  siteRole,
+  timeZoneId,
+  creating,
+  issued,
+  onIssued,
+}: RobotsStepProps) {
+  const t = useTranslations('install.wordpress.robots');
+  const format = useFormatter();
+  const keys = useServerKeys(siteId, open);
+  const issuedArea = useRef<HTMLDivElement>(null);
+  const latest = latestNamed(keys.data, WORDPRESS_KEY_NAME);
+  const label = latest ? t('another') : t('create');
+
+  useEffect(() => {
+    if (issued) {
+      issuedArea.current?.focus();
+    }
+  }, [issued]);
+
+  /**
+   * Asks for a key without leaving a promise nobody is waiting on; a refusal is already on the
+   * screen through the notice below.
+   */
+  function create() {
+    creating.mutate(WORDPRESS_KEY_NAME, { onSuccess: (created) => onIssued(created.secret) });
+  }
+
+  return (
+    <Step number={5} title={t('title')}>
+      <p className="text-sm text-foreground-muted">{t('body')}</p>
+
+      {/*
+        While a new secret is on the screen, copying it is the one thing left to do, so the button
+        that would make another is put away until the panel is opened again.
+      */}
+      {siteRole === 'viewer' ? (
+        <p className="text-sm text-foreground-muted">{t('viewer', { site: siteDomain })}</p>
+      ) : issued ? null : (
+        <div>
+          <Button
+            tone={latest ? 'secondary' : 'primary'}
+            busy={creating.isPending}
+            disabled={keys.isPending}
+            onClick={create}
+            className="w-full sm:w-auto"
+          >
+            {creating.isPending ? t('creating') : label}
+          </Button>
+        </div>
+      )}
+
+      {keys.isError ? <FailureNotice error={keys.error} /> : null}
+      {creating.isError ? <FailureNotice error={creating.error} /> : null}
+
+      {issued ? (
+        <div ref={issuedArea} tabIndex={-1} className="flex flex-col gap-3 outline-none">
+          <IssuedKey secret={issued} />
+          <p className="text-sm text-foreground-muted">{t.rich('paste', { ui: interfaceLabel })}</p>
+        </div>
+      ) : null}
+
+      {latest && !issued ? (
+        <p className="text-sm text-foreground-muted">
+          {latest.lastUsedAt
+            ? t('lastUsed', {
+                preview: latest.preview,
+                date: format.dateTime(new Date(latest.lastUsedAt), {
+                  dateStyle: 'medium',
+                  timeZone: timeZoneId,
+                }),
+              })
+            : t('neverUsed', { preview: latest.preview })}
+        </p>
+      ) : null}
+    </Step>
+  );
+}
+
+/**
+ * The most recently created of a website's keys with a name, or nothing when it has none.
+ *
+ * @param keys The website's keys, when they have been read.
+ * @param name The name.
+ */
+function latestNamed(keys: readonly ServerKey[] | undefined, name: string): ServerKey | undefined {
+  return keys
+    ?.filter((key) => key.name === name)
+    .reduce<ServerKey | undefined>(
+      (latest, key) => (latest && latest.createdAt >= key.createdAt ? latest : key),
+      undefined,
+    );
 }
 
 /**

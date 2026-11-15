@@ -1220,6 +1220,17 @@
         "title": "Remove any code you added before",
         "body": "If you pasted the tracking code into WordPress yourself, take it out."
       },
+      "robots": {
+        "title": "See robots and AI crawlers too",
+        "body": "Search engines, AI crawlers and feed readers don't run your tracking code. With a server key, the plugin reports them from WordPress itself.",
+        "create": "Create a key for WordPress",
+        "another": "Create a new key",
+        "creating": "Creating",
+        "paste": "In WordPress, paste it into <ui>Server key</ui> under <ui>Settings</ui>, <ui>Dewiride Analytics</ui>, press <ui>Save Changes</ui>, then <ui>Check connection</ui>.",
+        "viewer": "Ask an editor or the owner of {site} to create a key for WordPress.",
+        "neverUsed": "Your WordPress key, ending in {preview}, hasn't been used yet.",
+        "lastUsed": "Your WordPress key, ending in {preview}, was last used on {date}."
+      },
       "next": "Traffic starts appearing here as soon as somebody visits. People signed in to WordPress aren't counted unless you choose to count them in the plugin's settings.",
       "update": "To update the plugin later, download it again and upload it the same way, then press <ui>Replace current with uploaded</ui>."
     }
@@ -1251,7 +1262,8 @@
       "yes": "Remove",
       "no": "Keep"
     },
-    "close": "Close"
+    "close": "Close",
+    "ending": "Ends in {preview}"
   },
   "siteSettings": {
     "action": "Settings",

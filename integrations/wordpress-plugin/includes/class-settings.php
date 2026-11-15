@@ -1,7 +1,7 @@
 <?php
 /**
- * The plugin's settings: where the analytics installation is, which website this is, and which
- * signed-in roles are counted.
+ * The plugin's settings: where the analytics installation is, which website this is, which
+ * signed-in roles are counted, and what the site's own server reports.
  *
  * @package Dewiride_Analytics
  */
@@ -13,7 +13,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Reads, registers and validates the one option the plugin keeps.
+ * Reads, registers and validates the plugin's settings, which are one option, and saves the
+ * server key the settings form is given, which is kept apart from them.
+ *
+ * @phpstan-type Saved array{address: string, site_id: string, counted_roles: list<string>, key_ending: string, report_server: bool, report_unfinished: bool, report_feeds: bool, report_sign_in: bool, proxy_mode: string, proxy_header: string, proxy_trusted: list<string>}
+ * @phpstan-type Proxy array{mode: string, header: string, trusted: list<string>}
  */
 final class Settings {
 
@@ -26,6 +30,37 @@ final class Settings {
 	 * The settings group the settings form saves.
 	 */
 	public const GROUP = 'dewiride_analytics';
+
+	/**
+	 * Visitors reach the site directly, or through Cloudflare, which the plugin recognises itself.
+	 */
+	public const AUTOMATIC = 'automatic';
+
+	/**
+	 * Visitors reach the site through a proxy named in the settings.
+	 */
+	public const THROUGH_PROXY = 'proxy';
+
+	/**
+	 * The header a proxy names the visitor in unless another is chosen.
+	 */
+	private const DEFAULT_PROXY_HEADER = 'X-Forwarded-For';
+
+	/**
+	 * The most proxy addresses the settings keep.
+	 */
+	private const MOST_PROXIES = 50;
+
+	/**
+	 * The shortest IPv4 prefix a proxy's range may have, and the shortest IPv6 one: a range wider
+	 * than these believes a good part of the internet about where it is, which no proxy needs.
+	 */
+	private const SHORTEST_IPV4_PROXY_PREFIX = 8;
+
+	/**
+	 * See {@see self::SHORTEST_IPV4_PROXY_PREFIX}.
+	 */
+	private const SHORTEST_IPV6_PROXY_PREFIX = 16;
 
 	/**
 	 * An address the plugin can print: http or https, a host name or an IPv4 address, an optional
@@ -78,30 +113,56 @@ final class Settings {
 	/**
 	 * What the option holds before anything is saved.
 	 *
-	 * @return array{address: string, site_id: string, counted_roles: list<string>}
+	 * The server's reports are on, so they start the moment a server key is saved, and so are
+	 * feeds, robots.txt and sitemaps, which are what feed readers and crawlers ask for. Sign-in
+	 * attempts and XML-RPC are off: attacks on them arrive by the thousand, and each would count
+	 * as a page view.
+	 *
+	 * @return Saved
 	 */
 	public static function defaults(): array {
 		return array(
-			'address'       => '',
-			'site_id'       => '',
-			'counted_roles' => array(),
+			'address'           => '',
+			'site_id'           => '',
+			'counted_roles'     => array(),
+			'key_ending'        => '',
+			'report_server'     => true,
+			'report_unfinished' => false,
+			'report_feeds'      => true,
+			'report_sign_in'    => false,
+			'proxy_mode'        => self::AUTOMATIC,
+			'proxy_header'      => self::DEFAULT_PROXY_HEADER,
+			'proxy_trusted'     => array(),
 		);
 	}
 
 	/**
-	 * The saved settings, each read back as the type it is meant to be.
+	 * The saved settings, each read back as the type it is meant to be, and anything missing — a
+	 * setting a newer version of the plugin added — as its default.
 	 *
-	 * @return array{address: string, site_id: string, counted_roles: list<string>}
+	 * The Website ID is read in lower case, as the settings page saves it, because a value written
+	 * some other way — from WP-CLI, which no sanitising reaches — would otherwise fail to match the
+	 * website Dewiride Analytics names in its answers.
+	 *
+	 * @return Saved
 	 */
 	public function all(): array {
-		$stored = get_option( self::OPTION, self::defaults() );
-		$stored = is_array( $stored ) ? $stored : array();
-		$roles  = isset( $stored['counted_roles'] ) && is_array( $stored['counted_roles'] ) ? $stored['counted_roles'] : array();
+		$stored   = get_option( self::OPTION, self::defaults() );
+		$stored   = is_array( $stored ) ? $stored : array();
+		$defaults = self::defaults();
 
 		return array(
-			'address'       => isset( $stored['address'] ) && is_string( $stored['address'] ) ? $stored['address'] : '',
-			'site_id'       => isset( $stored['site_id'] ) && is_string( $stored['site_id'] ) ? $stored['site_id'] : '',
-			'counted_roles' => array_values( array_filter( $roles, 'is_string' ) ),
+			'address'           => self::text( $stored, 'address', $defaults['address'] ),
+			'site_id'           => strtolower( self::text( $stored, 'site_id', $defaults['site_id'] ) ),
+			'counted_roles'     => self::texts( $stored, 'counted_roles' ),
+			'key_ending'        => self::text( $stored, 'key_ending', $defaults['key_ending'] ),
+			'report_server'     => self::flag( $stored, 'report_server', $defaults['report_server'] ),
+			'report_unfinished' => self::flag( $stored, 'report_unfinished', $defaults['report_unfinished'] ),
+			'report_feeds'      => self::flag( $stored, 'report_feeds', $defaults['report_feeds'] ),
+			'report_sign_in'    => self::flag( $stored, 'report_sign_in', $defaults['report_sign_in'] ),
+			'proxy_mode'        => self::THROUGH_PROXY === ( $stored['proxy_mode'] ?? null ) ? self::THROUGH_PROXY : self::AUTOMATIC,
+			'proxy_header'      => self::text( $stored, 'proxy_header', $defaults['proxy_header'] ),
+			'proxy_trusted'     => self::texts( $stored, 'proxy_trusted' ),
 		);
 	}
 
@@ -135,6 +196,82 @@ final class Settings {
 		$settings = $this->all();
 
 		return '' !== $settings['address'] && '' !== $settings['site_id'];
+	}
+
+	/**
+	 * The last characters of the server key reports are sent with, or an empty string when there
+	 * is none: the one `wp-config.php` defines, or the one saved on the settings page.
+	 *
+	 * Read from the settings rather than from the key itself, which is not loaded with every page.
+	 */
+	public function key_ending(): string {
+		if ( Server_Key::is_in_config() ) {
+			$key = constant( Server_Key::CONSTANT );
+
+			return is_string( $key ) && Server_Key::looks_valid( $key ) ? Server_Key::ending_of( $key ) : '';
+		}
+
+		return $this->all()['key_ending'];
+	}
+
+	/**
+	 * Whether the site's own server reports what it answers, as far as the settings say: the
+	 * switch is on, and where the server cannot finish a page before sending its report, sending
+	 * it first was chosen too.
+	 *
+	 * @param bool $finishes_first Whether the server finishes a page before it reports it.
+	 */
+	public function reports_server( bool $finishes_first ): bool {
+		$settings = $this->all();
+
+		return $settings['report_server'] && ( $finishes_first || $settings['report_unfinished'] );
+	}
+
+	/**
+	 * Whether feeds, robots.txt and sitemaps are reported.
+	 */
+	public function reports_feeds(): bool {
+		return $this->all()['report_feeds'];
+	}
+
+	/**
+	 * Whether sign-in attempts and XML-RPC requests are reported.
+	 */
+	public function reports_sign_in(): bool {
+		return $this->all()['report_sign_in'];
+	}
+
+	/**
+	 * How visitors reach the site: automatically, or through the proxies named, the header they
+	 * name the visitor in, and their addresses.
+	 *
+	 * @return Proxy
+	 */
+	public function proxy(): array {
+		$settings = $this->all();
+
+		return array(
+			'mode'    => $settings['proxy_mode'],
+			'header'  => $settings['proxy_header'],
+			'trusted' => $settings['proxy_trusted'],
+		);
+	}
+
+	/**
+	 * Where the site's own server sends its reports: the saved address, unless a filter names the
+	 * address WordPress reaches the same installation on.
+	 *
+	 * A site and the installation can sit side by side on one private network, where visitors'
+	 * browsers reach the installation at one address and WordPress reaches it at another. Only
+	 * code can say so, through the `dewiride_analytics_server_address` filter, and an address it
+	 * gives that cannot be used is ignored.
+	 */
+	public function server_address(): string {
+		$address  = $this->address();
+		$filtered = apply_filters( 'dewiride_analytics_server_address', $address );
+		$filtered = is_string( $filtered ) ? self::normalise_address( $filtered ) : '';
+
+		return '' === $filtered ? $address : $filtered;
 	}
 
 	/**
@@ -197,18 +334,141 @@ final class Settings {
 	 * used is refused with a message and the saved one is kept, so a mistyped field never undoes a
 	 * setup that was working.
 	 *
+	 * Ticked boxes are on and absent ones off, as a form sends them. The server key the form may
+	 * carry is saved on its own, sealed, and only its last characters are kept here; see
+	 * {@see self::sanitize_server_key()}.
+	 *
 	 * @param mixed $input What the settings form sent.
-	 * @return array{address: string, site_id: string, counted_roles: list<string>}
+	 * @return Saved
 	 */
 	public function sanitize( $input ): array {
 		$input   = is_array( $input ) ? $input : array();
 		$current = $this->all();
+		$proxy   = $this->sanitize_proxy( $input, $current );
 
 		return array(
-			'address'       => $this->sanitize_address( $input['address'] ?? '', $current['address'] ),
-			'site_id'       => $this->sanitize_site_id( $input['site_id'] ?? '', $current['site_id'] ),
-			'counted_roles' => self::existing_roles( $input['counted_roles'] ?? array() ),
+			'address'           => $this->sanitize_address( $input['address'] ?? '', $current['address'] ),
+			'site_id'           => $this->sanitize_site_id( $input['site_id'] ?? '', $current['site_id'] ),
+			'counted_roles'     => self::existing_roles( $input['counted_roles'] ?? array() ),
+			'key_ending'        => self::sanitize_server_key( $input ),
+			'report_server'     => self::ticked( $input['report_server'] ?? false ),
+			'report_unfinished' => self::ticked( $input['report_unfinished'] ?? false ),
+			'report_feeds'      => self::ticked( $input['report_feeds'] ?? false ),
+			'report_sign_in'    => self::ticked( $input['report_sign_in'] ?? false ),
+			'proxy_mode'        => $proxy['mode'],
+			'proxy_header'      => $proxy['header'],
+			'proxy_trusted'     => $proxy['trusted'],
 		);
+	}
+
+	/**
+	 * Saves or removes the server key the form carried, and gives the last characters of the key
+	 * that is saved afterwards.
+	 *
+	 * The key itself never enters these settings. What is kept is worked out from the key as it is
+	 * saved, so cleaning the result again — which the Settings API does on a first save — keeps
+	 * the same ending rather than forgetting it. Saving or removing a key also starts the reports'
+	 * state afresh, so a key pasted again after it stopped opening is tried at once.
+	 *
+	 * @param array<mixed> $input What the settings form sent.
+	 * @return string The last characters of the saved key, or an empty string when none is saved.
+	 */
+	private static function sanitize_server_key( array $input ): string {
+		$server_key = new Server_Key();
+		$entered    = isset( $input['server_key'] ) && is_string( $input['server_key'] ) ? trim( $input['server_key'] ) : '';
+
+		if ( self::ticked( $input['forget_server_key'] ?? false ) ) {
+			$server_key->forget();
+			delete_option( Reporting_Status::OPTION );
+		} elseif ( Server_Key::looks_valid( $entered ) ) {
+			if ( $server_key->save( $entered ) ) {
+				delete_option( Reporting_Status::OPTION );
+			} else {
+				add_settings_error( self::OPTION, 'dewiride-analytics-server-key', esc_html__( 'The server key couldn\'t be saved. Save it again.', 'dewiride-analytics' ) );
+			}
+		} elseif ( '' !== $entered ) {
+			add_settings_error( self::OPTION, 'dewiride-analytics-server-key', esc_html__( 'That server key isn\'t complete. Copy it again from Dewiride Analytics and paste it here.', 'dewiride-analytics' ) );
+		}
+
+		return Server_Key::SAVED === $server_key->source() ? Server_Key::ending_of( $server_key->key() ) : '';
+	}
+
+	/**
+	 * Cleans how visitors reach the site.
+	 *
+	 * The header is a header's name and nothing else. The proxies' addresses are read one to a
+	 * line, or separated by commas or spaces, each as an address or a range; a range wider than
+	 * /8, or /16 for IPv6, is refused, since it would believe much of the internet about where it
+	 * is. Choosing
+	 * a proxy without naming its addresses is refused too, since no request could then be
+	 * believed. Anything refused keeps what was saved, with a message.
+	 *
+	 * @param array<mixed> $input   What the settings form sent.
+	 * @param array        $current The settings saved now.
+	 * @phpstan-param Saved $current
+	 * @return Proxy
+	 */
+	private function sanitize_proxy( array $input, array $current ): array {
+		$saved   = array(
+			'mode'    => $current['proxy_mode'],
+			'header'  => $current['proxy_header'],
+			'trusted' => $current['proxy_trusted'],
+		);
+		$mode    = self::THROUGH_PROXY === ( $input['proxy_mode'] ?? null ) ? self::THROUGH_PROXY : self::AUTOMATIC;
+		$header  = isset( $input['proxy_header'] ) && is_string( $input['proxy_header'] ) ? trim( $input['proxy_header'] ) : '';
+		$header  = '' === $header ? self::DEFAULT_PROXY_HEADER : $header;
+		$trusted = self::proxy_ranges( $input['proxy_trusted'] ?? '' );
+		$problem = '';
+
+		if ( 1 !== preg_match( '/^[A-Za-z0-9-]{1,64}$/', $header ) ) {
+			$problem = esc_html__( 'Enter the name of the header your proxy puts the visitor\'s address in, such as X-Forwarded-For.', 'dewiride-analytics' );
+		} elseif ( null === $trusted ) {
+			$problem = esc_html__( 'Enter your proxies\' addresses one to a line, each as an address like 203.0.113.10 or a range like 203.0.113.0/24, no wider than /8.', 'dewiride-analytics' );
+		} elseif ( self::THROUGH_PROXY === $mode && array() === $trusted ) {
+			$problem = esc_html__( 'Enter your proxies\' addresses, so that the plugin knows which requests to believe.', 'dewiride-analytics' );
+		}
+
+		if ( '' !== $problem || null === $trusted ) {
+			add_settings_error( self::OPTION, 'dewiride-analytics-proxy', $problem );
+
+			return $saved;
+		}
+
+		return array(
+			'mode'    => $mode,
+			'header'  => $header,
+			'trusted' => $trusted,
+		);
+	}
+
+	/**
+	 * The proxies' addresses as written in the form, each as an address and the length of its
+	 * prefix, or nothing when any of them cannot be used.
+	 *
+	 * @param mixed $value What the form sent: text, or a list already cleaned.
+	 * @return list<string>|null
+	 */
+	private static function proxy_ranges( $value ): ?array {
+		$entries = is_array( $value ) ? $value : preg_split( '/[\s,]+/', is_string( $value ) ? $value : '', -1, PREG_SPLIT_NO_EMPTY );
+		$ranges  = array();
+
+		if ( ! is_array( $entries ) ) {
+			return null;
+		}
+
+		foreach ( $entries as $entry ) {
+			$range = is_string( $entry ) ? Address_Range::parse( $entry ) : null;
+
+			if ( null === $range || $range[1] < ( 4 === strlen( $range[0] ) ? self::SHORTEST_IPV4_PROXY_PREFIX : self::SHORTEST_IPV6_PROXY_PREFIX ) ) {
+				return null;
+			}
+
+			$ranges[] = (string) inet_ntop( $range[0] ) . '/' . $range[1];
+		}
+
+		$ranges = array_values( array_unique( $ranges ) );
+
+		return count( $ranges ) > self::MOST_PROXIES ? null : $ranges;
 	}
 
 	/**
@@ -355,5 +615,48 @@ final class Settings {
 				)
 			)
 		);
+	}
+
+	/**
+	 * A saved setting that is text, or its default when it is missing or something else.
+	 *
+	 * @param array<mixed> $stored   The saved settings.
+	 * @param string       $name     The setting.
+	 * @param string       $fallback What it is before anything is saved.
+	 */
+	private static function text( array $stored, string $name, string $fallback ): string {
+		return isset( $stored[ $name ] ) && is_string( $stored[ $name ] ) ? $stored[ $name ] : $fallback;
+	}
+
+	/**
+	 * A saved setting that is a list of text, with anything in it that is not text left out.
+	 *
+	 * @param array<mixed> $stored The saved settings.
+	 * @param string       $name   The setting.
+	 * @return list<string>
+	 */
+	private static function texts( array $stored, string $name ): array {
+		return isset( $stored[ $name ] ) && is_array( $stored[ $name ] ) ? array_values( array_filter( $stored[ $name ], 'is_string' ) ) : array();
+	}
+
+	/**
+	 * A saved setting that is on or off, or its default when it is missing or something else.
+	 *
+	 * @param array<mixed> $stored   The saved settings.
+	 * @param string       $name     The setting.
+	 * @param bool         $fallback What it is before anything is saved.
+	 */
+	private static function flag( array $stored, string $name, bool $fallback ): bool {
+		return isset( $stored[ $name ] ) && is_scalar( $stored[ $name ] ) ? self::ticked( $stored[ $name ] ) : $fallback;
+	}
+
+	/**
+	 * Whether a switch is on, however it was written: by the settings form, which sends `1` for a
+	 * ticked box and nothing for one left empty, or by WP-CLI, which writes `false` as text.
+	 *
+	 * @param mixed $value The switch as written.
+	 */
+	private static function ticked( $value ): bool {
+		return is_scalar( $value ) && wp_validate_boolean( $value );
 	}
 }

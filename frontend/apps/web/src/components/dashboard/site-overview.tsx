@@ -335,6 +335,8 @@ export function SiteOverview({ site }: SiteOverviewProps) {
         onClose={() => setShowingCode(false)}
         siteId={site.id}
         siteDomain={site.domain}
+        siteRole={site.role}
+        timeZoneId={site.timeZoneId}
       />
 
       <ServerKeys

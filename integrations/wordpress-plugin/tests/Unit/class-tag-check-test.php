@@ -14,6 +14,7 @@
 namespace Dewiride\Analytics\WordPress\Tests\Unit;
 
 use Brain\Monkey\Functions;
+use Dewiride\Analytics\WordPress\Own_Request;
 use Dewiride\Analytics\WordPress\Settings;
 use Dewiride\Analytics\WordPress\Settings_Page;
 use Dewiride\Analytics\WordPress\Tag_Check;
@@ -159,6 +160,7 @@ final class Tag_Check_Test extends Test_Case {
 					'timeout'     => 10,
 					'redirection' => 0,
 					'user-agent'  => 'DewirideAnalytics/' . DEWIRIDE_ANALYTICS_VERSION,
+					'headers'     => array( Own_Request::HEADER => Own_Request::marker() ),
 				)
 			)
 			->andReturn( self::FAILED );
@@ -184,7 +186,7 @@ final class Tag_Check_Test extends Test_Case {
 							&& is_int( $kept['checked_at'] );
 					}
 				),
-				false
+				true
 			);
 
 		( new Tag_Check( new Settings() ) )->run();
@@ -195,7 +197,7 @@ final class Tag_Check_Test extends Test_Case {
 	 */
 	public function test_an_error_page_is_kept_as_unreachable(): void {
 		Functions\when( 'wp_remote_get' )->justReturn( self::response( 503 ) );
-		Functions\expect( 'update_option' )->once()->with( Tag_Check::OPTION, Mockery::subset( array( 'outcome' => Tag_Check::UNREACHABLE ) ), false );
+		Functions\expect( 'update_option' )->once()->with( Tag_Check::OPTION, Mockery::subset( array( 'outcome' => Tag_Check::UNREACHABLE ) ), true );
 
 		( new Tag_Check( new Settings() ) )->run();
 	}
@@ -214,7 +216,7 @@ final class Tag_Check_Test extends Test_Case {
 		);
 		Functions\when( 'home_url' )->justReturn( self::HOME_PAGE );
 		Functions\expect( 'wp_remote_get' )->once()->andReturn( self::response( 302, 'https://elsewhere.example/' ) );
-		Functions\expect( 'update_option' )->once()->with( Tag_Check::OPTION, Mockery::subset( array( 'outcome' => Tag_Check::UNREACHABLE ) ), false );
+		Functions\expect( 'update_option' )->once()->with( Tag_Check::OPTION, Mockery::subset( array( 'outcome' => Tag_Check::UNREACHABLE ) ), true );
 
 		( new Tag_Check( new Settings() ) )->run();
 	}
@@ -233,7 +235,7 @@ final class Tag_Check_Test extends Test_Case {
 		);
 		Functions\when( 'home_url' )->justReturn( 'http://example.com/' );
 		Functions\expect( 'wp_remote_get' )->times( 4 )->andReturn( self::response( 301, self::HOME_PAGE ) );
-		Functions\expect( 'update_option' )->once()->with( Tag_Check::OPTION, Mockery::subset( array( 'outcome' => Tag_Check::UNREACHABLE ) ), false );
+		Functions\expect( 'update_option' )->once()->with( Tag_Check::OPTION, Mockery::subset( array( 'outcome' => Tag_Check::UNREACHABLE ) ), true );
 
 		( new Tag_Check( new Settings() ) )->run();
 	}
@@ -504,7 +506,7 @@ final class Tag_Check_Test extends Test_Case {
 				return self::HTTP_HOME_PAGE === $url ? self::response( 301, self::HOME_PAGE ) : self::response( 200 );
 			}
 		);
-		Functions\expect( 'update_option' )->once()->with( Tag_Check::OPTION, Mockery::subset( array( 'outcome' => Tag_Check::INSECURE ) ), false );
+		Functions\expect( 'update_option' )->once()->with( Tag_Check::OPTION, Mockery::subset( array( 'outcome' => Tag_Check::INSECURE ) ), true );
 
 		( new Tag_Check( new Settings() ) )->run();
 	}

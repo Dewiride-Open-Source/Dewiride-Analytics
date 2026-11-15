@@ -151,6 +151,8 @@ function SiteInsights({ site, reading }: SiteInsightsProps) {
             onClose={() => setShowingCode(false)}
             siteId={site.id}
             siteDomain={site.domain}
+            siteRole={site.role}
+            timeZoneId={site.timeZoneId}
           />
           <SiteSettings
             open={showingSettings}

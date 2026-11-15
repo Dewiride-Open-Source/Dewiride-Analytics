@@ -120,9 +120,10 @@ export function ServerKeys({ open, onClose, siteId, siteDomain, timeZoneId }: Se
  * The secret, at the only moment it exists outside whatever the customer puts it into.
  *
  * Given its own surface rather than dropped into the list, because it will never appear again and
- * somebody scanning the panel has to be unable to miss it.
+ * somebody scanning the panel has to be unable to miss it. The WordPress steps show a key they
+ * create the same way.
  */
-function IssuedKey({ secret }: { readonly secret: string }) {
+export function IssuedKey({ secret }: { readonly secret: string }) {
   const t = useTranslations('serverKeys');
 
   return (
@@ -209,6 +210,10 @@ function KeyRow({ entry, timeZoneId, busy, onRemove }: KeyRowProps) {
   const added = t('added', { date: on(entry.createdAt) });
   const used = entry.lastUsedAt ? t('lastUsed', { date: on(entry.lastUsedAt) }) : t('neverUsed');
 
+  // The last characters of the secret, which the place it was pasted into shows too, so the key
+  // in use there can be told from the others here.
+  const ending = t('ending', { preview: entry.preview });
+
   return (
     <li
       className={cn(
@@ -221,7 +226,7 @@ function KeyRow({ entry, timeZoneId, busy, onRemove }: KeyRowProps) {
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground">{entry.name}</p>
           <p className="text-xs text-foreground-muted">
-            {added} · {used}
+            {ending} · {added} · {used}
           </p>
         </div>
       </div>

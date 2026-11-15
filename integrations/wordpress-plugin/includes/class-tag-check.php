@@ -21,7 +21,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * before the plugin was set up, optimisation plugins delay or combine scripts, and consent tools
  * hold them back until somebody accepts. Each of those quietly stops counting some or all
  * readers, so the plugin looks once a day, and whenever the owner asks, and says plainly what it
- * found. Only the outcome and the time are kept — never anything from the page.
+ * found. Only the outcome and the time are kept — never anything from the page — with the options
+ * loaded for every page, since each report the server sends first asks whether the tag reaches
+ * readers.
  *
  * @phpstan-type Outcome array{outcome: string, tool: string}
  * @phpstan-type Checked array{outcome: string, tool: string, checked_at: int}
@@ -183,7 +185,21 @@ final class Tag_Check {
 			? self::outcome( self::UNREACHABLE )
 			: self::inspect( $page['html'], $this->settings->address(), $this->settings->site_id(), $page['url'] );
 
-		update_option( self::OPTION, $result + array( 'checked_at' => time() ), false );
+		update_option( self::OPTION, $result + array( 'checked_at' => time() ), true );
+	}
+
+	/**
+	 * Whether an outcome keeps the tag from readers, which pauses the server's reports: no tag on
+	 * the page, a tag a tool has taken over, or one browsers refuse to load.
+	 *
+	 * A page that could not be fetched pauses nothing, since nothing is known about it, and
+	 * neither does a second copy of the beacon, which runs once whichever copy loads first.
+	 *
+	 * @param array|null $result The outcome of a check, or nothing when none has run.
+	 * @phpstan-param Checked|null $result
+	 */
+	public static function holds_back( ?array $result ): bool {
+		return null !== $result && in_array( $result['outcome'], array( self::MISSING, self::ALTERED, self::INSECURE ), true );
 	}
 
 	/**
@@ -453,6 +469,7 @@ final class Tag_Check {
 					'timeout'     => self::TIMEOUT,
 					'redirection' => 0,
 					'user-agent'  => 'DewirideAnalytics/' . DEWIRIDE_ANALYTICS_VERSION,
+					'headers'     => array( Own_Request::HEADER => Own_Request::marker() ),
 				)
 			);
 

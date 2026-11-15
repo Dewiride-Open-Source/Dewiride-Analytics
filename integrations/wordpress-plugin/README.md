@@ -17,6 +17,34 @@ ID** — into **Settings → Dewiride Analytics**, and the plugin then:
 - fetches the site's own home page once a day, and when asked, to check that visitors receive the
   tag as printed — naming the tool that changed it when it can — and keeps only the outcome.
 
+With a **server key** saved as well, the site's own server reports what reaches WordPress to
+`/collect/server` (`docs/server-reporting.md`, ADR 0074): crawlers, feed readers, scanners and
+everything else that never runs the tag.
+
+- Each request worth reporting is sent once it has been answered: pages, feeds, robots.txt and
+  sitemaps, and — when chosen — sign-in attempts and XML-RPC. Never the dashboard, the REST API,
+  WP-CLI, cron, people signed in (unless their role is counted), a successful sign-in, a browser
+  signing in, or the site's own requests. A visitor's headers (prefetch, `Sec-Fetch-Dest`,
+  `HEAD`, the site's own user agents) leave a request out only when it was answered below 400;
+  from 400 up, neither its method, the feeds switch, a REST query on another address nor a query
+  asking for a preview, an embed or an AMP copy does — only who is signed in.
+- A browser navigating to a page gets a `Server-Timing: dw;desc="…"` name, matched to the
+  browser's own report — only once the installation has named the website in an answer, which is
+  how an installation that reads names safely (ADR 0073) shows itself.
+- The report is sent at `shutdown` after `fastcgi_finish_request()` or
+  `litespeed_finish_request()`; where neither exists, reporting is off unless the second switch
+  accepts that every robot's page is held open for it.
+- Failures are waited out (30 s doubling to 15 minutes, one request trying again after each
+  wait); 429 is waited out for its `Retry-After`; a website not being measured, or one that does
+  not cover the site's host, is asked again after 15 minutes; a refused key, a redirect, another
+  website's key or a saved key that no longer opens stop the reports until the settings change.
+- The visitor's address is the connection's, Cloudflare's `CF-Connecting-IP` for a connection
+  from Cloudflare's published ranges and one of the site's own names, or a named proxy's header
+  read from its right-hand end; an address that is not public is never sent outside a `local` or
+  `development` environment.
+- The key is kept sealed with `sodium_crypto_secretbox` under a key derived from
+  `wp_salt( 'auth' )`, never autoloaded, or in `DEWIRIDE_ANALYTICS_SERVER_KEY` on a single site.
+
 ## What ships
 
 Exactly these files, and nothing else under them:
@@ -35,6 +63,20 @@ includes/class-tracker-tag.php
 includes/class-optimiser-exclusions.php
 includes/class-no-script-image.php
 includes/class-tag-check.php
+includes/class-request-headers.php
+includes/class-address-range.php
+includes/class-own-request.php
+includes/class-server-key.php
+includes/class-cloudflare-ranges.php
+includes/class-visitor-address.php
+includes/class-stored-option.php
+includes/class-reporting-status.php
+includes/class-collector-client.php
+includes/class-request-report.php
+includes/class-server-reporting.php
+includes/class-connection-check.php
+includes/class-privacy-policy.php
+includes/class-server-settings.php
 ```
 
 The packaging script names every file one at a time and fails when a file under those roots is
@@ -105,8 +147,10 @@ next version.
 - **Every string goes through gettext with the literal text domain `dewiride-analytics`.** There
   is no `.pot` and no `load_plugin_textdomain()`: WordPress.org's language packs reach every
   installed copy by the plugin's slug.
-- **Telemetry stays out of the database.** The plugin stores its settings and the outcome of the
-  last tag check, and never anything from a page or a visitor.
+- **Telemetry stays out of the database.** The plugin stores its settings, the server key sealed,
+  the outcomes of its last checks, how the server's reports have been going — counts, times,
+  statuses and fixed reasons, written only when they change — and Cloudflare's addresses. Never
+  anything from a page or a visitor, and nothing on each request.
 
 ## Working on it
 
@@ -146,6 +190,19 @@ attribute and never by order, what an anonymous visitor and a signed-in administ
 runs the tag check's parser over the page as delivered, over copies changed the way optimisers,
 consent tools and pasted snippets change it and over the page an address saved with http produces,
 and runs the daily check end to end.
+
+It then checks the server's own reports against `collector.mjs`, a stand-in for the installation
+that serves `dw.js`, records every batch it is sent and answers as the collector does. A must-use
+plugin (`mu-plugins/dewiride-smoke.php`) points the server's reports at it, and answers 403 to a
+page asked for with `smoke_refuse`, as a security plugin would; the WordPress is a `local` one so
+the harness's private addresses are sent. Each request is made by `visit.mjs` from the stand-in's
+own container — WordPress's and WP-CLI's addresses are the site's own, which are never reported —
+and checks that the page was named, reported or ignored as expected, with the key and the page's
+address in every batch: nothing until holding pages open is accepted (both images run PHP inside
+Apache), Check connection, crawlers, browsers, prefetches, redirects, `HEAD`, the REST API, the
+favicon, missing files and probes, probes and refusals asked for as an embed or a preview, a feed
+answered `304` and WordPress's sitemap, sign-in attempts and XML-RPC, the plugin's own requests, and
+its own header, ignored when genuine and reported when forged.
 
 ```bash
 PLUGIN_DIR=/absolute/path/to/dewiride-analytics bash tests/smoke/run.sh floor

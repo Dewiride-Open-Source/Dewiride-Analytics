@@ -8,9 +8,16 @@
 namespace Dewiride\Analytics\WordPress\Tests\Unit;
 
 use Brain\Monkey\Functions;
+use Dewiride\Analytics\WordPress\Cloudflare_Ranges;
+use Dewiride\Analytics\WordPress\Collector_Client;
+use Dewiride\Analytics\WordPress\Connection_Check;
+use Dewiride\Analytics\WordPress\Reporting_Status;
+use Dewiride\Analytics\WordPress\Server_Key;
+use Dewiride\Analytics\WordPress\Server_Settings;
 use Dewiride\Analytics\WordPress\Settings;
 use Dewiride\Analytics\WordPress\Settings_Page;
 use Dewiride\Analytics\WordPress\Tag_Check;
+use Dewiride\Analytics\WordPress\Visitor_Address;
 
 /**
  * The page's warnings, its status, the Settings link and the reminder on the Plugins screen.
@@ -490,9 +497,18 @@ final class Settings_Page_Test extends Test_Case {
 	 * The page over the saved settings.
 	 */
 	private function page(): Settings_Page {
-		$settings = new Settings();
+		$settings   = new Settings();
+		$tag_check  = new Tag_Check( $settings );
+		$server_key = new Server_Key();
+		$status     = new Reporting_Status( $settings );
+		$check      = new Connection_Check( $settings, $server_key, new Collector_Client( $settings, $server_key, $status ), $status, $tag_check );
 
-		return new Settings_Page( $settings, new Tag_Check( $settings ), self::BASENAME );
+		return new Settings_Page(
+			$settings,
+			$tag_check,
+			self::BASENAME,
+			new Server_Settings( $settings, $server_key, $status, $check, $tag_check, new Visitor_Address( $settings, new Cloudflare_Ranges() ) )
+		);
 	}
 
 	/**

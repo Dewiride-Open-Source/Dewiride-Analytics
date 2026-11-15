@@ -112,18 +112,47 @@ public sealed record ServerObservation
 }
 
 /// <summary>
-/// What became of a batch.
+/// What became of a batch, and what the key it came with is for.
 /// </summary>
 /// <remarks>
+/// <para>
 /// This endpoint says what became of every observation, unlike the browser collector, which tells a
 /// page whose page view it stored for a website that records presses only that, and answers every
 /// other report it reads with nothing. The difference is that this caller has already proved it
 /// holds a key for the site, so there is nothing left for the answer to disclose — and whoever is
 /// writing the reporter needs to know whether it is working.
+/// </para>
+/// <para>
+/// A batch with no observations in it is answered the same way and stores nothing, which makes it
+/// the way a reporter checks its connection: the key works, it belongs to the website the reporter
+/// thinks it does, the pages it will send are on a hostname that website covers, and the website is
+/// being measured. The fields beyond the two counts are what a newer collector adds; a reporter
+/// reads them where they are present and does without them where they are not.
+/// </para>
 /// </remarks>
 /// <param name="Accepted">Observations that were stored.</param>
 /// <param name="Rejected">
-/// Observations that could not be used, because they were malformed or named a page on a
-/// hostname this site does not cover.
+/// Observations that could not be used: malformed, naming a page on a hostname the website does not
+/// cover, sent while the website was not being measured, or belonging to a visit from a website the
+/// installation does not keep visits from. The rest of the batch is stored all the same.
 /// </param>
-public sealed record ServerCollectResponse(int Accepted, int Rejected);
+/// <param name="Site">The website the key belongs to, which is the website the batch was recorded against.</param>
+/// <param name="Hosts">
+/// The hostnames the website covers, each standing for itself and every hostname below it, compared
+/// in lower case as written; empty while the account the website belongs to is closed.
+/// </param>
+/// <param name="Measuring">
+/// Whether observations for the website are being kept at all: false while its account is closed,
+/// and on the hosted service while the account's plan has stopped admitting them.
+/// </param>
+/// <param name="From">
+/// The address the batch arrived from, as the collector saw it — which is how a reporter recognises
+/// requests its own server makes, and leaves them out.
+/// </param>
+public sealed record ServerCollectResponse(
+    int Accepted,
+    int Rejected,
+    Guid Site,
+    IReadOnlyList<string> Hosts,
+    bool Measuring,
+    string? From);

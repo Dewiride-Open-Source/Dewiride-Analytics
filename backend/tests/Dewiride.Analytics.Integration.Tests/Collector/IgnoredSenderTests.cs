@@ -100,7 +100,9 @@ public sealed class IgnoredSenderTests(AnalyticsStackFixture stack)
         var counted = await answer.Content.ReadFromJsonAsync<ServerCollectResponse>(Cancellation.Token);
 
         answer.StatusCode.Should().Be(HttpStatusCode.OK);
-        counted.Should().Be(new ServerCollectResponse(Accepted: 1, Rejected: 1));
+        counted.Should().NotBeNull();
+        counted.Accepted.Should().Be(1);
+        counted.Rejected.Should().Be(1);
         (await StoredSendersAsync(site.Id)).Should().Equal("www.google.com");
     }
 

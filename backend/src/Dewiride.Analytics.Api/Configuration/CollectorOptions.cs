@@ -53,12 +53,25 @@ public sealed class CollectorOptions
     public int MaxEventsPerBatch { get; init; } = 100;
 
     /// <summary>
-    /// Batches accepted per minute from one network address.
+    /// Batches accepted per minute with one live server key.
     /// </summary>
     /// <remarks>
-    /// Counted in batches rather than observations, because the address is all that is known
-    /// before the body is read. A reporter is one machine rather than a shared office connection,
-    /// so this can be tighter per address than the browser allowance while carrying far more.
+    /// Counted per key rather than per address, because one host commonly serves many websites:
+    /// each reports with a key of its own, and a busy neighbour on the same machine should not use
+    /// up anybody else's allowance. Counted in batches rather than observations, because the key is
+    /// all that is known before the body is read. A website that reports one request per batch
+    /// loses whatever arrives past this in the rest of the minute, and is told how long to wait.
+    /// </remarks>
+    [Range(1, 1000000)]
+    public int ServerBatchesPerMinutePerKey { get; init; } = 600;
+
+    /// <summary>
+    /// Batches accepted per minute from one network address without a live key.
+    /// </summary>
+    /// <remarks>
+    /// Covers a batch with no key at all, one that is not shaped like a key, one shaped like a key
+    /// that matches nothing, and a withdrawn key. Counted before anything is looked up, so
+    /// inventing keys buys neither an allowance per invention nor a lookup past this.
     /// </remarks>
     [Range(1, 1000000)]
     public int ServerBatchesPerMinutePerAddress { get; init; } = 600;

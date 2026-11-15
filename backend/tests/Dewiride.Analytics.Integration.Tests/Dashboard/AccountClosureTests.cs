@@ -305,8 +305,9 @@ public sealed class AccountClosureTests(AnalyticsStackFixture stack)
 
     /// <summary>
     /// A server key still authorises the reporter — it was issued for the website and has not
-    /// been withdrawn — but every observation it reports is turned away, and the count in the
-    /// answer says so, which is the one place a reporter's operator can see that it happened.
+    /// been withdrawn — but every observation it reports is turned away, and the answer says so:
+    /// the count, and that the website is not being measured, which is the one place a reporter's
+    /// operator can see that it happened.
     /// </summary>
     [Fact]
     public async Task A_Server_Reporting_For_A_Closed_Account_Has_Every_Observation_Rejected()
@@ -331,6 +332,8 @@ public sealed class AccountClosureTests(AnalyticsStackFixture stack)
 
         counted.Accepted.Should().Be(0);
         counted.Rejected.Should().Be(2);
+        counted.Measuring.Should().BeFalse();
+        counted.Hosts.Should().BeEmpty();
         (await StoredCountAsync(account.Site.Id).ConfigureAwait(true)).Should().Be(0);
     }
 

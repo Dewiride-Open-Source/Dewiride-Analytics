@@ -54,6 +54,10 @@ internal static class ApiRegistration
             services.GetRequiredService<IOptions<CollectorOptions>>().Value.IgnoredSenders,
             services.GetRequiredService<IIgnoredVisitors>()));
 
+        // Read by the server collector's allowance before anything is looked up, so held in this
+        // process's memory and read again on a schedule rather than looked up per batch.
+        builder.Services.AddSingleton<LiveServerKeys>();
+
         builder.Services.AddOptions<ClassificationOptions>()
             .Bind(builder.Configuration.GetSection(ClassificationOptions.SectionName))
             .ValidateDataAnnotations()
@@ -240,6 +244,21 @@ internal static class ApiRegistration
         {
             limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
+            // Every allowance here is counted over a fixed window, and the limiter says how long a
+            // caller turned away should wait: on this release of .NET, the window's whole length,
+            // which is never too soon and can be up to a window longer than was needed. Passed on,
+            // it saves a reporter guessing — and a reporter that guesses short only spends the
+            // next window sooner.
+            limiter.OnRejected = static (rejected, _) =>
+            {
+                if (rejected.Lease.TryGetMetadata(MetadataName.RetryAfter, out var wait))
+                {
+                    rejected.HttpContext.Response.Headers.RetryAfter = RetryAfter.Seconds(wait);
+                }
+
+                return ValueTask.CompletedTask;
+            };
+
             limiter.AddPolicy(
                 CollectEndpoint.RateLimitPolicyName,
                 context => RateLimitPartition.GetFixedWindowLimiter(
@@ -254,16 +273,31 @@ internal static class ApiRegistration
                         QueueLimit = 0,
                     }));
 
+            // Counted per key where the batch carries a live key, and per address otherwise — see
+            // LiveServerKeys. Deciding costs a hash and a read of memory, never a lookup, and the
+            // address's count is taken before the endpoint looks anything up, so a stream of
+            // invented keys is turned away without reaching the database or being given a limiter
+            // each.
             limiter.AddPolicy(
                 ServerCollectEndpoint.RateLimitPolicyName,
-                context => RateLimitPartition.GetFixedWindowLimiter(
-                    RequestObservation.ClientAddress(context) ?? string.Empty,
-                    _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = collector.ServerBatchesPerMinutePerAddress,
-                        Window = TimeSpan.FromMinutes(1),
-                        QueueLimit = 0,
-                    }));
+                context => ServerCollectEndpoint.PresentedKeyHash(context.Request) is { } key
+                           && context.RequestServices.GetRequiredService<LiveServerKeys>().Includes(key)
+                    ? RateLimitPartition.GetFixedWindowLimiter(
+                        $"key:{key}",
+                        _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = collector.ServerBatchesPerMinutePerKey,
+                            Window = TimeSpan.FromMinutes(1),
+                            QueueLimit = 0,
+                        })
+                    : RateLimitPartition.GetFixedWindowLimiter(
+                        $"address:{RequestObservation.ClientAddress(context)}",
+                        _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = collector.ServerBatchesPerMinutePerAddress,
+                            Window = TimeSpan.FromMinutes(1),
+                            QueueLimit = 0,
+                        }));
 
             limiter.AddPolicy(
                 RateLimitPolicies.Live,

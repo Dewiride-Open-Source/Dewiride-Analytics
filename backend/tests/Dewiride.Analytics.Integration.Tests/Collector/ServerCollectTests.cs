@@ -1,8 +1,13 @@
+using System.Buffers.Text;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using ClickHouse.Driver;
 using Dewiride.Analytics.Api.Contracts;
 using Dewiride.Analytics.Integration.Tests.Fixtures;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
 
@@ -267,7 +272,148 @@ public sealed class ServerCollectTests(AnalyticsStackFixture stack)
         answer.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
 
+    /// <summary>
+    /// A batch with nothing in it stores nothing and is still answered in full, which is how a
+    /// reporter checks its connection before it has anything to send: whose key it holds, which
+    /// hostnames its pages have to be on, and whether anything sent is being kept.
+    /// </summary>
+    [Fact]
+    public async Task An_Empty_Batch_Is_Answered_With_What_The_Key_Is_For()
+    {
+        var (site, secret) = await MeasuredSiteAsync();
+        using var client = stack.CreateClient();
+
+        var answer = await PostAsync(client, secret, Batch("wordpress-plugin"));
+
+        answer.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var counted = await CountedAsync(answer);
+
+        counted.Accepted.Should().Be(0);
+        counted.Rejected.Should().Be(0);
+        counted.Site.Should().Be(site.Id);
+        counted.Hosts.Should().Equal(site.Domain);
+        counted.Measuring.Should().BeTrue();
+        (await RowsAsync(site.Id)).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A website that names the hostnames it is published at is answered with those, because they
+    /// are what its pages are checked against.
+    /// </summary>
+    [Fact]
+    public async Task The_Hostnames_A_Website_Names_Are_The_Ones_It_Is_Answered_With()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(
+            stack,
+            domain: Domain(),
+            configure: created => created.ReplaceAllowedOrigins(["docs.example.org", "blog.example.org"]));
+        var secret = await ControlPlaneSeed.AddServerKeyAsync(stack, site.Id);
+        using var client = stack.CreateClient();
+
+        var counted = await CountedAsync(await PostAsync(client, secret, Batch("wordpress-plugin")));
+
+        counted.Hosts.Should().BeEquivalentTo("docs.example.org", "blog.example.org");
+    }
+
+    /// <summary>
+    /// A reporter is told the address its batch arrived from, which is the address its own server's
+    /// requests to its own website arrive from too, so it can leave them out.
+    /// </summary>
+    [Fact]
+    public async Task A_Reporter_Is_Told_The_Address_Its_Batch_Arrived_From()
+    {
+        var (_, secret) = await MeasuredSiteAsync();
+
+        var answered = await stack.Server.SendAsync(
+            context =>
+            {
+                context.Request.Method = HttpMethods.Post;
+                context.Request.Path = Endpoint;
+                context.Request.ContentType = "application/json";
+                context.Request.Headers.Authorization = $"Bearer {secret}";
+                context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("""{"events":[]}"""));
+                context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.9");
+            },
+            Cancellation.Token);
+
+        var counted = await JsonSerializer.DeserializeAsync<ServerCollectResponse>(
+            answered.Response.Body,
+            JsonSerializerOptions.Web,
+            Cancellation.Token);
+
+        counted!.From.Should().Be("203.0.113.9");
+    }
+
+    /// <summary>
+    /// Batches with a live key are allowed per key, so two websites reporting from one machine — the
+    /// ordinary arrangement on shared hosting — each have the whole allowance from their first batch,
+    /// and the one that uses its own up is told how long to wait.
+    /// </summary>
+    [Fact]
+    public async Task Websites_Reporting_From_One_Address_Each_Have_An_Allowance_Of_Their_Own()
+    {
+        var (first, firstSecret) = await MeasuredSiteAsync();
+        var (second, secondSecret) = await MeasuredSiteAsync();
+
+        using var throttled = stack.WithWebHostBuilder(builder =>
+            builder.UseSetting("Dewiride:Collector:ServerBatchesPerMinutePerKey", "2"));
+
+        using var client = throttled.CreateClient();
+        var answers = new List<HttpStatusCode>();
+
+        foreach (var (site, secret) in new[] { (first, firstSecret), (second, secondSecret) })
+        {
+            for (var batch = 0; batch < 2; batch++)
+            {
+                using var answer = await PostAsync(client, secret, Batch("wordpress-plugin", Observation(site.Domain, "/")));
+                answers.Add(answer.StatusCode);
+            }
+        }
+
+        using var refused = await PostAsync(client, firstSecret, Batch("wordpress-plugin", Observation(first.Domain, "/")));
+
+        answers.Should().AllBeEquivalentTo(HttpStatusCode.OK);
+        refused.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        refused.Headers.RetryAfter!.Delta.Should().BePositive();
+    }
+
+    /// <summary>
+    /// A key costs nothing to invent, so a batch whose key is not live is counted against the address
+    /// it came from before anything is looked up, and an address past its allowance is turned away for
+    /// the rest of the minute. A reporter at the same address whose key is live is counted on its own
+    /// and carries on.
+    /// </summary>
+    [Fact]
+    public async Task Keys_Nobody_Issued_Are_Counted_Against_The_Address_They_Came_From()
+    {
+        var (site, secret) = await MeasuredSiteAsync();
+
+        using var throttled = stack.WithWebHostBuilder(builder =>
+            builder.UseSetting("Dewiride:Collector:ServerBatchesPerMinutePerAddress", "2"));
+
+        using var client = throttled.CreateClient();
+        using var known = await PostAsync(client, secret, Batch("wordpress-plugin", Observation(site.Domain, "/")));
+        var guesses = new List<HttpStatusCode>();
+
+        for (var guess = 0; guess < 3; guess++)
+        {
+            using var answer = await PostAsync(client, Invented(), Batch("wordpress-plugin"));
+            guesses.Add(answer.StatusCode);
+        }
+
+        using var stillKnown = await PostAsync(client, secret, Batch("wordpress-plugin", Observation(site.Domain, "/pricing")));
+
+        known.StatusCode.Should().Be(HttpStatusCode.OK);
+        guesses.Should().Equal(HttpStatusCode.Unauthorized, HttpStatusCode.Unauthorized, HttpStatusCode.TooManyRequests);
+        stillKnown.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     private IClickHouseClient Client => stack.Services.GetRequiredService<IClickHouseClient>();
+
+    /// <summary>A value shaped exactly like a server key, which nobody issued.</summary>
+    private static string Invented() =>
+        $"dwk_{Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32))}";
 
     private static string Domain() => $"server-{Guid.NewGuid():n}.example";
 

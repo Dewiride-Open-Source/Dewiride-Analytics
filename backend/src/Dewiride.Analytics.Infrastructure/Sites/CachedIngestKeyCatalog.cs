@@ -57,6 +57,15 @@ public sealed class CachedIngestKeyCatalog(
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> ListLiveAsync(CancellationToken cancellationToken) =>
+        await database.SiteIngestKeys
+            .AsNoTracking()
+            .Where(key => key.RevokedAt == null)
+            .Select(key => key.TokenHash)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
     /// <summary>
     /// Looks a hash up and, if it is live, records that it is being used.
     /// </summary>

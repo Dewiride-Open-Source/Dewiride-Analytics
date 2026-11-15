@@ -14,5 +14,5 @@
  */
 export const WORDPRESS_PLUGIN = {
   href: '/downloads/dewiride-analytics.zip',
-  version: '1.0.0',
+  version: '1.0.1',
 } as const;

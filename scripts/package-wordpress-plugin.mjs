@@ -55,6 +55,7 @@ export const SHIPPED = Object.freeze([
   README,
   'LICENSE',
   'includes/class-plugin.php',
+  'includes/class-private-host.php',
   'includes/class-settings.php',
   'includes/class-settings-page.php',
   'includes/class-audience.php',

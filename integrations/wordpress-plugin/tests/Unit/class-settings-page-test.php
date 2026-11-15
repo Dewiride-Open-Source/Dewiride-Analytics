@@ -183,6 +183,17 @@ final class Settings_Page_Test extends Test_Case {
 	}
 
 	/**
+	 * The Connect section says where its two values come from and what has to exist first, with a
+	 * link to the hosted service.
+	 */
+	public function test_the_connect_section_says_what_is_needed_first(): void {
+		Functions\when( 'wp_kses' )->returnArg();
+		$this->expectOutputString( '<p>Copy both from the WordPress steps in Dewiride Analytics. You need an account at <a href="https://analytics.dewiride.com/">analytics.dewiride.com</a>, or an installation of Dewiride Analytics you run yourself.</p>' );
+
+		$this->page()->describe_connect();
+	}
+
+	/**
 	 * The reminder shows on the Plugins screen while the setup is unfinished.
 	 */
 	public function test_the_reminder_shows_on_the_plugins_screen_until_setup_is_done(): void {

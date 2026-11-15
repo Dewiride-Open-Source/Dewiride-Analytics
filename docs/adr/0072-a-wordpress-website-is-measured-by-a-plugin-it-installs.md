@@ -125,9 +125,10 @@ old as the plugin on every website that had not updated it.
 from `wp_body_open`; a theme too old to call that gets it from `wp_footer` instead. It loads
 `{Address}/collect/pixel.gif?site={Website ID}&u={page}`, where the page is the site's own scheme,
 host and port, taken from `home_url()` and never from what the request claimed, followed by the path
-that was asked for, without its query. The collector takes the page from `u` in preference to the
-referrer (`NoScriptPixelEndpoint`), so a reader whose browser sends less than the whole page is
-still counted on the page they read. `referrerpolicy="strict-origin"` sends only the site's origin
+that was asked for, cleaned by `sanitize_url()` as WordPress cleans any address, without its
+query. The collector takes the page from `u` in preference to the referrer
+(`NoScriptPixelEndpoint`), so a reader whose browser sends less than the whole page is still
+counted on the page they read. `referrerpolicy="strict-origin"` sends only the site's origin
 as the referrer, never the page or its query, where a search box puts what was searched for. The
 referrer is still asked for, because the collector judges where the image was shown from the
 `Origin` header, then the referrer's host, and only without both from `u`'s host
@@ -191,9 +192,19 @@ as an exclusion, and several use one text both as a regular expression and as a 
 it may hold only characters that, read as a pattern, still match the address itself: a `(`, `|` or
 `*` in it could break an optimiser's exclusions for every script on the site. A website served over
 `https` needs an `https` Address, since a browser refuses to run a script loaded over `http` on a
-secure page. On a network the Address must also pass `wp_http_validate_url()`, WordPress's own test
-of an address its servers may fetch, so that no site's setting points the network's servers at an
-address WordPress would refuse to reach; a network administrator allows a private installation
+secure page. Any other website needs one too, unless the Address names this computer or a private
+network (`Private_Host`): `localhost` or a name under it, an IPv4 address outside the public ranges
+— loopback, private and the other reserved ones — or a name ending in `.test`, `.local`,
+`.home.arpa` or `.internal`, none of which resolves on the public internet. Visitors' browsers send
+what they measure to the Address, and the directory asks that a plugin's communication be as secure
+as it can be ([guideline 8](https://developer.wordpress.org/plugins/wordpress-org/detailed-plugin-guidelines/#8-plugins-may-not-send-executable-code-via-third-party-systems)).
+The exception is for a site that only its owner or their own network opens, such as while it is
+built. A name like `nas.lan`, a single label and an address in `100.64.0.0/10` are refused: none
+is reserved, and the last crosses a provider's network. Nor does a name that merely resolves to a
+private address count, since where it resolves is for whoever controls the name to change.
+On a network the Address must also pass `wp_http_validate_url()`, WordPress's own test of an
+address its servers may fetch, so that no site's setting points the network's servers at an address
+WordPress would refuse to reach; a network administrator allows a private installation
 through WordPress's `http_request_host_is_external` and `http_allowed_safe_ports` filters. Only
 those who may change the Address ever reach that test, so its refusal speaks to them: use the
 installation's public `https` address, or allow this one in the network's code. The Website ID is
@@ -270,7 +281,8 @@ before — naming each thing to press as WordPress prints it (**Plugins**, **Add
 **Upload Plugin**, **Install Now**, **Activate Plugin**; the readme adds that WordPress before 6.8
 says **Add New Plugin**), with the Address and the Website ID each beside a button that copies it.
 Until the plugin is listed in the directory, an update is a new download uploaded the same way,
-with WordPress's own **Replace current with uploaded**. Listing it is the next piece of work.
+with WordPress's own **Replace current with uploaded**. Once it is listed, every copy is offered the
+directory's versions as ordinary updates, as below.
 
 **No `Update URI`, ever.** WordPress asks WordPress.org about every plugin that carries none, and
 offers whatever the directory holds under the plugin's folder name as its update
@@ -282,8 +294,8 @@ itself from anywhere else in any case: the directory's
 [guidelines](https://developer.wordpress.org/plugins/wordpress-org/detailed-plugin-guidelines/)
 forbid serving updates from servers other than WordPress.org's. Until the listing exists the name
 is not yet this plugin's, and whatever the directory came to hold under `dewiride-analytics` would
-be offered to every copy. That is why the listing comes straight after this, and why the hosted
-service begins handing the download out once the owner has submitted the plugin to the directory.
+be offered to every copy. That is why the listing comes straight after this: submitting the plugin
+gives it the name for as long as the review takes, and approval for good.
 
 **WordPress 6.4 and PHP 7.4 are the floor.** WordPress applies `wp_script_attributes` to the
 scripts it enqueues from 6.4, and everything else the plugin uses — loading strategies, the HTML
@@ -291,8 +303,13 @@ API — is older, so no WordPress function is tested for or shimmed. PHP 7.4 is 
 WordPress itself runs on from 7.0
 ([hosting handbook](https://make.wordpress.org/hosting/handbook/compatibility/version/7-0/)), and
 the oldest the plugin's tools are resolved for. The header and the readme state both, so WordPress
-refuses to activate the plugin on anything older. `Tested up to: 7.2` rests on the smoke harness,
-whose newest run installs the plugin on WordPress 7.2's pre-release image.
+refuses to activate the plugin on anything older. `Tested up to` names the newest WordPress that has
+been released or has reached a release candidate, and never a later one, which is the directory's
+rule ([developer FAQ](https://developer.wordpress.org/plugins/wordpress-org/plugin-developer-faq/#what-version-of-wordpress-should-the-tested-up-to-value-be)):
+`7.1` until 7.2's first release candidate. The smoke harness's newest run installs the plugin on
+the newest WordPress image there is, betas included, so the version the header names next has been
+tested before it may be named, and Plugin Check in the Monday build fails once a release leaves the
+header behind.
 
 **One action holds the checks, and both Builds run it.** `.github/actions/wordpress-plugin` defines
 them once. The public Build's **WordPress plugin** job runs it on every change, and the commercial
@@ -336,7 +353,7 @@ WordPress, Plugin Check and MariaDB, under the GPL, run only as the smoke harnes
 in the Build's Plugin Check. The version table at the root of the tree keeps strong copyleft, and
 `Hangfire.Core`'s LGPL, out of what this product is built from, and none of these tools becomes
 part of it: `vendor/` is ignored by Git and kept out of every image's build context, and the
-archive names its twelve files one at a time. It is the line `next.config.ts` already draws for
+archive names its thirteen files one at a time. It is the line `next.config.ts` already draws for
 `sharp`, an image decoder installed with the framework and kept out of the image. `composer.lock`
 is resolved for PHP 7.4 (`config.platform.php`), so the floor and the newest PHP install the same
 tools.
@@ -350,10 +367,48 @@ so once it is listed, WordPress.org's language packs reach every copy however it
 a new language stays a translation job. Until then the plugin is in English.
 
 **The readme says what reaches whom.** `readme.txt`, in the directory's format, says under
-`== External services ==` that nothing is sent until both values are saved, what the tracker sends
-and when, what the image records, and that the tag check fetches only the site's own home page; it
-links the hosted service's terms and privacy policy, and says that an installation the site's owner
-runs receives everything itself and nothing reaches the hosted service.
+`== External services ==` why the plugin connects to a service at all, that nothing is sent until
+both values are saved, what the tracker sends to `/collect` and when — the Website ID and the time
+among it — what the image records from `/collect/pixel.gif`, and that the tag check fetches only
+the site's own home page, daily, after a new Address or Website ID is saved and on request; it links
+the hosted service and its terms and privacy policy, and says that an installation the site's owner
+runs receives everything itself and nothing reaches the hosted service. Its description, and the
+settings page's **Connect** section, say what has to exist before the two values do: an account on
+the hosted service, paid after a free trial, or an installation of the site's own — the directory
+asks a plugin that needs an account with a service to say so in both places
+([review checklist](https://make.wordpress.org/plugins/handbook/performing-reviews/review-checklist/)).
+Its installation steps are the directory's — **Add Plugin**, search, **Install Now**,
+**Activate** — with the uploaded archive as the other way, and its `Plugin URI` is the WordPress
+section of the hosted service's install guide.
+
+**Published to the directory by a workflow of its own.** **WordPress plugin release**
+(`.github/workflows/wordpress-plugin-release.yml`) is started by hand. Its first job refuses a run
+from any branch but `main`, and refuses unless the `wordpress-org` environment exists with a
+required reviewer and `main` as the only branch it admits: the environment's two secrets — the
+WordPress.org user name and the Subversion password generated for committing, which signs in to
+nothing else — are only as safe as those two rules, which GitHub enforces whatever a branch's copy
+of the workflow says, and GitHub creates an environment a job names when none exists, with neither.
+The plugin's action and the PHP 7.4 tests then run against the commit, and the archive the action
+packaged and checked is kept. Publication waits for the reviewer's approval, which is also what
+releases the secrets. Approved, the job packages the commit again with only GitHub's own actions and
+this repository's script having run in it, and refuses unless that is the kept archive file for
+file: the checks ran other parties' code — PHP's setup, the coding standard's tools, Plugin Check —
+in a workspace that already held the archive. The version is read from the unpacked main file,
+since a run started from a branch names none, and the archive is only ever packaged when the
+header, the constant, the readme's `Stable tag` and the dashboard's download agree. The directory
+is asked whether the version's tag exists: when it does with the same files nothing is published
+and the run succeeds, so running it twice publishes once; when it does with other files the run
+fails, because the publishing step would end without a commit and a number would name two sets of
+files. Otherwise `10up/action-wordpress-plugin-deploy` 2.3.0, pinned to its commit because it is
+the one step holding the password and left no token in the checkout, replaces the directory's
+`trunk` with the folder, copies it to `tags/<version>`, replaces the listing's pictures with
+`.wordpress-org/` and commits it all at once. A dry run prepares the same commit and shows it
+without making it, and needs the directory's repository, which exists only once the plugin is
+approved. A change to the readme alone reaches the listing with the next version:
+`10up/action-wordpress-plugin-asset-update`, the action that would carry it sooner, reads the
+plugin from the root of the repository and cannot be pointed at this one's folder.
+`.wordpress-org/` — the icon, which is the dashboard's own, the banner in both sizes, and the
+screenshot the readme captions — is kept out of the archive and of every image's build context.
 
 ## Considered and refused
 
@@ -437,7 +492,10 @@ function — runs in a process of its own.
   `test_the_option_is_created_autoloaded`, `test_usable_values_are_saved_clean`,
   `test_sanitising_twice_changes_nothing_the_second_time`,
   `test_an_unusable_address_keeps_the_saved_one`, `test_an_https_site_refuses_an_http_address`,
-  `test_an_http_site_accepts_an_http_address`,
+  `test_an_http_site_accepts_an_http_address_on_its_own_network` (this computer by name and by
+  address, a private IPv4 address, a private network's name, a local network's name),
+  `test_an_http_site_refuses_an_http_address_across_the_internet`,
+  `test_an_http_site_accepts_an_https_address`,
   `test_a_network_refuses_an_address_wordpress_would_not_fetch`,
   `test_a_network_accepts_an_address_wordpress_would_fetch`,
   `test_an_incomplete_website_id_keeps_the_saved_one`, `test_empty_fields_clear_the_settings`,
@@ -452,6 +510,12 @@ function — runs in a process of its own.
   `test_the_lock_names_who_can_change_the_address` (a single site, a site of a network, a network
   administrator), `test_only_http_on_an_https_site_is_mixed_content` (http on an https site, in
   capitals, https on an https site, http on an http site, no address).
+- `Private_Host_Test`: `test_a_private_host_matches` (`localhost` and a name under it, two
+  loopback addresses, a `10.`, a `172.16.` and a `192.168.` address, the top of
+  `172.16.0.0/12`, a link-local address, names ending in `.local`, `.home.arpa`, `.internal`
+  and `.test`, capitals, a path), `test_a_public_host_does_not_match` (a public name, a public
+  IPv4 address, just outside `172.16.0.0/12`, a private name inside a public one, a private ending
+  without its dot, no host).
 - `Audience_Test`: `test_a_visitor_who_is_not_signed_in_is_counted`,
   `test_a_page_not_read_as_itself_is_not_counted` (a preview, the Customizer, an embed),
   `test_an_amp_copy_is_not_counted`, `test_a_page_the_amp_plugin_serves_as_itself_is_counted`,
@@ -470,6 +534,7 @@ function — runs in a process of its own.
   `test_the_source_names_the_website_and_the_page`, `test_the_page_cannot_break_out_of_the_address`,
   `test_the_page_is_the_sites_origin_and_the_requested_path`, `test_the_page_keeps_the_sites_port`,
   `test_a_full_address_in_the_request_names_this_site`, `test_control_characters_are_removed`,
+  `test_characters_an_address_cannot_hold_are_removed`,
   `test_no_request_path_means_the_home_page`, `test_the_image_is_printed_with_an_escaped_address`,
   `test_the_footer_prints_nothing_once_the_body_has_it`,
   `test_the_footer_prints_the_image_for_older_themes`,
@@ -510,6 +575,7 @@ function — runs in a process of its own.
   `test_open_registration_is_warned_about_when_its_role_is_left_out`,
   `test_open_registration_is_fine_when_its_role_is_counted`, `test_the_settings_link_comes_first`,
   `test_links_of_another_shape_are_left_alone`,
+  `test_the_connect_section_says_what_is_needed_first`,
   `test_the_reminder_shows_on_the_plugins_screen_until_setup_is_done`,
   `test_the_reminder_asks_for_what_is_missing` (both, the Address, the Website ID),
   `test_the_reminder_leaves_a_missing_address_to_somebody_allowed_to_change_it`,

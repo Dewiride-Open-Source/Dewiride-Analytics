@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name:       Dewiride Analytics
- * Plugin URI:        https://analytics.dewiride.com/docs
+ * Plugin URI:        https://analytics.dewiride.com/docs/install#wordpress
  * Description:       Counts the people who read your site with Dewiride Analytics.
- * Version:           1.0.0
+ * Version:           1.0.1
  * Requires at least: 6.4
  * Requires PHP:      7.4
  * Author:            Dewiride Technologies
@@ -21,8 +21,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'DEWIRIDE_ANALYTICS_VERSION', '1.0.0' );
+define( 'DEWIRIDE_ANALYTICS_VERSION', '1.0.1' );
 
+require_once __DIR__ . '/includes/class-private-host.php';
 require_once __DIR__ . '/includes/class-settings.php';
 require_once __DIR__ . '/includes/class-audience.php';
 require_once __DIR__ . '/includes/class-tracker-tag.php';

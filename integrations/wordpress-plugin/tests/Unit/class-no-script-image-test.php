@@ -34,6 +34,17 @@ final class No_Script_Image_Test extends Test_Case {
 		Functions\when( 'is_embed' )->justReturn( false );
 		Functions\when( 'is_user_logged_in' )->justReturn( false );
 		Functions\when( 'add_query_arg' )->alias( array( self::class, 'with_query' ) );
+		Functions\when( 'sanitize_url' )->alias( array( self::class, 'sanitized_url' ) );
+	}
+
+	/**
+	 * Cleans an address as WordPress does: spaces become escapes, and every character an address
+	 * cannot hold is dropped.
+	 *
+	 * @param string $url The address.
+	 */
+	public static function sanitized_url( string $url ): string {
+		return (string) preg_replace( '|[^a-z0-9-~+_.?#=!&;,/:%@$\|*\'()\[\]\x80-\xff]|i', '', str_replace( ' ', '%20', ltrim( $url ) ) );
 	}
 
 	/**
@@ -128,6 +139,15 @@ final class No_Script_Image_Test extends Test_Case {
 		$_SERVER['REQUEST_URI'] = "/a\x00b\x1fc/";
 
 		self::assertSame( 'https://example.com/abc/', No_Script_Image::current_page() );
+	}
+
+	/**
+	 * Characters an address cannot hold are removed before the path is read.
+	 */
+	public function test_characters_an_address_cannot_hold_are_removed(): void {
+		$_SERVER['REQUEST_URI'] = '/a"b<c>d/';
+
+		self::assertSame( 'https://example.com/abcd/', No_Script_Image::current_page() );
 	}
 
 	/**

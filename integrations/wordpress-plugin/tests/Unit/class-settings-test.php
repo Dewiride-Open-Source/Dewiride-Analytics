@@ -324,16 +324,64 @@ final class Settings_Test extends Test_Case {
 	}
 
 	/**
-	 * An http site may use an http address.
+	 * Addresses an http site may use without https: this computer, and its own network.
+	 *
+	 * @return array<string, array{string}>
 	 */
-	public function test_an_http_site_accepts_an_http_address(): void {
+	public function private_http_addresses(): array {
+		return array(
+			'this computer by name'  => array( self::LOCAL_ADDRESS ),
+			'this computer by IP'    => array( 'http://127.0.0.1:3000' ),
+			'a private IPv4 address' => array( 'http://192.168.1.20:3000' ),
+			'a private network name' => array( 'http://analytics.internal' ),
+			'a local network name'   => array( 'http://analytics.local' ),
+		);
+	}
+
+	/**
+	 * An http site may reach an installation on this computer or its own network over http.
+	 *
+	 * @dataProvider private_http_addresses
+	 *
+	 * @param string $address The address.
+	 */
+	public function test_an_http_site_accepts_an_http_address_on_its_own_network( string $address ): void {
 		$this->given_settings( '', '' );
 		Functions\when( 'home_url' )->justReturn( self::HTTP_HOME );
 		Functions\expect( 'add_settings_error' )->never();
 
-		$saved = ( new Settings() )->sanitize( array( 'address' => self::LOCAL_ADDRESS ) );
+		$saved = ( new Settings() )->sanitize( array( 'address' => $address ) );
 
-		self::assertSame( self::LOCAL_ADDRESS, $saved['address'] );
+		self::assertSame( $address, $saved['address'] );
+	}
+
+	/**
+	 * Anywhere across the internet is reached over https, whatever the site itself is served over,
+	 * and whoever sent an http address is told which one to use instead.
+	 */
+	public function test_an_http_site_refuses_an_http_address_across_the_internet(): void {
+		$this->given_settings( '', '' );
+		Functions\when( 'home_url' )->justReturn( self::HTTP_HOME );
+		Functions\expect( 'add_settings_error' )
+			->once()
+			->with( Settings::OPTION, 'dewiride-analytics-address', Mockery::pattern( '~^Use the address starting with https:// that you open Dewiride Analytics on\. http:// is accepted only for a private address, .+, or a name ending in \.local, \.internal, \.home\.arpa or \.test\.$~' ) );
+
+		$saved = ( new Settings() )->sanitize( array( 'address' => self::HTTP_ADDRESS ) );
+
+		self::assertSame( '', $saved['address'] );
+	}
+
+	/**
+	 * An https address is saved on an http site too.
+	 */
+	public function test_an_http_site_accepts_an_https_address(): void {
+		$this->given_settings( '', '' );
+		Functions\when( 'home_url' )->justReturn( self::HTTP_HOME );
+		Functions\expect( 'add_settings_error' )->never();
+
+		$saved = ( new Settings() )->sanitize( array( 'address' => self::ADDRESS ) );
+
+		self::assertSame( self::ADDRESS, $saved['address'] );
 	}
 
 	/**

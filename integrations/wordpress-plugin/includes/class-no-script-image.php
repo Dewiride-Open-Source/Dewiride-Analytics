@@ -95,17 +95,18 @@ final class No_Script_Image {
 	 * The address of the page being read, without its query or fragment.
 	 *
 	 * The site's own scheme and host, never the ones the request claimed, followed by the path
-	 * that was asked for. A query is left out because it can carry anything — a search, an email
-	 * address in a campaign link — and the collector keeps only the path.
+	 * that was asked for, cleaned as WordPress cleans any address, which drops what an address
+	 * cannot hold, control characters among them. A query is left out because it can carry
+	 * anything — a search, an email address in a campaign link — and the collector keeps only the
+	 * path.
 	 */
 	public static function current_page(): string {
 		$home = wp_parse_url( home_url() );
 		$home = is_array( $home ) ? $home : array();
 		$path = '/';
 
-		if ( isset( $_SERVER['REQUEST_URI'] ) ) {
-			$requested = filter_var( wp_unslash( $_SERVER['REQUEST_URI'] ), FILTER_UNSAFE_RAW, FILTER_FLAG_STRIP_LOW );
-			$requested = is_string( $requested ) ? wp_parse_url( $requested, PHP_URL_PATH ) : null;
+		if ( isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ) {
+			$requested = wp_parse_url( sanitize_url( wp_unslash( $_SERVER['REQUEST_URI'] ) ), PHP_URL_PATH );
 			$path      = is_string( $requested ) && 0 === strpos( $requested, '/' ) ? $requested : '/';
 		}
 

@@ -17,6 +17,7 @@ define( 'WP_UNINSTALL_PLUGIN', 'dewiride-analytics/dewiride-analytics.php' );
 define( 'DEWIRIDE_ANALYTICS_VERSION', 'test' );
 
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
+require_once dirname( __DIR__ ) . '/includes/class-private-host.php';
 require_once dirname( __DIR__ ) . '/includes/class-settings.php';
 require_once dirname( __DIR__ ) . '/includes/class-audience.php';
 require_once dirname( __DIR__ ) . '/includes/class-tracker-tag.php';

@@ -1,0 +1,248 @@
+# Publishes a version of the WordPress plugin to the WordPress.org plugin directory.
+#
+# Started by hand from the Actions tab, on main. Nothing starts unless the wordpress-org environment
+# exists with a required reviewer and main as its only branch. The plugin's own checks then run
+# against the commit being published, and nothing reaches WordPress.org until somebody named on the
+# environment approves it. What is published is packaged again after approval, by GitHub's own
+# actions and this repository's script alone, and has to match what the checks passed file for
+# file. Every copy of the plugin — installed from the directory or downloaded from a dashboard —
+# takes a published version as an ordinary WordPress update, which is why this cannot be checked
+# less thoroughly than a change is.
+#
+# The version is the one the plugin states: its header, its constant, the readme's Stable tag and
+# the dashboard's download agree or the archive is never packaged. Publishing a version the
+# directory already holds with the same files changes nothing and succeeds; one it holds with
+# other files is refused.
+
+name: WordPress plugin release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Prepare everything the directory would receive and show it, but publish nothing
+        type: boolean
+        default: false
+
+# Two publications at once would race each other into the same repository. Queued, never cancelled:
+# a publication stopped half-way is worse than one that waits.
+concurrency:
+  group: wordpress-plugin-release
+  cancel-in-progress: false
+
+# Nothing here writes to this repository. Stated rather than left to the repository default, because
+# the default is a setting somebody can widen without touching this file.
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: From main, behind the wordpress-org environment
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Reading an environment and its branch rules needs the Actions permission, read only.
+      actions: read
+
+    steps:
+      # Otherwise a run from another branch would check the plugin, skip the publication and end
+      # green, as though something had been published.
+      - name: Started from main
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::A version is published only from main, and this run was started from $GITHUB_REF."
+            exit 1
+          fi
+
+      # The password is only as safe as the environment holding it: one that asks somebody before
+      # every publication and admits no branch but main. GitHub creates an environment a job names
+      # when none exists, with neither rule, so the job that names it never starts until both hold.
+      - name: The environment is protected
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          environment="repos/$GITHUB_REPOSITORY/environments/wordpress-org"
+          refuse() {
+            echo "::error::$1 Nothing was published."
+            exit 1
+          }
+          settings=$(gh api "$environment" 2>/dev/null) \
+            || refuse "The wordpress-org environment does not exist. Create it with a required reviewer and main as its only branch."
+          reviewers=$(jq '[.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[]?] | length' <<<"$settings")
+          [ "$reviewers" -gt 0 ] || refuse "The wordpress-org environment has no required reviewer."
+          [ "$(jq -r '.deployment_branch_policy.custom_branch_policies // false' <<<"$settings")" = "true" ] \
+            || refuse "The wordpress-org environment admits any branch. Allow main only."
+          branches=$(gh api "$environment/deployment-branch-policies" --jq '[.branch_policies[] | .type + ":" + .name] | sort | join(",")')
+          [ "$branches" = "branch:main" ] || refuse "The wordpress-org environment admits $branches. Allow main only."
+
+  check:
+    name: WordPress plugin
+    needs: gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # The same checks every change to the plugin passes, from the same action.
+      - name: Check
+        uses: ./.github/actions/wordpress-plugin
+
+      # The archive the checks above packaged, unpacked and installed, kept so that the publication
+      # can show it is what it publishes.
+      - name: Keep the checked archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: wordpress-plugin
+          path: frontend/apps/web/public/downloads/dewiride-analytics.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  check-php74:
+    name: WordPress plugin on PHP 7.4
+    needs: gate
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: integrations/wordpress-plugin
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # The oldest PHP the plugin promises to run on, as the build checks it.
+      - name: PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "7.4"
+          tools: composer:v2
+          coverage: none
+
+      - name: Install
+        run: composer install --no-progress
+
+      - name: Tests
+        run: composer test
+
+  publish:
+    name: Publish
+    needs: [check, check-php74]
+    runs-on: ubuntu-latest
+    # Approval is what releases the two secrets below: GitHub hands an environment's secrets to a
+    # job only once one of its required reviewers has approved it, and runs it only from a branch
+    # the environment admits.
+    environment: wordpress-org
+
+    steps:
+      # Refused at once rather than after the archive is prepared, and in words that say which
+      # setting is missing. The directory's repository is written to with a password made for that
+      # purpose alone, held by the environment above and nowhere else.
+      - name: Credentials
+        env:
+          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+        run: |
+          missing=""
+          [ -n "$SVN_USERNAME" ] || missing="$missing SVN_USERNAME"
+          [ -n "$SVN_PASSWORD" ] || missing="$missing SVN_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::The wordpress-org environment holds no$missing. Nothing was published."
+            exit 1
+          fi
+
+      # No token is left in the checkout for the publishing step, which runs another party's code.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Only GitHub's own actions have run in this job, so what the script packages here comes from
+      # the commit alone, and it is this that is published.
+      - name: Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Package
+        run: node scripts/package-wordpress-plugin.mjs
+
+      # The folder holding the plugin's main file is what the directory's trunk becomes.
+      - name: Unpack
+        run: unzip -q frontend/apps/web/public/downloads/dewiride-analytics.zip -d "$RUNNER_TEMP/plugin"
+
+      - name: The checked archive
+        uses: actions/download-artifact@v8
+        with:
+          name: wordpress-plugin
+          path: ${{ runner.temp }}/checked
+
+      # The checks ran other parties' code — PHP's setup, the coding standard's tools, Plugin Check —
+      # in a workspace that already held the archive, so what they passed has to be what this commit
+      # packages, file for file.
+      - name: Published as checked
+        run: |
+          unzip -q "$RUNNER_TEMP/checked/dewiride-analytics.zip" -d "$RUNNER_TEMP/checked/unpacked"
+          if ! diff -r "$RUNNER_TEMP/checked/unpacked/dewiride-analytics" "$RUNNER_TEMP/plugin/dewiride-analytics"; then
+            echo "::error::The archive the checks passed is not the one this commit packages. Nothing was published."
+            exit 1
+          fi
+
+      # Read from the unpacked main file, so the version published is the version inside it. The
+      # run is started from a branch, so nothing else could name it.
+      - name: Version
+        id: version
+        run: |
+          version=$(sed -n 's/^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*\([0-9][0-9.]*\)[[:space:]]*$/\1/p' \
+            "$RUNNER_TEMP/plugin/dewiride-analytics/dewiride-analytics.php")
+          if [ -z "$version" ]; then
+            echo "::error::The plugin's header names no version."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing version $version."
+
+      # The publishing step ends without a commit when the version's tag already exists, which is
+      # right when the tag holds these same files and wrong when a changed plugin kept its version:
+      # every copy that has the version would keep the old files, and the dashboard would hand out
+      # the new ones under the same number. So the directory is asked first.
+      - name: Not published with other files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tag="https://plugins.svn.wordpress.org/dewiride-analytics/tags/$VERSION/"
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' "$tag")
+          case "$status" in
+            404)
+              echo "Version $VERSION is not in the directory yet."
+              ;;
+            200)
+              sudo apt-get update -y >/dev/null
+              sudo apt-get install -y subversion >/dev/null
+              svn export --quiet --non-interactive "$tag" "$RUNNER_TEMP/published"
+              if diff -r "$RUNNER_TEMP/published" "$RUNNER_TEMP/plugin/dewiride-analytics"; then
+                echo "::notice::Version $VERSION is already in the directory with these same files, so nothing is published."
+              else
+                echo "::error::Version $VERSION is already in the directory with other files. Give this change a new version."
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::The directory answered $status when asked about version $VERSION. Nothing was published."
+              exit 1
+              ;;
+          esac
+
+      # Pinned to a commit: this is the one step that holds the directory's password. 2.3.0 checks
+      # out the directory's repository, replaces trunk with the folder below, copies trunk to
+      # tags/<version>, replaces the listing's pictures and commits all of it at once; it ends
+      # without a commit when the version is already published, or when this is a dry run. It
+      # installs Subversion itself, which the runner image does not carry.
+      - name: Publish
+        uses: 10up/action-wordpress-plugin-deploy@54bd289b8525fd23a5c365ec369185f2966529c2 # 2.3.0
+        with:
+          dry-run: ${{ inputs.dry_run }}
+        env:
+          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+          SLUG: dewiride-analytics
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_DIR: ${{ runner.temp }}/plugin/dewiride-analytics
+          ASSETS_DIR: integrations/wordpress-plugin/.wordpress-org

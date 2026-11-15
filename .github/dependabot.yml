@@ -61,8 +61,9 @@ updates:
     commit-message:
       prefix: "build"
       include: "scope"
-    # Six actions, one proposal, wherever they are named. They are moved together or not at all,
-    # and every one of them runs in the build the proposal itself goes through.
+    # Every action, one proposal, wherever it is named. They are moved together or not at all, and
+    # every one of them runs in the build the proposal itself goes through, except the three only the
+    # WordPress plugin's release uses, which publish nothing until somebody approves the release.
     groups:
       actions:
         patterns:

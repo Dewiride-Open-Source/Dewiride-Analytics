@@ -31,6 +31,11 @@ final class Settings_Page {
 	private const CAPABILITY = 'manage_options';
 
 	/**
+	 * The hosted Dewiride Analytics service, where an account gives the two values the page asks for.
+	 */
+	private const SERVICE = 'https://analytics.dewiride.com/';
+
+	/**
 	 * The plugin's settings.
 	 *
 	 * @var Settings
@@ -158,10 +163,22 @@ final class Settings_Page {
 	}
 
 	/**
-	 * Says where the two values come from.
+	 * Says where the two values come from, and what has to exist before there are any: an account
+	 * on the hosted service, or an installation of the site's own. A plugin that needs an account
+	 * with a service says so where it is set up, not only in its readme.
 	 */
 	public function describe_connect(): void {
-		printf( '<p>%s</p>', esc_html__( 'Copy both from the WordPress steps in Dewiride Analytics.', 'dewiride-analytics' ) );
+		printf(
+			'<p>%s</p>',
+			wp_kses(
+				sprintf(
+					/* translators: %s: Address of the hosted Dewiride Analytics service. */
+					__( 'Copy both from the WordPress steps in Dewiride Analytics. You need an account at <a href="%s">analytics.dewiride.com</a>, or an installation of Dewiride Analytics you run yourself.', 'dewiride-analytics' ),
+					esc_url( self::SERVICE )
+				),
+				array( 'a' => array( 'href' => array() ) )
+			)
+		);
 	}
 
 	/**

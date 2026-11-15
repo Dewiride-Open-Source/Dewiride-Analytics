@@ -278,11 +278,13 @@ final class Settings {
 	 * What stops an address from being used, in the words the settings page shows.
 	 *
 	 * A page served over https cannot load a script over http, so a secure site needs a secure
-	 * address. On a network the address must also pass WordPress's own test for addresses it may
-	 * fetch, so that no site's setting points the network's servers at an address WordPress would
-	 * refuse to reach. Only somebody who may change the address gets this far — on a network, its
-	 * administrators or WP-CLI — so the message speaks to them: an address is allowed by widening
-	 * that test through WordPress's own filters, in the network's code.
+	 * address. Any other site's visitors report to it as well, so the address is an https one
+	 * unless it names this computer or a private network, where what visitors send never crosses
+	 * the internet. On a network the address must also pass WordPress's own test for addresses it
+	 * may fetch, so that no site's setting points the network's servers at an address WordPress
+	 * would refuse to reach. Only somebody who may change the address gets this far — on a network,
+	 * its administrators or WP-CLI — so the message speaks to them: an address is allowed by
+	 * widening that test through WordPress's own filters, in the network's code.
 	 *
 	 * @param string $address The normalised address, or an empty string when it could not be read.
 	 * @return string The problem, or an empty string when there is none.
@@ -294,6 +296,8 @@ final class Settings {
 			$problem = esc_html__( 'Enter the address you open Dewiride Analytics on, like https://analytics.example.com.', 'dewiride-analytics' );
 		} elseif ( self::is_mixed_content( $address ) ) {
 			$problem = esc_html__( 'Your site is served over https, so the address must start with https:// too.', 'dewiride-analytics' );
+		} elseif ( 0 === strpos( $address, 'http://' ) && ! Private_Host::matches( $address ) ) {
+			$problem = esc_html__( 'Use the address starting with https:// that you open Dewiride Analytics on. http:// is accepted only for a private address, such as http://localhost or http://192.168.1.20, or a name ending in .local, .internal, .home.arpa or .test.', 'dewiride-analytics' );
 		} elseif ( is_multisite() && false === wp_http_validate_url( $address ) ) {
 			$problem = esc_html__( 'Sites on a network can\'t use a private or unusual address. Use the public https address you open Dewiride Analytics on, or allow this address in your network\'s code.', 'dewiride-analytics' );
 		}

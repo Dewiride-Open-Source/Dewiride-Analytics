@@ -27,6 +27,7 @@ uninstall.php
 readme.txt
 LICENSE
 includes/class-plugin.php
+includes/class-private-host.php
 includes/class-settings.php
 includes/class-settings-page.php
 includes/class-audience.php
@@ -44,6 +45,48 @@ checkers' configuration, the tests — is for working on the plugin and never re
 The version is written in four places that must agree, which the packaging script checks: the
 `Version:` header and the `DEWIRIDE_ANALYTICS_VERSION` constant in `dewiride-analytics.php`,
 `Stable tag:` in `readme.txt`, and the dashboard's download link.
+
+## Publishing a version
+
+A version reaches people two ways: the dashboard hands out the archive its image was built with,
+and the WordPress.org plugin directory offers it to every copy as an ordinary WordPress update,
+however the copy was installed. A change to any shipped file therefore comes with a new version in
+all four places, so that a version number never names two different sets of files.
+
+The directory is published to by **WordPress plugin release**
+(`.github/workflows/wordpress-plugin-release.yml`), started by hand on `main` from the Actions tab.
+It refuses to start unless the `wordpress-org` environment is protected as below, runs the
+plugin's checks against that commit and keeps the archive they passed, and then waits for a
+reviewer of the environment to approve it. Approved, it packages the commit again, refuses unless
+that is the checked archive file for file, and replaces the directory's `trunk` with it, copies it
+to `tags/<version>`, replaces the listing's pictures with `.wordpress-org/`, and commits all of it
+at once. A version the directory already holds with the same files is left as it is and the run
+succeeds; one it holds with other files fails the run, because the version has to change.
+**dry run** prepares the same commit and shows it without making it.
+
+The `wordpress-org` environment is created by hand before the workflow first runs — a run that
+names an environment that does not exist creates it unprotected — under **Settings →
+Environments**, with:
+
+- **Required reviewers**: whoever approves a publication, with **Prevent self-review** left off when
+  the only reviewer is also the one who starts the run;
+- **Deployment branches and tags**: **Selected branches and tags**, with one rule, the branch
+  `main`;
+- **Allow administrators to bypass configured protection rules** turned off;
+- two environment secrets, held nowhere else: `SVN_USERNAME`, the WordPress.org username exactly as
+  its profile spells it, and `SVN_PASSWORD`, the Subversion password generated under **Account &
+  Security → SVN credentials** in that profile — not the account's own password, and useless for
+  anything but committing. Generating a new one stops the old one working, and the secret has to be
+  replaced with it.
+
+The workflow checks the first two and refuses to publish without them.
+
+`.wordpress-org/` holds what the listing shows and never ships: `icon.svg` with `icon-128x128.png`
+and `icon-256x256.png` (the dashboard's own icon), `banner-772x250.png` and
+`banner-1544x500.png`, and `screenshot-N.png`, each captioned by line N under `== Screenshots ==`
+in `readme.txt`. The directory reads its listing from `readme.txt` in the published tag, so a
+change to the readme alone — a newer `Tested up to:` among them — reaches the listing with the
+next version.
 
 ## Conventions
 

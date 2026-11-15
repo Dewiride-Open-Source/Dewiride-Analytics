@@ -31,11 +31,13 @@ deploy
 docs
 
 # Except the WordPress plugin's own files, which the dashboard image packages. What its checks
-# install and leave behind, and its tests, stay out: none of it goes into the download, and a change
-# to any file let in here makes the image build the dashboard again.
+# install and leave behind, its tests and the pictures its directory listing shows stay out: none of
+# it goes into the download, and a change to any file let in here makes the image build the
+# dashboard again.
 !integrations/wordpress-plugin
 integrations/wordpress-plugin/vendor
 integrations/wordpress-plugin/tests
+integrations/wordpress-plugin/.wordpress-org
 integrations/wordpress-plugin/.phpunit.cache
 integrations/wordpress-plugin/.phpunit.result.cache
 

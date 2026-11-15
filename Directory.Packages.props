@@ -116,7 +116,7 @@
       is ever built, so nothing can be fetched or run. An upgrade has to pass the architecture test
       on where the tokenizer calls itself. MIT.
     -->
-    <PackageVersion Include="AngleSharp" Version="1.9.1" />
+    <PackageVersion Include="AngleSharp" Version="1.10.0" />
   </ItemGroup>
 
   <ItemGroup Label="Runtime infrastructure">

@@ -22,6 +22,18 @@ public interface IIngestKeyCatalog
     /// one that has been withdrawn.
     /// </returns>
     Task<IngestAuthorization?> AuthorizeAsync(string presentedSecret, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Lists the hash of every key that has not been withdrawn.
+    /// </summary>
+    /// <remarks>
+    /// Read straight from the store each time, not cached: the caller keeps the list itself and
+    /// reads it again on a schedule of its own. Hashes rather than secrets, which is all the store
+    /// holds.
+    /// </remarks>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The hashes, in no particular order.</returns>
+    Task<IReadOnlyList<string>> ListLiveAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>

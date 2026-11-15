@@ -8,6 +8,7 @@ using Dewiride.Analytics.Application.Ingest;
 using Dewiride.Analytics.Application.Sites;
 using Dewiride.Analytics.Application.Telemetry;
 using Dewiride.Analytics.Domain.Telemetry;
+using Dewiride.Analytics.Infrastructure.Sites;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
@@ -62,10 +63,27 @@ internal static class ServerCollectEndpoint
             .AllowAnonymous();
     }
 
+    /// <summary>
+    /// The hash of the key a batch presents, where it presents something shaped like one.
+    /// </summary>
+    /// <remarks>
+    /// What a live key's batches are counted under. The hash rather than the secret, so
+    /// nothing that could be replayed is held under a name in the limiter any more than it is in
+    /// the cache; and read from the shape alone, so deciding costs no lookup.
+    /// </remarks>
+    /// <param name="request">The request.</param>
+    /// <returns>The hash, or <see langword="null"/> where no key-shaped value was presented.</returns>
+    public static string? PresentedKeyHash(HttpRequest request) =>
+        ReadPresentedSecret(request) is { } secret && IngestKeySecret.LooksWellFormed(secret)
+            ? IngestKeySecret.Hash(secret)
+            : null;
+
     private static async Task<Results<Ok<ServerCollectResponse>, ProblemHttpResult>> HandleAsync(
         HttpContext context,
         EventIngestor ingestor,
         IIngestKeyCatalog keys,
+        ISiteCatalog sites,
+        IMeasurementAllowance allowance,
         IOptions<CollectorOptions> options,
         CancellationToken cancellationToken)
     {
@@ -112,8 +130,27 @@ internal static class ServerCollectEndpoint
             }
         }
 
-        return TypedResults.Ok(new ServerCollectResponse(accepted, observations.Count - accepted));
+        var site = await sites.FindAsync(authorization.SiteId, cancellationToken).ConfigureAwait(false);
+        var measuring = site is not null && await allowance.AllowsAsync(site, cancellationToken).ConfigureAwait(false);
+
+        return TypedResults.Ok(new ServerCollectResponse(
+            accepted,
+            observations.Count - accepted,
+            authorization.SiteId,
+            site is null ? [] : PublishedAt(site),
+            measuring,
+            RequestObservation.ClientAddress(context)));
     }
+
+    /// <summary>
+    /// The hostnames a website covers, each standing for itself and every hostname below it.
+    /// </summary>
+    /// <remarks>
+    /// The same list the collector checks each observation's page against, so a reporter can see
+    /// for itself whether the pages it is about to send will be kept.
+    /// </remarks>
+    private static string[] PublishedAt(SiteSnapshot site) =>
+        site.AllowedOrigins.IsDefaultOrEmpty ? [site.Domain] : [.. site.AllowedOrigins];
 
     private static async Task<bool> StoreAsync(
         ServerObservation observation,

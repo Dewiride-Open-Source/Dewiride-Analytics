@@ -122,7 +122,7 @@ are different hosts and a visitor whose network offers both kinds of address can
 each. Left alone, that is two page views and two people for every one of each.
 
 Send a `correlationId` and put the same value on the response, and the two accounts are recognised
-as one. Mint it per request; it names an event rather than a person, and has no meaning once the
+as one. Mint it per request; it names one delivery rather than a person, and has no meaning once the
 pair has been matched.
 
 Put it on the response as a `Server-Timing` metric called `dw`:
@@ -132,17 +132,31 @@ Server-Timing: dw;desc="7b21ae4c90f1d33e"
 ```
 
 The tracker reads it from the timings the browser already collected for the page, so nothing has to
-be written into the markup — which matters, because most of the sites this product is for are built
-once and served from a cache, and a reporter sitting in the request path often cannot alter a body
-at all. A browser hands these timings to script on the page they came from and, unless the site says
-otherwise, to nobody else.
+be written into the markup — which matters, because a reporter sitting in the request path often
+cannot alter a body at all. A browser hands these timings to script on the page they came from and,
+unless the site says otherwise, to nobody else. The tracker also reads a value written into its tag
+as `data-correlation`, and the tag wins if both are present.
 
-Where a reporter renders the page itself, writing the value into the tracker's tag as
-`data-correlation` does the same job, and the tag wins if both are present.
+Name only a delivery you will report, to a browser that is navigating to the page — a request
+carrying `Sec-Fetch-Dest: document` that is not a prefetch. A crawler sends no `Sec-Fetch-*` headers,
+so a page a crawler fetched goes out unnamed.
 
-Both are optional. Without either, page views are still counted once per delivery — the two halves
-are counted separately and the larger kept — but the two halves cannot be recognised as one
-visitor, so a site running both will report each person twice.
+A page cache in front of a site keeps the response whole, headers and markup alike, and hands it to
+everybody who asks while the copy lasts, so one delivery's name can come back from many browsers, and
+a crawler's request from a stranger's. The collector reads names accordingly:
+
+- A name is a browser's answer when that browser is the only one to send it back within two minutes
+  either side of your report. A name two browsers send back within that time was handed out by a
+  cache, and counts as one of your names that nobody answered; one sent back later is a copy and is
+  not counted.
+- Each of your key's reports is recognised as a browser's visitor when, within 28 minutes either side
+  of it, that browser is the only one to have answered your key and has answered at least half of the
+  pages your key named. Reports without a name — a redirect, a feed, a page that was not there —
+  follow the same rule, so they stay inside the reader's visit.
+
+Both ways of naming are optional. Without either, page views are still counted once per delivery —
+the two halves are counted separately and the larger kept — but the two halves cannot be recognised
+as one visitor, so a site running both will report each person twice.
 
 HTML served under an identifier that no script ever reported is a page that was fetched and never
 rendered, which is itself evidence.
@@ -150,7 +164,14 @@ rendered, which is itself evidence.
 ### The answer
 
 ```json
-{ "accepted": 3, "rejected": 1 }
+{
+  "accepted": 3,
+  "rejected": 1,
+  "site": "0197c0de-0000-7000-8000-000000000001",
+  "hosts": ["example.com"],
+  "measuring": true,
+  "from": "198.51.100.20"
+}
 ```
 
 Unlike the browser collector, which tells a page whose page view it stored for a website that
@@ -164,13 +185,26 @@ visit from a website the installation does not keep visits from (`Dewiride:Colle
 the visit whose referrer named it, and what its visitor sends until the visit is over). The rest of
 the batch is still stored.
 
-| Status | Meaning                                                                   |
-| ------ | ------------------------------------------------------------------------- |
-| `200`  | The batch was processed. Read `accepted` and `rejected`.                  |
-| `400`  | The body was not a batch, or held more than 100 observations.             |
-| `401`  | No key, an unknown key, or a withdrawn key. All three answer identically. |
-| `413`  | The body was larger than the configured limit.                            |
-| `429`  | Too many batches from this address in one minute.                         |
+| Field       | Meaning                                                                                                                                                                     |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `site`      | The website the key belongs to, which is the website the batch was recorded against.                                                                                        |
+| `hosts`     | The hostnames the website covers, each standing for itself and every hostname below it. A page on any other hostname is rejected. Empty while the account is closed.        |
+| `measuring` | Whether anything sent is being kept: false while the account the website belongs to is closed, and on the hosted service while the account's plan has stopped admitting it. |
+| `from`      | The address the batch arrived from, as the collector saw it — usually the address your own server's requests to your own website arrive from too.                           |
+
+A batch whose `events` array is empty stores nothing and is answered in full, which makes it the way
+to check a connection before there is anything to send: the key works, it belongs to the website you
+expect, your pages are on a hostname that website covers, and the website is being measured. The
+four fields after `rejected` were added after the endpoint's first release, so read each where it is
+present and do without it where it is not.
+
+| Status | Meaning                                                                                                          |
+| ------ | ---------------------------------------------------------------------------------------------------------------- |
+| `200`  | The batch was processed. Read `accepted` and `rejected`.                                                         |
+| `400`  | The body was not a batch, or held more than 100 observations.                                                    |
+| `401`  | No key, an unknown key, or a withdrawn key. All three answer identically.                                        |
+| `413`  | The body was larger than the configured limit.                                                                   |
+| `429`  | Too many batches in one minute, with this key or from this address. `Retry-After` says how many seconds to wait. |
 
 A withdrawn key can keep working for up to a minute: resolved keys are held briefly in memory so
 that a reporter presenting the same secret on every batch does not put the control-plane database
@@ -189,11 +223,35 @@ anybody can send that name.
 
 Configurable under `Dewiride:Collector`:
 
-| Setting                            | Default  | Meaning                                   |
-| ---------------------------------- | -------- | ----------------------------------------- |
-| `MaxServerBatchBytes`              | `262144` | Largest accepted body.                    |
-| `MaxEventsPerBatch`                | `100`    | Most observations in one batch.           |
-| `ServerBatchesPerMinutePerAddress` | `600`    | Batches accepted per minute, per address. |
+| Setting                            | Default  | Meaning                                                                                                                                         |
+| ---------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MaxServerBatchBytes`              | `262144` | Largest accepted body.                                                                                                                          |
+| `MaxEventsPerBatch`                | `100`    | Most observations in one batch.                                                                                                                 |
+| `ServerBatchesPerMinutePerKey`     | `600`    | Batches accepted per minute with one live key.                                                                                                  |
+| `ServerBatchesPerMinutePerAddress` | `600`    | Batches accepted per minute from one address without a live key: none, one not shaped like a key, one that matches nothing, or a withdrawn one. |
+
+A batch with a live key — issued and not withdrawn — is counted against the key, so websites
+reporting from one shared host each have the whole allowance, from their first batch. Every other
+batch — no key, one not shaped like a key, one that matches nothing, a withdrawn one — is counted
+against the address it came from, before anything is looked up. An address past that allowance is
+turned away for the rest of the minute, while the live keys reporting from it carry on under their
+own. Which keys are live is read again every minute, so a key created a moment ago is counted
+against its address until then. A website that reports each request as it is answered loses what
+it reports past its allowance for the rest of the minute, and is told how long to wait:
+`Retry-After` gives a wait after which the allowance is certain to have reopened, which can be up
+to a minute longer than it had to be.
+
+## What a reporter leaves out
+
+- **Requests your own server makes to your own website** — a health check, a cache warming itself, a
+  page your reporter fetched for its own reasons. `from` in the answer is the address your batches
+  arrive from, which is usually where those come from too. The engine's own sitemap reader is
+  described above.
+- **Requests a visitor's headers say to leave out, only when your website answered below 400.** A
+  visitor writes every header it sends, so a request that says it is a prefetch (`Sec-Purpose`,
+  `Purpose`), that it is not for a document (`Sec-Fetch-Dest`), or that is a `HEAD` can be left out
+  when it was answered — and is reported whatever it carries when it was refused. Otherwise a scanner
+  probing for a way in could hide every probe behind one header.
 
 ## Trying it
 

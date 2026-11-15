@@ -333,6 +333,125 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// A verdict is reached about a visit once it has been quiet for half an hour, and has to stay
+    /// about that visit whatever the server's key does afterwards. Were the answer that joined the
+    /// server's reports to the reader read across the whole day, a later page answered by another
+    /// browser would take those reports away from the reader, and the visit the verdict was about
+    /// would no longer be found.
+    /// </summary>
+    [Fact]
+    public async Task A_Verdict_Stays_With_Its_Visit_Whatever_The_Same_Key_Is_Answered_By_Later()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Delivered(site.Id, "as-the-server-saw-them", at, "/", "delivery-1"),
+            Page(site.Id, "reader-b", at.AddSeconds(1), "/", Chrome) with { CorrelationId = "delivery-1" },
+            Delivered(site.Id, "as-the-server-saw-them", at.AddMinutes(3), "/feed/"),
+            Read(site.Id, "reader-b", at.AddMinutes(4), Chrome));
+
+        await JudgeAsync(site);
+        var judged = (await VisitsAsync(site)).Single();
+
+        await WriteAsync(
+            Delivered(site.Id, "as-the-server-saw-them", at.AddHours(3), "/pricing", "delivery-2"),
+            Page(site.Id, "reader-a", at.AddHours(3).AddSeconds(1), "/pricing", Chrome) with { CorrelationId = "delivery-2" });
+
+        var waiting = await ReconstructAsync(site);
+        var listed = await VisitsAsync(site);
+
+        judged.SessionKey.Should().StartWith("reader-b:");
+        judged.PageCount.Should().Be(2);
+        waiting.Select(visit => visit.Evidence.SessionKey).Should().NotContain(key => key.StartsWith("reader-b:"));
+        listed.Single(visit => visit.SessionKey == judged.SessionKey).EntryPath.Should().Be("/");
+    }
+
+    /// <summary>
+    /// The same holds when the name itself turns up again hours later, in a report under another
+    /// key: a copy reported a second time cannot take back what the name settled when it was
+    /// delivered, and the verdict stays with the visit it was reached about.
+    /// </summary>
+    [Fact]
+    public async Task A_Verdict_Stays_With_Its_Visit_When_Its_Name_Is_Reported_Again_Later()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Delivered(site.Id, "as-the-server-saw-them", at, "/", "delivery-1"),
+            Page(site.Id, "reader", at.AddSeconds(1), "/", Chrome) with { CorrelationId = "delivery-1" },
+            Delivered(site.Id, "as-the-server-saw-them", at.AddMinutes(3), "/feed/"),
+            Read(site.Id, "reader", at.AddMinutes(4), Chrome));
+
+        await JudgeAsync(site);
+        var judged = (await VisitsAsync(site)).Single();
+
+        await WriteAsync(Delivered(site.Id, "reported-again", at.AddHours(3), "/", "delivery-1"));
+
+        var waiting = await ReconstructAsync(site);
+        var listed = await VisitsAsync(site);
+
+        judged.SessionKey.Should().StartWith("reader:");
+        waiting.Select(visit => visit.Evidence.SessionKey).Should().NotContain(key => key.StartsWith("reader:"));
+        listed.Single(visit => visit.SessionKey == judged.SessionKey).EntryPath.Should().Be("/");
+    }
+
+    /// <summary>
+    /// Whose a report was is decided from what arrived around it, so two readings of the same
+    /// activity that start at different points find the same visits. A name given again a day later
+    /// — a cached response reported a second time — is read on its own, whether or not the reading
+    /// reaches back to the first time it was given.
+    /// </summary>
+    [Fact]
+    public async Task Two_Readings_That_Start_At_Different_Points_Find_The_Same_Visits()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Delivered(site.Id, "first-delivered-to", at.AddHours(-25), "/", "delivery-1"),
+            Page(site.Id, "first-reader", at.AddHours(-25).AddSeconds(1), "/", Chrome) with { CorrelationId = "delivery-1" },
+            Delivered(site.Id, "served-the-copy", at, "/", "delivery-1"),
+            Page(site.Id, "second-reader", at.AddSeconds(1), "/", Chrome) with { CorrelationId = "delivery-1" },
+            Delivered(site.Id, "served-the-copy", at.AddMinutes(5), "/feed/"));
+
+        var reachingTheFirst = await ReadSessionsAsync(site, at.AddHours(-3), Now.AddMinutes(-30));
+        var startingAfterIt = await ReadSessionsAsync(site, at.AddMinutes(-30), Now.AddMinutes(-30));
+
+        startingAfterIt.Select(visit => visit.Evidence.SessionKey)
+            .Should().BeEquivalentTo(reachingTheFirst.Select(visit => visit.Evidence.SessionKey));
+        reachingTheFirst.Should().ContainSingle()
+            .Which.Evidence.SessionKey.Should().StartWith("second-reader:");
+    }
+
+    /// <summary>
+    /// What the rule cannot tell apart, pinned so that it is a decision rather than a surprise: a
+    /// crawler that sends a browser's headers but never runs the tracker fills a cache, and exactly
+    /// one reader is handed its copy within the answer window. That reader sent back the only answer
+    /// to a key that named nothing else, which is exactly what a reader's own page looks like, so
+    /// the crawler's request is read as the reader's, and the reader's visit holds it.
+    /// </summary>
+    [Fact]
+    public async Task A_Copy_A_Crawler_Left_In_A_Cache_And_One_Reader_Was_Handed_Is_Read_As_That_Readers()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Delivered(site.Id, "filled-the-cache", at, "/posts/hello", "delivery-1"),
+            Page(site.Id, "reader", at.AddSeconds(40), "/posts/hello", Chrome) with { CorrelationId = "delivery-1" },
+            Read(site.Id, "reader", at.AddMinutes(2), Chrome, "/posts/hello"));
+
+        var visits = await ReconstructAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Evidence.SessionKey.Should().StartWith("reader:");
+        visits[0].Evidence.Surfaces.Should().Contain(IngestSurface.NextJsMiddleware);
+        visits[0].Evidence.PageCount.Should().Be(1);
+    }
+
+    /// <summary>
     /// A report about a page this visitor was never seen arriving at says a page was delivered to
     /// somebody, and nothing about which visit it belonged to. Handing it to the nearest visit would
     /// credit a reader with a page they never asked for.
@@ -2003,6 +2122,31 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
     /// <summary>The same activity, arriving from a computer rented in a datacentre.</summary>
     private static RawEvent Rented(RawEvent observed) =>
         observed with { AutonomousSystem = RentedNetwork, NetworkOwner = "ALIBABA-CN-NET Alibaba US Technology Co., Ltd." };
+
+    /// <summary>
+    /// A page the site's own server says it delivered to a browser, with the name it gave the
+    /// delivery where it gave one.
+    /// </summary>
+    private static RawEvent Delivered(
+        Guid siteId,
+        string visitor,
+        DateTimeOffset at,
+        string path,
+        string? correlationId = null) =>
+        new()
+        {
+            EventId = Guid.CreateVersion7(at),
+            SiteId = siteId,
+            Kind = EventKind.PageView,
+            Surface = IngestSurface.NextJsMiddleware,
+            ServerTimestamp = at,
+            VisitorKey = visitor,
+            Host = "example.com",
+            Path = path,
+            UserAgent = Chrome,
+            StatusCode = 200,
+            CorrelationId = correlationId,
+        };
 
     /// <summary>
     /// One request as a surface in the request path sees it: a status code, no viewport, and no

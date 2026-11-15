@@ -944,7 +944,7 @@ public static class AnalyticsSqlCompiler
             WITH
                 windowed AS
                 (
-                    SELECT site_id, kind, surface, path, visitor_key, correlation_id
+                    SELECT site_id, kind, surface, path, visitor_key, correlation_id, server_ts
                     FROM events
                     WHERE site_id IN {site_ids:Array(UUID)}
                       AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')

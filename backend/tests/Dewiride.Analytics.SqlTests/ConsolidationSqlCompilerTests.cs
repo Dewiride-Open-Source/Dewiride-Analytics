@@ -51,6 +51,7 @@ public sealed partial class ConsolidationSqlCompilerTests
     private static readonly Dictionary<int, string> ArithmeticOf = new()
     {
         [1] = "2c66959a2fac04ae5e9a15dca73075c14b3c4406d3fa2cd793c00cf2ad74c9e6",
+        [2] = "ca7d306dad33e52da4eb8775b6f297b739733600780a06ee8743b452ad06777b",
     };
 
     /// <summary>
@@ -61,6 +62,7 @@ public sealed partial class ConsolidationSqlCompilerTests
     private static readonly Dictionary<int, string> ArithmeticOfPosts = new()
     {
         [1] = "ed0ddf2ceb6a556ce87e0e5c263feda81af0b8f267e9b97cedf492b95bba46db",
+        [2] = "e5af8eae2fb2c40baae2448bf894392d885de75b944862697c6efc59f9f9793c",
     };
 
     /// <summary>Two of a website's posts, as the collector stores their paths.</summary>

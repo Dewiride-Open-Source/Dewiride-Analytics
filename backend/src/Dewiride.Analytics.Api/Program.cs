@@ -27,6 +27,7 @@ var edition = builder.AddEdition();
 builder.Services.AddHostedService<SchemaMigrationService>();
 builder.Services.AddHostedService<ClassificationWorker>();
 builder.Services.AddHostedService<ConsolidationWorker>();
+builder.Services.AddHostedService<LiveServerKeysRefresher>();
 
 var app = builder.Build();
 

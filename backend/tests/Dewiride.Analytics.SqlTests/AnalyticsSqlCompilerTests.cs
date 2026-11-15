@@ -560,7 +560,8 @@ public sealed partial class AnalyticsSqlCompilerTests
         var statement = AnalyticsSqlCompiler.CompileVolume(Volume());
 
         statement.Sql.Should().Contain("GROUP BY site_id, correlation_id");
-        statement.Sql.Should().Contain("LEFT JOIN linked ON windowed.site_id = linked.site_id AND");
+        statement.Sql.Should().Contain("PARTITION BY site_id, reporter ORDER BY at_ms");
+        statement.Sql.Should().Contain("ASOF LEFT JOIN linked ON windowed.site_id = linked.site_id AND");
     }
 
     [Fact]
@@ -1819,7 +1820,8 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// <summary>
     /// The store writes a common table expression out again wherever it is named, so nine
     /// selections laid end to end would rebuild every visit in the period nine times over. The nine
-    /// details are unfolded from one array instead, over a single pass.
+    /// details are unfolded from one array instead, over a single pass, and the rebuild is named
+    /// once.
     /// </summary>
     [Fact]
     public void Every_Detail_Is_Counted_In_One_Pass_Over_The_Rebuild()
@@ -1827,7 +1829,7 @@ public sealed partial class AnalyticsSqlCompilerTests
         var statement = AnalyticsSqlCompiler.Compile(Scope(), Facets());
 
         statement.Sql.Should().Contain("arrayJoin([");
-        statement.Sql.Should().NotContain("UNION ALL");
+        statement.Sql.Split("FROM described").Should().HaveCount(2);
     }
 
     /// <summary>

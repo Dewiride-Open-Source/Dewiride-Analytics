@@ -32,11 +32,19 @@ public sealed class ClassificationOptions
     /// How long a visitor may be quiet before their next activity counts as a new visit.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Half an hour is the convention across web analytics, and the value matters to more than
     /// tidiness: it is also how long a visit has to have been silent before the engine will judge
     /// it, so a longer timeout means verdicts arrive later.
+    /// </para>
+    /// <para>
+    /// Half an hour is also the shortest it may be. That is how long after a report everything that
+    /// can decide whose it was has arrived — see <see cref="Telemetry.EchoedDeliveries.Settled"/> —
+    /// and a visit judged sooner could have a report given to somebody else afterwards, leaving its
+    /// verdict about a visit that no longer exists.
+    /// </para>
     /// </remarks>
-    [Range(typeof(TimeSpan), "00:01:00", "12:00:00")]
+    [Range(typeof(TimeSpan), "00:30:00", "12:00:00")]
     public TimeSpan IdleTimeout { get; init; } = TimeSpan.FromMinutes(30);
 
     /// <summary>

@@ -19,7 +19,7 @@ namespace Dewiride.Analytics.Infrastructure.Sites;
 /// what makes storing only a digest sound: there is nothing to guess and nothing to look up.
 /// </para>
 /// </remarks>
-internal static class IngestKeySecret
+public static class IngestKeySecret
 {
     /// <summary>Marks a string as one of these secrets.</summary>
     public const string Prefix = "dwk_";

@@ -1,0 +1,118 @@
+# The WordPress plugin's checks, defined once.
+#
+# Two builds run them: this repository's own, on every change, and the commercial edition's, which a
+# hosted release runs against the exact commit of this repository it publishes — because every
+# release of the dashboard hands out the archive packaged here. One action rather than a job written
+# out in both, so the two can never come to check different things.
+#
+# Expects this repository at the root of the workspace, which is where both builds check it out.
+
+name: WordPress plugin
+description: >-
+  Checks the WordPress plugin, packages it, and installs the package on the oldest and newest
+  WordPress it supports.
+
+runs:
+  using: composite
+  steps:
+    # The newest stable PHP, stated rather than left to the action. Left alone it reads a version
+    # from the plugin's own manifest, which names the oldest PHP the plugin supports — the version
+    # its tools are resolved for — and the oldest has a job of its own in the build.
+    - name: PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: "8.5"
+        tools: composer:v2
+        # Nothing here measures coverage, and a loaded coverage driver slows every step below.
+        coverage: none
+
+    # Strict, so a warning fails too — among them a lock file that no longer matches the manifest,
+    # which would otherwise install a set of tools nobody reviewed.
+    - name: Manifest
+      shell: bash
+      working-directory: integrations/wordpress-plugin
+      run: composer validate --strict
+
+    # Before the install rather than after it, because installing runs code: a version with a known
+    # advisory is refused before any of it executes. Read from the lock file, which is exactly what
+    # the install below puts in place.
+    - name: Advisories
+      shell: bash
+      working-directory: integrations/wordpress-plugin
+      run: composer audit --locked
+
+    - name: Install
+      shell: bash
+      working-directory: integrations/wordpress-plugin
+      run: composer install --no-progress
+
+    # The WordPress coding standard, and whether the code uses anything the oldest PHP the plugin
+    # supports does not have. Both are read from the code without running it, so the newest PHP
+    # answers for the oldest here.
+    - name: Coding standard
+      shell: bash
+      working-directory: integrations/wordpress-plugin
+      run: composer lint
+
+    # Types and WordPress's own signatures, read without running anything.
+    - name: Analysis
+      shell: bash
+      working-directory: integrations/wordpress-plugin
+      run: composer analyse
+
+    - name: Tests
+      shell: bash
+      working-directory: integrations/wordpress-plugin
+      run: composer test
+
+    # The Node major the images and the build run on, stated as the build states it. The packaging
+    # script needs nothing but Node itself, so this is the whole of its setup.
+    - name: Node
+      uses: actions/setup-node@v7
+      with:
+        node-version: "24"
+
+    # Packaged by the same script the dashboard images run, so what is checked below is the archive
+    # people download rather than the folder it was made from. It refuses to package when a file is
+    # missing from its list or the four places that state the version disagree.
+    - name: Package
+      shell: bash
+      run: node scripts/package-wordpress-plugin.mjs
+
+    # Unpacked outside the checkout, so nothing below can see a file the archive does not hold.
+    - name: Unpack
+      shell: bash
+      run: |
+        unzip -q frontend/apps/web/public/downloads/dewiride-analytics.zip \
+          -d "$RUNNER_TEMP/wordpress-plugin"
+
+    # WordPress's own Plugin Check, which the plugin directory runs on a new plugin before accepting
+    # it, on exactly what was unpacked. Strict, so a warning fails the build as an error does, and
+    # nothing the directory could question is first found at submission. Experimental checks are
+    # left out, and stated because the action's README and its definition disagree about the
+    # default: this installs whichever Plugin Check is newest on the day it runs, and a check its
+    # own authors have not settled would turn this red on their work in progress.
+    - name: Plugin Check
+      uses: wordpress/plugin-check-action@v1
+      with:
+        build-dir: ${{ runner.temp }}/wordpress-plugin/dewiride-analytics
+        strict: true
+        include-experimental: false
+        wp-version: latest
+
+    # The unpacked archive installed into a real WordPress and its pages read from outside, on the
+    # oldest WordPress and PHP the plugin supports and with a theme that prints markup the old way,
+    # where what a page receives differs most from what the plugin asked WordPress to print.
+    - name: Installed on the oldest WordPress it supports
+      shell: bash
+      env:
+        PLUGIN_DIR: ${{ runner.temp }}/wordpress-plugin/dewiride-analytics
+      run: bash integrations/wordpress-plugin/tests/smoke/run.sh floor
+
+    # And on the newest WordPress and PHP, where a change WordPress makes to what a page receives
+    # shows first — here, rather than on somebody's website that has stopped counting.
+    - name: Installed on the newest WordPress
+      shell: bash
+      env:
+        PLUGIN_DIR: ${{ runner.temp }}/wordpress-plugin/dewiride-analytics
+      run: bash integrations/wordpress-plugin/tests/smoke/run.sh newest

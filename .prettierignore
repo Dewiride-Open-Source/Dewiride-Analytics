@@ -13,5 +13,8 @@ ee
 tracker/dist
 frontend/apps/web/public
 
+# Packages Composer installs for the WordPress plugin's checks.
+integrations/wordpress-plugin/vendor
+
 # Written and rewritten by `next dev`, not by hand.
 frontend/apps/web/AGENTS.md

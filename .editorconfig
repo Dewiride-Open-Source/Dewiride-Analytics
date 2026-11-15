@@ -185,3 +185,12 @@ indent_style = tab
 [justfile]
 indent_style = space
 indent_size = 4
+
+# ---------------------------------------------------------------------------
+# The WordPress plugin's PHP follows the WordPress coding standard, which
+# indents with tabs and counts each as four columns when it lines code up.
+# ---------------------------------------------------------------------------
+[integrations/wordpress-plugin/**.php]
+indent_style = tab
+indent_size = tab
+tab_width = 4

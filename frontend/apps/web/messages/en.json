@@ -1182,14 +1182,47 @@
     "websiteInvalid": "Enter an address like example.com.",
     "timeZoneRequired": "Choose a time zone."
   },
+  "copy": {
+    "action": "Copy",
+    "done": "Copied",
+    "actionNamed": "Copy {what}",
+    "doneNamed": "{what} copied"
+  },
   "install": {
     "action": "Tracking code",
     "title": "Your tracking code",
     "body": "Paste these two lines into {site} once, wherever your website keeps the things that show on every page. Most website builders have a box for it, usually called custom code or header.",
-    "copy": "Copy",
-    "copied": "Copied",
     "close": "Close",
-    "next": "Traffic starts appearing here as soon as somebody visits."
+    "next": "Traffic starts appearing here as soon as somebody visits.",
+    "route": {
+      "label": "Instructions for",
+      "any": "Any website",
+      "wordpress": "WordPress"
+    },
+    "wordpress": {
+      "body": "Our WordPress plugin adds your tracking code to {site} for you.",
+      "download": {
+        "title": "Download the plugin",
+        "action": "Download",
+        "version": "Version {version}"
+      },
+      "upload": {
+        "title": "Add it to WordPress",
+        "body": "In WordPress, open <ui>Plugins</ui>, choose <ui>Add Plugin</ui> and press <ui>Upload Plugin</ui>. Choose the file you just downloaded, press <ui>Install Now</ui>, then <ui>Activate Plugin</ui>."
+      },
+      "connect": {
+        "title": "Connect it",
+        "body": "Open <ui>Settings</ui>, then <ui>Dewiride Analytics</ui>. Paste each of these into the box with the same name, then save.",
+        "address": "Address",
+        "siteId": "Website ID"
+      },
+      "tidy": {
+        "title": "Remove any code you added before",
+        "body": "If you pasted the tracking code into WordPress yourself, take it out."
+      },
+      "next": "Traffic starts appearing here as soon as somebody visits. People signed in to WordPress aren't counted unless you choose to count them in the plugin's settings.",
+      "update": "To update the plugin later, download it again and upload it the same way, then press <ui>Replace current with uploaded</ui>."
+    }
   },
   "serverKeys": {
     "action": "Server keys",
@@ -1205,8 +1238,6 @@
       "title": "Here is your key",
       "body": "Copy it now. It is not shown again."
     },
-    "copy": "Copy",
-    "copied": "Copied",
     "list": {
       "title": "Keys in use",
       "empty": "Nothing is reporting from your server yet."

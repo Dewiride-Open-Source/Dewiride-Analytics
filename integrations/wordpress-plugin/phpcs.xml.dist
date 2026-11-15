@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<ruleset name="Dewiride Analytics for WordPress">
+	<description>The WordPress Coding Standards, and PHP compatibility from the plugin's floor of PHP 7.4 upwards.</description>
+
+	<file>dewiride-analytics.php</file>
+	<file>uninstall.php</file>
+	<file>includes</file>
+	<file>tests</file>
+
+	<arg name="basepath" value="."/>
+	<arg name="extensions" value="php"/>
+	<arg name="parallel" value="8"/>
+	<arg name="colors"/>
+	<arg value="sp"/>
+
+	<config name="testVersion" value="7.4-"/>
+	<config name="minimum_wp_version" value="6.4"/>
+
+	<rule ref="WordPress"/>
+	<rule ref="PHPCompatibilityWP"/>
+
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="dewiride_analytics"/>
+				<element value="Dewiride\Analytics\WordPress"/>
+			</property>
+		</properties>
+	</rule>
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="dewiride-analytics"/>
+			</property>
+		</properties>
+	</rule>
+</ruleset>

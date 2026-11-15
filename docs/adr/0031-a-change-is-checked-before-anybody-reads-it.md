@@ -3,6 +3,8 @@
 - **Status**: accepted
 - **Date**: 2026-08-26
 - **Applies to**: both editions. Adds no column, collects nothing new, and widens no envelope.
+- **Followed by**: [0072](0072-a-wordpress-website-is-measured-by-a-plugin-it-installs.md), whose
+  WordPress plugin is checked by this Build in a job of its own, and by the commercial edition's.
 
 ## Context
 

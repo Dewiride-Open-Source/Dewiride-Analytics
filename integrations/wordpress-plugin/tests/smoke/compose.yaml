@@ -1,0 +1,59 @@
+# A throwaway WordPress for the smoke harness: a database, WordPress itself and WP-CLI beside it.
+#
+# run.sh chooses the images, makes up the database password and names the folder holding the
+# plugin under test, which is mounted read-only exactly where WordPress expects it. Nothing here
+# is meant to be started by hand.
+
+services:
+  database:
+    image: ${SMOKE_DATABASE_IMAGE:?run.sh chooses the database image}
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: ${SMOKE_DATABASE_PASSWORD:?run.sh makes up the database password}
+      MARIADB_RANDOM_ROOT_PASSWORD: "1"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  wordpress:
+    image: ${SMOKE_WORDPRESS_IMAGE:?run.sh chooses the WordPress image}
+    depends_on:
+      database:
+        condition: service_healthy
+    # WordPress neither updates itself nor runs its scheduled events while the harness drives it,
+    # so nothing changes underneath an assertion. The image reads these from wp-config.php on every
+    # request, which is why WP-CLI is given them as well.
+    environment: &wordpress-environment
+      WORDPRESS_DB_HOST: database
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: ${SMOKE_DATABASE_PASSWORD:?run.sh makes up the database password}
+      WORDPRESS_CONFIG_EXTRA: |
+        define( 'AUTOMATIC_UPDATER_DISABLED', true );
+        define( 'DISABLE_WP_CRON', true );
+    volumes:
+      - wordpress:/var/www/html
+      - ${PLUGIN_DIR:?PLUGIN_DIR names the folder holding the plugin}:/var/www/html/wp-content/plugins/dewiride-analytics:ro
+      - ./theme:/var/www/html/wp-content/themes/dewiride-smoke:ro
+
+  # WP-CLI runs as the user the WordPress image serves files as, so it can update WordPress.
+  cli:
+    image: ${SMOKE_CLI_IMAGE:?run.sh chooses the WP-CLI image}
+    user: "33:33"
+    depends_on:
+      - wordpress
+    environment:
+      <<: *wordpress-environment
+      WP_CLI_CACHE_DIR: /tmp/wp-cli-cache
+    volumes:
+      - wordpress:/var/www/html
+      - ${PLUGIN_DIR:?PLUGIN_DIR names the folder holding the plugin}:/var/www/html/wp-content/plugins/dewiride-analytics:ro
+      - ./theme:/var/www/html/wp-content/themes/dewiride-smoke:ro
+      - .:/smoke:ro
+    command: ["tail", "-f", "/dev/null"]
+
+volumes:
+  wordpress:

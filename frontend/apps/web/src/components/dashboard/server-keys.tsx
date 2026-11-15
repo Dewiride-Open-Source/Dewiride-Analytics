@@ -1,9 +1,10 @@
 'use client';
 
-import { Check, Copy, KeyRound } from 'lucide-react';
+import { KeyRound } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { CopyButton } from '@/components/ui/copy-button';
 import { Dialog } from '@/components/ui/dialog';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { Field, TextInput } from '@/components/ui/field';
@@ -19,9 +20,6 @@ interface ServerKeysProps {
   /** IANA zone the website’s days are counted in, so dates read the same everywhere. */
   readonly timeZoneId: string;
 }
-
-/** How long the button keeps saying it worked. */
-const CONFIRMATION_MS = 2000;
 
 /** Where somebody gets, and takes away, the keys their own server reports with. */
 export function ServerKeys({ open, onClose, siteId, siteDomain, timeZoneId }: ServerKeysProps) {
@@ -126,28 +124,6 @@ export function ServerKeys({ open, onClose, siteId, siteDomain, timeZoneId }: Se
  */
 function IssuedKey({ secret }: { readonly secret: string }) {
   const t = useTranslations('serverKeys');
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!copied) {
-      return;
-    }
-
-    const timer = setTimeout(() => setCopied(false), CONFIRMATION_MS);
-
-    return () => clearTimeout(timer);
-  }, [copied]);
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(secret);
-      setCopied(true);
-    } catch {
-      // Refused, which happens when the page is not on a secure address. The key is on the screen
-      // and selectable, so there is still a way through and nothing to announce.
-      setCopied(false);
-    }
-  }
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-accent-strong bg-accent-soft p-4">
@@ -157,14 +133,7 @@ function IssuedKey({ secret }: { readonly secret: string }) {
       </code>
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-foreground-muted">{t('issued.body')}</p>
-        <Button tone="secondary" size="sm" onClick={copy} className="w-full sm:w-auto">
-          {copied ? (
-            <Check aria-hidden className="size-4 text-positive" />
-          ) : (
-            <Copy aria-hidden className="size-4" />
-          )}
-          {copied ? t('copied') : t('copy')}
-        </Button>
+        <CopyButton value={secret} className="w-full sm:w-auto" />
       </div>
     </div>
   );

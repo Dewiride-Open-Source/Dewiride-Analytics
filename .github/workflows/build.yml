@@ -108,3 +108,43 @@ jobs:
       # cannot disagree about what passing means.
       - name: Verify
         run: pnpm verify
+
+  wordpress-plugin:
+    name: WordPress plugin
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Defined in an action of this repository's own rather than here, because the commercial
+      # edition's build runs exactly the same checks: every hosted release hands out this plugin.
+      - name: Check
+        uses: ./.github/actions/wordpress-plugin
+
+  wordpress-plugin-php74:
+    name: WordPress plugin on PHP 7.4
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: integrations/wordpress-plugin
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # The oldest PHP the plugin promises to run on. The coding standard and the analysis already
+      # read the code for it from the newest PHP; only running the tests here shows the code works
+      # on it.
+      - name: PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "7.4"
+          tools: composer:v2
+          coverage: none
+
+      # The lock file is resolved for this PHP, so the same tools the other job runs install here.
+      - name: Install
+        run: composer install --no-progress
+
+      - name: Tests
+        run: composer test

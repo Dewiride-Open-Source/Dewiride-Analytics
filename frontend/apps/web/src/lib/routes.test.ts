@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { routing } from '@/i18n/routing';
 import type { ClosedAccount, Session } from '@/lib/api/schemas';
+import { WORDPRESS_PLUGIN } from '@/lib/downloads';
 import {
   ALL_POSTS,
   CLOSED,
@@ -206,12 +207,18 @@ describe('which addresses name a screen', () => {
     expect(isScreen('/app/sign-in/', routing.locales)).toBe(true);
   });
 
-  it.each(['/', '/en', '/nowhere', '/app/sign', '/app/sign-in/extra', '/a/b/c', '/appendix'])(
-    'does not recognise %s',
-    (typed) => {
-      expect(isScreen(typed, ['en'])).toBe(false);
-    },
-  );
+  it.each([
+    '/',
+    '/en',
+    '/nowhere',
+    '/app/sign',
+    '/app/sign-in/extra',
+    '/a/b/c',
+    '/appendix',
+    WORDPRESS_PLUGIN.href,
+  ])('does not recognise %s', (typed) => {
+    expect(isScreen(typed, ['en'])).toBe(false);
+  });
 
   /**
    * A screen with a file but no entry in the list is unreachable: the address is turned away
@@ -236,10 +243,10 @@ describe('what the engine answers rather than the dashboard', () => {
   );
 
   /**
-   * The beacon is a file the dashboard serves itself, and the collector's name must not be able to
-   * shadow a screen that merely begins with the same letters.
+   * The beacon and the downloads are files the dashboard serves itself, and the collector's name
+   * must not be able to shadow a screen that merely begins with the same letters.
    */
-  it.each(['/', '/app/sign-in', '/dw.js', '/collections', '/apiary'])(
+  it.each(['/', '/app/sign-in', '/dw.js', WORDPRESS_PLUGIN.href, '/collections', '/apiary'])(
     'answers %s itself',
     (address) => {
       expect(isEngineAddress(address)).toBe(false);
@@ -292,12 +299,18 @@ describe('what the website in front of the product serves', () => {
 
   /**
    * The prefix must not be able to shadow a screen that merely begins with the same letters, and
-   * the two named files are exactly those two — not every file at the root.
+   * the two named files are exactly those two — not every file at the root, and not the files the
+   * dashboard hands out itself.
    */
-  it.each(['/', '/app', '/app/settings', '/site-assetsx/main.js', '/favicon.ico', '/dw.js'])(
-    'leaves %s alone',
-    (address) => {
-      expect(isSiteFile(address)).toBe(false);
-    },
-  );
+  it.each([
+    '/',
+    '/app',
+    '/app/settings',
+    '/site-assetsx/main.js',
+    '/favicon.ico',
+    '/dw.js',
+    WORDPRESS_PLUGIN.href,
+  ])('leaves %s alone', (address) => {
+    expect(isSiteFile(address)).toBe(false);
+  });
 });

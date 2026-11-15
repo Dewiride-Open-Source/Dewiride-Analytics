@@ -124,6 +124,13 @@ const config: NextConfig = {
         source: '/dw.js',
         headers: [{ key: 'Cache-Control', value: 'public, max-age=3600, must-revalidate' }],
       },
+      {
+        // The WordPress plugin people download from the install steps. A new version replaces the
+        // file at the same address, so it is held for an hour like the beacon and then asked for
+        // again, never kept as though it could not change.
+        source: '/downloads/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=3600, must-revalidate' }],
+      },
     ];
   },
 };

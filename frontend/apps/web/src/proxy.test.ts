@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { WORDPRESS_PLUGIN } from '@/lib/downloads';
 import { config } from '@/proxy';
 
 /**
@@ -44,10 +45,12 @@ describe('which addresses reach the proxy', () => {
   });
 
   /**
-   * The framework's own files and the beacon are served as they are. The beacon in particular must
-   * never be given a language prefix: its address is written into other people's websites.
+   * The framework's own files, the beacon and the downloads are served as they are. The beacon in
+   * particular must never be given a language prefix: its address is written into other people's
+   * websites. A download must never be forwarded or turned into a redirect either: it is a file the
+   * dashboard holds itself, and whoever follows the link expects the file.
    */
-  it.each(['/_next/static/chunks/main.js', '/dw.js', '/favicon.ico'])(
+  it.each(['/_next/static/chunks/main.js', '/dw.js', '/favicon.ico', WORDPRESS_PLUGIN.href])(
     'leaves %s to be served directly',
     (address) => {
       expect(reaches(address)).toBe(false);

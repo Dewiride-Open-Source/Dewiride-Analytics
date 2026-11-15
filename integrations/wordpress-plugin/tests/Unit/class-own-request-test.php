@@ -17,10 +17,15 @@ use Dewiride\Analytics\WordPress\Own_Request;
 final class Own_Request_Test extends Test_Case {
 
 	/**
-	 * The plugin's own request carries a header the site recognises.
+	 * The plugin's own request carries a header the site recognises, on the page it was made for.
 	 */
 	public function test_the_plugins_own_request_is_recognised_by_its_header(): void {
-		$this->given_request( array( 'HTTP_X_DEWIRIDE_ANALYTICS_OWN' => Own_Request::marker() ) );
+		$this->given_request(
+			array(
+				'REQUEST_URI'                   => '/',
+				'HTTP_X_DEWIRIDE_ANALYTICS_OWN' => Own_Request::marker( 'https://example.com/' ),
+			)
+		);
 
 		self::assertTrue( Own_Request::is_marked() );
 	}
@@ -29,13 +34,69 @@ final class Own_Request_Test extends Test_Case {
 	 * A header written without the site's secret keys is not recognised, nor is none at all.
 	 */
 	public function test_a_header_written_without_the_sites_keys_is_not_recognised(): void {
-		$marker = Own_Request::marker();
+		$marker = Own_Request::marker( 'https://example.com/' );
 
 		Functions\when( 'wp_salt' )->justReturn( 'somebody else\'s keys' );
-		$this->given_request( array( 'HTTP_X_DEWIRIDE_ANALYTICS_OWN' => $marker ) );
+		$this->given_request(
+			array(
+				'REQUEST_URI'                   => '/',
+				'HTTP_X_DEWIRIDE_ANALYTICS_OWN' => $marker,
+			)
+		);
 		self::assertFalse( Own_Request::is_marked() );
 
-		$this->given_request( array() );
+		$this->given_request( array( 'REQUEST_URI' => '/' ) );
+		self::assertFalse( Own_Request::is_marked() );
+	}
+
+	/**
+	 * A header copied from the request for one page opens no other page, nor the same page of
+	 * another site sharing the secret keys.
+	 */
+	public function test_a_header_opens_only_the_page_it_was_made_for(): void {
+		$marker = Own_Request::marker( 'https://example.com/' );
+
+		$this->given_request(
+			array(
+				'REQUEST_URI'                   => '/.env',
+				'HTTP_X_DEWIRIDE_ANALYTICS_OWN' => $marker,
+			)
+		);
+		self::assertFalse( Own_Request::is_marked() );
+
+		Functions\when( 'home_url' )->justReturn( 'https://sibling.example.com' );
+		$this->given_request(
+			array(
+				'REQUEST_URI'                   => '/',
+				'HTTP_X_DEWIRIDE_ANALYTICS_OWN' => $marker,
+			)
+		);
+		self::assertFalse( Own_Request::is_marked() );
+	}
+
+	/**
+	 * A header made in the ten minutes before is still recognised, one made before that is not.
+	 */
+	public function test_a_header_is_recognised_for_its_ten_minutes_and_the_next(): void {
+		$period = intdiv( time(), 600 );
+		$made   = static function ( int $when ): string {
+			return hash_hmac( 'sha256', 'dewiride-analytics-own-request:' . $when . ':example.com/', 'the site\'s secret keys' );
+		};
+
+		$this->given_request(
+			array(
+				'REQUEST_URI'                   => '/',
+				'HTTP_X_DEWIRIDE_ANALYTICS_OWN' => $made( $period - 1 ),
+			)
+		);
+		self::assertTrue( Own_Request::is_marked() );
+
+		$this->given_request(
+			array(
+				'REQUEST_URI'                   => '/',
+				'HTTP_X_DEWIRIDE_ANALYTICS_OWN' => $made( $period - 2 ),
+			)
+		);
 		self::assertFalse( Own_Request::is_marked() );
 	}
 

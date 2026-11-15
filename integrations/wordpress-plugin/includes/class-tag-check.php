@@ -469,7 +469,7 @@ final class Tag_Check {
 					'timeout'     => self::TIMEOUT,
 					'redirection' => 0,
 					'user-agent'  => 'DewirideAnalytics/' . DEWIRIDE_ANALYTICS_VERSION,
-					'headers'     => array( Own_Request::HEADER => Own_Request::marker() ),
+					'headers'     => array( Own_Request::HEADER => Own_Request::marker( $url ) ),
 				)
 			);
 

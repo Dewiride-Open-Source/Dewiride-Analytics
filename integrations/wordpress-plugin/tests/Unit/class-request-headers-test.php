@@ -82,6 +82,7 @@ final class Request_Headers_Test extends Test_Case {
 			'bytes that are not ASCII'       => array( "/caf\xc3\xa9", '/caf%C3%A9' ),
 			'escapes already written'        => array( '/caf%C3%A9', '/caf%C3%A9' ),
 			'a % that starts no escape'      => array( '/100%', '/100%25' ),
+			'square brackets, as browsers'   => array( '/docs/[draft]/', '/docs/[draft]/' ),
 			'a whole address'                => array( 'http://example.com/wp-login.php?x=1', '/wp-login.php' ),
 			'a path without its first slash' => array( 'posts', '/posts' ),
 			'nothing'                        => array( '', '/' ),
@@ -131,5 +132,24 @@ final class Request_Headers_Test extends Test_Case {
 
 		self::assertSame( "\xff\xfe, 203.0.113.7", Request_Headers::list_end( 'X-Forwarded-For', 100 ) );
 		self::assertSame( '', Request_Headers::list_end( 'X-Real-IP', 100 ) );
+	}
+
+	/**
+	 * A request refused while plugins were still loading was never slashed by WordPress, and its
+	 * backslashes and quotation marks are read as they were sent.
+	 */
+	public function test_a_request_wordpress_has_not_slashed_is_read_as_sent(): void {
+		$this->given_request(
+			array(
+				'HTTP_USER_AGENT'      => 'Probe "1" \\ 2',
+				'HTTP_X_FORWARDED_FOR' => '203.0.113.7',
+				'REQUEST_URI'          => '/a\\b',
+			),
+			false
+		);
+
+		self::assertSame( 'Probe "1" \\ 2', Request_Headers::header( 'User-Agent' ) );
+		self::assertSame( '203.0.113.7', Request_Headers::list_end( 'X-Forwarded-For', 100 ) );
+		self::assertSame( '/a%5Cb', Request_Headers::requested_path() );
 	}
 }

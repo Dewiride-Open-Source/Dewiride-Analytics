@@ -145,7 +145,7 @@ final class Request_Report {
 	 * @phpstan-param list<string> $sends_from
 	 */
 	public function is_nameable( array $sends_from ): bool {
-		return self::PAGE === $this->kind()
+		return self::PAGE === $this->kind( false )
 			&& 'GET' === Request_Headers::method()
 			&& self::is_browser_navigation()
 			&& $this->admits( self::PAGE, false )
@@ -163,8 +163,8 @@ final class Request_Report {
 	 * @return array<string, int|string>|null
 	 */
 	public function observation( string $name, array $sends_from, int $status, string $content_type ): ?array {
-		$kind    = $this->kind();
 		$refused = $status >= 400;
+		$kind    = $this->kind( $refused );
 
 		if ( self::NOT_REPORTED === $kind || ! $this->admits( $kind, $refused ) || ! self::answer_admits( $status ) ) {
 			return null;
@@ -223,8 +223,10 @@ final class Request_Report {
 
 	/**
 	 * Which kind of request this is.
+	 *
+	 * @param bool $refused Whether the site answered it with an error.
 	 */
-	private function kind(): string {
+	private function kind( bool $refused ): string {
 		if ( ( defined( 'WP_CLI' ) && WP_CLI ) || wp_doing_cron() || wp_doing_ajax() || is_admin() ) {
 			return self::NOT_REPORTED;
 		}
@@ -232,7 +234,7 @@ final class Request_Report {
 		$kind = self::NOT_REPORTED;
 
 		if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
-			$kind = self::is_rest_address() ? self::NOT_REPORTED : self::REST_ELSEWHERE;
+			$kind = self::is_rest_address( true ) ? self::NOT_REPORTED : self::REST_ELSEWHERE;
 		} elseif ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST ) {
 			$kind = self::XML_RPC;
 		} elseif ( did_action( 'login_init' ) > 0 ) {
@@ -242,9 +244,25 @@ final class Request_Report {
 			// answered "not modified" ends before then, and SEO plugins serve their sitemaps while
 			// the query is still being run.
 			$kind = is_feed() || is_robots() || '' !== get_query_var( 'sitemap' ) ? self::FEED : self::PAGE;
+		} elseif ( $refused ) {
+			$kind = self::refused_before_parsing();
 		}
 
 		return $kind;
+	}
+
+	/**
+	 * The kind of a request the site refused before WordPress parsed it: a security plugin's
+	 * firewall answers while plugins load or at `init`, and WordPress refuses a malformed query
+	 * while parsing it. It is reported as a request for a page, or for the sign-in page; the REST
+	 * API's own addresses stay out, as they do once parsed.
+	 */
+	private static function refused_before_parsing(): string {
+		if ( self::is_rest_address( self::is_routed() ) ) {
+			return self::NOT_REPORTED;
+		}
+
+		return isset( $GLOBALS['pagenow'] ) && 'wp-login.php' === $GLOBALS['pagenow'] ? self::SIGN_IN : self::PAGE;
 	}
 
 	/**
@@ -298,7 +316,9 @@ final class Request_Report {
 		$attempt = self::XML_RPC === $kind
 			|| ( self::SIGN_IN === $kind && ! self::is_browser_navigation() && ( 'GET' === $method || ( 'POST' === $method && 0 === did_action( 'wp_login' ) ) ) );
 
-		return $attempt && $this->settings->reports_sign_in() && ! is_user_logged_in();
+		// Signing out leaves nobody signed in by the time the request is reported, so it is
+		// recognised by WordPress announcing it, not by who is signed in at the end.
+		return $attempt && $this->settings->reports_sign_in() && ! is_user_logged_in() && 0 === did_action( 'wp_logout' );
 	}
 
 	/**
@@ -318,7 +338,7 @@ final class Request_Report {
 			&& 'HEAD' !== Request_Headers::method()
 			&& ! self::is_prefetch()
 			&& ! Own_Request::is_own_agent( Request_Headers::header( 'User-Agent' ) )
-			&& ! ( $status >= 300 && self::is_browser_navigation() );
+			&& ! ( $status >= 300 && ( self::is_browser_navigation() || self::is_navigation_without_metadata() ) );
 	}
 
 	/**
@@ -351,16 +371,29 @@ final class Request_Report {
 	}
 
 	/**
-	 * Whether the address asked for is the REST API's own: the site's address, or its index, with
-	 * `?rest_route=`, or a path under the REST API's prefix.
+	 * Whether the address asked for is the REST API's own: a path under the REST API's prefix, or
+	 * the site's address or its index, which reach the REST API with `?rest_route=`.
+	 *
+	 * @param bool $routed Whether the request carries `?rest_route=`.
 	 */
-	private static function is_rest_address(): bool {
+	private static function is_rest_address( bool $routed ): bool {
 		$home   = rtrim( (string) wp_parse_url( home_url(), PHP_URL_PATH ), '/' );
 		$path   = Request_Headers::requested_path();
 		$path   = '' !== $home && ( $path === $home || 0 === strpos( $path, $home . '/' ) ) ? (string) substr( $path, strlen( $home ) ) : $path;
 		$prefix = preg_quote( trim( rest_get_url_prefix(), '/' ), '#' );
 
-		return 1 === preg_match( '#^/?(?:index\.php)?/?$|^/(?:index\.php/)?' . $prefix . '(?:/|$)#', $path );
+		return 1 === preg_match( '#^/(?:index\.php/)?' . $prefix . '(?:/|$)#', $path )
+			|| ( $routed && 1 === preg_match( '#^/?(?:index\.php)?/?$#', $path ) );
+	}
+
+	/**
+	 * Whether the request's query carries `rest_route`, which WordPress reads, once it parses the
+	 * request, as a request for the REST API.
+	 */
+	private static function is_routed(): bool {
+		parse_str( Request_Headers::server( 'QUERY_STRING', self::LONGEST_URL ), $arguments );
+
+		return isset( $arguments['rest_route'] );
 	}
 
 	/**
@@ -368,6 +401,17 @@ final class Request_Report {
 	 */
 	private static function is_browser_navigation(): bool {
 		return 'document' === strtolower( Request_Headers::header( 'Sec-Fetch-Dest', 32 ) ) && ! self::is_prefetch();
+	}
+
+	/**
+	 * Whether the request is a navigation from a browser that sends no fetch metadata: one that
+	 * asks to be upgraded to https and names no destination. Every browser does so on a site
+	 * served over http, where it sends no `Sec-Fetch-*` headers, as older Safari does everywhere.
+	 */
+	private static function is_navigation_without_metadata(): bool {
+		return '' === Request_Headers::header( 'Sec-Fetch-Dest', 32 )
+			&& '1' === Request_Headers::header( 'Upgrade-Insecure-Requests', 8 )
+			&& ! self::is_prefetch();
 	}
 
 	/**
@@ -389,15 +433,19 @@ final class Request_Report {
 	}
 
 	/**
-	 * The page the visitor came from, without anything after its path, or an empty string when
-	 * the request named none or named something that is not a web address.
+	 * The page the visitor came from — its scheme, host, port and path, never a user name or a
+	 * password written into it — or an empty string when the request named none or named
+	 * something that is not a web address.
 	 */
 	private static function referrer(): string {
 		$referrer = Request_Headers::header( 'Referer', self::LONGEST_REFERRER );
-		$referrer = substr( $referrer, 0, strcspn( $referrer, '?#' ) );
-		$parts    = wp_parse_url( $referrer );
+		$parts    = wp_parse_url( substr( $referrer, 0, strcspn( $referrer, '?#' ) ) );
 
-		return is_array( $parts ) && in_array( strtolower( $parts['scheme'] ?? '' ), array( 'http', 'https' ), true ) && '' !== ( $parts['host'] ?? '' ) ? $referrer : '';
+		if ( ! is_array( $parts ) || ! in_array( strtolower( $parts['scheme'] ?? '' ), array( 'http', 'https' ), true ) || '' === ( $parts['host'] ?? '' ) ) {
+			return '';
+		}
+
+		return strtolower( $parts['scheme'] ) . '://' . $parts['host'] . ( isset( $parts['port'] ) ? ':' . $parts['port'] : '' ) . ( $parts['path'] ?? '' );
 	}
 
 	/**

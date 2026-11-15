@@ -7,6 +7,7 @@
 
 namespace Dewiride\Analytics\WordPress\Tests\Unit;
 
+use Brain\Monkey\Actions;
 use Brain\Monkey\Functions;
 use Dewiride\Analytics\WordPress\Collector_Client;
 use Dewiride\Analytics\WordPress\Reporting_Status;
@@ -26,9 +27,9 @@ final class Collector_Client_Test extends Test_Case {
 	private const KEY = 'dwk_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
 	/**
-	 * What a fetch that failed outright returns in these tests.
+	 * What a fetch that failed outright says went wrong, in these tests.
 	 */
-	private const FAILED = 'failed fetch';
+	private const FAILED = 'cURL error 7: Failed to connect to analytics.example.com port 443';
 
 	/**
 	 * What the reporting state option holds in each test.
@@ -77,7 +78,7 @@ final class Collector_Client_Test extends Test_Case {
 		);
 		Functions\when( 'is_wp_error' )->alias(
 			static function ( $thing ): bool {
-				return self::FAILED === $thing;
+				return $thing instanceof Fake_Wp_Error;
 			}
 		);
 		$this->given_responses_as_arrays();
@@ -151,7 +152,7 @@ final class Collector_Client_Test extends Test_Case {
 	 * What became of a report, and what each answer is read as.
 	 */
 	public function test_each_answer_is_read_for_what_it_says(): void {
-		Functions\when( 'wp_remote_post' )->justReturn( self::FAILED );
+		Functions\when( 'wp_remote_post' )->justReturn( new Fake_Wp_Error( self::FAILED ) );
 		self::assertSame( 0, $this->client()->send( array(), 3 )['status'] );
 
 		Functions\when( 'wp_remote_post' )->justReturn( self::answer( 200, array( 'accepted' => 0 ) ) );
@@ -180,9 +181,52 @@ final class Collector_Client_Test extends Test_Case {
 			'another path on the same host'  => array( '/collect/server/', '' ),
 			'a path relative to the address' => array( 'server/', '' ),
 			'the same address, written out'  => array( 'HTTPS://analytics.example.com/collect/server/', '' ),
+			'the same address, its own port' => array( 'https://analytics.example.com:443/collect/server/', '' ),
 			'the same host on another port'  => array( 'https://analytics.example.com:8443/collect/server', 'https://analytics.example.com:8443' ),
 			'nowhere'                        => array( '', '' ),
 		);
+	}
+
+	/**
+	 * A failure to accept the address's certificate is told apart from no answer at all, since it
+	 * is put right somewhere else.
+	 */
+	public function test_a_certificate_not_accepted_is_told_apart(): void {
+		Functions\when( 'wp_remote_post' )->justReturn( new Fake_Wp_Error( 'cURL error 60: SSL certificate problem: unable to get local issuer certificate' ) );
+		self::assertTrue( $this->client()->send( array(), 3 )['certificate'] );
+
+		Functions\when( 'wp_remote_post' )->justReturn( new Fake_Wp_Error( self::FAILED ) );
+		self::assertFalse( $this->client()->send( array(), 3 )['certificate'] );
+	}
+
+	/**
+	 * Connecting is given the same bound as the whole report, which WordPress leaves at ten seconds
+	 * where PHP has no cURL; the bound is taken off again once the report has gone.
+	 */
+	public function test_connecting_is_bounded_as_the_whole_is(): void {
+		$bound = null;
+
+		Actions\expectAdded( 'requests-requests.before_request' )
+			->once()
+			->whenHappen(
+				static function ( $callback ) use ( &$bound ): void {
+					$bound = $callback;
+				}
+			);
+		Actions\expectRemoved( 'requests-requests.before_request' )->once();
+		Functions\when( 'wp_remote_post' )->justReturn( self::answer( 200, array( 'accepted' => 0 ) ) );
+
+		$this->client()->send( array(), 3 );
+
+		$url     = self::ADDRESS;
+		$headers = array();
+		$data    = '';
+		$type    = 'POST';
+		$options = array( 'connect_timeout' => 10 );
+
+		self::assertIsCallable( $bound );
+		$bound( $url, $headers, $data, $type, $options );
+		self::assertSame( 3, $options['connect_timeout'] );
 	}
 
 	/**
@@ -206,8 +250,27 @@ final class Collector_Client_Test extends Test_Case {
 	public function test_an_accepted_report_is_recorded(): void {
 		$this->record( 200, array( 'accepted' => 1 ) );
 
-		self::assertSame( 0, self::dig( $this->state, 'failures' ) ?? 0 );
-		self::assertSame( '', self::dig( $this->state, 'stopped' ) ?? '' );
+		self::assertSame( 0, self::dig( $this->state, 'failures' ) );
+		self::assertSame( '', self::dig( $this->state, 'stopped' ) );
+		self::assertGreaterThan( 0, self::dig( $this->state, 'sent_at' ) );
+	}
+
+	/**
+	 * A closed account answers that nothing is being kept, and covers no address: the reports
+	 * wait for the account, not for the address.
+	 */
+	public function test_a_closed_account_pauses_the_reports_as_not_measured(): void {
+		$this->record(
+			200,
+			array(
+				'accepted'  => 0,
+				'rejected'  => 1,
+				'hosts'     => array(),
+				'measuring' => false,
+			)
+		);
+
+		self::assertSame( Reporting_Status::NOT_MEASURING, self::dig( $this->state, 'pause' ) );
 	}
 
 	/**
@@ -246,6 +309,16 @@ final class Collector_Client_Test extends Test_Case {
 	}
 
 	/**
+	 * A redirect stops the reports with the address it suggests saving instead.
+	 */
+	public function test_a_redirect_is_kept_with_where_it_leads(): void {
+		$this->record( 301, array(), array( 'location' => 'https://analytics.example.org/collect/server' ) );
+
+		self::assertSame( Reporting_Status::REDIRECTED, self::dig( $this->state, 'stopped' ) );
+		self::assertSame( 'https://analytics.example.org', self::dig( $this->state, 'redirect' ) );
+	}
+
+	/**
 	 * The website's own identifier, however it is written, is this website.
 	 */
 	public function test_the_websites_own_identifier_in_capitals_is_this_website(): void {
@@ -278,7 +351,7 @@ final class Collector_Client_Test extends Test_Case {
 	 */
 	public function failures(): array {
 		return array(
-			'no answer'                  => array( self::FAILED ),
+			'no answer'                  => array( new Fake_Wp_Error( self::FAILED ) ),
 			'an error'                   => array( self::answer( 503, array() ) ),
 			'a refused batch'            => array( self::answer( 400, array() ) ),
 			'an answer that is no batch' => array( self::answer( 200, array( 'hello' => 'world' ) ) ),

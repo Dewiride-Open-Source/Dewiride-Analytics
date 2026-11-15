@@ -331,7 +331,7 @@ describe('the key that lets WordPress report robots too', () => {
     expect(screen.queryByRole('button', { name: 'Create a new key' })).not.toBeInTheDocument();
     expect(screen.getByText('Check connection')).toBeInTheDocument();
 
-    await acting.click(screen.getByRole('button', { name: 'Copy' }));
+    await acting.click(screen.getByRole('button', { name: 'Copy Server key' }));
 
     expect(writeText).toHaveBeenLastCalledWith(SECRET);
   });
@@ -346,25 +346,152 @@ describe('the key that lets WordPress report robots too', () => {
     ).not.toBeInTheDocument();
   });
 
-  /** Once a key exists, when it was last used is how somebody tells the plugin is reporting. */
-  it('says when the WordPress key was last used, by its ending', async () => {
+  /** Once a key exists, when it last connected says the plugin has reached Dewiride Analytics. */
+  it('says when the WordPress key last connected, by its ending', async () => {
     await showWordPress('editor', [{ ...WORDPRESS_KEY, lastUsedAt: '2026-11-14T09:30:00+00:00' }]);
 
     expect(
-      await screen.findByText('Your WordPress key, ending in wxyz, was last used on Nov 14, 2026.'),
+      await screen.findByText(
+        'Your WordPress key, ending in wxyz, last connected on Nov 14, 2026.',
+      ),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create a new key' })).toBeInTheDocument();
   });
 
-  it('says plainly when the WordPress key has not been used yet', async () => {
+  it('says plainly when the WordPress key has not connected yet', async () => {
     await showWordPress('editor', [
       WORDPRESS_KEY,
       { ...WORDPRESS_KEY, id: '0199c8f4-6c1e-7a3b-9d21-5f0b8e2a4c7a', name: 'Cloudflare' },
     ]);
 
     expect(
-      await screen.findByText("Your WordPress key, ending in wxyz, hasn't been used yet."),
+      await screen.findByText("Your WordPress key, ending in wxyz, hasn't connected yet."),
     ).toBeInTheDocument();
+  });
+
+  /** A key made and never pasted does not hide the one WordPress reports with. */
+  it('describes the WordPress key in use, not the newest one', async () => {
+    await showWordPress('editor', [
+      { ...WORDPRESS_KEY, lastUsedAt: '2026-11-15T09:30:00+00:00' },
+      {
+        ...WORDPRESS_KEY,
+        id: '0199c8f4-6c1e-7a3b-9d21-5f0b8e2a4c7b',
+        preview: 'newr',
+        createdAt: '2026-11-10T00:00:00+00:00',
+      },
+    ]);
+
+    expect(
+      await screen.findByText(
+        'Your WordPress key, ending in wxyz, last connected on Nov 15, 2026.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/ending in newr/)).not.toBeInTheDocument();
+  });
+
+  /** A viewer is not asked to request what already exists; the key's state is all there is to say. */
+  it('tells a viewer only how the existing key is doing', async () => {
+    await showWordPress('viewer', [{ ...WORDPRESS_KEY, lastUsedAt: '2026-11-14T09:30:00+00:00' }]);
+
+    expect(
+      await screen.findByText(
+        'Your WordPress key, ending in wxyz, last connected on Nov 14, 2026.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Ask an editor or the owner/)).not.toBeInTheDocument();
+  });
+
+  /** Until the keys have been read, nobody can tell whether one exists, so none is made yet. */
+  it('waits for the keys before offering to make one', async () => {
+    const someone = person();
+    let answer: (response: Response) => void = () => {};
+
+    engineDoing((_path, init) =>
+      init.method === 'POST'
+        ? Promise.resolve(respondWith(200, { key: WORDPRESS_KEY, secret: SECRET }))
+        : new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+    );
+    show();
+    await someone.acting.click(screen.getByRole('radio', { name: 'WordPress' }));
+
+    expect(screen.getByRole('button', { name: 'Create a key for WordPress' })).toBeDisabled();
+
+    answer(respondWith(200, []));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Create a key for WordPress' })).toBeEnabled(),
+    );
+  });
+
+  /** Keys that could not be read are not keys that do not exist, so no second one is offered. */
+  it('says when the keys could not be read, and offers no key until they can be', async () => {
+    const someone = person();
+
+    engineDoing(async () => respondWith(500, {}));
+    show();
+    await someone.acting.click(screen.getByRole('radio', { name: 'WordPress' }));
+
+    expect(await screen.findByText(/Something went wrong/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create a key for WordPress' })).toBeDisabled();
+  });
+
+  /** A refusal belongs to the attempt it answered, and goes with the panel. */
+  it('forgets a refusal once the panel has been closed', async () => {
+    const { acting } = person();
+
+    engineDoing(async (_path, init) =>
+      init.method === 'POST' ? respondWith(500, {}) : respondWith(200, []),
+    );
+    renderScreen(<Panel />);
+
+    await acting.click(screen.getByRole('button', { name: 'Open' }));
+    await acting.click(screen.getByRole('radio', { name: 'WordPress' }));
+    await acting.click(await screen.findByRole('button', { name: 'Create a key for WordPress' }));
+    expect(await screen.findByText(/Something went wrong/)).toBeInTheDocument();
+
+    await acting.click(screen.getByRole('button', { name: 'Close' }));
+    await acting.click(screen.getByRole('button', { name: 'Open' }));
+
+    expect(screen.queryByText(/Something went wrong/)).not.toBeInTheDocument();
+  });
+
+  /** Focus moves to a new key as it appears, and never again behind somebody's back. */
+  it('leaves focus where it is when the steps are chosen again', async () => {
+    const { acting } = await showWordPress();
+
+    await acting.click(await screen.findByRole('button', { name: 'Create a key for WordPress' }));
+    expect(await screen.findByText(SECRET)).toBeInTheDocument();
+
+    await acting.click(screen.getByRole('radio', { name: 'Any website' }));
+    await acting.click(screen.getByRole('radio', { name: 'WordPress' }));
+
+    expect(screen.getByRole('radio', { name: 'WordPress' })).toHaveFocus();
+  });
+
+  /** A key made for one website is never shown under another's steps. */
+  it('shows no key made for another website', async () => {
+    const { acting } = person();
+
+    engineWith();
+    const { rerender } = show();
+    await acting.click(screen.getByRole('radio', { name: 'WordPress' }));
+    await acting.click(await screen.findByRole('button', { name: 'Create a key for WordPress' }));
+    expect(await screen.findByText(SECRET)).toBeInTheDocument();
+
+    rerender(
+      <TrackingCode
+        open
+        onClose={() => {}}
+        siteId="0199c8f4-6c1e-7a3b-9d21-5f0b8e2a4c80"
+        siteDomain="example.org"
+        siteRole="editor"
+        timeZoneId="Etc/UTC"
+      />,
+    );
+
+    expect(screen.queryByText(SECRET)).not.toBeInTheDocument();
   });
 
   /** The secret goes with the panel, so opening it again cannot show a key already walked away from. */

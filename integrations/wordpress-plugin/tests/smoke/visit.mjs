@@ -11,8 +11,9 @@
 // `named` asserts a page sent under a name in its Server-Timing header and one report carrying that
 // name; `reported` one report and no name; `ignored` no report and no name. Every batch must come
 // with the key and name the plugin, and every report must hold the page's address without its query
-// and the status the page was answered with. Prints `ok` when every assertion holds, and otherwise
-// one line for each that failed.
+// and the status the page was answered with. A timing in SMOKE_KEEPS must still be in the page's
+// Server-Timing header. Prints `ok` when every assertion holds, and otherwise one line for each
+// that failed.
 
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -62,6 +63,16 @@ function nameIn(timing) {
 }
 
 /**
+ * Each timing a Server-Timing header holds, as written.
+ *
+ * @param {string | null} timing
+ * @returns {string[]}
+ */
+function timingsIn(timing) {
+  return (timing ?? '').split(',').map((entry) => entry.trim());
+}
+
+/**
  * What failed of what was expected of the request.
  *
  * @param {Response} response
@@ -99,6 +110,12 @@ function failuresOf(response, batches) {
     failures.push(
       name === '' ? 'the page was sent without a name' : 'the page was sent under a name',
     );
+  }
+
+  const keeps = setting('SMOKE_KEEPS');
+
+  if (keeps !== '' && !timingsIn(response.headers.get('server-timing')).includes(keeps)) {
+    failures.push(`the page lost the timing "${keeps}"`);
   }
 
   if (reports.length !== (expect === 'ignored' ? 0 : 1)) {

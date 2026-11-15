@@ -10,6 +10,7 @@ namespace Dewiride\Analytics\WordPress\Tests\Unit;
 use Brain\Monkey\Functions;
 use Dewiride\Analytics\WordPress\Audience;
 use Dewiride\Analytics\WordPress\Cloudflare_Ranges;
+use Dewiride\Analytics\WordPress\Own_Request;
 use Dewiride\Analytics\WordPress\Request_Report;
 use Dewiride\Analytics\WordPress\Settings;
 use Dewiride\Analytics\WordPress\Visitor_Address;
@@ -56,6 +57,13 @@ final class Request_Report_Test extends Test_Case {
 	private $settings = array();
 
 	/**
+	 * The plugin's other options in each test, by name.
+	 *
+	 * @var array<string, mixed>
+	 */
+	private $options_given = array();
+
+	/**
 	 * Starts each test on a page a crawler asked for, answered by WordPress.
 	 */
 	protected function setUp(): void {
@@ -67,12 +75,12 @@ final class Request_Report_Test extends Test_Case {
 						'address' => self::ADDRESS,
 						'site_id' => self::SITE_ID,
 					)
-					: false;
+					: $this->options_given[ $option ] ?? false;
 			}
 		);
 		Functions\when( 'did_action' )->alias(
 			function ( string $action ): int {
-				return $this->actions[ $action ] ?? 0;
+				return $this->actions[ $action ] ?? ( 'sanitize_comment_cookies' === $action ? 1 : 0 );
 			}
 		);
 		Functions\when( 'doing_action' )->justReturn( false );
@@ -162,15 +170,38 @@ final class Request_Report_Test extends Test_Case {
 	}
 
 	/**
-	 * The REST API is not reported.
+	 * The REST API at its own addresses is not reported, answered or refused.
 	 *
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
 	public function test_the_rest_api_is_not_reported(): void {
 		define( 'REST_REQUEST', true ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- WordPress's own constant, defined as WordPress defines it.
+		$this->actions = array();
+		$this->given_visit( array( 'REQUEST_URI' => '/wp-json/wp/v2/users/me' ) );
 
-		self::assertNull( $this->observe( 200 ) );
+		self::assertNull( $this->observe( 200, self::JSON ) );
+		self::assertNull( $this->observe( 401, self::JSON ) );
+	}
+
+	/**
+	 * On a site in a folder of its host, the REST API's own addresses are found in that folder.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_the_rest_api_of_a_site_in_a_folder_is_not_reported(): void {
+		define( 'REST_REQUEST', true ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- WordPress's own constant, defined as WordPress defines it.
+		Functions\when( 'home_url' )->justReturn( 'https://example.com/blog' );
+		$this->actions = array();
+
+		foreach ( array( '/blog/wp-json/wp/v2/posts', '/blog/?rest_route=/x', '/blog/index.php?rest_route=/x' ) as $own ) {
+			$this->given_visit( array( 'REQUEST_URI' => $own ) );
+			self::assertNull( $this->observe( 404, self::JSON ), $own );
+		}
+
+		$this->given_visit( array( 'REQUEST_URI' => '/blog/.env?rest_route=/x' ) );
+		self::assertNotNull( $this->observe( 404, self::JSON ), 'a probe with a REST query' );
 	}
 
 	/**
@@ -223,6 +254,8 @@ final class Request_Report_Test extends Test_Case {
 			'a prefetch'                   => array( array( 'HTTP_SEC_PURPOSE' => 'prefetch' ) ),
 			'a prerender'                  => array( array( 'HTTP_SEC_PURPOSE' => 'prefetch;prerender' ) ),
 			'an older browser\'s prefetch' => array( array( 'HTTP_PURPOSE' => 'prefetch' ) ),
+			'a proxy\'s prefetch'          => array( array( 'HTTP_X_PURPOSE' => 'preview' ) ),
+			'Firefox\'s old prefetch'      => array( array( 'HTTP_X_MOZ' => 'prefetch' ) ),
 			'a request for an image'       => array( array( 'HTTP_SEC_FETCH_DEST' => 'image' ) ),
 			'this plugin'                  => array( array( 'HTTP_USER_AGENT' => 'DewirideAnalytics/1.1.0' ) ),
 			'WordPress fetching this site' => array( array( 'HTTP_USER_AGENT' => 'WordPress/7.1.4; https://example.com' ) ),
@@ -241,6 +274,8 @@ final class Request_Report_Test extends Test_Case {
 		$this->given_visit( $headers + array( 'REQUEST_URI' => '/.env' ) );
 
 		self::assertNull( $this->observe( 200 ) );
+		self::assertNull( $this->observe( 399 ), 'the last status below a refusal' );
+		self::assertNotNull( $this->observe( 400 ), 'the first refusal' );
 		self::assertNotNull( $this->observe( 404 ) );
 	}
 
@@ -377,7 +412,7 @@ final class Request_Report_Test extends Test_Case {
 		$this->given_visit();
 		self::assertNull( $this->observe( 200, '', '', array( self::VISITOR ) ), 'where its reports come from' );
 
-		$this->given_visit( array( 'HTTP_X_DEWIRIDE_ANALYTICS_OWN' => \Dewiride\Analytics\WordPress\Own_Request::marker() ) );
+		$this->given_visit( array( 'HTTP_X_DEWIRIDE_ANALYTICS_OWN' => Own_Request::marker( 'https://example.com/posts/hello/' ) ) );
 		self::assertNull( $this->observe( 500 ), 'the plugin\'s own request' );
 	}
 
@@ -602,22 +637,190 @@ final class Request_Report_Test extends Test_Case {
 	}
 
 	/**
+	 * A request a security plugin refused before WordPress parsed it — while plugins were still
+	 * loading — is reported as the page it asked for, as it was sent; one it let through, which
+	 * never reached WordPress's front end, is not.
+	 */
+	public function test_a_request_refused_before_it_was_parsed_is_reported(): void {
+		$this->actions = array( 'sanitize_comment_cookies' => 0 );
+		$this->given_visit(
+			array(
+				'REQUEST_URI'     => '/?id=1%27%20UNION%20SELECT%201',
+				'QUERY_STRING'    => 'id=1%27%20UNION%20SELECT%201',
+				'HTTP_USER_AGENT' => 'sqlmap/1.8 (https://sqlmap.org) \\ probe',
+			),
+			false
+		);
+
+		$observation = $this->observe( 403 );
+
+		self::assertNotNull( $observation );
+		self::assertSame( 'https://example.com/', $observation['url'] );
+		self::assertSame( 403, $observation['statusCode'] );
+		self::assertSame( 'sqlmap/1.8 (https://sqlmap.org) \\ probe', $observation['userAgent'] );
+		self::assertNull( $this->observe( 200 ) );
+	}
+
+	/**
+	 * Refused before it was parsed, a request to the REST API's own address stays out, as it does
+	 * once parsed; a REST query added to any other address is a probe like any other.
+	 */
+	public function test_the_rest_api_refused_before_it_was_parsed_is_not_reported(): void {
+		$this->actions = array();
+
+		$this->given_visit(
+			array(
+				'REQUEST_URI'  => '/wp-json/wp/v2/users',
+				'QUERY_STRING' => '',
+			)
+		);
+		self::assertNull( $this->observe( 403 ), 'the REST API under its prefix' );
+
+		$this->given_visit(
+			array(
+				'REQUEST_URI'  => '/?rest_route=/wp/v2/users',
+				'QUERY_STRING' => 'rest_route=/wp/v2/users',
+			)
+		);
+		self::assertNull( $this->observe( 403 ), 'the REST API by its query' );
+
+		$this->given_visit(
+			array(
+				'REQUEST_URI'  => '/.env?rest_route=/',
+				'QUERY_STRING' => 'rest_route=/',
+			)
+		);
+		self::assertNotNull( $this->observe( 403 ), 'a probe with a REST query' );
+	}
+
+	/**
+	 * Refused before WordPress reached its sign-in page — a plugin hiding that page answers it with
+	 * a 404 — a request for it follows the sign-in attempts setting.
+	 */
+	public function test_the_sign_in_page_refused_before_it_was_parsed_follows_its_setting(): void {
+		$this->actions      = array();
+		$GLOBALS['pagenow'] = 'wp-login.php'; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- WordPress's own record of the script asked for, set as WordPress sets it.
+		$this->given_visit(
+			array(
+				'REQUEST_URI'  => '/wp-login.php',
+				'QUERY_STRING' => '',
+			)
+		);
+
+		self::assertNull( $this->observe( 404 ) );
+
+		$this->settings = array( 'report_sign_in' => true );
+
+		self::assertNotNull( $this->observe( 404 ) );
+
+		unset( $GLOBALS['pagenow'] );
+	}
+
+	/**
+	 * Signing out leaves nobody signed in by the end of the request, and is not a sign-in attempt.
+	 */
+	public function test_signing_out_is_not_a_sign_in_attempt(): void {
+		$this->settings = array( 'report_sign_in' => true );
+		$this->actions  = array(
+			'login_init' => 1,
+			'wp_logout'  => 1,
+		);
+		$this->given_visit( array( 'REQUEST_URI' => '/wp-login.php?action=logout' ) );
+
+		self::assertNull( $this->observe( 302 ) );
+	}
+
+	/**
+	 * A user name and password written into the page somebody came from are never sent.
+	 */
+	public function test_a_referrer_is_sent_without_a_user_name_or_password(): void {
+		$this->given_visit( array( 'HTTP_REFERER' => 'https://alice:s3cret@staging.example.com:8443/reports/q3?x=1' ) );
+
+		self::assertSame( 'https://staging.example.com:8443/reports/q3', self::dig( $this->observe( 200 ), 'referrer' ) );
+	}
+
+	/**
+	 * On a site served over http, browsers say nothing of where a request goes, and are known by
+	 * asking for https instead: a browser redirected there is left to the page it lands on.
+	 */
+	public function test_a_browser_redirected_on_an_http_site_is_left_out(): void {
+		$this->given_visit(
+			array(
+				'HTTP_USER_AGENT'                => self::BROWSER,
+				'HTTP_UPGRADE_INSECURE_REQUESTS' => '1',
+			)
+		);
+
+		self::assertNull( $this->observe( 301 ) );
+		self::assertNotNull( $this->observe( 200 ) );
+	}
+
+	/**
+	 * A probe sent through another Cloudflare customer's zone is reported when it was refused,
+	 * without the address it claimed, and left out when it was answered.
+	 */
+	public function test_a_refusal_through_another_cloudflare_zone_is_reported_without_an_address(): void {
+		$this->options_given[ Cloudflare_Ranges::OPTION ] = array( 'ranges' => array( '173.245.48.0/20' ) );
+		$this->given_visit(
+			array(
+				'REMOTE_ADDR'           => '173.245.48.20',
+				'HTTP_HOST'             => 'attacker.example',
+				'HTTP_CF_CONNECTING_IP' => '66.249.66.1',
+				'REQUEST_URI'           => '/.env',
+			)
+		);
+
+		self::assertNull( $this->observe( 200 ) );
+
+		$observation = $this->observe( 404 );
+
+		self::assertNotNull( $observation );
+		self::assertArrayNotHasKey( 'ipAddress', $observation );
+	}
+
+	/**
+	 * When the request arrived is sent in milliseconds since 1970.
+	 */
+	public function test_when_the_request_arrived_is_sent_in_milliseconds(): void {
+		self::assertSame( 1763200000250, self::dig( $this->observe( 200 ), 'observedAt' ) );
+	}
+
+	/**
+	 * A browser on the site's own address is not reported, so its page is not named either.
+	 */
+	public function test_a_browser_on_the_sites_own_address_is_not_named(): void {
+		$this->given_visit(
+			array(
+				'SERVER_ADDR'         => self::VISITOR,
+				'HTTP_USER_AGENT'     => self::BROWSER,
+				'HTTP_SEC_FETCH_DEST' => 'document',
+			)
+		);
+
+		self::assertFalse( $this->report()->is_nameable( array() ) );
+	}
+
+	/**
 	 * Makes the request a crawler's, with what the test changes.
 	 *
 	 * @param array<string, mixed> $changes What differs from the crawler's request.
+	 * @param bool                 $slashed Whether WordPress has slashed it yet, which it has not
+	 *                                      for a request refused while plugins load.
 	 */
-	private function given_visit( array $changes = array() ): void {
+	private function given_visit( array $changes = array(), bool $slashed = true ): void {
 		$this->given_request(
 			$changes + array(
 				'REMOTE_ADDR'          => self::VISITOR,
 				'SERVER_ADDR'          => '198.51.100.20',
 				'REQUEST_METHOD'       => 'GET',
 				'REQUEST_URI'          => '/posts/hello/?utm_source=mail',
+				'QUERY_STRING'         => 'utm_source=mail',
 				'HTTP_USER_AGENT'      => self::CRAWLER,
 				'HTTP_REFERER'         => 'https://news.example/front?id=7#comments',
 				'HTTP_ACCEPT_LANGUAGE' => 'en-GB,en;q=0.9',
 				'REQUEST_TIME_FLOAT'   => 1763200000.25,
-			)
+			),
+			$slashed
 		);
 	}
 

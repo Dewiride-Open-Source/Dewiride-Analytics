@@ -171,6 +171,22 @@ final class Visitor_Address_Test extends Test_Case {
 	}
 
 	/**
+	 * A site at www. is reached through Cloudflare by its name without www. too.
+	 */
+	public function test_cloudflare_names_the_visitor_for_a_www_sites_bare_name(): void {
+		Functions\when( 'home_url' )->justReturn( 'https://www.example.com' );
+		$this->given_request(
+			array(
+				'REMOTE_ADDR'           => self::CLOUDFLARE,
+				'HTTP_HOST'             => 'example.com',
+				'HTTP_CF_CONNECTING_IP' => self::VISITOR,
+			)
+		);
+
+		self::assertSame( $this->found( self::VISITOR ), $this->resolve() );
+	}
+
+	/**
 	 * A request through Cloudflare for somebody else's name could have been written by another
 	 * Cloudflare customer, and nothing is sent.
 	 */
@@ -290,11 +306,30 @@ final class Visitor_Address_Test extends Test_Case {
 		$this->given_request(
 			array(
 				'REMOTE_ADDR'          => self::PROXY,
-				'HTTP_X_FORWARDED_FOR' => str_repeat( '1', 2034 ) . ', 66.249.66.1, ' . self::VISITOR,
+				'HTTP_X_FORWARDED_FOR' => str_repeat( '1', 9000 ) . ', 66.249.66.1, ' . self::VISITOR . ', 10.0.0.9',
 			)
 		);
 
 		self::assertSame( $this->found( self::VISITOR ), $this->resolve() );
+	}
+
+	/**
+	 * However much of a `Forwarded` header a visitor fills, it is read once, and the element the
+	 * proxy added is the one believed.
+	 */
+	public function test_a_forwarded_header_filled_by_a_visitor_is_read_once(): void {
+		$this->given_proxy( 'Forwarded', array( '10.0.0.0/8' ) );
+		$this->given_request(
+			array(
+				'REMOTE_ADDR'    => self::PROXY,
+				'HTTP_FORWARDED' => str_repeat( 'for=a' . str_repeat( ' ', 1000 ) . 'x,', 8 ) . ' For = "[2606:4700::1111]:443";proto=https',
+			)
+		);
+
+		$started = microtime( true );
+
+		self::assertSame( $this->found( '2606:4700::1111' ), $this->resolve() );
+		self::assertLessThan( 0.5, microtime( true ) - $started );
 	}
 
 	/**

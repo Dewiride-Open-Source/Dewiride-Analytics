@@ -42,4 +42,5 @@ require_once dirname( __DIR__ ) . '/includes/class-settings-page.php';
 require_once dirname( __DIR__ ) . '/includes/class-plugin.php';
 require_once __DIR__ . '/Unit/class-fake-roles.php';
 require_once __DIR__ . '/Unit/class-fake-database.php';
+require_once __DIR__ . '/Unit/class-fake-wp-error.php';
 require_once __DIR__ . '/Unit/class-test-case.php';

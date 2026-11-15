@@ -35,6 +35,12 @@ type Route = 'any' | 'wordpress';
  */
 const WORDPRESS_KEY_NAME = 'WordPress';
 
+/** A key created in the steps, with the website it was created for. */
+interface Issued {
+  readonly siteId: string;
+  readonly secret: string;
+}
+
 /**
  * Everything somebody needs to start counting a website, for whatever it is built with.
  *
@@ -52,9 +58,17 @@ export function TrackingCode({
 }: TrackingCodeProps) {
   const t = useTranslations('install');
   const [route, setRoute] = useState<Route>('any');
-  const [issued, setIssued] = useState<string | null>(null);
+  const [issued, setIssued] = useState<Issued | null>(null);
   const creating = useCreateServerKey(siteId);
+  const { reset } = creating;
   const origin = useDashboardOrigin();
+
+  // The website these steps are for can change while they are open — chosen in another tab — and
+  // a refusal of an attempt for the website before says nothing about this one. A key created for
+  // it is not shown under another website's steps either.
+  useEffect(() => {
+    reset();
+  }, [siteId, reset]);
 
   /**
    * Closes the panel, taking the one secret it may hold with it, and any refusal of an attempt to
@@ -97,8 +111,8 @@ export function TrackingCode({
               siteRole={siteRole}
               timeZoneId={timeZoneId}
               creating={creating}
-              issued={issued}
-              onIssued={setIssued}
+              issued={issued?.siteId === siteId ? issued.secret : null}
+              onIssued={(secret) => setIssued({ siteId, secret })}
             />
           </WordPress>
         )}
@@ -245,10 +259,11 @@ interface RobotsStepProps {
  *
  * The key is named for what uses it, and its secret is shown once, as on the server keys panel.
  * Somebody who may only view the website is told who can make one rather than shown a button that
- * would be refused. Once a key for WordPress exists, when it was last used is how somebody tells
- * the plugin is reporting — the dashboard has no other way to know. Until the keys have been read,
- * the button waits, so that a key that already exists is not made again by somebody who could not
- * see it yet. A new key takes focus as it appears, in place of the button that made it.
+ * would be refused, unless one already exists. Once a key for WordPress exists, when it last
+ * connected says the plugin has reached Dewiride Analytics with it; whether it is reporting is for
+ * the plugin's own settings page to say. Until the keys have been read, the button waits, so that
+ * a key that already exists is not made again by somebody who could not see it yet. A new key
+ * takes focus as it appears, in place of the button that made it, and only then.
  */
 function RobotsStep({
   open,
@@ -264,11 +279,13 @@ function RobotsStep({
   const format = useFormatter();
   const keys = useServerKeys(siteId, open);
   const issuedArea = useRef<HTMLDivElement>(null);
-  const latest = latestNamed(keys.data, WORDPRESS_KEY_NAME);
-  const label = latest ? t('another') : t('create');
+  const arrived = useRef(false);
+  const current = currentNamed(keys.data, WORDPRESS_KEY_NAME);
+  const label = current ? t('another') : t('create');
 
   useEffect(() => {
-    if (issued) {
+    if (issued && arrived.current) {
+      arrived.current = false;
       issuedArea.current?.focus();
     }
   }, [issued]);
@@ -278,54 +295,67 @@ function RobotsStep({
    * screen through the notice below.
    */
   function create() {
-    creating.mutate(WORDPRESS_KEY_NAME, { onSuccess: (created) => onIssued(created.secret) });
+    creating.mutate(WORDPRESS_KEY_NAME, {
+      onSuccess: (created) => {
+        arrived.current = true;
+        onIssued(created.secret);
+      },
+    });
+  }
+
+  /*
+    While a new secret is on the screen, copying it is the one thing left to do, so the button
+    that would make another is put away until the panel is opened again.
+  */
+  let action: ReactNode = null;
+
+  if (siteRole === 'viewer') {
+    action = current ? null : (
+      <p className="text-sm text-foreground-muted">{t('viewer', { site: siteDomain })}</p>
+    );
+  } else if (!issued) {
+    action = (
+      <div>
+        <Button
+          tone={current ? 'secondary' : 'primary'}
+          busy={creating.isPending}
+          disabled={!keys.isSuccess}
+          onClick={create}
+          className="w-full sm:w-auto"
+        >
+          {creating.isPending ? t('creating') : label}
+        </Button>
+      </div>
+    );
   }
 
   return (
     <Step number={5} title={t('title')}>
       <p className="text-sm text-foreground-muted">{t('body')}</p>
 
-      {/*
-        While a new secret is on the screen, copying it is the one thing left to do, so the button
-        that would make another is put away until the panel is opened again.
-      */}
-      {siteRole === 'viewer' ? (
-        <p className="text-sm text-foreground-muted">{t('viewer', { site: siteDomain })}</p>
-      ) : issued ? null : (
-        <div>
-          <Button
-            tone={latest ? 'secondary' : 'primary'}
-            busy={creating.isPending}
-            disabled={keys.isPending}
-            onClick={create}
-            className="w-full sm:w-auto"
-          >
-            {creating.isPending ? t('creating') : label}
-          </Button>
-        </div>
-      )}
+      {action}
 
       {keys.isError ? <FailureNotice error={keys.error} /> : null}
       {creating.isError ? <FailureNotice error={creating.error} /> : null}
 
       {issued ? (
         <div ref={issuedArea} tabIndex={-1} className="flex flex-col gap-3 outline-none">
-          <IssuedKey secret={issued} />
+          <IssuedKey secret={issued} what={t('key')} />
           <p className="text-sm text-foreground-muted">{t.rich('paste', { ui: interfaceLabel })}</p>
         </div>
       ) : null}
 
-      {latest && !issued ? (
+      {current && !issued ? (
         <p className="text-sm text-foreground-muted">
-          {latest.lastUsedAt
+          {current.lastUsedAt
             ? t('lastUsed', {
-                preview: latest.preview,
-                date: format.dateTime(new Date(latest.lastUsedAt), {
+                preview: current.preview,
+                date: format.dateTime(new Date(current.lastUsedAt), {
                   dateStyle: 'medium',
                   timeZone: timeZoneId,
                 }),
               })
-            : t('neverUsed', { preview: latest.preview })}
+            : t('neverUsed', { preview: current.preview })}
         </p>
       ) : null}
     </Step>
@@ -333,18 +363,34 @@ function RobotsStep({
 }
 
 /**
- * The most recently created of a website's keys with a name, or nothing when it has none.
+ * The key with a name that is in use: of a website's keys with that name, the one used most
+ * recently, or the newest when none has been used, so that a key made and never pasted anywhere
+ * does not hide the one WordPress reports with. Nothing when the website has none by that name.
  *
  * @param keys The website's keys, when they have been read.
  * @param name The name.
  */
-function latestNamed(keys: readonly ServerKey[] | undefined, name: string): ServerKey | undefined {
+function currentNamed(keys: readonly ServerKey[] | undefined, name: string): ServerKey | undefined {
   return keys
     ?.filter((key) => key.name === name)
     .reduce<ServerKey | undefined>(
-      (latest, key) => (latest && latest.createdAt >= key.createdAt ? latest : key),
+      (current, key) => (current && !isMoreCurrent(key, current) ? current : key),
       undefined,
     );
+}
+
+/**
+ * Whether a key was used more recently than another, or, used at the same moment or neither used,
+ * created later.
+ *
+ * @param key The key.
+ * @param than The other key.
+ */
+function isMoreCurrent(key: ServerKey, than: ServerKey): boolean {
+  const used = key.lastUsedAt ?? '';
+  const thanUsed = than.lastUsedAt ?? '';
+
+  return used === thanUsed ? key.createdAt > than.createdAt : used > thanUsed;
 }
 
 /**

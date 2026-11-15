@@ -1228,8 +1228,9 @@
         "creating": "Creating",
         "paste": "In WordPress, paste it into <ui>Server key</ui> under <ui>Settings</ui>, <ui>Dewiride Analytics</ui>, press <ui>Save Changes</ui>, then <ui>Check connection</ui>.",
         "viewer": "Ask an editor or the owner of {site} to create a key for WordPress.",
-        "neverUsed": "Your WordPress key, ending in {preview}, hasn't been used yet.",
-        "lastUsed": "Your WordPress key, ending in {preview}, was last used on {date}."
+        "neverUsed": "Your WordPress key, ending in {preview}, hasn't connected yet.",
+        "lastUsed": "Your WordPress key, ending in {preview}, last connected on {date}.",
+        "key": "Server key"
       },
       "next": "Traffic starts appearing here as soon as somebody visits. People signed in to WordPress aren't counted unless you choose to count them in the plugin's settings.",
       "update": "To update the plugin later, download it again and upload it the same way, then press <ui>Replace current with uploaded</ui>."
@@ -1263,7 +1264,8 @@
       "no": "Keep"
     },
     "close": "Close",
-    "ending": "Ends in {preview}"
+    "ending": "Ends in {preview}",
+    "viewer": "Ask an editor or the owner of {site} to create or remove keys."
   },
   "siteSettings": {
     "action": "Settings",

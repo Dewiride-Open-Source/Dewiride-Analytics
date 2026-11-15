@@ -23,17 +23,23 @@ everything else that never runs the tag.
 
 - Each request worth reporting is sent once it has been answered: pages, feeds, robots.txt and
   sitemaps, and — when chosen — sign-in attempts and XML-RPC. Never the dashboard, the REST API,
-  WP-CLI, cron, people signed in (unless their role is counted), a successful sign-in, a browser
-  signing in, or the site's own requests. A visitor's headers (prefetch, `Sec-Fetch-Dest`,
-  `HEAD`, the site's own user agents) leave a request out only when it was answered below 400;
-  from 400 up, neither its method, the feeds switch, a REST query on another address nor a query
-  asking for a preview, an embed or an AMP copy does — only who is signed in.
-- A browser navigating to a page gets a `Server-Timing: dw;desc="…"` name, matched to the
-  browser's own report — only once the installation has named the website in an answer, which is
-  how an installation that reads names safely (ADR 0073) shows itself.
+  WP-CLI, cron, people signed in (unless their role is counted), a successful sign-in, signing
+  out, a browser signing in, or the site's own requests. A visitor's headers (prefetch,
+  `Sec-Fetch-Dest`, `HEAD`, the site's own user agents) leave a request out only when it was
+  answered below 400; from 400 up, neither its method, the feeds switch, a REST query on another
+  address nor a query asking for a preview, an embed or an AMP copy does — only who is signed in,
+  and a request for a page's own file (a script, a stylesheet, a source map, an image, a font, an
+  icon, a web manifest) whose `Sec-Fetch-Dest` is not `document`. A request a firewall refuses
+  before WordPress parses it is reported as a page, or a sign-in on `wp-login.php`, unless its
+  address is the REST API's.
+- A browser navigating to a page gets a `Server-Timing: dw;desc="…"` name at `wp`, matched to the
+  browser's own report — only while the installation's answers name the website, which is how an
+  installation that reads names safely (ADR 0073) shows itself.
 - The report is sent at `shutdown` after `fastcgi_finish_request()` or
   `litespeed_finish_request()`; where neither exists, reporting is off unless the second switch
-  accepts that every robot's page is held open for it.
+  accepts that every reported page, readers' as well as robots', is held open for it. While reports
+  are sent, the request is told to outlive a visitor who hangs up from the very start of
+  `shutdown`, before any page held back is written out.
 - Failures are waited out (30 s doubling to 15 minutes, one request trying again after each
   wait); 429 is waited out for its `Retry-After`; a website not being measured, or one that does
   not cover the site's host, is asked again after 15 minutes; a refused key, a redirect, another

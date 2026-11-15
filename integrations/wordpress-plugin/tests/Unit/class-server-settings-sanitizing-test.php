@@ -197,6 +197,20 @@ final class Server_Settings_Sanitizing_Test extends Test_Case {
 					'proxy_trusted' => '2000::/3',
 				),
 			),
+			'more proxies than any site has'   => array(
+				array(
+					'proxy_mode'    => Settings::THROUGH_PROXY,
+					'proxy_trusted' => implode(
+						"\n",
+						array_map(
+							static function ( int $last ): string {
+								return '10.0.0.' . $last;
+							},
+							range( 1, 51 )
+						)
+					),
+				),
+			),
 			'a header that is not a name'      => array(
 				array(
 					'proxy_mode'    => Settings::THROUGH_PROXY,

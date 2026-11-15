@@ -64,6 +64,7 @@ function show(existing: readonly unknown[] = []) {
       onClose={() => {}}
       siteId={SITE}
       siteDomain="example.com"
+      siteRole="editor"
       timeZoneId="Etc/UTC"
     />,
   );
@@ -85,6 +86,7 @@ function Panel() {
         onClose={() => setOpen(false)}
         siteId={SITE}
         siteDomain="example.com"
+        siteRole="editor"
         timeZoneId="Etc/UTC"
       />
     </>
@@ -144,6 +146,7 @@ describe('the keys a website’s own server reports with', () => {
         onClose={() => {}}
         siteId={SITE}
         siteDomain="example.com"
+        siteRole="editor"
         timeZoneId="Asia/Kolkata"
       />,
     );
@@ -161,6 +164,7 @@ describe('the keys a website’s own server reports with', () => {
         onClose={() => {}}
         siteId={SITE}
         siteDomain="example.com"
+        siteRole="editor"
         timeZoneId="Etc/UTC"
       />,
     );
@@ -181,6 +185,7 @@ describe('the keys a website’s own server reports with', () => {
         onClose={() => {}}
         siteId={SITE}
         siteDomain="example.com"
+        siteRole="editor"
         timeZoneId="Etc/UTC"
       />,
     );
@@ -322,6 +327,7 @@ describe('the keys a website’s own server reports with', () => {
         onClose={() => {}}
         siteId={SITE}
         siteDomain="example.com"
+        siteRole="editor"
         timeZoneId="Etc/UTC"
       />,
     );
@@ -330,6 +336,31 @@ describe('the keys a website’s own server reports with', () => {
     await acting.click(screen.getByRole('button', { name: 'Create key' }));
 
     expect(await screen.findByRole('alert')).toBeInTheDocument();
+  });
+
+  /**
+   * Somebody who may only view the website sees its keys and is told who can change them, rather
+   * than being offered buttons the engine would refuse.
+   */
+  it('offers a viewer neither creating nor removing a key', async () => {
+    engineWith([EXISTING]);
+
+    renderScreen(
+      <ServerKeys
+        open
+        onClose={() => {}}
+        siteId={SITE}
+        siteDomain="example.com"
+        siteRole="viewer"
+        timeZoneId="Etc/UTC"
+      />,
+    );
+
+    expect(await screen.findByText('Cloudflare')).toBeInTheDocument();
+    expect(screen.getByText(/Ask an editor or the owner of example\.com/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('What will use this key?')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create key' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument();
   });
 });
 

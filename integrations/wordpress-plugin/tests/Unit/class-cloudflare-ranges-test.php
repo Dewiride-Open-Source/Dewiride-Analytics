@@ -86,6 +86,8 @@ final class Cloudflare_Ranges_Test extends Test_Case {
 			'a range that is not text'       => array( self::with_ipv4( 7 ) ),
 			'every IPv4 address'             => array( self::with_ipv4( '0.0.0.0/0' ) ),
 			'a quarter of the IPv4 internet' => array( self::with_ipv4( '64.0.0.0/2' ) ),
+			'an IPv4 range wider than /10'   => array( self::with_ipv4( '64.0.0.0/9' ) ),
+			'an IPv6 range wider than /20'   => array( self::with_ipv6( '2400::/19' ) ),
 			'far too many ranges'            => array( self::with_ipv4( ...array_fill( 0, 101, '173.245.48.0/20' ) ) ),
 		);
 	}
@@ -99,6 +101,31 @@ final class Cloudflare_Ranges_Test extends Test_Case {
 	 */
 	public function test_an_answer_that_is_not_the_list_is_refused( $answer ): void {
 		self::assertNull( Cloudflare_Ranges::read( $answer ) );
+	}
+
+	/**
+	 * Lists at the edge of what is believed, which are Cloudflare's.
+	 *
+	 * @return array<string, array{array<string, mixed>}>
+	 */
+	public function lists_at_the_edge(): array {
+		return array(
+			'an IPv4 range of /10'   => array( self::with_ipv4( '64.0.0.0/10' ) ),
+			'an IPv6 range of /20'   => array( self::with_ipv6( '2400::/20' ) ),
+			'a hundred ranges'       => array( self::with_ipv4( ...array_fill( 0, 98, '173.245.48.0/20' ) ) ),
+			'a single address range' => array( self::with_ipv4( '173.245.48.7/32' ) ),
+		);
+	}
+
+	/**
+	 * A list at the edge of what is believed is read.
+	 *
+	 * @dataProvider lists_at_the_edge
+	 *
+	 * @param array<string, mixed> $answer The answer.
+	 */
+	public function test_a_list_at_the_edge_is_read( array $answer ): void {
+		self::assertNotNull( Cloudflare_Ranges::read( $answer ) );
 	}
 
 	/**
@@ -199,6 +226,19 @@ final class Cloudflare_Ranges_Test extends Test_Case {
 	private static function with_ipv4( ...$ranges ): array {
 		$answer                         = self::ANSWER;
 		$answer['result']['ipv4_cidrs'] = $ranges;
+
+		return $answer;
+	}
+
+	/**
+	 * Cloudflare's answer with other IPv6 ranges.
+	 *
+	 * @param mixed ...$ranges The IPv6 ranges.
+	 * @return array<string, mixed>
+	 */
+	private static function with_ipv6( ...$ranges ): array {
+		$answer                         = self::ANSWER;
+		$answer['result']['ipv6_cidrs'] = $ranges;
 
 		return $answer;
 	}

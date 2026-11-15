@@ -160,7 +160,7 @@ final class Tag_Check_Test extends Test_Case {
 					'timeout'     => 10,
 					'redirection' => 0,
 					'user-agent'  => 'DewirideAnalytics/' . DEWIRIDE_ANALYTICS_VERSION,
-					'headers'     => array( Own_Request::HEADER => Own_Request::marker() ),
+					'headers'     => array( Own_Request::HEADER => Own_Request::marker( self::HOME_PAGE ) ),
 				)
 			)
 			->andReturn( self::FAILED );
@@ -430,6 +430,42 @@ final class Tag_Check_Test extends Test_Case {
 				)
 			)
 		);
+	}
+
+	/**
+	 * Outcomes, and whether each keeps the tag from readers.
+	 *
+	 * @return array<string, array{string|null, bool}>
+	 */
+	public function holding_back(): array {
+		return array(
+			'never checked'           => array( null, false ),
+			'intact'                  => array( Tag_Check::INTACT, false ),
+			'loaded more than once'   => array( Tag_Check::DUPLICATE, false ),
+			'home page out of reach'  => array( Tag_Check::UNREACHABLE, false ),
+			'missing'                 => array( Tag_Check::MISSING, true ),
+			'altered'                 => array( Tag_Check::ALTERED, true ),
+			'refused by the browsers' => array( Tag_Check::INSECURE, true ),
+		);
+	}
+
+	/**
+	 * Only a tag readers cannot run pauses the server's reports: a page that could not be fetched
+	 * says nothing about the tag, and a second copy still runs once.
+	 *
+	 * @dataProvider holding_back
+	 *
+	 * @param string|null $outcome    The outcome, or nothing when none has run.
+	 * @param bool        $holds_back Whether it keeps the tag from readers.
+	 */
+	public function test_only_a_tag_readers_cannot_run_holds_reports_back( ?string $outcome, bool $holds_back ): void {
+		$result = null === $outcome ? null : array(
+			'outcome'    => $outcome,
+			'tool'       => '',
+			'checked_at' => 1700000000,
+		);
+
+		self::assertSame( $holds_back, Tag_Check::holds_back( $result ) );
 	}
 
 	/**

@@ -21,7 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * a report that waits is a report that says the page was slower to arrive than it was, which is
  * part of how crawlers are told apart.
  *
- * @phpstan-type Sent array{status: int, answer: array<mixed>|null, location: string, retry_after: int, duration_ms: int}
+ * @phpstan-type Sent array{status: int, answer: array<mixed>|null, location: string, retry_after: int, duration_ms: int, certificate: bool}
  */
 final class Collector_Client {
 
@@ -101,6 +101,10 @@ final class Collector_Client {
 	 * where the address was chosen by somebody who need not be trusted with the network's servers,
 	 * WordPress refuses an address it would not fetch for anybody.
 	 *
+	 * WordPress bounds a request's whole time only where PHP has cURL; without it, connecting alone
+	 * may take ten seconds, so for this request the connection is given the same bound as the
+	 * whole.
+	 *
 	 * @param list<array<string, mixed>> $events  The observations.
 	 * @param int                        $timeout How long it may take, in seconds.
 	 * @return Sent
@@ -113,6 +117,14 @@ final class Collector_Client {
 			),
 			JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
 		);
+
+		$bound = static function ( &$url, &$headers, &$data, &$type, &$options ) use ( $timeout ): void {
+			if ( is_array( $options ) ) {
+				$options['connect_timeout'] = $timeout;
+			}
+		};
+
+		add_action( 'requests-requests.before_request', $bound, 10, 5 );
 
 		$started  = microtime( true );
 		$response = false === $body ? null : wp_remote_post(
@@ -132,8 +144,10 @@ final class Collector_Client {
 		);
 		$duration = (int) round( 1000 * ( microtime( true ) - $started ) );
 
+		remove_action( 'requests-requests.before_request', $bound, 10 );
+
 		if ( ! is_array( $response ) ) {
-			return self::sent( 0, null, '', 0, $duration );
+			return self::sent( 0, null, '', 0, $duration, is_wp_error( $response ) && 1 === preg_match( '/certificate|\bSSL\b/i', $response->get_error_message() ) );
 		}
 
 		$status = (int) wp_remote_retrieve_response_code( $response );
@@ -156,10 +170,12 @@ final class Collector_Client {
 	 * had every report refused, and is asked again later. Anything that is neither a success nor one
 	 * of the answers that say what to do is a failure, waited out.
 	 *
-	 * @param array $sent What came of the report.
+	 * @param array $sent   What came of the report.
+	 * @param bool  $report Whether the batch was a report, rather than the empty batch that checks
+	 *                      the connection.
 	 * @phpstan-param Sent $sent
 	 */
-	public function record( array $sent ): void {
+	public function record( array $sent, bool $report = true ): void {
 		$status = $sent['status'];
 		$answer = $sent['answer'];
 
@@ -173,7 +189,7 @@ final class Collector_Client {
 			} elseif ( null !== $hosts && array() !== $hosts && ! Connection_Check::covers( Connection_Check::home_host(), $hosts ) ) {
 				$this->status->uncovered();
 			} else {
-				$this->status->succeeded( $answer, $sent['duration_ms'] );
+				$this->status->succeeded( $answer, $sent['duration_ms'], $report );
 			}
 		} elseif ( 401 === $status ) {
 			$this->status->stop( Reporting_Status::KEY_REFUSED );
@@ -194,15 +210,18 @@ final class Collector_Client {
 	 * @param string            $location    Where a redirect leads, as a scheme and a host.
 	 * @param int               $retry_after How long an answer asked for a pause, in seconds.
 	 * @param int               $duration_ms How long it took, in milliseconds.
+	 * @param bool              $certificate Whether there was no answer because the address's
+	 *                                       certificate was not accepted.
 	 * @return Sent
 	 */
-	private static function sent( int $status, ?array $answer, string $location, int $retry_after, int $duration_ms ): array {
+	private static function sent( int $status, ?array $answer, string $location, int $retry_after, int $duration_ms, bool $certificate = false ): array {
 		return array(
 			'status'      => $status,
 			'answer'      => $answer,
 			'location'    => $location,
 			'retry_after' => $retry_after,
 			'duration_ms' => $duration_ms,
+			'certificate' => $certificate,
 		);
 	}
 
@@ -244,11 +263,19 @@ final class Collector_Client {
 	}
 
 	/**
-	 * The scheme, host and port of an address's parts, in lower case.
+	 * The scheme, host and port of an address's parts, in lower case, without the port its scheme
+	 * uses anyway.
 	 *
 	 * @param array<string, int|string> $parts The parts, as wp_parse_url() gives them.
 	 */
 	private static function origin( array $parts ): string {
-		return strtolower( (string) ( $parts['scheme'] ?? '' ) ) . '://' . strtolower( (string) ( $parts['host'] ?? '' ) ) . ( isset( $parts['port'] ) ? ':' . $parts['port'] : '' );
+		$scheme   = strtolower( (string) ( $parts['scheme'] ?? '' ) );
+		$port     = (int) ( $parts['port'] ?? 0 );
+		$implicit = array(
+			'http'  => 80,
+			'https' => 443,
+		);
+
+		return $scheme . '://' . strtolower( (string) ( $parts['host'] ?? '' ) ) . ( 0 === $port || ( $implicit[ $scheme ] ?? 0 ) === $port ? '' : ':' . $port );
 	}
 }

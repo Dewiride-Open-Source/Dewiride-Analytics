@@ -112,12 +112,31 @@ final class Server_Reporting {
 	}
 
 	/**
-	 * Hooks the naming into the page's headers and the report into the very end of the request.
+	 * Hooks the naming into the moment the query has run, and the report into the very end of the
+	 * request.
+	 *
+	 * The page is named at `wp`: WordPress has answered the query and printed nothing yet, and
+	 * whether the page is an AMP copy can be asked, which it cannot before.
 	 */
 	public function register(): void {
-		add_action( 'send_headers', array( $this, 'name_page' ) );
+		add_action( 'wp', array( $this, 'name_page' ) );
 		add_filter( 'wp_redirect', array( $this, 'unname_redirect' ), PHP_INT_MAX );
+		add_action( 'shutdown', array( $this, 'keep_going' ), PHP_INT_MIN );
 		add_action( 'shutdown', array( $this, 'report' ), PHP_INT_MAX );
+	}
+
+	/**
+	 * Lets the request carry on to its report should the visitor hang up while the page is still
+	 * being written out.
+	 *
+	 * WordPress writes out whatever pages are held back — by a cache plugin, or its own template
+	 * buffer — at the start of `shutdown`; a visitor who has hung up by then would end the request
+	 * there, before its report, so the request is told to carry on first.
+	 */
+	public function keep_going(): void {
+		if ( $this->is_sending() ) {
+			ignore_user_abort( true );
+		}
 	}
 
 	/**
@@ -129,17 +148,17 @@ final class Server_Reporting {
 
 	/**
 	 * Whether everything the reports need is in place: counting is on, there is a key, reporting
-	 * is switched on for this server, the address may be sent a key, the tag reaches readers, and
-	 * nothing has stopped or paused the reports.
+	 * is switched on for this server, the tag reaches readers, and nothing has stopped or paused
+	 * the reports.
 	 *
-	 * The settings are read first, so a site without a key costs nothing more than reading them.
+	 * Only saved settings are read, so no page waits on this. Whether the address may be sent the
+	 * key can take a lookup of its name, which waits until a report is about to go.
 	 */
 	public function is_sending(): bool {
 		if ( null === $this->sending ) {
 			$this->sending = $this->settings->is_complete()
 				&& '' !== $this->settings->key_ending()
 				&& $this->settings->reports_server( self::finishes_pages_first() )
-				&& Private_Host::may_receive_secrets( $this->settings->server_address() )
 				&& ! Tag_Check::holds_back( $this->tag_check->last_result() )
 				&& $this->status->may_send();
 		}
@@ -209,6 +228,8 @@ final class Server_Reporting {
 			return;
 		}
 
+		self::load_pluggable_functions();
+
 		// A site reached through Cloudflare needs Cloudflare's list, fetched once reports are being
 		// sent and every week from then on, whatever became of the weekly fetch before.
 		if ( '' !== Request_Headers::header( 'CF-Connecting-IP', 64 ) ) {
@@ -230,15 +251,26 @@ final class Server_Reporting {
 
 		// The key itself is read only now, once the page has gone: one that does not open — the
 		// site's secret keys changed since it was saved — stops the reports, rather than leaving
-		// every page to be finished early for a report that is never sent.
+		// every page to be finished early for a report that is never sent. Whether the address
+		// may be sent the key, which can take a lookup of its name, is asked now for the same
+		// reason.
 		if ( '' === $this->server_key->key() ) {
 			$this->status->stop( Reporting_Status::KEY_UNREADABLE );
-
-			return;
-		}
-
-		if ( $this->status->claim() ) {
+		} elseif ( Private_Host::may_receive_secrets( $this->settings->server_address() ) && $this->status->claim() ) {
 			$this->client->report( $observation );
+		}
+	}
+
+	/**
+	 * Loads WordPress's pluggable functions where the request ended before WordPress loaded them.
+	 *
+	 * A security plugin's firewall can refuse a request while plugins are still loading, which
+	 * WordPress does before it loads the functions that tell who is signed in and that open the
+	 * saved key. Each of them is defined only where no plugin has defined it first.
+	 */
+	private static function load_pluggable_functions(): void {
+		if ( ! function_exists( 'wp_salt' ) || ! function_exists( 'is_user_logged_in' ) ) {
+			require_once ABSPATH . 'wp-includes/pluggable.php';
 		}
 	}
 
@@ -246,19 +278,20 @@ final class Server_Reporting {
 	 * Hands the page to the visitor, where the server can, and readies the request to carry on
 	 * without them.
 	 *
-	 * The request is told to carry on if the visitor goes, and any session is closed, so the
-	 * visitor's next request is not kept waiting for this one to end.
+	 * The request is told to carry on if the visitor goes before the page is handed over, which
+	 * writes out every buffer still held, and any session is closed, so the visitor's next request
+	 * is not kept waiting for this one to end. PHP can be built without sessions.
 	 */
 	private static function finish_page(): void {
+		ignore_user_abort( true );
+
 		if ( function_exists( 'fastcgi_finish_request' ) ) {
 			fastcgi_finish_request();
 		} elseif ( function_exists( 'litespeed_finish_request' ) ) {
 			litespeed_finish_request();
 		}
 
-		ignore_user_abort( true );
-
-		if ( PHP_SESSION_ACTIVE === session_status() ) {
+		if ( function_exists( 'session_status' ) && PHP_SESSION_ACTIVE === session_status() ) {
 			session_write_close();
 		}
 	}

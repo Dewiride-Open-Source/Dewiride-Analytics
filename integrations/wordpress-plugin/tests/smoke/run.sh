@@ -96,10 +96,11 @@ check() {
 
 # Makes one request as a visitor and checks what came back and what was reported because of it:
 # named, reported or ignored. Headers are a JSON object; the user agent is a crawler's unless given.
+# A timing given last must still be in the page's Server-Timing header.
 # The request is made from the stand-in collector's container: WordPress's and WP-CLI's addresses
 # are the site's own, whose requests the plugin never reports.
 report() {
-  local description="$1" expect="$2" method="$3" path="$4" status="$5" headers="${6:-}" agent="${7:-}" body="${8:-}" result
+  local description="$1" expect="$2" method="$3" path="$4" status="$5" headers="${6:-}" agent="${7:-}" body="${8:-}" keeps="${9:-}" result
   result="$(compose exec -T \
     -e SMOKE_EXPECT="$expect" \
     -e SMOKE_METHOD="$method" \
@@ -108,6 +109,7 @@ report() {
     -e SMOKE_HEADERS="$headers" \
     -e SMOKE_AGENT="$agent" \
     -e SMOKE_BODY="$body" \
+    -e SMOKE_KEEPS="$keeps" \
     -e SMOKE_KEY="$SERVER_KEY" \
     collector node /smoke/visit.mjs)"
   verdict "$description" "$result"
@@ -245,6 +247,12 @@ verdict "the server key is saved sealed, and only its ending kept in the setting
 report "on a server that holds pages open, nothing is reported until that is accepted" ignored GET / 200
 save_server_settings 'report_server,report_unfinished,report_feeds'
 
+# Saving the key again starts the reports afresh, so nothing has yet shown that the installation
+# joins names safely by naming the website in an answer: a browser's page goes unnamed until one
+# does, and this report's answer is the first.
+report "a browser is not named until the installation names the website" reported GET /hello-world/ 200 \
+  '{"Sec-Fetch-Dest":"document","Sec-Fetch-Mode":"navigate"}' "$BROWSER"
+
 connected="$(cli wp eval '
   $settings = new \Dewiride\Analytics\WordPress\Settings();
   $key      = new \Dewiride\Analytics\WordPress\Server_Key();
@@ -264,6 +272,12 @@ report "a browser prefetching a page is neither named nor reported" ignored GET 
   '{"Sec-Fetch-Dest":"document","Sec-Purpose":"prefetch"}' "$BROWSER"
 report "a redirected browser is left to the page it lands on" ignored GET /hello-world 301 \
   '{"Sec-Fetch-Dest":"document","Sec-Fetch-Mode":"navigate"}' "$BROWSER"
+report "a redirect loses the page's name and keeps another plugin's timing" ignored GET /hello-world 301 \
+  '{"Sec-Fetch-Dest":"document","Sec-Fetch-Mode":"navigate","X-Smoke-Timing":"1"}' "$BROWSER" '' 'other;dur=1'
+# Browsers send no Sec-Fetch-* headers to a site served over http, as this one is, and ask to be
+# upgraded to https on every navigation instead.
+report "a browser redirected on a site served over http is left to the page it lands on" ignored GET /hello-world 301 \
+  '{"Upgrade-Insecure-Requests":"1"}' "$BROWSER"
 report "a redirected crawler is reported" reported GET /hello-world 301
 report "a HEAD request that was answered is left out" ignored HEAD /hello-world/ 200
 report "a feed is reported" reported GET /feed/ 200
@@ -291,9 +305,20 @@ report "somebody signing in in a browser is not reported" ignored POST /wp-login
   "$BROWSER" 'log=administrator&pwd=not-the-password&testcookie=1'
 report "XML-RPC is reported, once chosen" reported GET /xmlrpc.php 405
 
-# The plugin's own requests carry a header only the site can write. A crawler's request carrying it
-# is the site's own and is left out; one carrying anything else is reported.
-marker="$(cli wp eval 'echo \Dewiride\Analytics\WordPress\Own_Request::marker();')"
+# A security plugin's firewall can refuse a request before WordPress has parsed it: while plugins
+# are still loading, before WordPress's own functions for who is signed in exist, or as WordPress
+# starts. What it refused is reported all the same, as a page or a sign-in, and the REST API still
+# is not.
+report "a probe a firewall refused while plugins were loading is reported" reported GET '/.env?smoke_firewall=plugin_loaded' 403
+report "a probe a firewall refused as WordPress started is reported" reported GET '/.env?smoke_firewall=init' 403
+report "a sign-in a firewall refused as WordPress started is reported" reported POST '/wp-login.php?smoke_firewall=init' 403 \
+  "$cookie" '' 'log=administrator&pwd=not-the-password&testcookie=1'
+report "the REST API refused by a firewall is not reported" ignored GET '/wp-json/?smoke_firewall=init' 403
+
+# The plugin's own requests carry a header only the site can write, for the page they ask for. A
+# crawler's request carrying it is the site's own and is left out; one carrying anything else is
+# reported.
+marker="$(cli wp eval 'echo \Dewiride\Analytics\WordPress\Own_Request::marker( home_url( "/hello-world/" ) );')"
 report "a request carrying the site's own mark is not reported" ignored GET /hello-world/ 200 \
   "{\"X-Dewiride-Analytics-Own\":\"$marker\"}"
 report "a request carrying a mark the site did not write is reported" reported GET /hello-world/ 200 \

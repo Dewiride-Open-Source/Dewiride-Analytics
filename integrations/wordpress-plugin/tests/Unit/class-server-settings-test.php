@@ -208,16 +208,16 @@ final class Server_Settings_Test extends Test_Case {
 	 */
 	public function delivery_states(): array {
 		return array(
-			'never sent'          => array( array(), 'On. Robots and other programs are reported too.' ),
+			'never sent'          => array( array(), 'On. Robots and other programs are reported as they arrive.' ),
 			'sent'                => array(
 				array(
 					'sent_at' => 1,
 					'send_ms' => 84,
 				),
-				'On. The last report was sent 5 mins ago and took 84 ms.',
+				'On. A report was sent 5 mins ago and took 84 ms.',
 			),
-			'a refused key'       => array( array( 'stopped' => Reporting_Status::KEY_REFUSED ), 'Stopped. Dewiride Analytics didn\'t accept' ),
-			'another website'     => array( array( 'stopped' => Reporting_Status::OTHER_WEBSITE ), 'Stopped. The server key belongs to another website' ),
+			'a refused key'       => array( array( 'stopped' => Reporting_Status::KEY_REFUSED ), 'Stopped. Dewiride Analytics didn\'t accept the server key. Create a new key' ),
+			'another website'     => array( array( 'stopped' => Reporting_Status::OTHER_WEBSITE ), 'Stopped. The server key and the Website ID come from different websites' ),
 			'a redirect'          => array(
 				array(
 					'stopped'  => Reporting_Status::REDIRECTED,
@@ -251,14 +251,28 @@ final class Server_Settings_Test extends Test_Case {
 					'failures' => 1,
 					'failure'  => 0,
 				),
-				'Waiting after an error. The last report got no answer',
+				'Waiting. The last report got no answer; the plugin tries again in 5 mins.',
 			),
 			'an error'            => array(
 				array(
 					'failures' => 2,
 					'failure'  => 503,
 				),
-				'Waiting after an error. The last report got error 503',
+				'Waiting. Dewiride Analytics answered the last report with an error; the plugin tries again in 5 mins.',
+			),
+			'something else'      => array(
+				array(
+					'failures' => 1,
+					'failure'  => 404,
+				),
+				'Waiting. The address doesn\'t answer as Dewiride Analytics',
+			),
+			'turned away'         => array(
+				array(
+					'failures' => 1,
+					'failure'  => 403,
+				),
+				'Waiting. Something at the address turned the last report away',
 			),
 			'another address'     => array(
 				array(
@@ -316,6 +330,203 @@ final class Server_Settings_Test extends Test_Case {
 	}
 
 	/**
+	 * A key saved some other way than through the page, which left the settings without its
+	 * ending, is said to need the page saved, which writes it, rather than said to be on.
+	 */
+	public function test_a_key_saved_around_the_page_is_said_to_need_saving(): void {
+		( new Server_Key() )->save( self::KEY );
+
+		self::assertStringStartsWith( 'Off. Press Save Changes below', $this->page()->reporting_sentence() );
+	}
+
+	/**
+	 * Switched off, the reports are said to be switched off, whatever else is wrong with them.
+	 */
+	public function test_the_switch_is_said_before_a_key_that_no_longer_opens(): void {
+		$this->given_key();
+		Functions\when( 'wp_salt' )->justReturn( 'new secret keys' );
+		$this->options[ Settings::OPTION ] = array( 'report_server' => false ) + self::as_array( $this->options[ Settings::OPTION ] );
+
+		self::assertStringStartsWith( 'Off. Tick Report visits', $this->page()->reporting_sentence() );
+	}
+
+	/**
+	 * A key that no longer opens can be removed, and its note says to make a new one.
+	 */
+	public function test_a_key_that_no_longer_opens_can_be_removed(): void {
+		$this->given_key();
+		Functions\when( 'wp_salt' )->justReturn( 'new secret keys' );
+
+		$output = $this->render( 'render_key' );
+
+		self::assertStringContainsString( 'name="dewiride_analytics_settings[forget_server_key]"', $output );
+		self::assertStringContainsString( 'Create a new key in Dewiride Analytics and paste it here.', $output );
+	}
+
+	/**
+	 * Before anything is sent, a site whose visitors' addresses cannot be read is not said to be
+	 * reporting.
+	 */
+	public function test_a_site_behind_an_unknown_proxy_is_not_said_to_be_reporting(): void {
+		$this->given_key();
+		$this->given_request(
+			array(
+				'REMOTE_ADDR'          => '10.0.0.5',
+				'HTTP_X_FORWARDED_FOR' => '203.0.113.7',
+			)
+		);
+
+		self::assertStringStartsWith( 'Not reporting yet.', $this->page()->reporting_sentence() );
+	}
+
+	/**
+	 * What the page can say about the address WordPress sees, by what was asked.
+	 *
+	 * @return array<string, array{array<string, mixed>, array<string, mixed>, string}>
+	 */
+	public function address_readings(): array {
+		$proxy      = array(
+			'proxy_mode'    => Settings::THROUGH_PROXY,
+			'proxy_header'  => 'X-Forwarded-For',
+			'proxy_trusted' => array( '10.0.0.0/8' ),
+		);
+		$cloudflare = array(
+			'REMOTE_ADDR'           => '173.245.48.20',
+			'HTTP_HOST'             => 'example.com',
+			'HTTP_CF_CONNECTING_IP' => '203.0.113.7',
+		);
+
+		return array(
+			'a visitor'                 => array( array(), array( 'REMOTE_ADDR' => '203.0.113.7' ), 'WordPress sees your address as 203.0.113.7.' ),
+			'an unknown proxy'          => array(
+				array(),
+				array(
+					'REMOTE_ADDR'          => '10.0.0.5',
+					'HTTP_X_FORWARDED_FOR' => '203.0.113.7',
+				),
+				'behind a proxy WordPress doesn&#039;t know about',
+			),
+			'another Cloudflare zone'   => array( array( 'cloudflare' => true ), array( 'HTTP_HOST' => 'elsewhere.example' ) + $cloudflare, 'for a name that isn&#039;t this site&#039;s' ),
+			'Cloudflare, not yet asked' => array( array(), $cloudflare, 'Once your server reports robots, the plugin fetches Cloudflare&#039;s list' ),
+			'Cloudflare, being asked'   => array( array( 'scheduled' => true ), $cloudflare, 'The plugin is fetching Cloudflare&#039;s list' ),
+			'a proxy not named'         => array( $proxy, array( 'REMOTE_ADDR' => '192.168.1.5' ), 'didn&#039;t come from one of the proxies entered above' ),
+			'a proxy naming nobody'     => array(
+				$proxy,
+				array(
+					'REMOTE_ADDR'          => '10.0.0.5',
+					'HTTP_X_FORWARDED_FOR' => '10.0.0.9',
+				),
+				'Your proxy didn&#039;t say whose request it passed on.',
+			),
+			'a private network'         => array( array(), array( 'REMOTE_ADDR' => '192.168.1.20' ), 'Your address is on a private network' ),
+			'no address'                => array( array(), array(), 'WordPress didn&#039;t receive an address for your request.' ),
+		);
+	}
+
+	/**
+	 * Whatever the address WordPress sees for whoever reads the page, the page says what it means.
+	 *
+	 * @dataProvider address_readings
+	 *
+	 * @param array<string, mixed> $given    Settings, and whether Cloudflare's list is kept or its
+	 *                                       fetch scheduled.
+	 * @param array<string, mixed> $server   The request.
+	 * @param string               $sentence What the page says.
+	 */
+	public function test_every_address_reading_is_said( array $given, array $server, string $sentence ): void {
+		if ( true === ( $given['cloudflare'] ?? false ) ) {
+			$this->options[ Cloudflare_Ranges::OPTION ] = array( 'ranges' => array( '173.245.48.0/20' ) );
+		}
+
+		Functions\when( 'wp_next_scheduled' )->justReturn( true === ( $given['scheduled'] ?? false ) ? 1 : false );
+		$this->options[ Settings::OPTION ] = array_diff_key( $given, array_flip( array( 'cloudflare', 'scheduled' ) ) ) + self::as_array( $this->options[ Settings::OPTION ] );
+		$this->given_request( $server );
+
+		self::assertStringContainsString( $sentence, $this->render( 'render_proxy' ) );
+	}
+
+	/**
+	 * The last check of the connection is shown, with when it was made, until the settings it
+	 * checked change.
+	 */
+	public function test_the_last_check_is_shown_until_the_settings_change(): void {
+		$this->given_key();
+		$this->options[ Connection_Check::OPTION ] = array(
+			'outcome'     => Connection_Check::CONNECTED,
+			'status'      => 0,
+			'detail'      => '',
+			'older'       => false,
+			'checked_at'  => 1,
+			'fingerprint' => ( new Reporting_Status( new Settings() ) )->fingerprint(),
+		);
+
+		$shown = $this->render( 'print_status_rows' );
+
+		self::assertStringContainsString( 'Connected. Dewiride Analytics accepts this site&#039;s reports.', $shown );
+		self::assertStringContainsString( 'Checked 5 mins ago.', $shown );
+
+		$this->options[ Settings::OPTION ] = array( 'site_id' => '5d0c7a1e-8b2f-4c3d-9e4a-6f7b8c9d0e1f' ) + self::as_array( $this->options[ Settings::OPTION ] );
+
+		self::assertStringContainsString( 'Not checked yet.', $this->render( 'print_status_rows' ) );
+	}
+
+	/**
+	 * A key set in wp-config.php is shown by its ending, and what it takes to replace it says
+	 * where it is.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_key_in_wp_config_is_said_to_be_there(): void {
+		define( 'DEWIRIDE_ANALYTICS_SERVER_KEY', self::KEY );
+
+		self::assertStringContainsString( 'Set in wp-config.php, ending in eeee.', $this->render( 'render_key' ) );
+
+		$fresh                                     = ( new Reporting_Status( new Settings() ) )->state();
+		$this->options[ Reporting_Status::OPTION ] = array( 'stopped' => Reporting_Status::KEY_REFUSED ) + $fresh;
+
+		self::assertStringStartsWith( 'Stopped. Dewiride Analytics didn\'t accept the server key in wp-config.php', $this->page()->reporting_sentence() );
+	}
+
+	/**
+	 * A key in wp-config.php that is not a whole key is said to need replacing there.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_an_incomplete_key_in_wp_config_is_said_to_need_replacing(): void {
+		define( 'DEWIRIDE_ANALYTICS_SERVER_KEY', 'dwk_short' );
+
+		self::assertStringContainsString( 'The key set in wp-config.php isn&#039;t complete.', $this->render( 'render_key' ) );
+		self::assertStringStartsWith( 'Off. The server key in wp-config.php isn\'t complete.', $this->page()->reporting_sentence() );
+	}
+
+	/**
+	 * A page cache in front of WordPress is mentioned, since what it answers alone never reaches
+	 * WordPress to be reported.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_page_cache_is_mentioned(): void {
+		$content = sys_get_temp_dir() . '/dewiride-analytics-content-' . getmypid();
+
+		// phpcs:disable WordPress.WP.AlternativeFunctions, WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- A scratch folder of the test's own, made and removed without WordPress, standing in for wp-content; and WordPress's own constants, defined as WordPress defines them.
+		mkdir( $content );
+		touch( $content . '/advanced-cache.php' );
+		define( 'WP_CACHE', true );
+		define( 'WP_CONTENT_DIR', $content );
+
+		$output = $this->render( 'describe' );
+
+		unlink( $content . '/advanced-cache.php' );
+		rmdir( $content );
+		// phpcs:enable
+
+		self::assertStringContainsString( 'Your site uses a page cache.', $output );
+	}
+
+	/**
 	 * Saves a key, as the settings page would.
 	 */
 	private function given_key(): void {
@@ -333,17 +544,6 @@ final class Server_Settings_Test extends Test_Case {
 		$this->page()->$method();
 
 		return (string) ob_get_clean();
-	}
-
-
-	/**
-	 * A key saved some other way than through the page, which left the settings without its ending,
-	 * is said to need saving again rather than said to be on.
-	 */
-	public function test_a_key_saved_around_the_page_is_said_to_need_saving(): void {
-		( new Server_Key() )->save( self::KEY );
-
-		self::assertStringStartsWith( 'Off. Paste the server key below again', $this->page()->reporting_sentence() );
 	}
 
 	/**

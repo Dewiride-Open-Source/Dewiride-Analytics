@@ -39,7 +39,7 @@ final class Plugin_Test extends Test_Case {
 		self::assertTrue( has_filter( 'rocket_delay_js_exclusions' ) );
 		self::assertTrue( has_action( Tag_Check::EVENT ) );
 		self::assertTrue( has_action( Cloudflare_Ranges::EVENT ) );
-		self::assertTrue( has_action( 'send_headers' ) );
+		self::assertTrue( has_action( 'wp' ) );
 		self::assertTrue( has_action( 'shutdown' ) );
 		self::assertFalse( has_action( 'admin_menu' ) );
 		self::assertFalse( has_action( 'admin_init' ) );

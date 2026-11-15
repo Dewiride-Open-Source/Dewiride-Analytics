@@ -337,8 +337,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-07.
   signed in unless their role is chosen — asks the common optimisation plugins to leave the tracker
   alone, and checks daily that the home page reaches readers with it; with a server key, reports
   from WordPress itself the crawlers, AI fetchers, feed readers and scanners that never run the
-  tracker, and names each page a browser opens so its two halves count as one visit. Downloaded
-  from the dashboard, which creates the key in its WordPress steps.
+  tracker, and names each page a browser opens over https so its two halves count as one visit.
+  Downloaded from the dashboard, which creates the key in its WordPress steps.
 - **Not started** · Cloudflare Worker.
 - **Not started** · Netlify edge function.
 - **Not started** · Vercel edge middleware.

@@ -40,18 +40,17 @@ final class Request_Headers {
 	/**
 	 * A value the web server put in `$_SERVER`, or an empty string when there is none.
 	 *
-	 * WordPress adds slashes to `$_SERVER` as it does to a form's fields, so they are taken off
-	 * before anything else.
-	 *
 	 * @param string $key     The key, such as `REMOTE_ADDR`.
 	 * @param int    $longest The most characters kept.
 	 */
 	public static function server( string $key, int $longest = self::LONGEST ): string {
-		if ( ! isset( $_SERVER[ $key ] ) || ! is_string( $_SERVER[ $key ] ) ) {
+		$raw = self::raw( $key );
+
+		if ( null === $raw ) {
 			return '';
 		}
 
-		$value = filter_var( wp_unslash( $_SERVER[ $key ] ), FILTER_UNSAFE_RAW, FILTER_FLAG_STRIP_LOW );
+		$value = filter_var( $raw, FILTER_UNSAFE_RAW, FILTER_FLAG_STRIP_LOW );
 
 		return is_string( $value ) ? mb_substr( wp_check_invalid_utf8( $value ), 0, $longest ) : '';
 	}
@@ -71,13 +70,13 @@ final class Request_Headers {
 	 * @param int    $longest The most bytes kept, counted from the end.
 	 */
 	public static function list_end( string $name, int $longest ): string {
-		$key = 'HTTP_' . strtoupper( str_replace( '-', '_', $name ) );
+		$raw = self::raw( 'HTTP_' . strtoupper( str_replace( '-', '_', $name ) ) );
 
-		if ( ! isset( $_SERVER[ $key ] ) || ! is_string( $_SERVER[ $key ] ) ) {
+		if ( null === $raw ) {
 			return '';
 		}
 
-		$value = (string) filter_var( wp_unslash( $_SERVER[ $key ] ), FILTER_UNSAFE_RAW, FILTER_FLAG_STRIP_LOW );
+		$value = (string) filter_var( $raw, FILTER_UNSAFE_RAW, FILTER_FLAG_STRIP_LOW );
 
 		if ( strlen( $value ) > $longest ) {
 			$value = (string) substr( $value, -$longest );
@@ -101,22 +100,26 @@ final class Request_Headers {
 	 * Kept as it was sent, because a probe for `/.env` or `/wp-config.php.bak` is told apart by
 	 * exactly that. Control characters are dropped, and every character a path may not hold —
 	 * bytes that are not ASCII among them — is written as a percent escape, as is a `%` that does
-	 * not start one, so the address is one any reader accepts. A request naming a whole address
-	 * rather than a path, as one sent to a proxy does, is read for its path.
+	 * not start one, so the address is one any reader accepts. Square brackets are the exception:
+	 * browsers send them as they are and the tracker reports them so, and both halves must name a
+	 * page alike to count it once. A request naming a whole address rather than a path, as one
+	 * sent to a proxy does, is read for its path.
 	 */
 	public static function requested_path(): string {
-		if ( ! isset( $_SERVER['REQUEST_URI'] ) || ! is_string( $_SERVER['REQUEST_URI'] ) ) {
+		$raw = self::raw( 'REQUEST_URI' );
+
+		if ( null === $raw ) {
 			return '/';
 		}
 
-		$requested = (string) filter_var( wp_unslash( $_SERVER['REQUEST_URI'] ), FILTER_UNSAFE_RAW, FILTER_FLAG_STRIP_LOW );
+		$requested = (string) filter_var( $raw, FILTER_UNSAFE_RAW, FILTER_FLAG_STRIP_LOW );
 
 		if ( 1 === preg_match( '~^[a-z][a-z0-9+.-]*://[^/?#]*~i', $requested, $authority ) ) {
 			$requested = substr( $requested, strlen( $authority[0] ) );
 		}
 
 		$path = (string) preg_replace_callback(
-			'~[^A-Za-z0-9\-._\~!$&\'()*+,;=:@/%]|%(?![0-9A-Fa-f]{2})~',
+			'~[^A-Za-z0-9\-._\~!$&\'()*+,;=:@/%\[\]]|%(?![0-9A-Fa-f]{2})~',
 			static function ( array $character ): string {
 				return rawurlencode( $character[0] );
 			},
@@ -124,5 +127,27 @@ final class Request_Headers {
 		);
 
 		return 0 === strpos( $path, '/' ) ? $path : '/' . $path;
+	}
+
+	/**
+	 * What `$_SERVER` holds under a key as the web server put it there, or nothing when it holds
+	 * no text there.
+	 *
+	 * WordPress adds slashes to `$_SERVER`, as it does to a form's fields, once plugins have
+	 * loaded (`wp_magic_quotes()`, just before `sanitize_comment_cookies`), so from then on they are
+	 * taken off. A request a security plugin refused while plugins were still loading never got
+	 * that far, and is read as it is, or a backslash its sender wrote would be lost.
+	 *
+	 * @param string $key The key, such as `REMOTE_ADDR`.
+	 */
+	private static function raw( string $key ): ?string {
+		if ( ! isset( $_SERVER[ $key ] ) || ! is_string( $_SERVER[ $key ] ) ) {
+			return null;
+		}
+
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Unslashed below once WordPress has slashed it; every caller then strips control characters and keeps the rest as evidence.
+		$value = $_SERVER[ $key ];
+
+		return did_action( 'sanitize_comment_cookies' ) > 0 ? (string) wp_unslash( $value ) : $value;
 	}
 }

@@ -125,12 +125,17 @@ final class Connection_Check_Test extends Test_Case {
 	 */
 	public function refusals(): array {
 		return array(
-			'no answer'     => array( 0, array(), Connection_Check::UNREACHABLE, '' ),
-			'a refused key' => array( 401, array(), Connection_Check::KEY_REFUSED, '' ),
-			'a redirect'    => array( 308, array( 'location' => self::ELSEWHERE . '/collect/server' ), Connection_Check::REDIRECTED, self::ELSEWHERE ),
-			'a path moved'  => array( 301, array( 'location' => '/collect/server/' ), Connection_Check::REDIRECTED, '' ),
-			'a pause'       => array( 429, array(), Connection_Check::BUSY, '' ),
-			'an error'      => array( 502, array(), Connection_Check::UNEXPECTED, '' ),
+			'no answer'          => array( 0, array(), Connection_Check::UNREACHABLE, '' ),
+			'a certificate'      => array( -1, array(), Connection_Check::CERTIFICATE, '' ),
+			'a refused key'      => array( 401, array(), Connection_Check::KEY_REFUSED, '' ),
+			'a redirect'         => array( 308, array( 'location' => self::ELSEWHERE . '/collect/server' ), Connection_Check::REDIRECTED, self::ELSEWHERE ),
+			'a path moved'       => array( 301, array( 'location' => '/collect/server/' ), Connection_Check::REDIRECTED, '' ),
+			'a pause'            => array( 429, array(), Connection_Check::BUSY, '' ),
+			'an error'           => array( 502, array(), Connection_Check::UNEXPECTED, '' ),
+			'a page, no batch'   => array( 200, array(), Connection_Check::NOT_DEWIRIDE, '' ),
+			'nothing there'      => array( 404, array(), Connection_Check::NOT_DEWIRIDE, '' ),
+			'a method not taken' => array( 405, array(), Connection_Check::NOT_DEWIRIDE, '' ),
+			'turned away'        => array( 403, array(), Connection_Check::TURNED_AWAY, '' ),
 		);
 	}
 
@@ -141,19 +146,25 @@ final class Connection_Check_Test extends Test_Case {
 	 * @preserveGlobalState disabled
 	 * @dataProvider refusals
 	 *
-	 * @param int                   $status  The answer's status, or 0 for none.
+	 * @param int                   $status  The answer's status, or 0 for none and -1 for none
+	 *                                       because the certificate was not accepted.
 	 * @param array<string, string> $headers The answer's headers.
 	 * @param string                $outcome What it means.
 	 * @param string                $detail  What else is kept.
 	 */
 	public function test_each_refusal_is_read_for_what_it_means( int $status, array $headers, string $outcome, string $detail ): void {
+		$failures = array(
+			0  => 'cURL error 7: Failed to connect to analytics.example.com port 443',
+			-1 => 'cURL error 60: SSL certificate problem: unable to get local issuer certificate',
+		);
+
 		$this->given_http_allowed();
 		Functions\when( 'is_wp_error' )->alias(
 			static function ( $thing ): bool {
-				return 'failed' === $thing;
+				return $thing instanceof Fake_Wp_Error;
 			}
 		);
-		Functions\when( 'wp_remote_post' )->justReturn( 0 === $status ? 'failed' : self::answer( $status, array(), $headers ) );
+		Functions\when( 'wp_remote_post' )->justReturn( isset( $failures[ $status ] ) ? new Fake_Wp_Error( $failures[ $status ] ) : self::answer( $status, array(), $headers ) );
 
 		$result = $this->check()->run();
 
@@ -298,25 +309,50 @@ final class Connection_Check_Test extends Test_Case {
 			Connection_Check::UNCOVERED,
 			Connection_Check::NOT_MEASURING,
 			Connection_Check::NO_SCRIPT,
+			Connection_Check::KEY_UNREADABLE,
+			Connection_Check::KEY_MALFORMED,
+			Connection_Check::NOT_DEWIRIDE,
+			Connection_Check::TURNED_AWAY,
+			Connection_Check::CERTIFICATE,
 		);
 
-		$sentences = array_map(
-			static function ( string $outcome ): string {
-				return Connection_Check::message(
-					array(
-						'outcome' => $outcome,
-						'status'  => 502,
-						'detail'  => self::ELSEWHERE,
-						'older'   => false,
-					)
-				);
-			},
-			$outcomes
+		$sentences = array_combine(
+			$outcomes,
+			array_map(
+				static function ( string $outcome ): string {
+					return Connection_Check::message(
+						array(
+							'outcome' => $outcome,
+							'status'  => 502,
+							'detail'  => self::ELSEWHERE,
+							'older'   => false,
+						)
+					);
+				},
+				$outcomes
+			)
 		);
 
 		self::assertSame( count( $outcomes ), count( array_unique( $sentences ) ) );
-		self::assertStringContainsString( '502', $sentences[8] );
-		self::assertStringContainsString( self::ELSEWHERE, $sentences[5] );
+		self::assertStringContainsString( self::ELSEWHERE, $sentences[ Connection_Check::REDIRECTED ] );
+		self::assertStringNotContainsString( '502', $sentences[ Connection_Check::UNEXPECTED ] );
+	}
+
+	/**
+	 * An installation too old to name the website is said to count a reader twice until it is
+	 * updated, which is what it means for the site.
+	 */
+	public function test_an_older_installation_is_said_to_count_readers_twice(): void {
+		$sentence = Connection_Check::message(
+			array(
+				'outcome' => Connection_Check::CONNECTED,
+				'status'  => 0,
+				'detail'  => '',
+				'older'   => true,
+			)
+		);
+
+		self::assertStringContainsString( 'counted twice', $sentence );
 	}
 
 	/**
@@ -343,9 +379,10 @@ final class Connection_Check_Test extends Test_Case {
 		self::assertNull( $this->check()->last_result() );
 
 		$this->options[ Connection_Check::OPTION ] = array(
-			'outcome'    => Connection_Check::BUSY,
-			'status'     => 429,
-			'checked_at' => 1763200000,
+			'outcome'     => Connection_Check::BUSY,
+			'status'      => 429,
+			'checked_at'  => 1763200000,
+			'fingerprint' => ( new Reporting_Status( new Settings() ) )->fingerprint(),
 		);
 
 		self::assertSame(
@@ -358,6 +395,73 @@ final class Connection_Check_Test extends Test_Case {
 			),
 			$this->check()->last_result()
 		);
+	}
+
+	/**
+	 * A check of other settings says nothing about these: once the address, the Website ID or the
+	 * key changes, the connection is said not to have been checked.
+	 */
+	public function test_a_check_of_other_settings_is_not_read_back(): void {
+		$this->options[ Connection_Check::OPTION ] = array(
+			'outcome'     => Connection_Check::KEY_REFUSED,
+			'status'      => 401,
+			'checked_at'  => 1763200000,
+			'fingerprint' => ( new Reporting_Status( new Settings() ) )->fingerprint(),
+		);
+		$this->options[ Settings::OPTION ]         = array( 'key_ending' => 'eeee' ) + self::as_array( $this->options[ Settings::OPTION ] );
+
+		self::assertNull( $this->check()->last_result() );
+	}
+
+	/**
+	 * A saved key that no longer opens is said to, rather than said to be missing.
+	 */
+	public function test_a_key_that_no_longer_opens_is_said_to(): void {
+		Functions\when( 'wp_salt' )->justReturn( 'new secret keys' );
+		Functions\expect( 'wp_remote_post' )->never();
+
+		self::assertSame( Connection_Check::KEY_UNREADABLE, $this->check()->run()['outcome'] );
+	}
+
+	/**
+	 * A key in wp-config.php that is not a whole key is said to be so, and one the installation
+	 * refused is said to need replacing there.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_key_in_wp_config_is_said_to_be_there(): void {
+		define( 'DEWIRIDE_ANALYTICS_SERVER_KEY', 'dwk_short' );
+		Functions\expect( 'wp_remote_post' )->never();
+
+		self::assertSame( Connection_Check::KEY_MALFORMED, $this->check()->run()['outcome'] );
+		self::assertStringContainsString(
+			'put it in wp-config.php in its place',
+			Connection_Check::message(
+				array(
+					'outcome' => Connection_Check::KEY_REFUSED,
+					'status'  => 401,
+					'detail'  => '',
+					'older'   => false,
+				)
+			)
+		);
+	}
+
+	/**
+	 * Checking the connection is not a report: the time of the last report is not changed by it.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_check_is_not_counted_as_a_report(): void {
+		$this->given_http_allowed();
+		Functions\when( 'wp_remote_post' )->justReturn( self::answer( 200, self::full_answer() ) );
+		Functions\when( 'wp_remote_get' )->justReturn( self::answer( 200, array() ) );
+
+		$this->check()->run();
+
+		self::assertSame( 0, self::dig( $this->options, Reporting_Status::OPTION, 'sent_at' ) );
 	}
 
 	/**

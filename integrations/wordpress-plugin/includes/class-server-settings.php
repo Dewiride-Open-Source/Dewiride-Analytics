@@ -127,7 +127,7 @@ final class Server_Settings {
 					Server_Key::FROM_CONFIG === $source
 						/* translators: %s: The last four characters of the server key. */
 						? sprintf( __( 'Set in wp-config.php, ending in %s.', 'dewiride-analytics' ), $ending )
-						: __( 'The key set in wp-config.php isn\'t complete. Copy it again from Dewiride Analytics.', 'dewiride-analytics' )
+						: __( 'The key set in wp-config.php isn\'t complete. Create a new key in Dewiride Analytics, under Tracking code, then WordPress, and put it in wp-config.php in its place.', 'dewiride-analytics' )
 				)
 			);
 
@@ -140,7 +140,7 @@ final class Server_Settings {
 		);
 		printf( '<p class="description" id="dewiride-analytics-server-key-note">%s</p>', esc_html( $this->key_note( $source, $ending ) ) );
 
-		if ( Server_Key::SAVED === $source ) {
+		if ( Server_Key::SAVED === $source || Server_Key::UNREADABLE === $source ) {
 			printf(
 				'<p><label><input type="checkbox" name="%s" value="1"> %s</label></p>',
 				esc_attr( Settings::OPTION . '[forget_server_key]' ),
@@ -160,8 +160,8 @@ final class Server_Settings {
 		self::print_checkbox( 'report_server', $saved['report_server'], __( 'Report visits from robots and other programs', 'dewiride-analytics' ) );
 
 		if ( ! Server_Reporting::finishes_pages_first() ) {
-			printf( '<p class="description">%s</p>', esc_html__( 'This server can\'t send a page before reporting it, so every page a robot reads, search engines\' included, would arrive a little later. Reports are sent only if you tick the box below as well.', 'dewiride-analytics' ) );
-			self::print_checkbox( 'report_unfinished', $saved['report_unfinished'], __( 'Report anyway, even though robots\' pages arrive a little later', 'dewiride-analytics' ) );
+			printf( '<p class="description">%s</p>', esc_html__( 'This server can\'t send a page before reporting it, so every page opened by anyone who isn\'t signed in, readers and robots alike, would arrive a little later. Reports are sent only if you tick the box below as well.', 'dewiride-analytics' ) );
+			self::print_checkbox( 'report_unfinished', $saved['report_unfinished'], __( 'Report anyway, even though pages arrive a little later', 'dewiride-analytics' ) );
 		}
 
 		echo '</fieldset>';
@@ -257,18 +257,19 @@ final class Server_Settings {
 
 		if ( Server_Key::NONE === $source ) {
 			$problem = __( 'Off. Save a server key below to report robots and other programs too.', 'dewiride-analytics' );
-		} elseif ( Server_Key::UNREADABLE === $source ) {
-			$problem = __( 'Off. The saved server key can\'t be read any more, which happens when your site\'s security keys change. Paste the key again below.', 'dewiride-analytics' );
-		} elseif ( Server_Key::MALFORMED_IN_CONFIG === $source ) {
-			$problem = __( 'Off. The server key in wp-config.php isn\'t complete. Copy it again from Dewiride Analytics.', 'dewiride-analytics' );
-		} elseif ( '' === $this->settings->key_ending() ) {
-			// A key saved some other way than through this page — imported, or written from WP-CLI —
-			// left the settings without its ending, which is what every request asks.
-			$problem = __( 'Off. Paste the server key below again and save, so that reporting can start.', 'dewiride-analytics' );
 		} elseif ( ! $this->settings->all()['report_server'] ) {
 			$problem = __( 'Off. Tick Report visits from robots and other programs below to start.', 'dewiride-analytics' );
+		} elseif ( Server_Key::UNREADABLE === $source ) {
+			$problem = __( 'Off. The saved server key can\'t be read any more, because your site\'s security keys have changed. Create a new key in Dewiride Analytics, under Tracking code, then WordPress, and paste it below.', 'dewiride-analytics' );
+		} elseif ( Server_Key::MALFORMED_IN_CONFIG === $source ) {
+			$problem = __( 'Off. The server key in wp-config.php isn\'t complete. Create a new key in Dewiride Analytics, under Tracking code, then WordPress, and put it in wp-config.php in its place.', 'dewiride-analytics' );
+		} elseif ( '' === $this->settings->key_ending() ) {
+			// A key saved some other way than through this page — imported, or written from WP-CLI —
+			// left the settings without its ending, which is what every request asks, and saving
+			// the page writes it.
+			$problem = __( 'Off. Press Save Changes below so that reporting can start.', 'dewiride-analytics' );
 		} elseif ( ! $this->settings->reports_server( Server_Reporting::finishes_pages_first() ) ) {
-			$problem = __( 'Off. This server can\'t send a page before reporting it. Tick the second box under Reporting below if robots\' pages may arrive a little later.', 'dewiride-analytics' );
+			$problem = __( 'Off. This server can\'t send a page before reporting it. Tick the second box under Reporting below if pages may arrive a little later.', 'dewiride-analytics' );
 		} elseif ( ! Private_Host::may_receive_secrets( $this->settings->server_address() ) ) {
 			$problem = __( 'Off. Reports carry your server key, so the address must start with https://.', 'dewiride-analytics' );
 		} elseif ( Tag_Check::holds_back( $this->tag_check->last_result() ) ) {
@@ -280,6 +281,10 @@ final class Server_Settings {
 
 	/**
 	 * How the reports are going, once the setup lets them be sent.
+	 *
+	 * Before anything has been sent, the address WordPress sees for whoever reads the page says
+	 * whether visitors' addresses can be read at all: behind a proxy WordPress was not told about,
+	 * none can, and nothing will ever be sent until that is put right.
 	 */
 	private function delivery_sentence(): string {
 		$state = $this->status->state();
@@ -290,23 +295,41 @@ final class Server_Settings {
 		} elseif ( $state['paused_until'] > $now ) {
 			$sentence = self::pause_sentence( $state['pause'], human_time_diff( $now, $state['paused_until'] ) );
 		} elseif ( $state['failures'] > 0 ) {
-			$sentence = sprintf(
-				/* translators: 1: What went wrong, such as "no answer" or "error 503". 2: How long until the next try, such as "30 secs". */
-				__( 'Waiting after an error. The last report got %1$s; the plugin tries again in %2$s.', 'dewiride-analytics' ),
-				0 === $state['failure']
-					? __( 'no answer', 'dewiride-analytics' )
-					/* translators: %d: The HTTP status Dewiride Analytics answered with. */
-					: sprintf( __( 'error %d', 'dewiride-analytics' ), $state['failure'] ),
-				human_time_diff( $now, max( $now + 1, $state['retry_at'] ) )
-			);
+			$sentence = self::failure_sentence( $state['failure'], human_time_diff( $now, max( $now + 1, $state['retry_at'] ) ) );
 		} elseif ( $state['sent_at'] > 0 ) {
 			/* translators: 1: How long ago, such as "3 mins". 2: How long sending took, in milliseconds. */
-			$sentence = sprintf( __( 'On. The last report was sent %1$s ago and took %2$d ms.', 'dewiride-analytics' ), human_time_diff( $state['sent_at'], $now ), $state['send_ms'] );
+			$sentence = sprintf( __( 'On. A report was sent %1$s ago and took %2$d ms.', 'dewiride-analytics' ), human_time_diff( $state['sent_at'], $now ), $state['send_ms'] );
+		} elseif ( in_array( $this->visitor_address->resolve()['cause'], array( Visitor_Address::UNKNOWN_PROXY, Visitor_Address::UNTRUSTED_PROXY, Visitor_Address::NO_VISITOR ), true ) ) {
+			$sentence = __( 'Not reporting yet. Visitors\' addresses can\'t be read, so they aren\'t reported; How visitors reach your site below says why.', 'dewiride-analytics' );
 		} else {
-			$sentence = __( 'On. Robots and other programs are reported too.', 'dewiride-analytics' );
+			$sentence = __( 'On. Robots and other programs are reported as they arrive.', 'dewiride-analytics' );
 		}
 
 		return $sentence;
+	}
+
+	/**
+	 * What went wrong with the last report, and when the plugin tries again.
+	 *
+	 * @param int    $failure The status the last report was answered with, or 0 for no answer.
+	 * @param string $wait    How long until the next try, such as "30 secs".
+	 */
+	private static function failure_sentence( int $failure, string $wait ): string {
+		if ( 0 === $failure ) {
+			/* translators: %s: How long until the next try, such as "30 secs". */
+			$sentence = __( 'Waiting. The last report got no answer; the plugin tries again in %s.', 'dewiride-analytics' );
+		} elseif ( in_array( $failure, array( 200, 404, 405 ), true ) ) {
+			/* translators: %s: How long until the next try, such as "30 secs". */
+			$sentence = __( 'Waiting. The address doesn\'t answer as Dewiride Analytics; check that it\'s exactly the address you open Dewiride Analytics on. The plugin tries again in %s.', 'dewiride-analytics' );
+		} elseif ( 403 === $failure ) {
+			/* translators: %s: How long until the next try, such as "30 secs". */
+			$sentence = __( 'Waiting. Something at the address turned the last report away, often a firewall; the plugin tries again in %s.', 'dewiride-analytics' );
+		} else {
+			/* translators: %s: How long until the next try, such as "30 secs". */
+			$sentence = __( 'Waiting. Dewiride Analytics answered the last report with an error; the plugin tries again in %s.', 'dewiride-analytics' );
+		}
+
+		return sprintf( $sentence, $wait );
 	}
 
 	/**
@@ -342,11 +365,15 @@ final class Server_Settings {
 		}
 
 		$sentences = array(
-			Reporting_Status::OTHER_WEBSITE  => __( 'Stopped. The server key belongs to another website in Dewiride Analytics. Create a key for this website and save it below.', 'dewiride-analytics' ),
-			Reporting_Status::KEY_UNREADABLE => __( 'Stopped. The server key couldn\'t be read on your site\'s pages. Paste it again below and save.', 'dewiride-analytics' ),
+			Reporting_Status::OTHER_WEBSITE  => __( 'Stopped. The server key and the Website ID come from different websites in Dewiride Analytics. Copy both from the same website, under Tracking code, then WordPress.', 'dewiride-analytics' ),
+			Reporting_Status::KEY_UNREADABLE => __( 'Stopped. The server key couldn\'t be read on your site\'s pages. Create a new key in Dewiride Analytics, under Tracking code, then WordPress, and paste it below.', 'dewiride-analytics' ),
 		);
 
-		return $sentences[ $reason ] ?? __( 'Stopped. Dewiride Analytics didn\'t accept the server key. Create a new key and save it below.', 'dewiride-analytics' );
+		$refused = Server_Key::is_in_config()
+			? __( 'Stopped. Dewiride Analytics didn\'t accept the server key in wp-config.php. Create a new key in Dewiride Analytics, under Tracking code, then WordPress, and put it in wp-config.php in its place.', 'dewiride-analytics' )
+			: __( 'Stopped. Dewiride Analytics didn\'t accept the server key. Create a new key in Dewiride Analytics, under Tracking code, then WordPress, and paste it below.', 'dewiride-analytics' );
+
+		return $sentences[ $reason ] ?? $refused;
 	}
 
 	/**
@@ -362,7 +389,7 @@ final class Server_Settings {
 		}
 
 		return Server_Key::UNREADABLE === $source
-			? __( 'The saved key can\'t be read any more, which happens when your site\'s security keys change. Paste the key again.', 'dewiride-analytics' )
+			? __( 'The saved key can\'t be read any more, because your site\'s security keys have changed. Create a new key in Dewiride Analytics and paste it here.', 'dewiride-analytics' )
 			: __( 'In Dewiride Analytics, open your website, choose Tracking code, then WordPress, and create a key.', 'dewiride-analytics' );
 	}
 
@@ -377,10 +404,17 @@ final class Server_Settings {
 			return sprintf( __( 'WordPress sees your address as %s.', 'dewiride-analytics' ), $resolved['address'] );
 		}
 
+		// Cloudflare's list is fetched only once the server reports and somebody arrives through
+		// Cloudflare; until then nothing is fetching it, and there is nothing to put right.
+		if ( Visitor_Address::CLOUDFLARE_PENDING === $resolved['cause'] ) {
+			return false !== wp_next_scheduled( Cloudflare_Ranges::EVENT )
+				? __( 'Your site is reached through Cloudflare. The plugin is fetching Cloudflare\'s list of addresses, and reports visitors once it has it. If this stays, make sure your site can reach api.cloudflare.com.', 'dewiride-analytics' )
+				: __( 'Your site is reached through Cloudflare. Once your server reports robots, the plugin fetches Cloudflare\'s list of addresses and reads visitors\' addresses through it.', 'dewiride-analytics' );
+		}
+
 		$sentences = array(
 			Visitor_Address::UNKNOWN_PROXY      => __( 'Your site is behind a proxy WordPress doesn\'t know about, so visitors\' addresses can\'t be read and they aren\'t reported. Choose Through another proxy and enter its addresses.', 'dewiride-analytics' ),
 			Visitor_Address::FOREIGN_CLOUDFLARE => __( 'Your request came through Cloudflare for a name that isn\'t this site\'s, so its address isn\'t believed.', 'dewiride-analytics' ),
-			Visitor_Address::CLOUDFLARE_PENDING => __( 'Your site is reached through Cloudflare. The plugin is fetching Cloudflare\'s list of addresses, and reports visitors once it has it. If this stays, make sure your site can reach api.cloudflare.com.', 'dewiride-analytics' ),
 			Visitor_Address::UNTRUSTED_PROXY    => __( 'Your request didn\'t come from one of the proxies entered above, so its address isn\'t believed.', 'dewiride-analytics' ),
 			Visitor_Address::NO_VISITOR         => __( 'Your proxy didn\'t say whose request it passed on.', 'dewiride-analytics' ),
 			Visitor_Address::PRIVATE_ADDRESS    => __( 'Your address is on a private network, so visits from it aren\'t reported.', 'dewiride-analytics' ),

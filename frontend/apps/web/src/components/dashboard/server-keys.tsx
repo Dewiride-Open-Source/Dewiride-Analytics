@@ -8,7 +8,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { Dialog } from '@/components/ui/dialog';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { Field, TextInput } from '@/components/ui/field';
-import type { ServerKey } from '@/lib/api/schemas';
+import type { ServerKey, SiteRole } from '@/lib/api/schemas';
 import { useCreateServerKey, useRevokeServerKey, useServerKeys } from '@/lib/queries/server-keys';
 import { cn } from '@/lib/styling';
 
@@ -17,15 +17,30 @@ interface ServerKeysProps {
   readonly onClose: () => void;
   readonly siteId: string;
   readonly siteDomain: string;
+  /** What the reader may do with the website, which decides whether they can change its keys. */
+  readonly siteRole: SiteRole;
   /** IANA zone the website’s days are counted in, so dates read the same everywhere. */
   readonly timeZoneId: string;
 }
 
-/** Where somebody gets, and takes away, the keys their own server reports with. */
-export function ServerKeys({ open, onClose, siteId, siteDomain, timeZoneId }: ServerKeysProps) {
+/**
+ * Where somebody gets, and takes away, the keys their own server reports with.
+ *
+ * Somebody who may only view the website sees the keys and is told who can change them, rather
+ * than being offered buttons that would be refused.
+ */
+export function ServerKeys({
+  open,
+  onClose,
+  siteId,
+  siteDomain,
+  siteRole,
+  timeZoneId,
+}: ServerKeysProps) {
   const t = useTranslations('serverKeys');
   const [name, setName] = useState('');
   const [issued, setIssued] = useState<string | null>(null);
+  const editable = siteRole !== 'viewer';
 
   const keys = useServerKeys(siteId, open);
   const creating = useCreateServerKey(siteId);
@@ -64,35 +79,39 @@ export function ServerKeys({ open, onClose, siteId, siteDomain, timeZoneId }: Se
       <div className="flex flex-col gap-5">
         <p className="text-sm text-foreground-muted">{t('body', { site: siteDomain })}</p>
 
-        <form
-          className="flex flex-col gap-3 sm:flex-row sm:items-end"
-          onSubmit={(event) => {
-            event.preventDefault();
-            create();
-          }}
-        >
-          <div className="flex-1">
-            <Field label={t('name.label')}>
-              {(attributes) => (
-                <TextInput
-                  {...attributes}
-                  value={name}
-                  maxLength={60}
-                  placeholder={t('name.placeholder')}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              )}
-            </Field>
-          </div>
-          <Button
-            type="submit"
-            busy={creating.isPending}
-            disabled={name.trim().length === 0}
-            className="w-full sm:w-auto"
+        {editable ? (
+          <form
+            className="flex flex-col gap-3 sm:flex-row sm:items-end"
+            onSubmit={(event) => {
+              event.preventDefault();
+              create();
+            }}
           >
-            {creating.isPending ? t('creating') : t('create')}
-          </Button>
-        </form>
+            <div className="flex-1">
+              <Field label={t('name.label')}>
+                {(attributes) => (
+                  <TextInput
+                    {...attributes}
+                    value={name}
+                    maxLength={60}
+                    placeholder={t('name.placeholder')}
+                    onChange={(event) => setName(event.target.value)}
+                  />
+                )}
+              </Field>
+            </div>
+            <Button
+              type="submit"
+              busy={creating.isPending}
+              disabled={name.trim().length === 0}
+              className="w-full sm:w-auto"
+            >
+              {creating.isPending ? t('creating') : t('create')}
+            </Button>
+          </form>
+        ) : (
+          <p className="text-sm text-foreground-muted">{t('viewer', { site: siteDomain })}</p>
+        )}
 
         {creating.isError ? <FailureNotice error={creating.error} /> : null}
         {issued ? <IssuedKey secret={issued} /> : null}
@@ -108,7 +127,7 @@ export function ServerKeys({ open, onClose, siteId, siteDomain, timeZoneId }: Se
             loading={keys.isPending}
             timeZoneId={timeZoneId}
             busyWith={revoking.isPending ? revoking.variables : undefined}
-            onRemove={(keyId) => revoking.mutate(keyId)}
+            onRemove={editable ? (keyId) => revoking.mutate(keyId) : undefined}
           />
         </section>
       </div>
@@ -121,9 +140,9 @@ export function ServerKeys({ open, onClose, siteId, siteDomain, timeZoneId }: Se
  *
  * Given its own surface rather than dropped into the list, because it will never appear again and
  * somebody scanning the panel has to be unable to miss it. The WordPress steps show a key they
- * create the same way.
+ * create the same way, among other things to copy, so there the button names what it copies.
  */
-export function IssuedKey({ secret }: { readonly secret: string }) {
+export function IssuedKey({ secret, what }: { readonly secret: string; readonly what?: string }) {
   const t = useTranslations('serverKeys');
 
   return (
@@ -134,7 +153,7 @@ export function IssuedKey({ secret }: { readonly secret: string }) {
       </code>
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-foreground-muted">{t('issued.body')}</p>
-        <CopyButton value={secret} className="w-full sm:w-auto" />
+        <CopyButton value={secret} what={what} className="w-full sm:w-auto" />
       </div>
     </div>
   );
@@ -145,7 +164,8 @@ interface KeyListProps {
   readonly loading: boolean;
   readonly timeZoneId: string;
   readonly busyWith: string | undefined;
-  readonly onRemove: (keyId: string) => void;
+  /** Withdraws a key, for somebody allowed to; nothing for somebody who may only look. */
+  readonly onRemove: ((keyId: string) => void) | undefined;
 }
 
 function KeyList({ keys, loading, timeZoneId, busyWith, onRemove }: KeyListProps) {
@@ -176,7 +196,7 @@ function KeyList({ keys, loading, timeZoneId, busyWith, onRemove }: KeyListProps
           entry={key}
           timeZoneId={timeZoneId}
           busy={busyWith === key.id}
-          onRemove={() => onRemove(key.id)}
+          onRemove={onRemove ? () => onRemove(key.id) : undefined}
         />
       ))}
     </ul>
@@ -187,20 +207,13 @@ interface KeyRowProps {
   readonly entry: ServerKey;
   readonly timeZoneId: string;
   readonly busy: boolean;
-  readonly onRemove: () => void;
+  readonly onRemove: (() => void) | undefined;
 }
 
-/**
- * One key, and the two presses it takes to withdraw it.
- *
- * Confirmed in place rather than in a second dialog. Removing a key silently stops whatever was
- * reporting with it, so it is worth a deliberate second press — but a dialog on top of a dialog
- * takes the list out of view at the moment somebody is checking which one they meant.
- */
+/** One key: what it is for, how it ends, when it was added and last used, and its withdrawal. */
 function KeyRow({ entry, timeZoneId, busy, onRemove }: KeyRowProps) {
   const t = useTranslations('serverKeys');
   const format = useFormatter();
-  const [confirming, setConfirming] = useState(false);
 
   // Counted in the website's own zone, as every other date on the dashboard is. A key created
   // late one evening must not appear to have been created the day before.
@@ -231,26 +244,40 @@ function KeyRow({ entry, timeZoneId, busy, onRemove }: KeyRowProps) {
         </div>
       </div>
 
-      {confirming ? (
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-foreground-muted">{t('confirm.question')}</span>
-          <Button tone="danger" size="sm" busy={busy} onClick={onRemove}>
-            {t('confirm.yes')}
-          </Button>
-          <Button tone="quiet" size="sm" onClick={() => setConfirming(false)}>
-            {t('confirm.no')}
-          </Button>
-        </div>
-      ) : (
-        <Button
-          tone="secondary"
-          size="sm"
-          onClick={() => setConfirming(true)}
-          className="w-full sm:w-auto"
-        >
-          {t('remove')}
-        </Button>
-      )}
+      {onRemove ? <Removal busy={busy} onRemove={onRemove} /> : null}
     </li>
+  );
+}
+
+/**
+ * The two presses it takes to withdraw a key.
+ *
+ * Confirmed in place rather than in a second dialog. Removing a key silently stops whatever was
+ * reporting with it, so it is worth a deliberate second press — but a dialog on top of a dialog
+ * takes the list out of view at the moment somebody is checking which one they meant.
+ */
+function Removal({ busy, onRemove }: { readonly busy: boolean; readonly onRemove: () => void }) {
+  const t = useTranslations('serverKeys');
+  const [confirming, setConfirming] = useState(false);
+
+  return confirming ? (
+    <div className="flex items-center gap-2">
+      <span className="text-sm text-foreground-muted">{t('confirm.question')}</span>
+      <Button tone="danger" size="sm" busy={busy} onClick={onRemove}>
+        {t('confirm.yes')}
+      </Button>
+      <Button tone="quiet" size="sm" onClick={() => setConfirming(false)}>
+        {t('confirm.no')}
+      </Button>
+    </div>
+  ) : (
+    <Button
+      tone="secondary"
+      size="sm"
+      onClick={() => setConfirming(true)}
+      className="w-full sm:w-auto"
+    >
+      {t('remove')}
+    </Button>
   );
 }

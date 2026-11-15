@@ -241,30 +241,33 @@ final class Reporting_Status {
 	}
 
 	/**
-	 * Records an answer that accepted the report.
+	 * Records an answer that accepted the batch.
+	 *
+	 * Whether the installation names the website is read from every answer, not learnt once: an
+	 * installation rolled back to a version that joins names unsafely stops naming it, and the
+	 * pages stop being named with it.
 	 *
 	 * @param array<mixed> $answer      The answer, decoded.
 	 * @param int          $duration_ms How long sending took, in milliseconds.
+	 * @param bool         $report      Whether the batch was a report, rather than the empty batch
+	 *                                  that checks the connection, which is not a report sent.
 	 */
-	public function succeeded( array $answer, int $duration_ms ): void {
+	public function succeeded( array $answer, int $duration_ms, bool $report = true ): void {
 		$now     = time();
 		$from    = is_string( $answer['from'] ?? null ) ? Address_Range::normalise( $answer['from'] ) : '';
 		$known   = $this->sends_from();
-		$due     = $now - $this->state()['sent_at'] >= self::KEPT_EVERY;
+		$due     = $report && $now - $this->state()['sent_at'] >= self::KEPT_EVERY;
 		$changes = array(
 			'failures'      => 0,
 			'retry_at'      => 0,
 			'probing_until' => 0,
+			'names_site'    => array_key_exists( 'site', $answer ),
 		);
 
 		// A new address is learnt at once only when none is known yet, then at the reports' own
 		// pace, so a server sending through a pool of addresses does not write on every report.
 		if ( '' !== $from && ! in_array( $from, $known, true ) && ( array() === $known || $due ) ) {
 			$changes['from'] = array_slice( array_merge( array( $from ), $known ), 0, self::MOST_ADDRESSES );
-		}
-
-		if ( array_key_exists( 'site', $answer ) ) {
-			$changes['names_site'] = true;
 		}
 
 		if ( false === ( $answer['measuring'] ?? null ) ) {
@@ -441,9 +444,10 @@ final class Reporting_Status {
 
 	/**
 	 * What the reports are sent to and with now, as a short digest: the address, the website and
-	 * the end of the key.
+	 * the end of the key. Whatever was learnt about the reports belongs to one fingerprint, as does
+	 * the last check of the connection.
 	 */
-	private function fingerprint(): string {
+	public function fingerprint(): string {
 		return substr( hash( 'sha256', $this->settings->server_address() . '|' . $this->settings->site_id() . '|' . $this->settings->key_ending() ), 0, 16 );
 	}
 

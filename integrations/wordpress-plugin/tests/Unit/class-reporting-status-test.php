@@ -263,6 +263,43 @@ final class Reporting_Status_Test extends Test_Case {
 	}
 
 	/**
+	 * An installation that stops naming the website — rolled back to a version that joins names
+	 * unsafely — stops the pages being named, from its next answer.
+	 */
+	public function test_an_answer_without_the_website_stops_the_naming(): void {
+		$this->status()->succeeded(
+			array(
+				'accepted' => 1,
+				'site'     => self::SITE_ID,
+			),
+			80
+		);
+		self::assertTrue( $this->status()->names_site() );
+
+		$this->status()->succeeded( array( 'accepted' => 1 ), 80 );
+
+		self::assertFalse( $this->status()->names_site() );
+	}
+
+	/**
+	 * The empty batch that checks the connection is not a report: it keeps no time of a report
+	 * sent, though it teaches where reports arrive from.
+	 */
+	public function test_a_check_of_the_connection_is_not_a_report_sent(): void {
+		$this->status()->succeeded(
+			array(
+				'accepted' => 0,
+				'from'     => self::SERVER,
+			),
+			120,
+			false
+		);
+
+		self::assertSame( 0, self::dig( $this->saved, 'sent_at' ) );
+		self::assertSame( array( self::SERVER ), $this->status()->sends_from() );
+	}
+
+	/**
 	 * Reports that change nothing write nothing, and the time of the last report is kept only
 	 * every 15 minutes.
 	 */

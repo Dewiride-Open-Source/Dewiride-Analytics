@@ -313,12 +313,18 @@ final class Visitor_Address {
 	 * The `for=` parameter of one element of a `Forwarded` header, without the quotation marks
 	 * around it and with what they escape restored, or an empty string when it has none.
 	 *
+	 * Read by finding the `=` rather than by a pattern, so that whatever a visitor writes into the
+	 * part of the header they control costs no more than reading it once.
+	 *
 	 * @param string $element The element.
 	 */
 	private static function for_parameter( string $element ): string {
 		foreach ( self::split_leftwards( $element, ';' ) as $pair ) {
-			if ( 1 === preg_match( '/^\s*for\s*=\s*(.*?)\s*$/i', $pair, $parameter ) ) {
-				$for = $parameter[1];
+			$pair   = trim( $pair );
+			$equals = strpos( $pair, '=' );
+
+			if ( false !== $equals && 0 === strcasecmp( rtrim( substr( $pair, 0, $equals ) ), 'for' ) ) {
+				$for = ltrim( substr( $pair, $equals + 1 ) );
 
 				return strlen( $for ) >= 2 && '"' === $for[0] && '"' === substr( $for, -1 )
 					? (string) preg_replace( '/\\\\(.)/', '$1', substr( $for, 1, -1 ) )

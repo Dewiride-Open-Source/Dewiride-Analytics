@@ -3,8 +3,9 @@
  * Tests for the server reporting what it answers.
  *
  * Naming a page writes a header, which PHP's command line cannot send once anything has been
- * printed, so the name reaching the browser is tested by the smoke harness in a real WordPress.
- * What is tested here is when reports are sent at all, and what is sent.
+ * printed, so a test of the naming replaces the header functions in the plugin's own namespace,
+ * in a process of its own: a function once declared stays declared for every test after it. The
+ * name reaching a browser is tested by the smoke harness in a real WordPress.
  *
  * @package Dewiride_Analytics
  */
@@ -41,11 +42,45 @@ final class Server_Reporting_Test extends Test_Case {
 	private const VISITOR = '203.0.113.7';
 
 	/**
+	 * The page asked for.
+	 */
+	private const PAGE = '/posts/hello/';
+
+	/**
+	 * Where a redirect leads.
+	 */
+	private const REDIRECT = 'https://example.com/hello-world/';
+
+	/**
+	 * A key set in `wp-config.php`; plainly not a real one either.
+	 */
+	private const CONFIG_KEY = 'dwk_ddddddddddddddddddddddddddddddddddddddddddd';
+
+	/**
+	 * The plugin's namespace, in which a test replaces a function PHP itself defines.
+	 */
+	private const PLUGIN = 'Dewiride\\Analytics\\WordPress\\';
+
+	/**
 	 * The options in each test, by name.
 	 *
 	 * @var array<string, mixed>
 	 */
 	private $options = array();
+
+	/**
+	 * The headers of the response, where a test replaces the functions that write them.
+	 *
+	 * @var list<string>
+	 */
+	private $headers = array();
+
+	/**
+	 * What the request did, in order, where a test follows it.
+	 *
+	 * @var list<string>
+	 */
+	private $calls = array();
 
 	/**
 	 * Starts each test with a key saved, reports accepted even though this server holds pages
@@ -85,7 +120,7 @@ final class Server_Reporting_Test extends Test_Case {
 		);
 		Functions\when( 'did_action' )->alias(
 			static function ( string $action ): int {
-				return 'parse_request' === $action ? 1 : 0;
+				return in_array( $action, array( 'parse_request', 'sanitize_comment_cookies' ), true ) ? 1 : 0;
 			}
 		);
 		foreach ( array( 'doing_action', 'wp_doing_cron', 'wp_doing_ajax', 'is_admin', 'is_feed', 'is_robots', 'is_favicon', 'is_preview', 'is_customize_preview', 'is_embed', 'is_user_logged_in' ) as $function ) {
@@ -101,30 +136,191 @@ final class Server_Reporting_Test extends Test_Case {
 			array(
 				'REMOTE_ADDR'     => self::VISITOR,
 				'REQUEST_METHOD'  => 'GET',
-				'REQUEST_URI'     => '/posts/hello/',
+				'REQUEST_URI'     => self::PAGE,
 				'HTTP_USER_AGENT' => 'Mozilla/5.0 (compatible; ExampleBot/1.0)',
 			)
 		);
 	}
 
 	/**
-	 * The page is named as its headers are sent, and reported at the very end of the request.
+	 * The page is named once the query has run, the request is told to carry on before anything
+	 * else at its end, and the report is sent at the very end.
 	 */
 	public function test_it_hooks_the_naming_and_the_report(): void {
 		$reporting = $this->reporting();
 
 		$reporting->register();
 
-		self::assertSame( 10, has_action( 'send_headers', array( $reporting, 'name_page' ) ) );
+		self::assertSame( 10, has_action( 'wp', array( $reporting, 'name_page' ) ) );
 		self::assertSame( PHP_INT_MAX, has_filter( 'wp_redirect', array( $reporting, 'unname_redirect' ) ) );
+		self::assertSame( PHP_INT_MIN, has_action( 'shutdown', array( $reporting, 'keep_going' ) ) );
 		self::assertSame( PHP_INT_MAX, has_action( 'shutdown', array( $reporting, 'report' ) ) );
+	}
+
+	/**
+	 * The request is told to carry on should the visitor hang up, only while reports are sent.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_the_request_carries_on_after_a_hang_up_only_while_reporting(): void {
+		Functions\expect( self::PLUGIN . 'ignore_user_abort' )->once()->with( true );
+
+		$this->reporting()->keep_going();
+
+		$this->options[ Settings::OPTION ] = array( 'report_server' => false ) + self::as_array( $this->options[ Settings::OPTION ] );
+		$this->reporting()->keep_going();
+	}
+
+	/**
+	 * A browser's page is named only once the installation has named the website in an answer,
+	 * which shows it joins names safely: one that does not would hand whoever echoed a name first
+	 * every visit the crawler that filled a cache made that day.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_page_is_named_only_once_the_installation_names_the_website(): void {
+		$this->given_browser_navigation();
+		$this->given_response_headers();
+
+		$this->reporting()->name_page();
+
+		self::assertSame( array(), $this->headers );
+
+		$this->given_installation_naming_the_website();
+		$this->reporting()->name_page();
+
+		self::assertCount( 1, $this->headers );
+		self::assertMatchesRegularExpression( '/^Server-Timing: dw;desc="[0-9a-f]{32}"$/', $this->headers[0] );
+	}
+
+	/**
+	 * A page that turns out to be a redirect loses its name, and keeps every other timing the
+	 * response carries, another plugin's measurements among them.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_redirect_loses_its_name_and_keeps_every_other_timing(): void {
+		$this->given_browser_navigation();
+		$this->given_installation_naming_the_website();
+		$this->given_response_headers( 'Server-Timing: other;dur=1', 'Content-Type: text/html; charset=UTF-8' );
+		$reporting = $this->reporting();
+		$reporting->name_page();
+
+		self::assertCount( 3, $this->headers );
+		self::assertSame( self::REDIRECT, $reporting->unname_redirect( self::REDIRECT ) );
+		self::assertSame( array( 'Content-Type: text/html; charset=UTF-8', 'Server-Timing: other;dur=1' ), $this->headers );
+	}
+
+	/**
+	 * Servers that can hand a page over before the request ends, by the function they do it with.
+	 *
+	 * @return array<string, array{string}>
+	 */
+	public function servers_finishing_pages_first(): array {
+		return array(
+			'PHP-FPM'   => array( 'fastcgi_finish_request' ),
+			'LiteSpeed' => array( 'litespeed_finish_request' ),
+		);
+	}
+
+	/**
+	 * Where the server can hand the page over first, reports are on without held pages being
+	 * accepted, and the page is handed over before the key is opened or the report sent.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 * @dataProvider servers_finishing_pages_first
+	 *
+	 * @param string $finish The function the server hands a page over with.
+	 */
+	public function test_a_server_finishing_pages_first_hands_the_page_over_before_reporting( string $finish ): void {
+		$this->options[ Settings::OPTION ] = array( 'report_unfinished' => false ) + self::as_array( $this->options[ Settings::OPTION ] );
+		Functions\when( $finish )->alias(
+			function (): bool {
+				$this->calls[] = 'page handed over';
+
+				return true;
+			}
+		);
+		Functions\when( 'get_option' )->alias(
+			function ( string $option, $fallback = false ) {
+				if ( Server_Key::OPTION === $option ) {
+					$this->calls[] = 'key opened';
+				}
+
+				return $this->options[ $option ] ?? $fallback;
+			}
+		);
+		Functions\when( 'wp_remote_post' )->alias(
+			function (): array {
+				$this->calls[] = 'report sent';
+
+				return array();
+			}
+		);
+		$reporting = $this->reporting();
+
+		self::assertTrue( Server_Reporting::finishes_pages_first() );
+		self::assertTrue( $reporting->is_sending() );
+
+		$reporting->report();
+
+		self::assertSame( 'page handed over', $this->calls[0] ?? null );
+		self::assertContains( 'report sent', $this->calls );
+	}
+
+	/**
+	 * A key set in `wp-config.php` reports as a saved one does, under that key.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_key_in_wp_config_reports_under_that_key(): void {
+		define( 'DEWIRIDE_ANALYTICS_SERVER_KEY', self::CONFIG_KEY );
+		$this->options[ Settings::OPTION ] = array( 'key_ending' => '' ) + self::as_array( $this->options[ Settings::OPTION ] );
+		unset( $this->options[ Server_Key::OPTION ] );
+		Functions\expect( 'wp_remote_post' )
+			->once()
+			->with(
+				self::ADDRESS . '/collect/server',
+				Mockery::on(
+					static function ( $arguments ): bool {
+						return 'Bearer ' . self::CONFIG_KEY === self::dig( $arguments, 'headers', 'Authorization' );
+					}
+				)
+			)
+			->andReturn( array() );
+
+		self::assertSame( 'dddd', ( new Settings() )->key_ending() );
+
+		$this->reporting()->report();
+	}
+
+	/**
+	 * A key in `wp-config.php` that is not a whole key sends nothing, and the key saved here does
+	 * not stand in for it.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_malformed_key_in_wp_config_sends_nothing(): void {
+		define( 'DEWIRIDE_ANALYTICS_SERVER_KEY', 'dwk_short' );
+		Functions\expect( 'wp_remote_post' )->never();
+
+		$reporting = $this->reporting();
+
+		self::assertFalse( $reporting->is_sending() );
+		$reporting->report();
 	}
 
 	/**
 	 * A redirect of a page that was never named leaves the address it leads to alone.
 	 */
 	public function test_an_unnamed_redirect_is_left_alone(): void {
-		self::assertSame( 'https://example.com/hello-world/', $this->reporting()->unname_redirect( 'https://example.com/hello-world/' ) );
+		self::assertSame( self::REDIRECT, $this->reporting()->unname_redirect( self::REDIRECT ) );
 	}
 
 	/**
@@ -184,12 +380,26 @@ final class Server_Reporting_Test extends Test_Case {
 	 */
 	public function unready_settings(): array {
 		return array(
-			'counting is off'                            => array( array( 'site_id' => '' ) ),
-			'there is no key'                            => array( array( 'key_ending' => '' ) ),
-			'reporting is switched off'                  => array( array( 'report_server' => false ) ),
-			'holding pages open is not accepted'         => array( array( 'report_unfinished' => false ) ),
-			'the address would send the key unencrypted' => array( array( 'address' => 'http://203.0.113.10' ) ),
+			'counting is off'                    => array( array( 'site_id' => '' ) ),
+			'there is no key'                    => array( array( 'key_ending' => '' ) ),
+			'reporting is switched off'          => array( array( 'report_server' => false ) ),
+			'holding pages open is not accepted' => array( array( 'report_unfinished' => false ) ),
 		);
+	}
+
+	/**
+	 * An address that would carry the key unencrypted is sent nothing. Whether it may be sent the
+	 * key can take a lookup of its name, so it is asked only once a report is about to go, never
+	 * while a page is being answered.
+	 */
+	public function test_an_address_that_would_send_the_key_unencrypted_is_sent_nothing(): void {
+		$this->options[ Settings::OPTION ] = array( 'address' => 'http://203.0.113.10' ) + self::as_array( $this->options[ Settings::OPTION ] );
+		Functions\expect( 'wp_remote_post' )->never();
+
+		$reporting = $this->reporting();
+
+		self::assertTrue( $reporting->is_sending() );
+		$reporting->report();
 	}
 
 	/**
@@ -285,7 +495,7 @@ final class Server_Reporting_Test extends Test_Case {
 			array(
 				'REMOTE_ADDR'           => self::VISITOR,
 				'REQUEST_METHOD'        => 'GET',
-				'REQUEST_URI'           => '/posts/hello/',
+				'REQUEST_URI'           => self::PAGE,
 				'HTTP_CF_CONNECTING_IP' => '198.51.100.7',
 			)
 		);
@@ -304,6 +514,60 @@ final class Server_Reporting_Test extends Test_Case {
 	 */
 	public function test_a_cancelled_redirect_is_left_alone(): void {
 		self::assertFalse( $this->reporting()->unname_redirect( false ) );
+	}
+
+	/**
+	 * A browser navigating to the crawler's page.
+	 */
+	private function given_browser_navigation(): void {
+		$this->given_request(
+			array(
+				'REMOTE_ADDR'         => self::VISITOR,
+				'REQUEST_METHOD'      => 'GET',
+				'REQUEST_URI'         => self::PAGE,
+				'HTTP_USER_AGENT'     => 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
+				'HTTP_SEC_FETCH_DEST' => 'document',
+			)
+		);
+	}
+
+	/**
+	 * An installation whose answers name the website, which shows it joins names safely.
+	 */
+	private function given_installation_naming_the_website(): void {
+		$this->options[ Reporting_Status::OPTION ] = array( 'names_site' => true ) + ( new Reporting_Status( new Settings() ) )->state();
+	}
+
+	/**
+	 * Replaces the functions the plugin writes headers with by a list of the response's headers.
+	 *
+	 * @param string ...$headers The headers the response already carries.
+	 */
+	private function given_response_headers( string ...$headers ): void {
+		$this->headers = $headers;
+		Functions\when( self::PLUGIN . 'headers_sent' )->justReturn( false );
+		Functions\when( self::PLUGIN . 'headers_list' )->alias(
+			function (): array {
+				return $this->headers;
+			}
+		);
+		Functions\when( self::PLUGIN . 'header' )->alias(
+			function ( string $header ): void {
+				$this->headers[] = $header;
+			}
+		);
+		Functions\when( self::PLUGIN . 'header_remove' )->alias(
+			function ( string $name ): void {
+				$this->headers = array_values(
+					array_filter(
+						$this->headers,
+						static function ( string $header ) use ( $name ): bool {
+							return 0 !== stripos( $header, $name . ':' );
+						}
+					)
+				);
+			}
+		);
 	}
 
 	/**

@@ -48,10 +48,16 @@ final class Own_Request {
 	private const WORDPRESS_AGENT = 'WordPress/';
 
 	/**
-	 * The value the plugin's own requests carry now.
+	 * The value the plugin's own request for an address of this site carries now.
+	 *
+	 * The value names this site's host and the path it is sent to, so one that is copied on its
+	 * way — from a log, or by somebody whose own site on the same network shares the secret keys —
+	 * opens nothing but the same page of the same site, for at most twenty minutes.
+	 *
+	 * @param string $url The address of this site the request is for.
 	 */
-	public static function marker(): string {
-		return self::marker_for( intdiv( time(), self::PERIOD ) );
+	public static function marker( string $url ): string {
+		return self::marker_for( intdiv( time(), self::PERIOD ), (string) wp_parse_url( $url, PHP_URL_PATH ) );
 	}
 
 	/**
@@ -65,8 +71,9 @@ final class Own_Request {
 		}
 
 		$period = intdiv( time(), self::PERIOD );
+		$path   = Request_Headers::requested_path();
 
-		return hash_equals( self::marker_for( $period ), $sent ) || hash_equals( self::marker_for( $period - 1 ), $sent );
+		return hash_equals( self::marker_for( $period, $path ), $sent ) || hash_equals( self::marker_for( $period - 1, $path ), $sent );
 	}
 
 	/**
@@ -101,11 +108,14 @@ final class Own_Request {
 	}
 
 	/**
-	 * The header's value for one period.
+	 * The header's value for one period and one page of this site.
 	 *
-	 * @param int $period The number of the period since 1970.
+	 * @param int    $period The number of the period since 1970.
+	 * @param string $path   The path of the page.
 	 */
-	private static function marker_for( int $period ): string {
-		return hash_hmac( 'sha256', 'dewiride-analytics-own-request:' . $period, wp_salt( 'nonce' ) );
+	private static function marker_for( int $period, string $path ): string {
+		$host = strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+
+		return hash_hmac( 'sha256', 'dewiride-analytics-own-request:' . $period . ':' . $host . ( '' === $path ? '/' : $path ), wp_salt( 'nonce' ) );
 	}
 }

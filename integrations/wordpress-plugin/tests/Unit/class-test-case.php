@@ -175,24 +175,31 @@ abstract class Test_Case extends TestCase {
 	 * and the headers it carried, by their names in `$_SERVER`. Whatever the test does not name is
 	 * left out, as a request that did not send it.
 	 *
-	 * Text is slashed as WordPress slashes `$_SERVER` before any plugin runs, so that a quotation
-	 * mark or a backslash a test sends reaches the plugin exactly as a visitor's would.
+	 * Text is slashed as WordPress slashes `$_SERVER` once plugins have loaded, and WordPress is
+	 * said to have done so, so that a quotation mark or a backslash a test sends reaches the plugin
+	 * exactly as a visitor's would. A request refused while plugins were still loading never got
+	 * that far, and is given as it is.
 	 *
-	 * @param array<string, mixed> $server What the web server says, such as `REMOTE_ADDR`.
+	 * @param array<string, mixed> $server  What the web server says, such as `REMOTE_ADDR`.
+	 * @param bool                 $slashed Whether WordPress has slashed it yet.
 	 */
-	protected function given_request( array $server ): void {
+	protected function given_request( array $server, bool $slashed = true ): void {
 		if ( null === $this->server_before ) {
 			$this->server_before = $_SERVER; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Kept whole only to be put back after the test.
 		}
 
 		foreach ( array_keys( $_SERVER ) as $key ) {
-			if ( is_string( $key ) && ( 0 === strpos( $key, 'HTTP_' ) || in_array( $key, array( 'REMOTE_ADDR', 'REQUEST_METHOD', 'REQUEST_URI', 'SERVER_ADDR' ), true ) ) ) {
+			if ( is_string( $key ) && ( 0 === strpos( $key, 'HTTP_' ) || in_array( $key, array( 'REMOTE_ADDR', 'REQUEST_METHOD', 'REQUEST_URI', 'SERVER_ADDR', 'QUERY_STRING' ), true ) ) ) {
 				unset( $_SERVER[ $key ] );
 			}
 		}
 
 		foreach ( $server as $key => $value ) {
-			$_SERVER[ $key ] = is_string( $value ) ? addslashes( $value ) : $value;
+			$_SERVER[ $key ] = $slashed && is_string( $value ) ? addslashes( $value ) : $value;
+		}
+
+		if ( $slashed && 0 === did_action( 'sanitize_comment_cookies' ) ) {
+			do_action( 'sanitize_comment_cookies' ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- WordPress's own action, fired as WordPress fires it once the request is slashed.
 		}
 	}
 

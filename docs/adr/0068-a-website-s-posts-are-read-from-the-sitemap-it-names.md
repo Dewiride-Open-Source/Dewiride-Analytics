@@ -19,7 +19,9 @@
 - **Extended by**: [0069](0069-a-post-s-views-are-kept-a-month-at-a-time.md), which reads the posts on
   Insights and keeps how many times each was read, a month at a time.
 - **Followed by**: [0070](0070-a-post-is-read-on-a-page-of-its-own.md), which gives each post this
-  sitemap lists a page of its own, and lists them all on one screen, searchable by title or address.
+  sitemap lists a page of its own, and lists them all on one screen, searchable by title or address;
+  and [0072](0072-a-wordpress-website-is-measured-by-a-plugin-it-installs.md), whose WordPress plugin
+  warns a website on plain links that every page would be recorded as its home page.
 
 ## Context
 

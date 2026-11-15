@@ -1,9 +1,10 @@
 # The dashboard: the screens people look at, the one address the browser talks to, and the beacon
-# that goes on the websites being measured.
+# that goes on the websites being measured, with the WordPress plugin that puts it there.
 #
 # The beacon is compiled and served here rather than by the engine, because the address somebody
 # pastes into their own website has to be one that is certainly reachable from outside — and that
-# is this one. Everything the engine answers is forwarded from here.
+# is this one. The plugin is packaged here for the same reason: it is downloaded from the dashboard
+# somebody is reading. Everything the engine answers is forwarded from here.
 #
 # Built from the repository root so the build context matches the engine's:
 #
@@ -30,10 +31,15 @@ RUN pnpm install --frozen-lockfile
 
 COPY tracker/ ./tracker/
 COPY frontend/ ./frontend/
+COPY integrations/wordpress-plugin/ ./integrations/wordpress-plugin/
+COPY scripts/package-wordpress-plugin.mjs ./scripts/
 
-# The beacon first: compiling it writes the file the dashboard then serves, and building in the
-# other order produces a dashboard with nothing to hand out.
+# The beacon and the plugin first: each writes a file the dashboard then serves, and building in the
+# other order produces a dashboard with nothing to hand out. The plugin is packaged before the
+# dashboard is built because it is the quicker of the two to refuse — and it refuses when the
+# version the download names is not the version inside it.
 RUN pnpm --filter @dewiride/tracker build
+RUN node scripts/package-wordpress-plugin.mjs
 RUN pnpm --filter @dewiride/web build
 
 # ---------------------------------------------------------------------------

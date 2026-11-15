@@ -113,7 +113,11 @@ and the [master plan](#master-plan) below it says what does not yet.
   unstored. Presses are recorded from Chrome 67, Edge 79, Firefox 133 and Safari 14 onwards, and a
   `data-dw-ignore` attribute keeps any part of a page out of it altogether.
 - A tracker you paste into your own site, and an image fallback for readers whose browsers run no
-  scripts. The dashboard hands you both lines with your address already filled in.
+  scripts. The dashboard hands you both lines with your address already filled in. On WordPress, a
+  plugin the dashboard hands out puts both on your pages for you instead: it leaves out people
+  signed in to WordPress unless you choose their role, asks the common optimisation plugins to
+  leave the tracker alone, and checks once a day that your home page reaches readers with it
+  intact.
 - A collection endpoint your own server can report to, so the traffic that never runs a script —
   crawlers, feed readers, scanners probing for paths that do not exist — is counted too, with the
   status your site returned. Keys are created and withdrawn in the dashboard; the wire format is
@@ -327,14 +331,18 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-07.
 
 **4.1 Website integrations**
 
-- **Not started** · WordPress plugin.
+- **Partly done** · WordPress plugin: counts the people who read a site, from the browser — nobody
+  signed in unless their role is chosen — asks the common optimisation plugins to leave the tracker
+  alone, and checks daily that the home page reaches readers with it; downloaded from the dashboard.
+  Reporting the robots and other programs that reach WordPress itself is still to come.
 - **Not started** · Cloudflare Worker.
 - **Not started** · Netlify edge function.
 - **Not started** · Vercel edge middleware.
 - **Not started** · Next.js middleware.
 - **Not started** · ASP.NET Core middleware.
-- Until these exist real websites report from the browser only, so the server-side signals —
-  scanners, scrapers, no script run — never fire outside the test suite.
+- Until one of these reports from a website's own server, which the WordPress plugin does not do
+  yet, real websites report from the browser only, so the server-side signals — scanners,
+  scrapers, no script run — never fire outside the test suite.
 
 **4.2 Browser tracker**
 
@@ -698,10 +706,21 @@ run the pieces outside containers.
    `docker compose down --volumes`.
 
 6. **Put the tracker on your site.** Choose **Tracking code** on the dashboard and paste the two
-   lines it gives you into your website's pages. Traffic appears as soon as somebody visits.
+   lines it gives you into your website's pages. On a WordPress site, choose **WordPress** there
+   instead: it hands you the plugin, the steps to install it, and the two values to paste into its
+   settings. Traffic appears as soon as somebody visits.
 
    The address in those lines is the one you are reading the dashboard on, so a site on the
-   internet needs a dashboard the internet can reach.
+   internet needs a dashboard the internet can reach — through a reverse proxy that sets
+   `X-Forwarded-For` to the address each connection came from, replacing whatever the request
+   carried. The engine believes that header when it arrives through the dashboard, which passes it
+   on as it is, and the address is most of what a verdict rests on: without a proxy that replaces
+   it, a browser can give the collector any address it likes. In Caddy, that is one line in the
+   `reverse_proxy` block:
+
+   ```text
+   header_up X-Forwarded-For {remote_host}
+   ```
 
 To stop: `docker compose down`. To start over from nothing, including wiping the data:
 `docker compose down --volumes`.
@@ -925,17 +944,18 @@ docker compose exec clickhouse sh -c 'clickhouse-client --user "$CLICKHOUSE_USER
 
 ## What's inside
 
-| Directory   | What lives there                                                        |
-| ----------- | ----------------------------------------------------------------------- |
-| `backend/`  | The engine: collection, the query surface, accounts, and classification |
-| `frontend/` | The dashboard                                                           |
-| `config/`   | Service tuning that is mounted into the containers                      |
-| `tracker/`  | The browser beacon and its no-JavaScript fallback, MIT rather than AGPL |
-| `docs/`     | How to report from your own server, and the decisions behind the design |
+| Directory       | What lives there                                                        |
+| --------------- | ----------------------------------------------------------------------- |
+| `backend/`      | The engine: collection, the query surface, accounts, and classification |
+| `frontend/`     | The dashboard                                                           |
+| `config/`       | Service tuning that is mounted into the containers                      |
+| `tracker/`      | The browser beacon and its no-JavaScript fallback, MIT rather than AGPL |
+| `integrations/` | Website integrations, so far the WordPress plugin; MIT rather than AGPL |
+| `docs/`         | How to report from your own server, and the decisions behind the design |
 
-Folders for the hosting-platform integrations, the traffic generator and the cloud deployment
-description arrive with the work that fills them. A directory with nothing in it is a promise, not
-a feature.
+Folders for the other hosting-platform integrations, the traffic generator and the cloud
+deployment description arrive with the work that fills them. A directory with nothing in it is a
+promise, not a feature.
 
 Two stores, deliberately. PostgreSQL holds accounts, websites, settings and the job queue, where
 records are updated and relationships matter. ClickHouse holds the telemetry, which is written
@@ -949,9 +969,8 @@ The engine, the dashboard, and everything that decides what your traffic is are
 self-host it, including for your own commercial purposes. If you run a modified version as a
 service for other people, the AGPL asks you to offer them your changes.
 
-`tracker/` is **MIT** instead, and the integrations will be when they arrive, because they are
-pasted into other people's websites and a copyleft beacon is not a reasonable thing to ask
-somebody to embed.
+`tracker/` and `integrations/` are **MIT** instead, because they go into other people's websites —
+pasted or installed — and a copyleft beacon is not a reasonable thing to ask somebody to embed.
 
 Self-hosting is not a crippled tier. The full detection engine, every screen that shows or
 judges your traffic, and unlimited websites and traffic are free, and every edition keeps twelve

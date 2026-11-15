@@ -6,6 +6,8 @@
   new, and widens no envelope.
 - **Revises**: [0043](0043-what-is-out-of-date-is-proposed-not-applied.md), whose week of waiting is
   "short enough that a security fix is still proposed the week it ships". It is not.
+- **Followed by**: [0072](0072-a-wordpress-website-is-measured-by-a-plugin-it-installs.md), whose
+  WordPress plugin's tools are proposed by the same Monday run and checked by the same weekly Build.
 
 ## Context
 

@@ -1,0 +1,31 @@
+{
+  "name": "dewiride/analytics-wordpress-plugin",
+  "description": "Counts the people who read a WordPress site with Dewiride Analytics.",
+  "type": "wordpress-plugin",
+  "license": "MIT",
+  "require-dev": {
+    "brain/monkey": "^2.7.0",
+    "dealerdirect/phpcodesniffer-composer-installer": "^1.2.1",
+    "php-stubs/wordpress-stubs": "^7.1.2",
+    "phpcompatibility/phpcompatibility-wp": "^2.1.8",
+    "phpstan/phpstan": "^2.3.5",
+    "phpunit/phpunit": "^9.6.39",
+    "squizlabs/php_codesniffer": "^3.13.6",
+    "szepeviktor/phpstan-wordpress": "^2.0.4",
+    "wp-coding-standards/wpcs": "^3.4.1"
+  },
+  "config": {
+    "allow-plugins": {
+      "dealerdirect/phpcodesniffer-composer-installer": true
+    },
+    "platform": {
+      "php": "7.4.33"
+    },
+    "sort-packages": true
+  },
+  "scripts": {
+    "lint": "phpcs",
+    "analyse": "phpstan analyse --memory-limit=1G",
+    "test": "phpunit"
+  }
+}

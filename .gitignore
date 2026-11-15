@@ -95,3 +95,22 @@ Thumbs.db
 tracker/dist/
 frontend/apps/web/public/dw.js
 frontend/apps/web/public/dw.js.map
+
+# ---------------------------------------------------------------------------
+# The WordPress plugin's download
+#
+# Packaged from integrations/wordpress-plugin by scripts/package-wordpress-plugin.mjs
+# into the folder the dashboard serves. Output: the source of record is the plugin.
+# ---------------------------------------------------------------------------
+frontend/apps/web/public/downloads/
+
+# ---------------------------------------------------------------------------
+# The WordPress plugin's checks
+#
+# The packages Composer installs for them and the test runner's record of its
+# last run. None of it ships; the tools themselves are pinned in
+# integrations/wordpress-plugin/composer.lock.
+# ---------------------------------------------------------------------------
+integrations/wordpress-plugin/vendor/
+.phpunit.cache/
+.phpunit.result.cache

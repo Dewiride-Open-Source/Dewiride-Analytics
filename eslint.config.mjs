@@ -27,6 +27,9 @@ export default defineConfig([
     '**/coverage/**',
     // Compiled output, served as it is. Linting it reports on the compiler's choices.
     'frontend/apps/web/public/**',
+    // Packages Composer installs for the WordPress plugin's checks. Some carry JavaScript of their
+    // own, and none of it is this repository's to lint.
+    '**/vendor/**',
     '**/next-env.d.ts',
     // A separate repository with its own tooling, checked out here to build the Cloud
     // edition. Absent from an ordinary clone, so linting it would pass or fail by luck.

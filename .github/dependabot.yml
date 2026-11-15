@@ -45,8 +45,12 @@
 version: 2
 
 updates:
+  # The root is where the workflows are read from. The actions this repository defines for itself
+  # live under .github/actions, which is never looked in unless it is named.
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -57,7 +61,8 @@ updates:
     commit-message:
       prefix: "build"
       include: "scope"
-    # Four actions, one proposal. They are moved together or not at all.
+    # Six actions, one proposal, wherever they are named. They are moved together or not at all,
+    # and every one of them runs in the build the proposal itself goes through.
     groups:
       actions:
         patterns:
@@ -111,6 +116,39 @@ updates:
           - "NSubstitute"
           - "NetArchTest.*"
           - "Testcontainers.*"
+
+  # The WordPress plugin's development tools: the coding standard, the analyser, the test runner and
+  # what they need. Nothing here ships — the plugin itself has no dependencies — but every check the
+  # plugin goes through is one of them. A week's small moves arrive as one proposal; a new major of
+  # anything is proposed on its own.
+  - package-ecosystem: "composer"
+    directory: "/integrations/wordpress-plugin"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Kolkata"
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    groups:
+      tools:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Two majors stay where they are, each held by something no proposal could move. PHPUnit stays
+    # on 9, the last release that runs on PHP 7.4, the oldest PHP the plugin supports and the one
+    # its tests are run on as well. PHP_CodeSniffer stays on 3, which is what the WordPress coding
+    # standard is written against; it moves when a release of the standard does.
+    ignore:
+      - dependency-name: "phpunit/phpunit"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "squizlabs/php_codesniffer"
+        update-types: ["version-update:semver-major"]
 
   # The SDK pinned in global.json. Within one major the pin can move freely: the image the
   # engine is built in carries the newest SDK of that major, and `rollForward: latestPatch`

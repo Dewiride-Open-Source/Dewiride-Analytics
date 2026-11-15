@@ -20,7 +20,8 @@
 !.env.example
 
 # The dashboard image compiles the tracker as well, because it is the dashboard that serves the
-# beacon: one address for the snippet somebody pastes into their website.
+# beacon: one address for the snippet somebody pastes into their website. It packages the WordPress
+# plugin for the same reason — the plugin is downloaded from the dashboard somebody is reading.
 
 # Not needed by any image.
 integrations
@@ -28,6 +29,15 @@ tools
 infra
 deploy
 docs
+
+# Except the WordPress plugin's own files, which the dashboard image packages. What its checks
+# install and leave behind, and its tests, stay out: none of it goes into the download, and a change
+# to any file let in here makes the image build the dashboard again.
+!integrations/wordpress-plugin
+integrations/wordpress-plugin/vendor
+integrations/wordpress-plugin/tests
+integrations/wordpress-plugin/.phpunit.cache
+integrations/wordpress-plugin/.phpunit.result.cache
 
 # ee/ is deliberately not excluded. The commercial edition's images are built from this same
 # context — an engine compiled with its projects, a dashboard bundled with its screens, and the

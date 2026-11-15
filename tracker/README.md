@@ -28,11 +28,24 @@ website and choose **Tracking code**. They look like this:
 The script works out where to send reports from where it was itself loaded, so there is only ever
 one address to get right. An installation served under a path keeps that path.
 
+On WordPress, the plugin in [`integrations/wordpress-plugin`](../integrations/wordpress-plugin/)
+prints the tag for you: choose **Tracking code**, then **WordPress**, and follow the steps there.
+Its tag carries an absolute `data-collector` and the attributes optimisation plugins read as "leave
+this alone", and its image names the page it is on (`u`, below).
+
 | Attribute          | Required | What it does                                                                              |
 | ------------------ | -------- | ----------------------------------------------------------------------------------------- |
 | `data-site`        | yes      | The website's identifier. Nothing is reported without it.                                 |
 | `data-collector`   | no       | Sends reports somewhere other than beside the script.                                     |
 | `data-correlation` | no       | An identifier stamped into the page by the server, echoed back so the two can be matched. |
+
+Where the tag carries no `data-correlation`, the script looks for the same identifier in the
+page's own response instead: a `Server-Timing` metric named `dw`, whose description is the
+identifier (`Server-Timing: dw;desc="7b21ae4c90f1d33e"`), as
+[naming the delivery](../docs/server-reporting.md#naming-the-delivery) sets out. It reads only the
+timing the browser recorded for the page itself. Browsers hand that timing to a script only on a
+page served over https, or from `localhost`, and only from Chrome 65, Edge 79, Firefox 61 and
+Safari 16.4; anywhere else the page view goes without an identifier, as it does when none was sent.
 
 Anything inside an element carrying **`data-dw-ignore`** is left alone entirely — no press inside
 it is ever reported. That is how you keep a signed-in area, or anything whose controls are named
@@ -105,6 +118,18 @@ missed for that reason, and it must never be described as though it does.
 The `referrerpolicy` attribute is doing real work. Without it a browser tells the collector only
 which site the image was requested from and not which page, and every reader with scripting off
 would be recorded as having read the front page.
+
+The image takes one more parameter, `u`: the absolute address of the page being read. Where it is
+given, the collector takes the page from it rather than from the referrer, so a page that knows its
+own address — as one printed by the WordPress plugin does — is counted as itself whatever the
+browser leaves out. It has to be an absolute `http` or `https` address, or it is passed over for
+the referrer; with neither, nothing is recorded. As with every report, only the page's path is kept
+and the request is held to the website's own addresses. The two lines the dashboard hands out
+leave it out, because a line pasted once into every page cannot know which page it is on.
+
+The plugin's image asks the browser for no more than the site's origin
+(`referrerpolicy="strict-origin"`): the page comes from `u`, and the origin is what the collector
+checks the image against.
 
 ## Browsers
 

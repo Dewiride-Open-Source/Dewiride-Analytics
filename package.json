@@ -7,8 +7,9 @@
     "node": ">=24.15.0"
   },
   "scripts": {
-    "dev": "pnpm --filter @dewiride/tracker build && pnpm --filter @dewiride/web dev",
-    "build": "pnpm --filter @dewiride/tracker build && pnpm --filter @dewiride/web build",
+    "dev": "pnpm build:wordpress-plugin && pnpm --filter @dewiride/tracker build && pnpm --filter @dewiride/web dev",
+    "build": "pnpm build:wordpress-plugin && pnpm --filter @dewiride/tracker build && pnpm --filter @dewiride/web build",
+    "build:wordpress-plugin": "node scripts/package-wordpress-plugin.mjs",
     "start": "pnpm --filter @dewiride/web start",
     "test": "pnpm --recursive test",
     "test:coverage": "pnpm --recursive test:coverage",

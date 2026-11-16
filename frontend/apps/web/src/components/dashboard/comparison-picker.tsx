@@ -38,7 +38,7 @@ export function useAgainstWords(): (comparison: Comparison) => string {
 }
 
 /**
- * What the period on screen is compared with, beneath the control that names the period.
+ * What the period on screen is compared with, beside the control that names the period.
  *
  * The browser's own list, as the period's is, offering every earlier stretch the period may be set
  * beside — the period's own first — each named the way the cards name it, with the days the one in
@@ -70,7 +70,7 @@ export function ComparisonPicker({
   if (offered.length === 1) {
     return (
       <DaysBeneath id={daysId} days={days}>
-        <p className="flex h-9 items-center text-sm font-medium text-foreground-muted sm:justify-end">
+        <p className="flex h-9 items-center text-sm font-medium text-foreground-muted">
           {t('option', { against: called(inForce) })}
         </p>
       </DaysBeneath>
@@ -91,7 +91,7 @@ export function ComparisonPicker({
           }
         }}
         onReach={onReach}
-        className="w-full"
+        className="w-full sm:w-auto"
       >
         {offered.map((one) => (
           <option key={one.against} value={one.against}>

@@ -219,9 +219,9 @@ export function SiteOverview({ site }: SiteOverviewProps) {
   return (
     <div className="flex flex-col gap-6">
       {/*
-        Aligned by their tops. The period carries what it is compared with beneath it, and that comes
-        and goes with the period, so a heading lined up with the bottom of the controls would move
-        every time somebody chose a period that is compared with nothing.
+        Aligned by their tops. The period and what it is compared with carry their days on a second
+        line, so a heading lined up with the bottom of the controls would sit below the name of the
+        screen's own row.
       */}
       <header className="flex flex-wrap items-start justify-between gap-4">
         {/*
@@ -247,7 +247,7 @@ export function SiteOverview({ site }: SiteOverviewProps) {
           out to on a second line, so a row centred on it would leave every button beside it
           sitting lower than the control they line up with.
         */}
-        <div className="flex flex-wrap items-start gap-3">
+        <div className="flex flex-wrap items-start gap-3 sm:ml-auto sm:justify-end">
           <Button tone="secondary" size="sm" onClick={() => setShowingCode(true)}>
             <CodeXml aria-hidden className="size-4" />
             {install('action')}
@@ -262,30 +262,25 @@ export function SiteOverview({ site }: SiteOverviewProps) {
           </Button>
           <PopulationSwitch peopleOnly={peopleOnly} onChange={showOnlyPeople} />
           {/*
-            What the period is compared with sits beneath the period, in one column whose width is
-            the same whichever period is chosen — wide enough for the longest thing either holds — so
-            neither the period nor the buttons beside it move when the period changes, whether or
-            not it is compared with anything, and the two line up on both edges wherever the row
-            wraps.
+            What the period is compared with sits beside the period, at the end of the row, so the
+            header is no taller for it; the row keeps to the right-hand edge wherever it wraps.
           */}
-          <div className="flex w-full min-w-0 flex-col gap-2 sm:w-72">
-            <PeriodPicker
-              ref={periodControl}
-              value={period}
-              onChange={choose}
-              timeZoneId={site.timeZoneId}
-              since={firstDay}
-              nothingHeld={nothingHeld}
-              onReach={reach}
-            />
-            <ComparisonPicker
-              offered={offered}
-              value={comparison?.against ?? null}
-              onChange={compareWith}
-              timeZoneId={site.timeZoneId}
-              onReach={reachEarlier}
-            />
-          </div>
+          <PeriodPicker
+            ref={periodControl}
+            value={period}
+            onChange={choose}
+            timeZoneId={site.timeZoneId}
+            since={firstDay}
+            nothingHeld={nothingHeld}
+            onReach={reach}
+          />
+          <ComparisonPicker
+            offered={offered}
+            value={comparison?.against ?? null}
+            onChange={compareWith}
+            timeZoneId={site.timeZoneId}
+            onReach={reachEarlier}
+          />
         </div>
       </header>
 

@@ -205,23 +205,23 @@ const JUDGED_MONTHS: TrafficSeries = {
 };
 
 /**
- * The three days before those, so that the two runs are the same length.
+ * The same three weekdays a week before those, the stretch a run of three days is measured against.
  *
  * Every figure differs from the same day of the period being read, so a line drawn from the wrong
  * one cannot pass for the right one.
  */
 const EARLIER_DAYS: readonly TrafficPoint[] = [
-  { start: '2026-08-07T18:30:00+00:00', pageViews: 30, visitors: 10 },
-  { start: '2026-08-08T18:30:00+00:00', pageViews: 44, visitors: 15 },
-  { start: '2026-08-09T18:30:00+00:00', pageViews: 28, visitors: 8 },
+  { start: '2026-08-03T18:30:00+00:00', pageViews: 30, visitors: 10 },
+  { start: '2026-08-04T18:30:00+00:00', pageViews: 44, visitors: 15 },
+  { start: '2026-08-05T18:30:00+00:00', pageViews: 28, visitors: 8 },
 ];
 
 /** The same three days, judged: six, eight and five visits. */
 const EARLIER_JUDGED: TrafficSeries = {
-  from: '2026-08-07T18:30:00+00:00',
-  to: '2026-08-10T18:30:00+00:00',
+  from: '2026-08-03T18:30:00+00:00',
+  to: '2026-08-06T18:30:00+00:00',
   granularity: 'day',
-  completeTo: '2026-08-10T18:30:00+00:00',
+  completeTo: '2026-08-06T18:30:00+00:00',
   buckets: EARLIER_DAYS.map((day) => day.start),
   groups: [
     { category: 'likely-human', sessions: [5, 7, 3], pageViews: [15, 21, 9] },
@@ -254,8 +254,11 @@ const EARLIER_JUDGED_WEEKS: TrafficSeries = {
   ],
 };
 
-/** What those days are called on screen. */
-const EARLIER_DATES = '7–9 Aug 2026';
+/** What those days are written as on screen. */
+const EARLIER_DATES = '4–6 Aug 2026';
+
+/** What the headline numbers call them. */
+const EARLIER_CALLED = 'the same days a week earlier';
 
 /** Every way of cutting a period, offered by one long enough for all of them. */
 const EVERY_WAY: readonly ChartBy[] = ['day', 'week', 'month'];
@@ -337,13 +340,15 @@ interface Shown {
   readonly manyYears?: boolean;
   readonly problem?: unknown;
   readonly style?: string;
-  /** Whether there is a period before to offer, which there is not where it is no longer kept. */
+  /** Whether there is an earlier stretch to offer, which there is not where it is no longer kept. */
   readonly comparing?: boolean;
-  /** Whether the period before is being drawn behind the one being read. */
+  /** Whether the earlier stretch is being drawn behind the one being read. */
   readonly against?: boolean;
   readonly earlierPoints?: readonly TrafficPoint[];
   readonly earlierSeries?: TrafficSeries;
   readonly earlierDates?: string;
+  /** What the headline numbers call the earlier stretch. */
+  readonly earlierCalled?: string;
   /** The ways the period can be cut, where it is long enough to offer one. */
   readonly cutting?: ChartCutting;
   /** Told the days a bucket was pressed into, where the period can still be narrowed. */
@@ -390,6 +395,7 @@ function show({
   earlierPoints = EARLIER_DAYS,
   earlierSeries = EARLIER_JUDGED,
   earlierDates = EARLIER_DATES,
+  earlierCalled = EARLIER_CALLED,
   cutting,
   onPick,
   pressableFrom,
@@ -417,6 +423,7 @@ function show({
               activity: earlierPoints,
               who: earlierSeries,
               days: earlierDates,
+              called: earlierCalled,
             }
           : undefined
       }
@@ -1834,7 +1841,7 @@ describe('a picture that could not be drawn', () => {
   });
 });
 
-describe('the period before, set behind the one being read', () => {
+describe('the earlier stretch, set behind the one being read', () => {
   it('is not drawn until somebody asks for it', () => {
     const option = show({ view: 'who' });
 
@@ -1842,24 +1849,28 @@ describe('the period before, set behind the one being read', () => {
     expect(screen.queryByText(/dashed/)).not.toBeInTheDocument();
   });
 
-  it('is asked for by the control beside the rest', async () => {
+  it('is asked for by the control beside the rest, which names what it draws', async () => {
     show({ view: 'who' });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Compare with the period before' }));
+    const control = screen.getByRole('button', {
+      name: 'Compare with the same days a week earlier',
+    });
+
+    expect(control).toHaveTextContent('Compare');
+
+    await userEvent.click(control);
 
     expect(compared).toHaveBeenCalledWith(true);
   });
 
   /**
    * A line drawn from days whose reports have gone is a line drawn from nothing, so where there is
-   * no period before to draw, nothing on the card offers one.
+   * no earlier stretch to draw, nothing on the card offers one.
    */
-  it('is not offered where there is no period before still kept to draw', () => {
+  it('is not offered where there is no earlier stretch still kept to draw', () => {
     const option = show({ view: 'who', comparing: false });
 
-    expect(
-      screen.queryByRole('button', { name: 'Compare with the period before' }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Compare with / })).not.toBeInTheDocument();
     expect(option.series.some((one) => one.lineStyle?.type === 'dashed')).toBe(false);
   });
 
@@ -1899,14 +1910,14 @@ describe('the period before, set behind the one being read', () => {
 
     expect(
       screen.getByText(
-        'Visits that have finished, by day in Kolkata. The dashed line is 7–9 Aug 2026.',
+        'Visits that have finished, by day in Kolkata. The dashed line is 4–6 Aug 2026.',
       ),
     ).toBeInTheDocument();
   });
 
   /**
-   * Each earlier week falls on the same weekdays as the week it is drawn beside, so its days are
-   * not the days the cards are measured against — and the caption says which they are.
+   * Each earlier week falls on the same weekdays as the week it is drawn beside, and the caption
+   * says which days they are.
    */
   it('sets the dashed lines week beside week, and says which days they are', () => {
     const option = show({
@@ -2243,17 +2254,17 @@ describe('a day pressed on the picture', () => {
   });
 
   /**
-   * Under a comparison the earlier period is drawn behind this one, bucket for bucket, so the
+   * Under a comparison the earlier stretch is drawn behind this one, bucket for bucket, so the
    * first column is two days at once. The one pressed is this period's.
    */
-  it("lands on this period's day rather than the earlier one's, with the period before drawn behind it", () => {
+  it("lands on this period's day rather than the earlier one's, with the earlier stretch drawn behind it", () => {
     const picked = vi.fn();
 
     show({ against: true, onPick: picked });
     drawn.pick?.(0);
 
     expect(picked).toHaveBeenCalledWith(day('2026-08-11'));
-    expect(picked).not.toHaveBeenCalledWith(day('2026-08-08'));
+    expect(picked).not.toHaveBeenCalledWith(day('2026-08-04'));
   });
 
   /** A canvas is not a control, so the table the same figures are published in carries the way in. */

@@ -77,7 +77,7 @@ export interface Activity extends AnalyticsWindow {
 }
 
 /**
- * The period immediately before the one being read, drawn behind it.
+ * The earlier stretch the period being read is measured against, drawn behind it.
  *
  * Asked for rather than always on. A second set of lines is a real cost to reading the first, and
  * most of the time somebody wants the shape of this period rather than of two at once — which is
@@ -93,6 +93,12 @@ export interface TrafficComparison {
   readonly who: TrafficSeries | undefined;
   /** The days it covers, already written in the website's own zone. */
   readonly days: string;
+  /**
+   * What the control that draws it is named after: the headline numbers' words for it — the same
+   * day last week, yesterday — where it is the stretch they are measured against, and the days it
+   * covers where a picture cut by the month, or a month cut by the week, draws other days.
+   */
+  readonly called: string;
 }
 
 interface TrafficChartProps extends Buckets {
@@ -268,7 +274,7 @@ export function TrafficChart({
                 tone="secondary"
                 size="sm"
                 aria-pressed={comparison.on}
-                aria-label={t('against.label')}
+                aria-label={t('against.label', { against: comparison.called })}
                 onClick={() => comparison.onChange(!comparison.on)}
                 className={
                   comparison.on

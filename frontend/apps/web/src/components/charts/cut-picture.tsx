@@ -1,9 +1,10 @@
 'use client';
 
-import { ChartArea, ChartColumn, ChartLine, ChevronDown, type LucideIcon } from 'lucide-react';
+import { ChartArea, ChartColumn, ChartLine, type LucideIcon } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 import { CELL, FIGURE, Figures } from '@/components/charts/figures';
+import { NativeSelect } from '@/components/ui/native-select';
 import { type BucketDays, bucketDays, heldInDetail } from '@/lib/analytics/buckets';
 import { CHART_BYS, type ChartCutting } from '@/lib/analytics/chart-by';
 import type { ChartView } from '@/lib/analytics/chart-view';
@@ -64,30 +65,24 @@ export function ShowBy({ granularity, cutting }: ShowByProps) {
   );
 
   return (
-    <span className="relative flex items-center">
-      <select
-        aria-label={t('label')}
-        value={granularity}
-        onChange={(event) => {
-          const chosen = CHART_BYS.find((cut) => cut === event.target.value);
+    <NativeSelect
+      aria-label={t('label')}
+      value={granularity}
+      onChange={(event) => {
+        const chosen = CHART_BYS.find((cut) => cut === event.target.value);
 
-          if (chosen !== undefined) {
-            onChoose(chosen);
-          }
-        }}
-        className="select-trigger h-9 w-30 cursor-pointer appearance-none truncate rounded-md border border-border bg-surface pr-8 pl-3 text-sm font-medium text-foreground"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <ChevronDown
-        aria-hidden
-        className="pointer-events-none absolute right-2.5 size-4 text-foreground-muted"
-      />
-    </span>
+        if (chosen !== undefined) {
+          onChoose(chosen);
+        }
+      }}
+      className="w-30"
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </NativeSelect>
   );
 }
 

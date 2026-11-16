@@ -48,11 +48,16 @@ and the [master plan](#master-plan) below it says what does not yet.
   year, back to the first month the website was measured — or, on an installation that first runs
   this release more than about eleven months after that, the first month it could still count —
   long after the reports of those months are gone; the lists beneath it cover the last twelve
-  months, which is as far back as anything about a single visit is kept. Nothing is ever compared
-  with days that are no longer kept, so a period whose earlier stretch reaches back past twelve
-  months shows no rise or fall at all. A
-  site running both the tracker and its own server's reports is counted once per page delivered
-  rather than once per report, so running the product properly does not double what it tells you.
+  months, which is as far back as anything about a single visit is kept. A run of days is measured
+  against the same weekdays — today against the same day last week, the last 30 days against the
+  same days five weeks earlier — so a quiet weekend never reads there as a fall; a day can be set
+  beside the day before or the same day four weeks earlier instead, and a run of up to three weeks
+  beside the same days four weeks earlier. A month is measured against the same dates of the month
+  before.
+  Nothing is ever compared with days that are no longer kept, so a period whose every earlier
+  stretch reaches back past twelve months shows no rise or fall at all. A site running both the
+  tracker and its own server's reports is counted once per page delivered rather than once per
+  report, so running the product properly does not double what it tells you.
   Traffic arriving through a pool of rented addresses is counted as the one operator it is, rather
   than as a fresh person on every request. A page is counted once, when a visitor arrives on it,
   however many reports follow about how it was read; a reading whose arrival never reached us
@@ -444,8 +449,12 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-07.
 **5.6 Trends**
 
 - **Done** · Totals and people only over time, by days, weeks (Monday to Sunday) or months; change
-  against the period before; the earlier period as a dashed line, lined up week for week or month
-  for month; bars that can be pressed to look at the days they cover.
+  against the same weekdays before — today against the same day last week, a run of days against
+  the same days the fewest whole weeks earlier that clear it — and a month against the same dates of
+  the month before; a choice beneath the period of what a day is set beside instead — the day
+  before, or the same day four weeks earlier — and of four weeks earlier for a run of up to three
+  weeks; that earlier stretch as a dashed line, lined up week for week or month for month; bars
+  that can be pressed to look at the days they cover.
 - **Done** · All time: the headline figures and the graph by months or years, back to the first
   month kept.
 - **Partly done** · The "Who came" chart stacks four tones over time; AI and search are folded
@@ -453,8 +462,9 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-07.
 - **Not started** · AI crawlers and search crawlers as lines of their own.
 - **Not started** · Changes for automated, suspicious and unknown traffic; Human Traffic Score
   over time.
-- **Not started** · Calendar week against the previous week; calendar month against the previous
-  month.
+- **Not started** · Calendar week against the previous week.
+- **Not started** · The same period last year, which needs each day's figures kept past the twelve
+  months a report is kept.
 - **Not started** · Country and network distribution over time.
 - **Not started** · "Traffic up, audience quality down" shown as one comparison.
 

@@ -174,6 +174,10 @@
         }
       }
     },
+    "compare": {
+      "label": "Compared with",
+      "option": "vs {against}"
+    },
     "population": {
       "action": "People only",
       "label": "People only: count just the visits judged to be people",
@@ -221,18 +225,21 @@
         "up": "<strong>{amount} more</strong> than {period}",
         "down": "<strong>{amount} less</strong> than {period}",
         "level": "<strong>No change</strong> from {period}",
-        "none": "<strong>Up from none</strong> in {period}"
+        "none": "<strong>Up from none</strong> vs {period}"
       },
       "against": {
-        "today": "yesterday",
-        "yesterday": "the day before",
-        "last-7-days": "the 7 days before",
-        "last-30-days": "the 30 days before",
-        "last-90-days": "the 90 days before",
-        "this-month": "the same days last month",
-        "last-month": "the month before",
-        "this-year": "the same days last year",
-        "chosen": "the {days, plural, one {day} other {# days}} before"
+        "today": {
+          "before": "the same day last week",
+          "day-before": "yesterday",
+          "4-weeks-before": "the same day 4 weeks ago"
+        },
+        "last-7-days": {
+          "before": "the same days last week"
+        },
+        "day-before": "the day before",
+        "weeks-earlier": "the same {days, plural, one {day} other {days}} {weeks, plural, one {a week} other {# weeks}} earlier",
+        "this-month": "the same dates last month",
+        "last-month": "the month before"
       }
     },
     "allTime": {
@@ -328,7 +335,7 @@
       },
       "against": {
         "action": "Compare",
-        "label": "Compare with the period before",
+        "label": "Compare with {against}",
         "measure": "{name} before",
         "lines": "The dashed lines are {days}{cut, select, week {, lined up week for week} month {, lined up month for month} other {}}."
       },

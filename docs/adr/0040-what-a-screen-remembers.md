@@ -18,6 +18,9 @@
 - **Extended by**: [0063](0063-the-picture-is-drawn-by-the-day-the-week-or-the-month.md), which
   remembers how finely the picture is cut as `dewiride.chart-by`, on the same terms as the view and
   the comparison, and keeps a remembered cut a short period cannot offer for the next long one.
+- **Extended by**: [0076](0076-somebody-chooses-which-earlier-days-a-period-is-set-beside.md), which
+  remembers which earlier days the overview's period is set beside as `dewiride.compared-with`, on
+  the same terms, and keeps a remembered choice a period does not offer for the next one that does.
 
 ## Context
 

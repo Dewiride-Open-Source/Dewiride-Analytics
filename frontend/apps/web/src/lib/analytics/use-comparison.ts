@@ -7,13 +7,14 @@ import { oneOf, remembered } from '@/lib/preferences/remembered';
 import { useRememberedAddress } from '@/lib/preferences/use-remembered-address';
 
 /**
- * Whether the drawing carries the period before it, carried in the address and remembered by the
- * browser.
+ * Whether the drawing carries the earlier days the period is set beside, carried in the address and
+ * remembered by the browser.
  *
  * It changes what is drawn rather than how it looks, so it travels: somebody who found a rise by
  * setting two periods beside each other can send exactly that. Remembered as well, so somebody
- * who reads their weeks against the ones before finds the earlier period already drawn. Left off,
- * it says nothing in the address at all.
+ * who reads their weeks against the ones before finds the earlier days already drawn. Left off,
+ * it says nothing in the address at all. Which earlier days are drawn is the cards' choice, made
+ * beneath the period, and carried under a key of its own.
  */
 
 /** Which of the closed set is in force, or nothing when this period is drawn alone. */
@@ -27,7 +28,7 @@ const WRITTEN = parseAsStringLiteral(COMPARISONS)
 const REMEMBERED = remembered<Against>('dewiride.chart-against', oneOf(COMPARISONS), null);
 
 export interface ChosenComparison {
-  /** Whether the period before is drawn behind the one being read. */
+  /** Whether the earlier days the period is set beside are drawn behind the one being read. */
   readonly against: boolean;
   readonly compare: (against: boolean) => void;
 }

@@ -3,11 +3,13 @@
 import {
   keepPreviousData,
   type QueryClient,
+  queryOptions,
   skipToken,
   useMutation,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { EVERY_JOURNEY, type JourneyFilters } from '@/lib/analytics/journeys';
 import type { Population } from '@/lib/analytics/people-only';
 import type {
@@ -146,10 +148,30 @@ export function useOverview(
   population: Population,
   enabled = true,
 ) {
-  return useQuery({
+  return useQuery({ ...overviewQuery(siteId, window, population), enabled });
+}
+
+/**
+ * Asks ahead for headline totals for one website over a window, for one population, so the
+ * figures a choice somebody is reaching for will need are waiting by the time it is made. An answer
+ * already held and still current is not asked for again.
+ */
+export function usePrefetchOverview() {
+  const cache = useQueryClient();
+
+  return useCallback(
+    (siteId: string, window: AnalyticsWindow, population: Population) => {
+      void cache.prefetchQuery(overviewQuery(siteId, window, population));
+    },
+    [cache],
+  );
+}
+
+/** How headline totals are asked for and kept, whether they are asked for now or ahead. */
+function overviewQuery(siteId: string, window: AnalyticsWindow, population: Population) {
+  return queryOptions({
     queryKey: overviewKey(siteId, window, population),
     queryFn: () => readOverview(siteId, window, population),
-    enabled,
     retry: false,
     staleTime: FRESH_FOR,
   });

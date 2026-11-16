@@ -3,7 +3,8 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Dashboard } from '@/components/dashboard/dashboard';
-import { spanInstants, todayIn } from '@/lib/analytics/period';
+import { COMPARED_WITH } from '@/lib/analytics/compared-with';
+import { PRESETS, previousWindow, spanInstants, todayIn } from '@/lib/analytics/period';
 import { allTimeKey, overviewKey, sitesKey, trafficKey } from '@/lib/queries/keys';
 import { drawn } from '@/test/drawing';
 import { engineDoing, engineStopped, respondWith, type Sent } from '@/test/engine';
@@ -126,21 +127,73 @@ const STOPPED_IN_THE_FIRST_DAY = {
 /** A week judged to the end in which nothing at all was judged, its traffic all begun before it. */
 const SETTLED_EMPTY = { ...NOTHING_JUDGED, buckets: BUCKETS, completeTo: TO };
 
-/** How recently a window has to end to be the period on screen rather than the one before it. */
-const RECENTLY = 86_400_000;
+/**
+ * Whether a question is about days a period is measured against rather than about the period on
+ * screen: its window is exactly the one some named period is set beside, under one of the earlier
+ * stretches that period is offered — worked out at the moment the engine was set up, or now.
+ *
+ * Told apart by the window itself rather than by how recently it ends. Today set beside yesterday
+ * is measured over a window that ended within the last day, as the window of yesterday itself does.
+ * A test that tells the two apart stands the clock still, so the windows it is asked about are the
+ * ones worked out here; one that moves the clock afterwards still has the windows the screen worked
+ * out before the move told apart. A stretch somebody chose is the period on screen unless its window
+ * is also one a named period is set beside — a finished day pressed on the picture can be — so a
+ * test giving earlier days figures of their own looks at named periods.
+ *
+ * @param path The question asked.
+ * @param setUpAt When the engine was set up, if it was.
+ */
+function aboutEarlierDays(path: string, setUpAt?: Date): boolean {
+  const from = partOf(path, 'from');
+  const to = partOf(path, 'to');
+  const moments = setUpAt === undefined ? [new Date()] : [setUpAt, new Date()];
+
+  return moments.some((now) =>
+    PRESETS.some((preset) =>
+      COMPARED_WITH.some((against) => {
+        const earlier = previousWindow({ kind: 'preset', preset }, against, SITE.timeZoneId, now);
+
+        return earlier?.from === from && earlier.to === to;
+      }),
+    ),
+  );
+}
+
+/** The labels of the three headline cards, as everybody's figures are labelled. */
+const CARD_LABELS = ['Page views', 'Daily visitors', 'Pages per visitor'];
 
 /**
- * Whether a question is about the period being looked at rather than the one it is measured
- * against.
+ * Whether the card a label heads holds the place of the line saying how its number moved, with a
+ * hidden sentence and a bar pulsing over it.
  *
- * Told apart by where the window ends. The period on screen runs up to about now; the one it is
- * compared with ended when that one began, which is at least a period ago.
+ * @param label The card's label.
  */
-function current(path: string): boolean {
-  const asked = new URLSearchParams(path.slice(path.indexOf('?') + 1));
-  const ends = Date.parse(asked.get('to') ?? '');
+function holdsTheLine(label: string): boolean {
+  const card = screen.getByRole('heading', { name: label }).parentElement;
 
-  return !Number.isNaN(ends) && ends > Date.now() - RECENTLY;
+  return card?.querySelector('[aria-hidden="true"] .animate-pulse') != null;
+}
+
+/**
+ * Where the cards' sentences are never looked for: the screen's header, whose control beneath the
+ * period names the same days in the same words, and the hidden sentence a card holds the line's
+ * place with while it waits, which nobody reads.
+ */
+const NOT_THE_CARDS = 'script, style, header *, [aria-hidden="true"] *';
+
+/**
+ * The sentences under the cards that say what their numbers are measured against, and how they
+ * moved.
+ *
+ * @param words What the sentences end with.
+ */
+function cardsSaying(words: RegExp): HTMLElement[] {
+  return screen.queryAllByText(words, { ignore: NOT_THE_CARDS });
+}
+
+/** The same sentences, once they are drawn. */
+function findCardsSaying(words: RegExp): Promise<HTMLElement[]> {
+  return screen.findAllByText(words, { ignore: NOT_THE_CARDS });
 }
 
 /** What a bucketed answer says of the whole period, as the breakdown reports it. */
@@ -211,6 +264,8 @@ function engineWith(
   people: unknown = overview,
   refused: readonly string[] = [],
 ) {
+  const setUpAt = new Date();
+
   return engineDoing(async (path) => {
     if (refused.some((address) => path.includes(address))) {
       return respondWith(500, { status: 500, title: 'The engine is having trouble.' });
@@ -294,7 +349,7 @@ function engineWith(
         return respondWith(200, people);
       }
 
-      return respondWith(200, current(path) ? overview : earlier);
+      return respondWith(200, aboutEarlierDays(path, setUpAt) ? earlier : overview);
     }
 
     const listed = Object.keys(NOTHING_LISTED).find((address) => path.includes(address));
@@ -369,46 +424,34 @@ function watched() {
 }
 
 /**
- * The website, answering every question at once except the figures the period is measured
- * against, which wait until the test lets them go.
+ * The website, its figures 464 page views and those of every stretch it is set beside 400,
+ * answering every question at once except the figures over the one window given, which wait until
+ * the test lets them go.
  *
- * @param earlier The figures of the period before, once they are let go.
+ * @param from Where the window held begins, as the engine is asked it.
+ * @param to Where it ends.
  */
-function periodBeforeHeld(earlier: unknown) {
-  engineWith([SITE], totals(464, 132, 900), NOTHING_JUDGED, earlier);
+function windowHeld(from: string, to: string) {
+  engineWith([SITE], totals(464, 132, 900), NOTHING_JUDGED, totals(400, 120, 800));
 
   const answering = globalThis.fetch as unknown as (
     path: string,
     init: RequestInit,
   ) => Promise<Response>;
   let release: () => void = () => {};
-  let answered: () => void = () => {};
   const released = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const answeredNow = new Promise<void>((resolve) => {
-    answered = resolve;
-  });
 
-  engineDoing(async (path, init) => {
-    if (!path.includes('/overview')) {
-      return answering(path, init);
+  const engine = engineDoing(async (path, init) => {
+    if (path.includes('/overview?') && partOf(path, 'from') === from && partOf(path, 'to') === to) {
+      await released;
     }
-
-    if (current(path)) {
-      const response = await answering(path, init);
-
-      answered();
-
-      return response;
-    }
-
-    await released;
 
     return answering(path, init);
   });
 
-  return { answeredNow, release: () => release() };
+  return { engine, release: () => release() };
 }
 
 /** What the engine was told about one part of the period, read back off the first question asked. */
@@ -744,7 +787,23 @@ describe('the dashboard', () => {
   });
 });
 
-describe('the period before', () => {
+describe('the days a period is measured against', () => {
+  /**
+   * Mid-afternoon on Monday the seventeenth of August in Kolkata. The figures of the days a period
+   * is measured against are told from its own by the window they are asked over, so the clock is
+   * stood still — only the clock, since pressing things needs the timers beneath it.
+   */
+  const NOW = new Date('2026-08-17T09:37:12Z');
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   /**
    * A number on its own says how much. A number beside the one before it says whether anything is
    * happening, which is what somebody opens a dashboard to find out.
@@ -757,44 +816,56 @@ describe('the period before', () => {
     expect(await screen.findByText('16% more')).toBeInTheDocument();
     expect(screen.getByText('10% more')).toBeInTheDocument();
     expect(screen.getByText('5% more')).toBeInTheDocument();
-    expect(screen.getAllByText(/than the 7 days before/)).toHaveLength(3);
+    expect(cardsSaying(/than the same days last week$/)).toHaveLength(3);
   });
 
   /**
    * Four hundred page views after none is neither four thousand per cent nor infinitely many.
    * A percentage taken against nothing would look like a measurement.
    */
-  it('shows no percentage where the period before held nothing', async () => {
+  it('shows no percentage where the days it is measured against held nothing', async () => {
     engineWith([SITE], totals(464, 132, 900), NOTHING_JUDGED, totals(0, 0, 0));
 
     renderScreen(<Dashboard />);
 
     expect(await screen.findByText('464')).toBeInTheDocument();
-    expect(screen.getAllByText('Up from none')).toHaveLength(3);
+    expect(await screen.findAllByText('Up from none')).toHaveLength(3);
+    expect(cardsSaying(/^\s*vs the same days last week$/)).toHaveLength(3);
     expect(screen.queryByText(/% more/)).not.toBeInTheDocument();
+
+    // A sentence too long for its card wraps beneath its own words, with the arrow kept level with
+    // their first line rather than left on a line of its own.
+    const line = cardsSaying(/^\s*vs the same days last week$/)[0]?.parentElement;
+
+    expect(line).toHaveClass('items-start');
+    expect(line).not.toHaveClass('flex-wrap');
+    expect(line?.firstElementChild).toHaveClass('shrink-0');
   });
 
   /**
-   * A number and the one it is measured against are two answers. Drawn as each arrived, every card
-   * would grow a line when the second came in and move the picture somebody is using below the
-   * cards; held until both are in, each card is drawn once, at its full height.
+   * A number and the one it is measured against are two answers. The number is the answer to how
+   * much, and is shown as soon as it is in; the line saying how it moved is held in its place until
+   * the second answer is in too, at the height the line will take, so nothing below the cards moves
+   * when it arrives.
    */
-  it('draws each number only once the one it is measured against is in too', async () => {
-    const { answeredNow, release } = periodBeforeHeld(totals(400, 120, 800));
+  it('shows each number as soon as it is in, and holds the line saying how it moved until the one it is measured against is in too', async () => {
+    const { release } = windowHeld('2026-08-03T18:30:00.000Z', '2026-08-10T10:00:00.000Z');
 
     renderScreen(<Dashboard />);
 
+    expect(await screen.findByText('464')).toBeInTheDocument();
     await act(async () => {
-      await answeredNow;
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
-
-    expect(screen.queryByText('464')).not.toBeInTheDocument();
+    expect(screen.queryByText('16% more')).not.toBeInTheDocument();
+    expect(cardsSaying(/than the same days last week$/)).toHaveLength(0);
+    expect(CARD_LABELS.every(holdsTheLine)).toBe(true);
 
     release();
 
-    expect(await screen.findByText('464')).toBeInTheDocument();
-    expect(screen.getByText('16% more')).toBeInTheDocument();
+    expect(await screen.findByText('16% more')).toBeInTheDocument();
+    expect(cardsSaying(/than the same days last week$/)).toHaveLength(3);
+    expect(CARD_LABELS.some(holdsTheLine)).toBe(false);
   });
 
   it('draws it behind the picture for anybody who asks, and publishes its figures too', async () => {
@@ -803,7 +874,7 @@ describe('the period before', () => {
     renderScreen(<Dashboard />);
 
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Compare with the period before' }),
+      await screen.findByRole('button', { name: 'Compare with the same days last week' }),
     );
 
     expect(
@@ -988,7 +1059,7 @@ describe('the whole screen kept to people', () => {
     const everybody = engine
       .all()
       .filter(({ path }) => path.includes('/overview?') && !path.includes('only='))
-      .filter(({ path }) => current(path));
+      .filter(({ path }) => !aboutEarlierDays(path));
 
     expect(everybody).toHaveLength(1);
   });
@@ -1273,7 +1344,7 @@ describe('a day pressed on the picture', () => {
     // that names the day, brought into view, and hears what changed.
     expect(screen.getByRole('combobox', { name: 'Period' })).toHaveFocus();
     expect(focusing).toHaveBeenCalledWith({ preventScroll: false });
-    expect(await screen.findAllByText(/the day before/)).toHaveLength(3);
+    expect(await findCardsSaying(/the same day a week earlier$/)).toHaveLength(3);
 
     for (const address of ABOUT_THE_PERIOD) {
       await waitFor(() =>
@@ -1346,7 +1417,7 @@ describe('a day pressed on the picture', () => {
     );
     expect(screen.getByRole('combobox', { name: 'Period' })).toHaveValue('yesterday');
     expect(screen.getByRole('combobox', { name: 'Period' })).toHaveFocus();
-    expect(await screen.findAllByText(/the day before/)).toHaveLength(3);
+    expect(await findCardsSaying(/the same day a week earlier$/)).toHaveLength(3);
 
     for (const address of ABOUT_THE_PERIOD) {
       await waitFor(() =>
@@ -1384,9 +1455,9 @@ describe('a day pressed on the picture', () => {
 
   /**
    * Today is still running, so it is asked about up to the top of the hour and set beside the same
-   * part of yesterday — which is what the cards then say they were measured against.
+   * part of the same day last week — which is what the cards then say they were measured against.
    */
-  it('names a pressed day that is today where the website is as Today, measured against yesterday', async () => {
+  it('names a pressed day that is today where the website is as Today, measured against the same day last week', async () => {
     const watching = vi.fn();
     const engine = watched();
 
@@ -1403,9 +1474,10 @@ describe('a day pressed on the picture', () => {
     );
     expect(screen.getByRole('combobox', { name: 'Period' })).toHaveValue('today');
     expect(screen.getByRole('combobox', { name: 'Period' })).toHaveFocus();
-    // The engine answers both windows alike, so every card reads "No change from yesterday".
-    expect(await screen.findAllByText(/from yesterday$/)).toHaveLength(3);
-    expect(screen.queryByText(/the day before/)).not.toBeInTheDocument();
+    // The engine answers both windows alike, so every card reads "No change from the same day last
+    // week".
+    expect(await findCardsSaying(/from the same day last week$/)).toHaveLength(3);
+    expect(screen.queryByText(/a week earlier/)).not.toBeInTheDocument();
     await waitFor(() =>
       expect(
         askedFor(
@@ -1417,7 +1489,7 @@ describe('a day pressed on the picture', () => {
       ).toBe(true),
     );
     expect(
-      askedFor(engine.all(), '/overview?', '2026-08-15T18:30:00.000Z', '2026-08-16T10:00:00.000Z'),
+      askedFor(engine.all(), '/overview?', '2026-08-09T18:30:00.000Z', '2026-08-10T10:00:00.000Z'),
     ).toBe(true);
   });
 
@@ -1432,7 +1504,8 @@ describe('a day pressed on the picture', () => {
 
     expect(await screen.findByRole('combobox', { name: 'Period' })).toHaveValue('chosen');
     expect(screen.getByRole('option', { name: 'Your dates' })).toBeInTheDocument();
-    expect(await screen.findAllByText(/the day before/)).toHaveLength(3);
+    expect(await findCardsSaying(/the same day a week earlier$/)).toHaveLength(3);
+    expect(screen.queryByText(/the same day last week/)).not.toBeInTheDocument();
   });
 });
 
@@ -1731,8 +1804,8 @@ describe('a picture cut by the week or the month', () => {
 
   /**
    * Thirty days before the last thirty begin on a Friday, and the dashed weeks would fall two days
-   * out from the ones they are drawn beside. Thirty-five days before is a Sunday again — while the
-   * cards are still measured against the thirty days before, and each says which days it means.
+   * out from the ones they are drawn beside. Thirty-five days before is a Sunday again, and the
+   * cards are measured against those same days.
    */
   it('asks for the earlier weeks lined up week for week', async () => {
     const engine = cutByTheCalendar();
@@ -1754,16 +1827,33 @@ describe('a picture cut by the week or the month', () => {
         askedFor(
           engine.all(),
           '/overview?',
-          '2026-06-18T18:30:00.000Z',
-          '2026-07-18T10:00:00.000Z',
+          '2026-06-13T18:30:00.000Z',
+          '2026-07-13T10:00:00.000Z',
         ),
       ).toBe(true),
     );
+    expect(await findCardsSaying(/the same days 5 weeks earlier$/)).toHaveLength(3);
     expect(
       await screen.findByText(
         /The dashed line is Jun 14\s–\sJul 13, 2026, lined up week for week\.$/,
       ),
     ).toBeInTheDocument();
+  });
+
+  /**
+   * By the month the dashed line moves back by whole months — the twentieth of January to the
+   * seventeenth of April — away from the days the cards are measured against, so the control that
+   * draws it is named by the days it draws rather than by the cards' words.
+   */
+  it('names the control by the days it draws where the line is not the cards’ own stretch', async () => {
+    cutByTheCalendar();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=last-90-days&by=month' });
+
+    expect(
+      await screen.findByRole('button', { name: /^Compare with Jan 20\s–\sApr 17, 2026$/ }),
+    ).toBeInTheDocument();
+    expect(await findCardsSaying(/from the same days 13 weeks earlier$/)).toHaveLength(3);
   });
 
   /**
@@ -1816,7 +1906,7 @@ describe('a period whose earlier days are no longer kept', () => {
     vi.useRealTimers();
   });
 
-  it("hides the comparison when last year's same days are no longer kept", async () => {
+  it("measures this year against nothing, since last year's same days are never all kept", async () => {
     const engine = engineWith([SITE], totals(464, 132, 900), JUDGED, totals(0, 0, 0));
 
     renderScreen(<Dashboard />, { searchParams: '?period=this-year' });
@@ -1824,17 +1914,379 @@ describe('a period whose earlier days are no longer kept', () => {
     expect(await screen.findByText('464')).toBeInTheDocument();
     await screen.findByRole('img', { name: /Who and what visited/ });
 
-    expect(screen.queryByText(/the same days last year/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/last year/)).not.toBeInTheDocument();
     expect(screen.queryByText('Up from none')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Compare with / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Compared with' })).not.toBeInTheDocument();
+
+    // Every headline figure asked for is this year's own, from the first of January in Kolkata.
+    const asked = engine.all().filter(({ path }) => path.includes('/overview?'));
+
+    expect(asked.length).toBeGreaterThan(0);
     expect(
-      screen.queryByRole('button', { name: 'Compare with the period before' }),
-    ).not.toBeInTheDocument();
+      asked.every(
+        ({ path }) =>
+          partOf(path, 'from') === '2025-12-31T18:30:00.000Z' &&
+          partOf(path, 'to') === '2026-08-17T10:00:00.000Z',
+      ),
+    ).toBe(true);
+  });
+});
+
+/**
+ * A day is read against more than one other day — the same day last week, yesterday, the same day
+ * four weeks ago — and only the reader knows which they came for, so the stretch a period is set
+ * beside is theirs to choose wherever the period offers more than one.
+ */
+describe('what the period is compared with', () => {
+  /** Mid-afternoon on Monday the seventeenth of August in Kolkata. */
+  const NOW = new Date('2026-08-17T09:37:12Z');
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** The list of earlier days, as it is reached without seeing it. */
+  function comparedWith() {
+    return screen.findByRole('combobox', { name: 'Compared with' });
+  }
+
+  /** What each entry in a list is called, in the order it is listed. */
+  function entries(list: HTMLElement) {
+    return within(list)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+  }
+
+  /**
+   * The watched website, its figures 464 page views and those of every stretch it is set beside
+   * 400.
+   */
+  function grown() {
+    return engineWith([SITE], totals(464, 132, 900), JUDGED, totals(400, 120, 800));
+  }
+
+  /** Today in Kolkata, as the engine is asked about it, up to the top of the hour. */
+  const TODAY = { from: '2026-08-16T18:30:00.000Z', to: '2026-08-17T10:00:00.000Z' };
+
+  /** The same hours of yesterday, as far into it as today has reached. */
+  const YESTERDAY_SO_FAR = { from: '2026-08-15T18:30:00.000Z', to: '2026-08-16T10:00:00.000Z' };
+
+  /** The same hours of the same day four weeks ago. */
+  const FOUR_WEEKS_AGO = { from: '2026-07-19T18:30:00.000Z', to: '2026-07-20T10:00:00.000Z' };
+
+  /** Whether the headline figures were asked for over exactly this window. */
+  function overviewAskedFor(sent: readonly Sent[], window: { from: string; to: string }) {
+    return askedFor(sent, '/overview?', window.from, window.to);
+  }
+
+  /** How many times the headline figures of a population were asked for over exactly this window. */
+  function timesAsked(
+    sent: readonly Sent[],
+    window: { from: string; to: string },
+    population: 'everybody' | 'people',
+  ) {
+    return sent.filter(
+      ({ path }) =>
+        path.includes('/overview?') &&
+        partOf(path, 'from') === window.from &&
+        partOf(path, 'to') === window.to &&
+        path.includes('only=people') === (population === 'people'),
+    ).length;
+  }
+
+  it('offers today the same day last week, yesterday and the same day 4 weeks ago, and opens on the first', async () => {
+    const engine = grown();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=today' });
+
+    const list = await comparedWith();
+
+    expect(entries(list)).toStrictEqual([
+      'vs the same day last week',
+      'vs yesterday',
+      'vs the same day 4 weeks ago',
+    ]);
+    expect(list).toHaveValue('before');
+    expect(list).toHaveAccessibleDescription('Aug 10, 2026');
+    expect(await findCardsSaying(/than the same day last week$/)).toHaveLength(3);
+    expect(
+      overviewAskedFor(engine.all(), {
+        from: '2026-08-09T18:30:00.000Z',
+        to: '2026-08-10T10:00:00.000Z',
+      }),
+    ).toBe(true);
+  });
+
+  it('offers yesterday the same day a week before it, the day before it, and the same day 4 weeks before it', async () => {
+    grown();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=yesterday' });
+
+    const list = await comparedWith();
+
+    expect(entries(list)).toStrictEqual([
+      'vs the same day a week earlier',
+      'vs the day before',
+      'vs the same day 4 weeks earlier',
+    ]);
+    expect(list).toHaveAccessibleDescription('Aug 9, 2026');
+  });
+
+  /** Setting the period beside other days is a decision, and the way back from it is the button at hand. */
+  it('measures today against yesterday once chosen, as a new entry in the history', async () => {
+    const watching = vi.fn();
+    const engine = grown();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=today', watchingAddress: watching });
+
+    await userEvent.selectOptions(await comparedWith(), 'day-before');
+
+    await waitFor(() =>
+      expect(watching).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryString: expect.stringContaining('vs=day-before'),
+          options: expect.objectContaining({ history: 'push' }),
+        }),
+      ),
+    );
+    expect(await findCardsSaying(/than yesterday$/)).toHaveLength(3);
+    expect(screen.getByText('16% more')).toBeInTheDocument();
+    expect(await comparedWith()).toHaveAccessibleDescription('Aug 16, 2026');
+    expect(overviewAskedFor(engine.all(), YESTERDAY_SO_FAR)).toBe(true);
+    expect(window.localStorage.getItem('dewiride.compared-with')).toBe('day-before');
+  });
+
+  /**
+   * The period was worked out when it was chosen, and so is every stretch it may be set beside.
+   * Yesterday chosen three hours later is still cut at the hour today had reached, and today's own
+   * figures are not asked for again over a window that moved with the clock.
+   */
+  it('never moves the period, or the hour its earlier days are cut at, when they are chosen later', async () => {
+    const engine = grown();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=today' });
+
+    const list = await comparedWith();
+
+    await findCardsSaying(/than the same day last week$/);
+    vi.setSystemTime(new Date('2026-08-17T12:10:00Z'));
+    await userEvent.selectOptions(list, 'day-before');
+
+    await waitFor(() => expect(overviewAskedFor(engine.all(), YESTERDAY_SO_FAR)).toBe(true));
     expect(
       engine
         .all()
         .filter(({ path }) => path.includes('/overview?'))
-        .every(({ path }) => current(path)),
+        .every(({ path }) => partOf(path, 'to')?.endsWith('T10:00:00.000Z')),
     ).toBe(true);
+    expect(overviewAskedFor(engine.all(), TODAY)).toBe(true);
+  });
+
+  /**
+   * Reaching for the list asks for every stretch's figures, so whichever is chosen is waiting —
+   * and is not asked for again once it is chosen.
+   */
+  it('asks for the figures of every earlier stretch offered once somebody reaches for the list', async () => {
+    const engine = grown();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=today' });
+
+    const list = await comparedWith();
+
+    await findCardsSaying(/than the same day last week$/);
+    expect(overviewAskedFor(engine.all(), FOUR_WEEKS_AGO)).toBe(false);
+    expect(overviewAskedFor(engine.all(), YESTERDAY_SO_FAR)).toBe(false);
+
+    fireEvent.pointerDown(list);
+
+    await waitFor(() => expect(overviewAskedFor(engine.all(), FOUR_WEEKS_AGO)).toBe(true));
+    expect(overviewAskedFor(engine.all(), YESTERDAY_SO_FAR)).toBe(true);
+
+    await userEvent.selectOptions(list, '4-weeks-before');
+
+    expect(await findCardsSaying(/than the same day 4 weeks ago$/)).toHaveLength(3);
+    expect(timesAsked(engine.all(), FOUR_WEEKS_AGO, 'everybody')).toBe(1);
+  });
+
+  /** Kept to people, the figures asked for ahead are the people's, which the cards then read. */
+  it('asks ahead for the people’s figures where the screen is kept to them', async () => {
+    const engine = grown();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=today&only=people' });
+
+    const list = await comparedWith();
+
+    await findCardsSaying(/the same day last week$/);
+    fireEvent.pointerDown(list);
+
+    await waitFor(() => expect(timesAsked(engine.all(), FOUR_WEEKS_AGO, 'people')).toBe(1));
+
+    await userEvent.selectOptions(list, '4-weeks-before');
+
+    expect(await findCardsSaying(/the same day 4 weeks ago$/)).toHaveLength(3);
+    expect(timesAsked(engine.all(), FOUR_WEEKS_AGO, 'people')).toBe(1);
+    expect(timesAsked(engine.all(), FOUR_WEEKS_AGO, 'everybody')).toBe(0);
+  });
+
+  /**
+   * Today's own figures are already on screen when yesterday is chosen, so they stay: only the line
+   * saying how they moved waits, and it never says how they moved against days other than the ones
+   * it names.
+   */
+  it('keeps the figures on the cards while the ones they are measured against are on their way', async () => {
+    const { release } = windowHeld(YESTERDAY_SO_FAR.from, YESTERDAY_SO_FAR.to);
+
+    renderScreen(<Dashboard />, { searchParams: '?period=today' });
+
+    expect(await findCardsSaying(/than the same day last week$/)).toHaveLength(3);
+
+    await userEvent.selectOptions(await comparedWith(), 'day-before');
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(screen.getByText('464')).toBeInTheDocument();
+    expect(screen.queryByText('16% more')).not.toBeInTheDocument();
+    expect(cardsSaying(/the same day last week$/)).toHaveLength(0);
+    expect(cardsSaying(/yesterday$/)).toHaveLength(0);
+    expect(CARD_LABELS.every(holdsTheLine)).toBe(true);
+
+    release();
+
+    expect(await findCardsSaying(/than yesterday$/)).toHaveLength(3);
+    expect(screen.getByText('16% more')).toBeInTheDocument();
+    expect(CARD_LABELS.some(holdsTheLine)).toBe(false);
+  });
+
+  /** Thirty days are set beside one stretch alone: written, rather than offered. */
+  it('writes the one earlier stretch the last 30 days are offered, with its days, rather than offering it', async () => {
+    grown();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=last-30-days' });
+
+    expect(await screen.findByText('vs the same days 5 weeks earlier')).toBeInTheDocument();
+    expect(screen.getByText(/^Jun 14\s–\sJul 13, 2026$/)).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Compared with' })).not.toBeInTheDocument();
+  });
+
+  it('offers nothing to compare all time with', async () => {
+    grown();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=all-time' });
+
+    expect(await screen.findByRole('combobox', { name: 'Period' })).toHaveValue('all-time');
+    expect(screen.queryByRole('combobox', { name: 'Compared with' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^vs /)).not.toBeInTheDocument();
+  });
+
+  /**
+   * The link in the bar should still say what is on the screen, and nothing anybody pressed put
+   * the choice there, so it is written in over the entry somebody is already on.
+   */
+  it('opens on the earlier days last chosen, written into the address over the entry somebody is on', async () => {
+    const watching = vi.fn();
+
+    window.localStorage.setItem('dewiride.compared-with', 'day-before');
+    grown();
+
+    renderScreen(<Dashboard />, {
+      searchParams: '?period=today',
+      watchingAddress: watching,
+      arrivingAfterAddress: true,
+    });
+
+    expect(await comparedWith()).toHaveValue('day-before');
+    await waitFor(() =>
+      expect(watching).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryString: expect.stringContaining('vs=day-before'),
+          options: expect.objectContaining({ history: 'replace' }),
+        }),
+      ),
+    );
+  });
+
+  /** A link names what its sender was looking at, and the reader's own habit gives way to it. */
+  it('lets a link name the earlier days over the ones remembered', async () => {
+    window.localStorage.setItem('dewiride.compared-with', '4-weeks-before');
+    grown();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=today&vs=day-before' });
+
+    expect(await comparedWith()).toHaveValue('day-before');
+  });
+
+  /** An address is written by whoever sent the link, so nothing in it is taken on trust. */
+  it('sets the period beside its own stretch where the address names days that are no choice', async () => {
+    grown();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=today&vs=last-year' });
+
+    expect(await comparedWith()).toHaveValue('before');
+  });
+
+  /** The period's own stretch is what an address saying nothing already means, so it is never written. */
+  it("leaves the address plain, and forgets the choice, when somebody goes back to the period's own", async () => {
+    const watching = vi.fn();
+
+    window.localStorage.setItem('dewiride.compared-with', 'day-before');
+    grown();
+
+    renderScreen(<Dashboard />, {
+      searchParams: '?period=today&vs=day-before',
+      watchingAddress: watching,
+    });
+
+    await userEvent.selectOptions(await comparedWith(), 'before');
+
+    await waitFor(() => expect(watching).toHaveBeenCalled());
+    expect(watching.mock.calls.at(-1)?.[0].queryString).not.toContain('vs=');
+    expect(window.localStorage.getItem('dewiride.compared-with')).toBeNull();
+  });
+
+  /**
+   * A choice the period cannot honour is set aside rather than forgotten. Somebody who reads their
+   * days against yesterday and looks at a month for a moment has yesterday back on the next day.
+   */
+  it('sets a choice aside on a period that does not offer it, and has it back on one that does', async () => {
+    grown();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=today&vs=day-before' });
+
+    expect(await comparedWith()).toHaveValue('day-before');
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Period' }), 'last-30-days');
+
+    expect(await screen.findByText('vs the same days 5 weeks earlier')).toBeInTheDocument();
+    expect(await findCardsSaying(/than the same days 5 weeks earlier$/)).toHaveLength(3);
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Period' }), 'today');
+
+    expect(await comparedWith()).toHaveValue('day-before');
+    expect(await findCardsSaying(/than yesterday$/)).toHaveLength(3);
+  });
+
+  /** The dashed line behind the picture is the stretch the cards are measured against, and says so. */
+  it('draws the chosen earlier days behind the picture, and names the control by them', async () => {
+    const engine = grown();
+
+    renderScreen(<Dashboard />, { searchParams: '?period=today&vs=day-before&against=before' });
+
+    expect(await screen.findByRole('button', { name: 'Compare with yesterday' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await waitFor(() =>
+      expect(
+        askedFor(engine.all(), '/traffic/series?', YESTERDAY_SO_FAR.from, YESTERDAY_SO_FAR.to),
+      ).toBe(true),
+    );
   });
 });
 
@@ -2680,9 +3132,7 @@ describe('all time', () => {
 
     await screen.findByRole('img', { name: /Who and what visited/ });
 
-    expect(
-      screen.queryByRole('button', { name: 'Compare with the period before' }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Compare with / })).not.toBeInTheDocument();
   });
 
   /** A month nobody counted in time is not a month nobody came in, and the caption says which. */

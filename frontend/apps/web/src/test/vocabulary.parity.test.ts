@@ -3,7 +3,13 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MEASURES } from '@/lib/analytics/all-time';
 import { CHART_BYS } from '@/lib/analytics/chart-by';
-import { GRANULARITIES, hasEarlier, KEPT_MONTHS, PRESETS } from '@/lib/analytics/period';
+import {
+  AGAINST_WORDS,
+  GRANULARITIES,
+  hasEarlier,
+  KEPT_MONTHS,
+  PRESETS,
+} from '@/lib/analytics/period';
 import {
   DEFAULT_POSTS_ORDER,
   POSTS_ORDERS,
@@ -33,8 +39,8 @@ import messages from '../../messages/en.json';
  * appearing on a customer's screen.
  *
  * The dashboard's own closed sets are guarded the same way, for the same reason. The periods it
- * offers are a fixed list, and each of them needs both a name and a way of saying what it is
- * measured against.
+ * offers are a fixed list, and each of them needs a name; the stretches they are measured against
+ * are named by a fixed list of words.
  *
  * The engine's own source is read rather than a copy of it, because a copy is the thing that goes
  * stale. This is the one place in the dashboard that looks at the backend, and it looks at it as
@@ -343,16 +349,22 @@ describe('the periods this dashboard offers', () => {
     expect(isWritten(wordsAt(`dashboard.period.presets.${preset}`))).toBe(true);
   });
 
-  it.each(PRESETS.filter(hasEarlier))('says in words what %s is measured against', (preset) => {
-    expect(isWritten(wordsAt(`dashboard.metrics.against.${preset}`))).toBe(true);
+  it.each(AGAINST_WORDS)('says in words what a period is measured against as %s', (words) => {
+    expect(isWritten(wordsAt(`dashboard.metrics.against.${words}`))).toBe(true);
   });
 
-  /** All time has nothing before it, so a sentence naming what it is measured against says nothing true. */
-  it('names no comparison for a period with nothing before it', () => {
-    const measured = [...PRESETS.filter(hasEarlier), 'chosen'].sort();
-
-    expect([...sentencesUnder('dashboard.metrics.against')].sort()).toEqual(measured);
-    expect(PRESETS.filter((preset) => !hasEarlier(preset))).toStrictEqual(['all-time']);
+  /**
+   * This year and all time have nothing before them, so a sentence naming what they are measured
+   * against says nothing true — and a sentence no period can be measured against is never read.
+   */
+  it('names nothing a period is measured against that the screen cannot say', () => {
+    expect([...sentencesUnder('dashboard.metrics.against')].sort()).toEqual(
+      [...AGAINST_WORDS].sort(),
+    );
+    expect(PRESETS.filter((preset) => !hasEarlier(preset))).toStrictEqual([
+      'this-year',
+      'all-time',
+    ]);
   });
 
   it('names no period it cannot offer', () => {

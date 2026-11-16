@@ -67,7 +67,7 @@
       it does not speak enough of the modern protocol to be secured properly, and names MailKit as
       the alternative. MIT.
     -->
-    <PackageVersion Include="MailKit" Version="4.18.1" />
+    <PackageVersion Include="MailKit" Version="4.18.2" />
     <!--
       Builds the messages MailKit sends. The sender writes against it directly, so it is a
       dependency in its own right rather than something MailKit happens to bring: a MailKit release

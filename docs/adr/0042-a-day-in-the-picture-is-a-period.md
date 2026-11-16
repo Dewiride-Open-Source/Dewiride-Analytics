@@ -21,6 +21,9 @@
 - **Revised by**: [0064](0064-a-month-outlives-the-reports-it-was-counted-from.md): under All time the
   cards and the picture cover the whole record, and the lists beneath them its last twelve months,
   which the screen says above them.
+- **Revised by**: [0075](0075-a-run-of-days-is-set-beside-the-same-weekdays-before-it.md), which sets
+  a single day beside the same day a week before rather than the day before it, and has its cards
+  say "the same day a week earlier".
 
 ## Context
 

@@ -1,4 +1,5 @@
 import type { ChartBy } from '@/lib/analytics/chart-by';
+import { COMPARED_WITH, type ComparedWith } from '@/lib/analytics/compared-with';
 import { type Population, withPopulation } from '@/lib/analytics/people-only';
 
 /**
@@ -31,9 +32,10 @@ export type PeriodPreset = (typeof PRESETS)[number];
 
 /**
  * The named periods with a stretch before them to be measured against: every one but all time,
- * which has nothing before it.
+ * which has nothing before it, and this year, whose only fitting stretch — the same days a year
+ * earlier — always begins before the first day a website still holds.
  */
-export type MeasuredPreset = Exclude<PeriodPreset, 'all-time'>;
+export type MeasuredPreset = Exclude<PeriodPreset, 'this-year' | 'all-time'>;
 
 /**
  * What a screen is looking at: one of the named periods, or a stretch somebody chose.
@@ -173,10 +175,34 @@ interface CivilSpan {
   readonly last: CivilDate;
 }
 
-/** A period's own days and the stretch immediately before them, which it is measured against. */
+/** A period's own days and an earlier stretch it is set beside, and how the two are set side by side. */
 interface Stretches {
   readonly span: CivilSpan;
   readonly earlier: CivilSpan;
+  /**
+   * Whether the earlier stretch was moved back by calendar months, each day beside the same date of
+   * its month, rather than by whole days, each day beside the day as many days before it.
+   */
+  readonly byMonths: boolean;
+}
+
+/** The same, with which of the earlier stretches a period may be set beside it is. */
+interface Offered extends Stretches {
+  readonly against: ComparedWith;
+}
+
+/**
+ * Where a period's own days step back to for one earlier stretch, or nothing where that stretch is
+ * not one the period may be set beside.
+ */
+type Step = (span: CivilSpan) => CivilSpan | null;
+
+/** How a period steps back to each earlier stretch it may be set beside. */
+interface Stepping {
+  /** Whether it steps back by calendar months, date for date, rather than by whole days. */
+  readonly byMonths: boolean;
+  /** Where it steps back to for each stretch, where that stretch is one it may be set beside. */
+  readonly to: Readonly<Partial<Record<ComparedWith, Step>>>;
 }
 
 /** A period's own days and the part of them that has happened, which an earlier window matches. */
@@ -185,9 +211,6 @@ interface Happened {
   /** The window those days are asked about, ending wherever the period has reached. */
   readonly window: AnalyticsWindow;
 }
-
-/** The window of an earlier stretch, cut to match the part of a period that has happened. */
-type Matching = (happened: Happened, earlier: DaySpan, timeZone: string) => AnalyticsWindow;
 
 /** Where each named period begins and ends, given what today is where the site is. */
 const SPANS: Readonly<Record<PeriodPreset, (today: CivilDate) => CivilSpan>> = {
@@ -214,31 +237,115 @@ const SPANS: Readonly<Record<PeriodPreset, (today: CivilDate) => CivilSpan>> = {
   'all-time': (today) => ({ first: shiftMonths(today, -KEPT_MONTHS), last: today }),
 };
 
-/** The run of days each named period with one before it is compared with. */
-const EARLIER: Readonly<Record<MeasuredPreset, (span: CivilSpan) => CivilSpan>> = {
-  today: byLength,
-  yesterday: byLength,
-  'last-7-days': byLength,
-  'last-30-days': byLength,
-  'last-90-days': byLength,
-  'this-month': (span) => {
-    const first = firstOfMonthBefore(span.first);
-
-    return { first, last: { ...first, day: Math.min(span.last.day, daysInMonth(first)) } };
-  },
-  'last-month': (span) => ({
-    first: firstOfMonthBefore(span.first),
-    last: shiftDays(span.first, -1),
-  }),
-  'this-year': (span) => {
-    const last = { ...span.last, year: span.last.year - 1 };
-
-    return {
-      first: { year: span.first.year - 1, month: 1, day: 1 },
-      last: { ...last, day: Math.min(last.day, daysInMonth(last)) },
-    };
+/**
+ * Where a run of days steps back to for each earlier stretch it may be set beside: its own, the
+ * same weekdays the fewest whole weeks earlier that clear it; the day before, where that clears it,
+ * which only a single day is cleared by; and the same weekdays four weeks earlier, where four weeks
+ * clear it.
+ */
+const RUN_OF_DAYS: Stepping = {
+  byMonths: false,
+  to: {
+    before: sameWeekdaysBefore,
+    'day-before': (span) => clearedBy(span, 1),
+    '4-weeks-before': (span) => clearedBy(span, 4 * DAYS_IN_A_WEEK),
   },
 };
+
+/**
+ * Where each named period with a stretch before it steps back to: a run of days as every run of
+ * days does, and a month by a month alone — this month to the same dates of last month, and last
+ * month to the whole of the month before. A month is a month whichever weekdays it holds, and is set
+ * beside nothing else.
+ */
+const EARLIER: Readonly<Record<MeasuredPreset, Stepping>> = {
+  today: RUN_OF_DAYS,
+  yesterday: RUN_OF_DAYS,
+  'last-7-days': RUN_OF_DAYS,
+  'last-30-days': RUN_OF_DAYS,
+  'last-90-days': RUN_OF_DAYS,
+  'this-month': {
+    byMonths: true,
+    to: {
+      before: (span) => {
+        const first = firstOfMonthBefore(span.first);
+
+        return { first, last: { ...first, day: Math.min(span.last.day, daysInMonth(first)) } };
+      },
+    },
+  },
+  'last-month': {
+    byMonths: true,
+    to: {
+      before: (span) => ({
+        first: firstOfMonthBefore(span.first),
+        last: shiftDays(span.first, -1),
+      }),
+    },
+  },
+};
+
+/** Where a period with no stretch before it steps back to: nowhere. */
+const NO_EARLIER: Stepping = { byMonths: false, to: {} };
+
+/**
+ * What each earlier stretch a period may be set beside is called, each the key of its words in the
+ * message catalogue under `dashboard.metrics.against`.
+ *
+ * Today, the last 7 days and the two calendar months have words of their own — today for every
+ * stretch it may be set beside. Every other run of days — yesterday, the last 30 or 90 days, a
+ * stretch somebody chose — is called the day before where it is set beside that, and otherwise by
+ * how many days it covers and how many whole weeks earlier the same weekdays are: the same day a
+ * week earlier, the same days 5 weeks earlier.
+ */
+export const AGAINST_WORDS = [
+  'today.before',
+  'today.day-before',
+  'today.4-weeks-before',
+  'last-7-days.before',
+  'day-before',
+  'weeks-earlier',
+  'this-month',
+  'last-month',
+] as const;
+
+/** One of them. */
+export type AgainstWords = (typeof AGAINST_WORDS)[number];
+
+/** The named periods with words of their own for some of the stretches they are set beside. */
+const NAMED_AGAINST: Readonly<
+  Partial<Record<PeriodPreset, Readonly<Partial<Record<ComparedWith, AgainstWords>>>>>
+> = {
+  today: {
+    before: 'today.before',
+    'day-before': 'today.day-before',
+    '4-weeks-before': 'today.4-weeks-before',
+  },
+  'last-7-days': { before: 'last-7-days.before' },
+  'this-month': { before: 'this-month' },
+  'last-month': { before: 'last-month' },
+};
+
+/** The words of every other stretch a run of days is set beside. */
+const UNNAMED_AGAINST: Readonly<Record<ComparedWith, AgainstWords>> = {
+  before: 'weeks-earlier',
+  'day-before': 'day-before',
+  '4-weeks-before': 'weeks-earlier',
+};
+
+/** An earlier stretch a period may be set beside, with the terms its words are written in. */
+export interface Comparison {
+  /** Which of them it is. */
+  readonly against: ComparedWith;
+  /** The days it covers. */
+  readonly span: DaySpan;
+  /** The key of the words that name it. */
+  readonly words: AgainstWords;
+  /** How many days the period covers. */
+  readonly days: number;
+  /** How many whole weeks earlier the stretch is, where it is a run of days moved back by weeks. */
+  readonly weeks: number;
+}
 
 /**
  * The named periods a stretch somebody chose is recognised as, in the order they are tried.
@@ -294,39 +401,20 @@ const SHORTEST: Readonly<Record<ChartBy, PeriodPreset>> = {
  *
  * A dashed line is read off the bucket it is drawn beside, so each earlier bucket has to be the
  * same kind of bucket as its partner. An hour and a day are: the stretch the cards are measured
- * against is the line's stretch too. A week is moved back by whole weeks, so each earlier week
- * falls on the same weekdays and is cut by the period on the same days as the one it is drawn
- * beside; a month or a year by whole months, so each runs over the same days of the month. Each is
- * moved back about as far as the stretch the cards are measured against — to the nearest whole
- * week, or by whole calendar months — and never by less than its own length, so the line never
- * covers a day the picture also covers.
+ * against is the line's stretch too, each of its hours or days drawn beside the one as far into the
+ * period. A week is moved back by whole weeks, so each earlier week falls on the same weekdays and
+ * is cut by the period on the same days as the one it is drawn beside — on a run of days that is the
+ * cards' own stretch, and on a month the whole weeks nearest the month before that still clear it.
+ * A month or a year is moved back by as many whole calendar months as the period reaches into, so
+ * each runs over the same days of the month. Nothing is moved back by less than its own length, so
+ * the line never covers a day the picture also covers.
  */
-const LINED_UP: Readonly<Record<Granularity, (stretches: Stretches) => CivilSpan>> = {
-  hour: ({ earlier }) => earlier,
-  day: ({ earlier }) => earlier,
-  week: weeksBefore,
-  month: monthsBefore,
-  year: monthsBefore,
-};
-
-/**
- * How the window a period's dashed lines are drawn from is cut to the part of the period that has
- * happened, for each way the period is cut.
- *
- * An hour and a day are drawn from the stretch the cards are measured against, and cut exactly as
- * the cards' window is, after as long as the period has run. That stretch is as long as the period
- * for a running or a chosen one, though a month set beside the month before can be a few days longer
- * or shorter. A week, a month and a year are moved back by whole weeks or months, which need not
- * leave it as long — the ninety days to the first of December, moved back four months, run to
- * ninety-one — so it is cut on its own last day instead, at the moment of that day the period has
- * reached on its own.
- */
-const MATCHED: Readonly<Record<Granularity, Matching>> = {
-  hour: cutToLength,
-  day: cutToLength,
-  week: cutToLastDay,
-  month: cutToLastDay,
-  year: cutToLastDay,
+const LINED_UP: Readonly<Record<Granularity, (stretches: Stretches) => Stretches>> = {
+  hour: (stretches) => stretches,
+  day: (stretches) => stretches,
+  week: (stretches) => ({ ...stretches, earlier: weeksBefore(stretches), byMonths: false }),
+  month: (stretches) => ({ ...stretches, earlier: monthsBefore(stretches), byMonths: true }),
+  year: (stretches) => ({ ...stretches, earlier: monthsBefore(stretches), byMonths: true }),
 };
 
 /**
@@ -423,117 +511,158 @@ export function keptFrom(timeZone: string, now: Date): string {
 }
 
 /**
- * The days a period is measured against: the stretch immediately before it, or nothing where that
- * stretch reaches back before the first day still kept — and nothing for all time, which has no
- * stretch before it.
+ * Every earlier stretch a period may be set beside, its own first — or none for this year and all
+ * time, which have no stretch before them, and none that begins before the first day still kept.
  *
- * One rule, applied by what a period is. A period named after a calendar — a month, a year —
- * steps back by one of those, so this month is set beside last month and the days line up by
- * their dates. Everything else steps back by its own length, so a run of thirty days is set
- * beside the thirty before it.
+ * A period's own stretch is settled by what the period is. A run of days — today, yesterday, the
+ * last 7, 30 or 90 days, or a stretch somebody chose — is set beside the same weekdays the fewest
+ * whole weeks earlier that clear it: a day beside the same day a week before, the last 7 days
+ * beside the 7 before them, and the last 30 beside the 30 that end five weeks earlier. A website's
+ * week has a shape — a weekend that reads less, a Monday that reads more — and a run set beside days
+ * that fall on other weekdays reports that shape as a rise or a fall. A period named after a month
+ * steps back by one, so this month is set beside the same dates of last month and last month beside
+ * the whole of the month before. Where a date has no equivalent in the earlier month it is pulled
+ * back to the last day that month has: the thirty-first of March is compared with the
+ * twenty-eighth of February rather than with a day that does not exist.
  *
- * Where a date has no equivalent in the earlier month it is pulled back to the last day that
- * month has: the thirty-first of March is compared with the twenty-eighth of February rather than
- * with a day that does not exist.
+ * A run of days may be set beside two more: the day before, where it is a single day, and the same
+ * weekdays four weeks earlier, where four weeks clear it. Each is offered only where it lands on
+ * days no stretch listed before it lands on, so a run of twenty-two to twenty-eight days, whose own
+ * stretch is four weeks earlier already, is offered that once. A month is offered its own alone.
+ *
+ * Each is named by what the period is called and by how far back its stretch was moved, never by
+ * the dates themselves: a stretch of today's date that somebody chose is still a stretch they
+ * chose, set beside the same day a week earlier, while Today is set beside the same day last week.
  *
  * @param period What is being looked at.
  * @param timeZone The site's reporting zone.
  * @param now The moment to measure from.
  */
-export function previousSpan(period: Period, timeZone: string, now: Date): DaySpan | null {
-  const stretches = stretchesOf(period, timeZone, now);
-
-  return stretches === null ? null : whereKept(stretches.earlier, timeZone, now);
+export function comparisonsFor(period: Period, timeZone: string, now: Date): readonly Comparison[] {
+  return offeredStretches(period, timeZone, now).map((offered) => ({
+    against: offered.against,
+    span: writeSpan(offered.earlier),
+    ...wordsFor(period, offered),
+  }));
 }
 
 /**
- * The window a period is measured against, or nothing where there is nothing to measure it
- * against.
- *
- * A period still running is compared with the same part of the earlier one rather than with the
- * whole of it. Today at ten in the morning has had ten hours in it and yesterday had twenty-four,
- * so measuring one against the other would report a collapse in traffic every morning and a
- * recovery every night.
- *
- * The same expression settles both cases. A period that has finished has run for its whole
- * calendar length, so the earlier period's own end is the nearer of the two and the comparison is
- * date-for-date; one still running has not, so the earlier window is cut to the part that matches.
- * A day the clocks changed on cannot skew a finished comparison, because the calendar end is what
- * wins there.
+ * The days of one of the earlier stretches a period may be set beside — or nothing where that
+ * stretch is not one it is offered, as `comparisonsFor` lists them.
  *
  * @param period What is being looked at.
+ * @param against Which of its earlier stretches.
+ * @param timeZone The site's reporting zone.
+ * @param now The moment to measure from.
+ */
+export function previousSpan(
+  period: Period,
+  against: ComparedWith,
+  timeZone: string,
+  now: Date,
+): DaySpan | null {
+  const stretches = stretchesAgainst(period, against, timeZone, now);
+
+  return stretches === null ? null : writeSpan(stretches.earlier);
+}
+
+/**
+ * The window of one of the earlier stretches a period may be set beside, which the cards are
+ * measured over when it is the one in force — or nothing where that stretch is not one it is
+ * offered.
+ *
+ * A period still running is compared with the same part of the earlier one rather than with the
+ * whole of it. Today at ten in the morning has had ten hours in it and the same day last week had
+ * twenty-four, so measuring one against the other would report a collapse in traffic every morning
+ * and a recovery every night. The earlier window is therefore cut on its own last day, at the
+ * moment of that day this period has reached on its last — unless that day was pulled back to the
+ * end of a shorter month, and is set beside a day of the period that is already over: on the
+ * thirty-first of March this month is set beside the whole of February.
+ *
+ * A period that has finished is set beside the whole of its earlier stretch, whatever the length of
+ * either: last month is set beside every day of the month before, thirty-one of them or
+ * twenty-eight, exactly as the days written for it say, and a day beside the whole of the day it is
+ * set beside, twenty-three hours long or twenty-five where the clocks changed.
+ *
+ * @param period What is being looked at.
+ * @param against Which of its earlier stretches.
  * @param timeZone The site's reporting zone.
  * @param now The moment to measure from.
  */
 export function previousWindow(
   period: Period,
+  against: ComparedWith,
   timeZone: string,
   now: Date,
 ): AnalyticsWindow | null {
-  const earlier = previousSpan(period, timeZone, now);
+  const stretches = stretchesAgainst(period, against, timeZone, now);
 
-  return earlier === null
+  return stretches === null
     ? null
-    : cutToLength(happenedIn(period, timeZone, now), earlier, timeZone);
+    : cutToLastDay(happenedIn(period, timeZone, now), stretches, timeZone);
 }
 
 /**
- * The days a period's dashed lines are drawn from, cut the way the picture is cut — or nothing
- * where they would reach back before the first day still kept, or where there is no stretch before
- * the period at all.
+ * The days a period's dashed lines are drawn from, of the earlier stretches it may be set beside,
+ * cut the way the picture is cut — or nothing where that stretch is not one the period is offered,
+ * or where the line would reach back before the first day still kept.
  *
- * By the hour and by the day they are the days the cards are measured against. By the week and by
- * the month they are moved back by whole weeks or whole months instead, so that each earlier bucket
- * covers the same weekdays, or the same days of the month, as the bucket it is drawn beside. The
- * cards and the line may then name slightly different days, and each says which days it means.
+ * By the hour and by the day they are the days the cards are measured against, and so are they by
+ * the week on a run of days, whose every stretch a picture cut by the week is set beside steps back
+ * by whole weeks already. By the month, and by the week on a month, they are moved back by whole
+ * months or whole weeks instead, so that each earlier bucket covers the same days of the month, or
+ * the same weekdays, as the bucket it is drawn beside. The cards and the line may then name slightly
+ * different days, and each says which days it means.
  *
- * Settled apart from the cards: the line can be drawn where the cards have nothing to compare with,
- * and the cards can compare where the line would reach too far back to be drawn.
+ * Drawn only where the cards have a stretch to be measured against. The cards can still compare
+ * where the line would reach too far back to be drawn.
  *
  * @param period What is being looked at.
+ * @param against Which of its earlier stretches the cards are measured against.
  * @param granularity How finely the picture is cut.
  * @param timeZone The site's reporting zone.
  * @param now The moment to measure from.
  */
 export function comparedSpan(
   period: Period,
+  against: ComparedWith,
   granularity: Granularity,
   timeZone: string,
   now: Date,
 ): DaySpan | null {
-  const stretches = stretchesOf(period, timeZone, now);
+  const lined = linedUpAgainst(period, against, granularity, timeZone, now);
 
-  return stretches === null ? null : whereKept(LINED_UP[granularity](stretches), timeZone, now);
+  return lined === null ? null : writeSpan(lined.earlier);
 }
 
 /**
  * The window a period's dashed lines are drawn from, cut to the part of it that matches the part
  * of this period that has happened — or nothing where there is no stretch to draw them from.
  *
- * By the hour and by the day it is cut exactly as the window the cards are measured against is,
- * after as long as this period has run. By the week and by the month it is cut on its own last day,
- * at the moment of that day this period has reached on its last, so the last earlier bucket covers
- * the same part of its week or month as the bucket it is drawn beside; a stretch moved back by
- * whole months can be a day longer or shorter than this one, and cut by length its last bucket
- * would end on the wrong day or not be drawn at all. Once this period has finished, the whole of
- * the earlier stretch is drawn.
+ * Cut as the window the cards are measured against is: on its own last day, at the moment of that
+ * day this period has reached on its last, so the last earlier bucket covers the same part of its
+ * hour, day, week or month as the bucket it is drawn beside. A stretch moved back by whole months
+ * can be a day longer or shorter than this one, and cut by the time this period has run its last
+ * bucket would end on the wrong day or not be drawn at all; where its last day was pulled back to
+ * the end of a shorter month, that day is already over beside its partner and is drawn whole, however
+ * long either stretch is. Once this period has finished, the whole of the earlier stretch is drawn.
  *
  * @param period What is being looked at.
+ * @param against Which of its earlier stretches the cards are measured against.
  * @param granularity How finely the picture is cut.
  * @param timeZone The site's reporting zone.
  * @param now The moment to measure from.
  */
 export function comparedWindow(
   period: Period,
+  against: ComparedWith,
   granularity: Granularity,
   timeZone: string,
   now: Date,
 ): AnalyticsWindow | null {
-  const earlier = comparedSpan(period, granularity, timeZone, now);
+  const lined = linedUpAgainst(period, against, granularity, timeZone, now);
 
-  return earlier === null
-    ? null
-    : MATCHED[granularity](happenedIn(period, timeZone, now), earlier, timeZone);
+  return lined === null ? null : cutToLastDay(happenedIn(period, timeZone, now), lined, timeZone);
 }
 
 /**
@@ -682,7 +811,7 @@ export function isAllTime(period: Period): boolean {
 
 /**
  * Whether a named period has a stretch before it to be measured against, which every one has but
- * all time.
+ * this year and all time.
  *
  * @param preset The period in question.
  */
@@ -917,23 +1046,89 @@ export function withChoices(
 }
 
 /**
- * A period's own days and the stretch before them, both as calendar days — or nothing for a period
- * with no stretch before it.
+ * A period's own days beside each earlier stretch it may be set beside, as calendar days, its own
+ * first: every stretch it steps back to, each landing on days none listed before it lands on, and
+ * each beginning on or after the first day still kept.
  */
-function stretchesOf(period: Period, timeZone: string, now: Date): Stretches | null {
+function offeredStretches(period: Period, timeZone: string, now: Date): readonly Offered[] {
   const days = spanFor(period, timeZone, now);
   const span = { first: readDay(days.first), last: readDay(days.last) };
+  const { byMonths, to } = steppingOf(period);
 
-  if (period.kind === 'chosen') {
-    return { span, earlier: byLength(span) };
-  }
+  return COMPARED_WITH.flatMap((against): readonly Offered[] => {
+    const earlier = to[against]?.(span) ?? null;
 
-  return hasEarlier(period.preset) ? { span, earlier: EARLIER[period.preset](span) } : null;
+    return earlier === null ? [] : [{ against, span, earlier, byMonths }];
+  })
+    .filter((one, at, all) => all.findIndex((other) => sameDays(other.earlier, one.earlier)) === at)
+    .filter((one) => isKept(one.earlier, timeZone, now));
 }
 
-/** A stretch written out, or nothing where it begins before the first day still kept. */
-function whereKept(span: CivilSpan, timeZone: string, now: Date): DaySpan | null {
-  return isAfter(firstKeptDay(timeZone, now), span.first) ? null : writeSpan(span);
+/**
+ * A period's own days beside one of the earlier stretches it may be set beside, or nothing where
+ * that stretch is not one it is offered.
+ */
+function stretchesAgainst(
+  period: Period,
+  against: ComparedWith,
+  timeZone: string,
+  now: Date,
+): Offered | null {
+  return offeredStretches(period, timeZone, now).find((one) => one.against === against) ?? null;
+}
+
+/** How a period steps back to each earlier stretch it may be set beside. */
+function steppingOf(period: Period): Stepping {
+  if (period.kind === 'chosen') {
+    return RUN_OF_DAYS;
+  }
+
+  return hasEarlier(period.preset) ? EARLIER[period.preset] : NO_EARLIER;
+}
+
+/**
+ * A period's own days beside the stretch its dashed lines are drawn from, cut the given way, of
+ * one of the earlier stretches it may be set beside — or nothing where that stretch is not one it
+ * is offered, or where the line would begin before the first day still kept.
+ */
+function linedUpAgainst(
+  period: Period,
+  against: ComparedWith,
+  granularity: Granularity,
+  timeZone: string,
+  now: Date,
+): Stretches | null {
+  const stretches = stretchesAgainst(period, against, timeZone, now);
+
+  if (stretches === null) {
+    return null;
+  }
+
+  const lined = LINED_UP[granularity](stretches);
+
+  return isKept(lined.earlier, timeZone, now) ? lined : null;
+}
+
+/**
+ * What an earlier stretch is called, in the terms its words are written in: by what the period is
+ * called and how far back the stretch was moved.
+ */
+function wordsFor(
+  period: Period,
+  { against, span, earlier }: Offered,
+): Pick<Comparison, 'words' | 'days' | 'weeks'> {
+  const named = period.kind === 'preset' ? NAMED_AGAINST[period.preset]?.[against] : undefined;
+
+  return {
+    words: named ?? UNNAMED_AGAINST[against],
+    days: daysBetween(span.first, span.last),
+    weeks: Math.round((daysBetween(earlier.first, span.first) - 1) / DAYS_IN_A_WEEK),
+  };
+}
+
+/** Whether every day of a stretch is still held in full. */
+function isKept(span: CivilSpan, timeZone: string, now: Date): boolean {
+  return !isAfter(firstKeptDay(timeZone, now), span.first);
 }
 
 /** A period's own days, and the window asked about them so far. */
@@ -942,71 +1137,72 @@ function happenedIn(period: Period, timeZone: string, now: Date): Happened {
 }
 
 /**
- * The window of an earlier stretch, cut to the same length as the part of the period being looked
- * at that has happened.
- */
-function cutToLength({ window }: Happened, earlier: DaySpan, timeZone: string): AnalyticsWindow {
-  const whole = windowForSpan(earlier, timeZone);
-  const elapsed = Date.parse(window.to) - Date.parse(window.from);
-  const to = Math.min(Date.parse(whole.to), Date.parse(whole.from) + elapsed);
-
-  return { from: whole.from, to: new Date(to).toISOString() };
-}
-
-/**
  * The window of an earlier stretch, cut on its own last day at the moment of that day the period
- * being looked at has reached on its last — or the whole of it, where the period has finished.
+ * being looked at has reached on its last — or the whole of it, where the period has finished or
+ * where the earlier stretch's last day is not the one the period's last day is set beside.
  *
  * Settled on the period's end rather than by the time the period has run for, which is the same
- * thing only where the two stretches are equally long.
+ * thing only where the two stretches are equally long. A month set beside the month before is not,
+ * and neither, often, is a stretch moved back by whole months. Where such a stretch ends in a
+ * shorter month, its last day was pulled back to the end of it, and is set beside a day of the
+ * period already over — the twenty-eighth of February beside the twenty-eighth of March, while the
+ * thirty-first is running — so the whole of it has happened, and the whole of it is counted.
  */
 function cutToLastDay(
   { span, window }: Happened,
-  earlier: DaySpan,
+  stretches: Stretches,
   timeZone: string,
 ): AnalyticsWindow {
-  const whole = windowForSpan(earlier, timeZone);
+  const whole = windowForSpan(writeSpan(stretches.earlier), timeZone);
   const reachedTo = Date.parse(window.to);
 
-  if (reachedTo >= Date.parse(windowForSpan(span, timeZone).to)) {
+  if (reachedTo >= Date.parse(windowForSpan(span, timeZone).to) || !lastDaysMeet(stretches)) {
     return whole;
   }
 
   const intoLastDay = reachedTo - startOfDayIn(timeZone, readDay(span.last)).getTime();
   const to = Math.min(
     Date.parse(whole.to),
-    startOfDayIn(timeZone, readDay(earlier.last)).getTime() + intoLastDay,
+    startOfDayIn(timeZone, stretches.earlier.last).getTime() + intoLastDay,
   );
 
   return { from: whole.from, to: new Date(to).toISOString() };
 }
 
 /**
- * A period moved back by whole weeks: as many as the stretch it is measured against steps back,
- * to the nearest week, and never fewer than the weeks it takes to clear the period itself.
+ * Whether the last day of an earlier stretch is the day the last day of a period is set beside:
+ * always where the stretch was moved back by whole days, as a run of days and the weeks drawn behind
+ * it are, and where it was moved back by calendar months only where it ends on the same date of its
+ * month rather than on a date pulled back to the end of a shorter one — however long either is.
  */
-function weeksBefore({ span, earlier }: Stretches): CivilSpan {
-  const steppedBack = daysBetween(earlier.first, span.first) - 1;
-  const weeks = Math.max(
-    Math.round(steppedBack / DAYS_IN_A_WEEK),
-    Math.ceil(daysBetween(span.first, span.last) / DAYS_IN_A_WEEK),
-  );
-
-  return {
-    first: shiftDays(span.first, -DAYS_IN_A_WEEK * weeks),
-    last: shiftDays(span.last, -DAYS_IN_A_WEEK * weeks),
-  };
+function lastDaysMeet({ span, earlier, byMonths }: Stretches): boolean {
+  return !byMonths || span.last.day === earlier.last.day;
 }
 
 /**
- * A period moved back by whole calendar months: as many as the stretch it is measured against
- * steps back, and never fewer than the months the period itself reaches into.
+ * A period moved back by whole weeks: as many as the stretch it is measured against steps back,
+ * to the nearest week, and never fewer than the weeks it takes to clear the period itself. A run of
+ * days long enough to be cut by the week is set beside nothing but stretches that step back by
+ * whole weeks already, and comes back as the stretch it is measured against.
  */
-function monthsBefore({ span, earlier }: Stretches): CivilSpan {
-  const months = Math.max(
-    monthsBetween(earlier.first, span.first),
-    monthsBetween(span.first, span.last) + 1,
-  );
+function weeksBefore({ span, earlier }: Stretches): CivilSpan {
+  const steppedBack = daysBetween(earlier.first, span.first) - 1;
+  const weeks = Math.max(Math.round(steppedBack / DAYS_IN_A_WEEK), weeksToClear(span));
+
+  return movedBack(span, DAYS_IN_A_WEEK * weeks);
+}
+
+/**
+ * A period moved back by as many whole calendar months as it reaches into, so each earlier month
+ * runs over the same days of the month as the one it is drawn beside, and no month is left out
+ * between the two or drawn in both.
+ *
+ * Only a run of ninety days or more is cut by the month, and its stretch steps back by whole weeks,
+ * never more than a week further than its own length — never ending further back than these months
+ * do, so the months the run reaches into are always as far as its line has to move.
+ */
+function monthsBefore({ span }: Stretches): CivilSpan {
+  const months = monthsBetween(span.first, span.last) + 1;
 
   return { first: shiftMonths(span.first, -months), last: shiftMonths(span.last, -months) };
 }
@@ -1184,11 +1380,36 @@ function daysInMonth(day: CivilDate): number {
   return new Date(Date.UTC(day.year, day.month, 0)).getUTCDate();
 }
 
-/** The run of days of the same length immediately before a given one. */
-function byLength(span: CivilSpan): CivilSpan {
-  const length = daysBetween(span.first, span.last);
+/**
+ * The same weekdays the fewest whole weeks earlier that clear a run of days: a day beside the same
+ * day a week before, seven days beside the seven before them, and thirty beside the thirty that end
+ * five weeks earlier — never sharing a day with the run itself.
+ */
+function sameWeekdaysBefore(span: CivilSpan): CivilSpan {
+  return movedBack(span, DAYS_IN_A_WEEK * weeksToClear(span));
+}
 
-  return { first: shiftDays(span.first, -length), last: shiftDays(span.last, -length) };
+/** How many whole weeks it takes to clear a run of days: its length in weeks, rounded up. */
+function weeksToClear(span: CivilSpan): number {
+  return Math.ceil(daysBetween(span.first, span.last) / DAYS_IN_A_WEEK);
+}
+
+/**
+ * The same run of days a number of days earlier, or nothing where that many days back would land on
+ * a day of its own.
+ */
+function clearedBy(span: CivilSpan, days: number): CivilSpan | null {
+  return days >= daysBetween(span.first, span.last) ? movedBack(span, days) : null;
+}
+
+/** The same run of days a number of days earlier. */
+function movedBack(span: CivilSpan, days: number): CivilSpan {
+  return { first: shiftDays(span.first, -days), last: shiftDays(span.last, -days) };
+}
+
+/** Whether two runs of days are the same days. */
+function sameDays(one: CivilSpan, other: CivilSpan): boolean {
+  return epochOf(one.first) === epochOf(other.first) && epochOf(one.last) === epochOf(other.last);
 }
 
 /**

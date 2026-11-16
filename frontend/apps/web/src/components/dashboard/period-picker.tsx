@@ -1,9 +1,10 @@
 'use client';
 
-import { ChevronDown } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
-import { type KeyboardEvent, type Ref, useId, useMemo, useState } from 'react';
+import { type Ref, useId, useMemo, useState } from 'react';
 import { CustomPeriod } from '@/components/dashboard/custom-period';
+import { DaysBeneath } from '@/components/dashboard/days-beneath';
+import { NativeSelect } from '@/components/ui/native-select';
 import {
   type DaySpan,
   isAllTime,
@@ -12,8 +13,8 @@ import {
   type Period,
   type PeriodPreset,
   spanFor,
-  spanInstants,
 } from '@/lib/analytics/period';
+import { writtenDays } from '@/lib/analytics/written-days';
 
 interface PeriodPickerProps {
   readonly value: Period;
@@ -71,54 +72,6 @@ const GROUPS: readonly PeriodGroup[] = [
   },
   { name: 'calendar', presets: ['this-month', 'last-month', 'this-year', 'all-time'] },
 ];
-
-/**
- * Keys that open the list, or move through it, with or without a modifier held: on one platform or
- * another each opens a closed list with one — Alt, Shift or ⌘ with the up and down arrows, Shift
- * with Space, Shift with Enter, Shift or ⌘ with F4.
- */
-const OPENING_KEYS: ReadonlySet<string> = new Set(['ArrowUp', 'ArrowDown', ' ', 'Enter', 'F4']);
-
-/**
- * Keys that move through the list, counted only when pressed on their own. With a modifier held they
- * are mostly the browser's — Alt or ⌘ with the left and right arrows go back and forward, Alt with
- * Home goes home, Ctrl with Page Up or Page Down changes tab — though some browsers still move a
- * closed list with Shift, or with Ctrl or ⌘ on the arrows, Home and End. A press of that kind that
- * does change the period asks for what the new period needs itself, so leaving it uncounted only
- * means the record is asked for a moment later.
- */
-const MOVING_KEYS: ReadonlySet<string> = new Set([
-  'ArrowLeft',
-  'ArrowRight',
-  'Home',
-  'End',
-  'PageUp',
-  'PageDown',
-]);
-
-/**
- * Whether a key pressed on the control works it, rather than moving focus away from it or calling
- * on the browser: a key that opens the list, whatever is held with it; a key that moves through it,
- * pressed on its own; or a single character typed with no Ctrl, Alt or ⌘ held, which picks the
- * period whose name begins with it. Tab, F6, Escape, Ctrl+L, Alt+D, Ctrl+F and a modifier on its own
- * work nothing in it, whatever they are on their way to; a moving key with a modifier held is left
- * uncounted too, for the reason the moving keys give.
- *
- * @param event The key pressed.
- */
-function works(event: KeyboardEvent<HTMLSelectElement>): boolean {
-  const { key, altKey, ctrlKey, metaKey, shiftKey } = event;
-
-  if (OPENING_KEYS.has(key)) {
-    return true;
-  }
-
-  if (MOVING_KEYS.has(key)) {
-    return !altKey && !ctrlKey && !metaKey && !shiftKey;
-  }
-
-  return key.length === 1 && !ctrlKey && !altKey && !metaKey;
-}
 
 /** Choosing this opens the chooser. Not a period, and no named period can ever spell it. */
 const CHOOSE = 'choose';
@@ -180,56 +133,47 @@ export function PeriodPicker({
   }
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto sm:items-end">
-      <span className="relative flex items-center">
-        <select
-          ref={ref}
-          aria-label={t('label')}
-          aria-describedby={coveredId}
-          value={value.kind === 'preset' ? value.preset : CHOSEN}
-          onChange={(event) => pick(event.target.value)}
-          // Pressed or worked from the keyboard, never merely focused or passed through: the screen
-          // hands focus here itself after a press on its picture, and somebody tabbing on through
-          // the header, or off to the address bar, is going somewhere else — neither is a reach
-          // for another period.
-          onPointerDown={onReach}
-          onKeyDown={(event) => {
-            if (works(event)) {
-              onReach?.();
-            }
-          }}
-          className="select-trigger h-9 w-full cursor-pointer appearance-none truncate rounded-md border border-border bg-surface pr-8 pl-3 text-sm font-medium text-foreground sm:w-auto"
-        >
-          {GROUPS.map((group) => (
-            <optgroup key={group.name} label={t(`groups.${group.name}`)}>
-              {group.presets.map((preset) => (
-                <option key={preset} value={preset}>
-                  {t(`presets.${preset}`)}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-          <optgroup label={t('groups.own')}>
-            {value.kind === 'chosen' ? <option value={CHOSEN}>{t('chosen')}</option> : null}
-            <option value={CHOOSE}>{t('choose')}</option>
-          </optgroup>
-        </select>
-        <ChevronDown
-          aria-hidden
-          className="pointer-events-none absolute right-2.5 size-4 text-foreground-muted"
-        />
-      </span>
-
-      {/* Read out with the control as well as printed under it: "Last 30 days" and its dates are one answer. */}
-      <p id={coveredId} className="min-h-4 truncate text-xs text-foreground-subtle sm:text-right">
-        {isAllTime(value) && nothingHeld ? null : (
+    <DaysBeneath
+      id={coveredId}
+      days={
+        isAllTime(value) && nothingHeld ? null : (
           <Covered
             span={span}
             timeZoneId={timeZoneId}
             since={isAllTime(value) ? since : undefined}
           />
-        )}
-      </p>
+        )
+      }
+    >
+      {/*
+        Reached for when pressed or worked from the keyboard, never when merely focused or passed
+        through: the screen hands focus here itself after a press on its picture, and somebody
+        tabbing on through the header, or off to the address bar, is going somewhere else — neither
+        is a reach for another period.
+      */}
+      <NativeSelect
+        ref={ref}
+        aria-label={t('label')}
+        aria-describedby={coveredId}
+        value={value.kind === 'preset' ? value.preset : CHOSEN}
+        onChange={(event) => pick(event.target.value)}
+        onReach={onReach}
+        className="w-full"
+      >
+        {GROUPS.map((group) => (
+          <optgroup key={group.name} label={t(`groups.${group.name}`)}>
+            {group.presets.map((preset) => (
+              <option key={preset} value={preset}>
+                {t(`presets.${preset}`)}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+        <optgroup label={t('groups.own')}>
+          {value.kind === 'chosen' ? <option value={CHOSEN}>{t('chosen')}</option> : null}
+          <option value={CHOOSE}>{t('choose')}</option>
+        </optgroup>
+      </NativeSelect>
 
       <CustomPeriod
         open={choosing}
@@ -242,7 +186,7 @@ export function PeriodPicker({
           onChange(namedPeriod(chosen, timeZoneId, new Date()));
         }}
       />
-    </div>
+    </DaysBeneath>
   );
 }
 
@@ -264,25 +208,12 @@ interface CoveredProps {
 function Covered({ span, timeZoneId, since }: CoveredProps) {
   const t = useTranslations('dashboard.period');
   const format = useFormatter();
-  const written = {
-    timeZone: timeZoneId,
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  } as const;
 
   if (since === undefined) {
-    const covered = spanInstants(span, timeZoneId);
-
-    return format.dateTimeRange(covered.first, covered.last, written);
+    return writtenDays(span, timeZoneId, format);
   }
 
   return since === null
     ? t('sinceFirst')
-    : t('since', {
-        date: format.dateTime(
-          spanInstants({ first: since, last: since }, timeZoneId).first,
-          written,
-        ),
-      });
+    : t('since', { date: writtenDays({ first: since, last: since }, timeZoneId, format) });
 }

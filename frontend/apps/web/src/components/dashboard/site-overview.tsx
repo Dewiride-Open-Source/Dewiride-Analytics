@@ -11,6 +11,7 @@ import {
 import { useFormatter, useTranslations } from 'next-intl';
 import { type Ref, type RefObject, useCallback, useMemo, useRef, useState } from 'react';
 import { PeriodMoved } from '@/components/charts/cut-picture';
+import { ComparisonPicker, useAgainstWords } from '@/components/dashboard/comparison-picker';
 import { JudgedTraffic } from '@/components/dashboard/judged-traffic';
 import { MetricCard, MetricCardSkeleton } from '@/components/dashboard/metric-card';
 import { PeriodPicker } from '@/components/dashboard/period-picker';
@@ -35,6 +36,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { changeBetween } from '@/lib/analytics/change';
+import { type ComparedWith, comparisonOf } from '@/lib/analytics/compared-with';
 import {
   absence,
   type Breakdown,
@@ -46,30 +48,32 @@ import type { Population } from '@/lib/analytics/people-only';
 import {
   type AllTimeGranularity,
   type AnalyticsWindow,
+  type Comparison,
   comparedSpan,
   comparedWindow,
+  comparisonsFor,
   crossesYears,
   cutsFor,
   type DaySpan,
-  daysIn,
   type Granularity,
-  hasEarlier,
   isAllTime,
   keptFrom,
   type Period,
+  previousSpan,
   previousWindow,
   spanFor,
-  spanInstants,
   todayIn,
   windowFor,
   windowForSpan,
 } from '@/lib/analytics/period';
 import { judgedNoneOf, stillJudgingFrom } from '@/lib/analytics/traffic-series';
 import { useChartView } from '@/lib/analytics/use-chart-view';
+import { useComparedWith } from '@/lib/analytics/use-compared-with';
 import { useComparison } from '@/lib/analytics/use-comparison';
 import { usePeopleOnly } from '@/lib/analytics/use-people-only';
 import { usePeriod } from '@/lib/analytics/use-period';
 import { useHandOver, usePickDays, usePicturePlan } from '@/lib/analytics/use-picture-plan';
+import { writtenDays } from '@/lib/analytics/written-days';
 import type {
   AllTime,
   AllTimeSeries,
@@ -83,6 +87,7 @@ import {
   useAllTimeSeries,
   useAllTimeTraffic,
   useOverview,
+  usePrefetchOverview,
   useSeries,
   useTraffic,
   useTrafficSeries,
@@ -96,7 +101,6 @@ interface SiteOverviewProps {
 /** One website, over one period. */
 export function SiteOverview({ site }: SiteOverviewProps) {
   const t = useTranslations('dashboard');
-  const metrics = useTranslations('dashboard.metrics');
   const install = useTranslations('install');
   const serverKeys = useTranslations('serverKeys');
   const settings = useTranslations('siteSettings');
@@ -112,18 +116,19 @@ export function SiteOverview({ site }: SiteOverviewProps) {
   // answer is cached under, and one that moved with the clock would never find a cached answer.
   // Every stretch is worked out from the one moment the period was resolved at, the dashed lines'
   // included, so none of them can stand an hour or a day apart from the picture they are read with.
-  const { now, span, window, earlierWindow, firstKept } = useMemo(() => {
+  const { now, span, window, offered, firstKept } = useMemo(() => {
     const resolvedAt = new Date();
 
     return {
       now: resolvedAt,
       span: spanFor(period, site.timeZoneId, resolvedAt),
       window: windowFor(period, site.timeZoneId, resolvedAt),
-      // The stretch immediately before this one, cut to the same length as the part of this one
-      // that has actually happened. Every headline number is read against it — where it is still
-      // kept: a period reaching back past the days a website still holds has nothing honest to be
-      // measured against, and its cards say how much and nothing more.
-      earlierWindow: previousWindow(period, site.timeZoneId, resolvedAt),
+      // Every earlier stretch this one may be set beside, its own first — a run of days the same
+      // weekdays whole weeks earlier, a month the month before, and a short run the day before or
+      // four weeks back as well — each where it is still kept: a period reaching back past the days
+      // a website still holds has nothing honest to be measured against, and its cards say how much
+      // and nothing more.
+      offered: comparisonsFor(period, site.timeZoneId, resolvedAt),
       // Where the days held one by one begin, which is as far back as all time's picture can be
       // pressed into: a month older than it is held as its totals and nothing finer.
       firstKept: keptFrom(site.timeZoneId, resolvedAt),
@@ -140,6 +145,15 @@ export function SiteOverview({ site }: SiteOverviewProps) {
   // Everybody's record, where the screen is on all time and its cards and picture are read from it;
   // nothing on any other period.
   const allTimeRecord = allTime ? record : undefined;
+  const { comparison, earlierWindow, compareWith, reachEarlier } = useEarlierDays({
+    site,
+    period,
+    now,
+    offered,
+    population,
+  });
+  const called = useAgainstWords();
+  const comparedWith = comparison === null ? undefined : called(comparison);
 
   const headline = useHeadline({
     siteId: site.id,
@@ -179,18 +193,19 @@ export function SiteOverview({ site }: SiteOverviewProps) {
     drawingActivity,
     record: allTimeRecord,
   });
-  const comparison = useDashedLines({
+  const dashedLines = useDashedLines({
     site,
     period,
+    against: comparison?.against ?? null,
     window,
     now,
     population,
     granularity,
     drawingActivity,
+    called: comparedWith,
   });
 
   const { totals, before, measuring, silent, deserted } = headline;
-  const comparedWith = againstWords(period, span, metrics);
   // Under all time the lists say once that they cover the last twelve months — only where the
   // figures above reach back before them. A website first measured since has its figures and its
   // lists over the same days, and the clause would have nothing to set apart.
@@ -203,7 +218,12 @@ export function SiteOverview({ site }: SiteOverviewProps) {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+      {/*
+        Aligned by their tops. The period carries what it is compared with beneath it, and that comes
+        and goes with the period, so a heading lined up with the bottom of the controls would move
+        every time somebody chose a period that is compared with nothing.
+      */}
+      <header className="flex flex-wrap items-start justify-between gap-4">
         {/*
           A heading and nothing more. Swapping between websites is a property of the session rather
           than of this screen, and lives in the bar across the top; a name that was also the control
@@ -241,15 +261,31 @@ export function SiteOverview({ site }: SiteOverviewProps) {
             {settings('action')}
           </Button>
           <PopulationSwitch peopleOnly={peopleOnly} onChange={showOnlyPeople} />
-          <PeriodPicker
-            ref={periodControl}
-            value={period}
-            onChange={choose}
-            timeZoneId={site.timeZoneId}
-            since={firstDay}
-            nothingHeld={nothingHeld}
-            onReach={reach}
-          />
+          {/*
+            What the period is compared with sits beneath the period, in one column whose width is
+            the same whichever period is chosen — wide enough for the longest thing either holds — so
+            neither the period nor the buttons beside it move when the period changes, whether or
+            not it is compared with anything, and the two line up on both edges wherever the row
+            wraps.
+          */}
+          <div className="flex w-full min-w-0 flex-col gap-2 sm:w-72">
+            <PeriodPicker
+              ref={periodControl}
+              value={period}
+              onChange={choose}
+              timeZoneId={site.timeZoneId}
+              since={firstDay}
+              nothingHeld={nothingHeld}
+              onReach={reach}
+            />
+            <ComparisonPicker
+              offered={offered}
+              value={comparison?.against ?? null}
+              onChange={compareWith}
+              timeZoneId={site.timeZoneId}
+              onReach={reachEarlier}
+            />
+          </div>
         </div>
       </header>
 
@@ -300,7 +336,7 @@ export function SiteOverview({ site }: SiteOverviewProps) {
             activity={activity}
             who={who}
             problem={problem}
-            comparison={comparison}
+            comparison={dashedLines}
             siteName={site.displayName}
             timeZoneId={site.timeZoneId}
             zone={readableZone(site.timeZoneId)}
@@ -686,7 +722,7 @@ interface HeadlineCardsProps {
   readonly measuring: boolean;
   /**
    * What the figures are measured against, named the way somebody would say it out loud — or
-   * nothing for all time, which has nothing before it.
+   * nothing where there is nothing to measure them against.
    */
   readonly comparedWith: string | undefined;
   /** Whether the figures are kept to the visits judged to be people. */
@@ -696,14 +732,17 @@ interface HeadlineCardsProps {
 }
 
 /**
- * The period's three headline numbers, or their stand-ins until every figure they show is in.
+ * The period's three headline numbers, or their stand-ins until the numbers are in.
  *
- * A card's own number and the one it is measured against are two answers, and a card drawn as each
- * arrived would grow a line when the second did. Held until both are in, each card is drawn once,
- * and its stand-in is laid out from the card's own words — the label kept to the population on
- * screen, and the sentence saying how the number moved where it will — so the picture the reader is
- * using below the cards stays where it is while a period's answers arrive one after the other, save
- * a line where a card's sentence breaks a line apart from its stand-in's.
+ * A card's own number and the one it is measured against are two answers. The card stands in until
+ * its own number is in, and then shows it, holding the line saying how it moved in its place until
+ * the number it is measured against is in too — as it does when somebody sets the period beside
+ * other days, whose figures are asked for while the period's own are already on screen. It never
+ * shows a change worked out against other days than the words beside it name. Every stand-in is laid
+ * out from the card's own words — the label kept to the population on screen, and the sentence
+ * saying how the number moved where it will — so the picture the reader is using below the cards
+ * stays where it is while a period's answers arrive one after the other, save a line where a card's
+ * sentence breaks a line apart from its stand-in's.
  *
  * A stand-in promises a figure on its way, so figures that could not be had are shown as the mark for
  * no figure: the notice above says why, and a stand-in moving under it would say something is coming
@@ -733,9 +772,10 @@ function HeadlineCards({
     );
   }
 
-  if (totals === undefined || (measuring && before === undefined)) {
-    const against = measuring ? comparedWith : undefined;
+  // What the cards are measured against, where they say how their numbers moved.
+  const against = measuring ? comparedWith : undefined;
 
+  if (totals === undefined) {
     return (
       <>
         <MetricCardSkeleton label={labels('pageViews.label')} comparedWith={against} />
@@ -749,26 +789,31 @@ function HeadlineCards({
     );
   }
 
+  const due = measuring && before === undefined;
+
   return (
     <>
       <MetricCard
         label={labels('pageViews.label')}
         value={format.number(totals.pageViews)}
         change={before && changeBetween(totals.pageViews, before.pageViews)}
-        comparedWith={comparedWith}
+        changeDue={due}
+        comparedWith={against}
       />
       <MetricCard
         label={labels('visitors.label')}
         value={format.number(totals.visitors)}
         change={before && changeBetween(totals.visitors, before.visitors)}
-        comparedWith={comparedWith}
+        changeDue={due}
+        comparedWith={against}
         note={metrics('visitors.note')}
       />
       <MetricCard
         label={labels('pagesPerVisitor.label')}
         value={perVisitor(totals.pageViews, totals.visitors, format)}
         change={before && changeBetween(pagesEach(totals), pagesEach(before))}
-        comparedWith={comparedWith}
+        changeDue={due}
+        comparedWith={against}
       />
     </>
   );
@@ -1108,26 +1153,71 @@ function union(one: readonly string[], other: readonly string[]): readonly strin
   return [...new Set([...one, ...other])].sort((first, second) => first.localeCompare(second));
 }
 
-/**
- * What a period's figures are measured against, named the way somebody would say it out loud — or
- * nothing for all time, which has nothing before it to be measured against.
- */
-function againstWords(
-  period: Period,
-  span: DaySpan,
-  metrics: ReturnType<typeof useTranslations<'dashboard.metrics'>>,
-): string | undefined {
-  if (period.kind === 'chosen') {
-    return metrics('against.chosen', { days: daysIn(span) });
-  }
-
-  return hasEarlier(period.preset) ? metrics(`against.${period.preset}`) : undefined;
+/** What the earlier days the period is set beside are worked out for. */
+interface EarlierAsked {
+  readonly site: Site;
+  readonly period: Period;
+  /** The moment the period on screen was worked out at, which its earlier days are worked out from. */
+  readonly now: Date;
+  /** Every earlier stretch the period may be set beside, its own first. */
+  readonly offered: readonly Comparison[];
+  readonly population: Population;
 }
 
-/** What the period before is drawn for. */
+/** The earlier days the period is set beside, and the choice of them. */
+interface EarlierDays {
+  /** The earlier stretch the figures are measured against, or nothing where none is offered. */
+  readonly comparison: Comparison | null;
+  /**
+   * Its window, cut to the part of it that matches the part of this period that has happened — or
+   * nothing where there is no earlier stretch.
+   */
+  readonly earlierWindow: AnalyticsWindow | null;
+  readonly compareWith: (against: ComparedWith) => void;
+  /** Asks ahead for what every stretch offered is measured over, once somebody reaches for them. */
+  readonly reachEarlier: () => void;
+}
+
+/**
+ * The earlier days the period is set beside: the ones somebody chose where the period offers them,
+ * and where it does not the first stretch it is offered — its own, wherever that is still kept.
+ *
+ * Worked out from the moment the period was, never from the moment of choosing, so choosing other
+ * earlier days never moves the period's own window or the hour its earlier one is cut at — the
+ * period's own figures stay the answer they were, and only the figures beside them are asked for.
+ * Those are asked for ahead, for every stretch offered, once somebody reaches for the choice, so the
+ * cards have them by the time one is made.
+ */
+function useEarlierDays({ site, period, now, offered, population }: EarlierAsked): EarlierDays {
+  const { comparedWith, compareWith } = useComparedWith();
+  const prefetch = usePrefetchOverview();
+  const comparison = comparisonOf(offered, comparedWith);
+  const against = comparison?.against ?? null;
+
+  const earlierWindow = useMemo(
+    () => (against === null ? null : previousWindow(period, against, site.timeZoneId, now)),
+    [period, against, site.timeZoneId, now],
+  );
+
+  const reachEarlier = useCallback(() => {
+    for (const one of offered) {
+      const earlier = previousWindow(period, one.against, site.timeZoneId, now);
+
+      if (earlier !== null) {
+        prefetch(site.id, earlier, population);
+      }
+    }
+  }, [offered, period, site.id, site.timeZoneId, now, population, prefetch]);
+
+  return { comparison, earlierWindow, compareWith, reachEarlier };
+}
+
+/** What the stretch a period is measured against is drawn for. */
 interface DashedLinesAsked {
   readonly site: Site;
   readonly period: Period;
+  /** Which earlier stretch the cards are measured against, or nothing where there is none. */
+  readonly against: ComparedWith | null;
   /** The window the picture asks about, which stands in where there is no earlier one to ask. */
   readonly window: AnalyticsWindow;
   /** The moment the period on screen was worked out at, which its earlier stretch is worked out from. */
@@ -1136,56 +1226,67 @@ interface DashedLinesAsked {
   readonly granularity: Granularity;
   /** Whether the picture is of how much was read rather than of who came. */
   readonly drawingActivity: boolean;
+  /** What the cards call the stretch they are measured against, or nothing where there is none. */
+  readonly called: string | undefined;
 }
 
 /**
- * The period before, to set behind the picture, or nothing where there is none to set there.
+ * The stretch the cards are measured against, to set behind the picture, or nothing where there is
+ * none to set there.
  *
- * Its days are settled apart from the stretch the cards are measured against. Cut by the week or
- * the month they are moved back by whole weeks or months, so each earlier bucket covers the same
- * weekdays or the same days of the month as the bucket it is drawn beside; where they would reach
- * back past the days a website still keeps, the picture offers no comparison at all. Cut into the
- * same buckets as this period, so the two are read off the same place on the axis, and asked for
- * only once somebody puts it behind the drawing — never where there is no stretch to draw it from,
- * so the window handed over then is never sent.
+ * By the hour and by the day it is the cards' own stretch, and so it is by the week on a run of
+ * days, which already steps back by whole weeks. By the month, and by the week on a month, it is
+ * moved back by whole months or whole weeks, so each earlier bucket covers the same days of the
+ * month or the same weekdays as the bucket it is drawn beside; where that would reach back past the
+ * days a website still keeps, the picture offers no comparison at all. Cut into the same buckets as
+ * this period, so the two are read off the same place on the axis, and asked for only once somebody
+ * puts it behind the drawing — never where there is no stretch to draw it from, so the window
+ * handed over then is never sent.
  */
 function useDashedLines({
   site,
   period,
+  against,
   window,
   now,
   population,
   granularity,
   drawingActivity,
+  called,
 }: DashedLinesAsked): TrafficComparison | undefined {
   const format = useFormatter();
-  const { against, compare } = useComparison();
+  const { against: drawing, compare } = useComparison();
 
   const lines = useMemo(
-    () => comparedWindow(period, granularity, site.timeZoneId, now),
-    [period, granularity, site.timeZoneId, now],
+    () =>
+      against === null ? null : comparedWindow(period, against, granularity, site.timeZoneId, now),
+    [period, against, granularity, site.timeZoneId, now],
   );
 
   // Written out once, in the site's own days, so the drawing can say which days its dashed lines
-  // actually cover rather than leaving somebody to work it out from the period they chose.
-  const days = useMemo(() => {
-    const covered = comparedSpan(period, granularity, site.timeZoneId, now);
+  // actually cover rather than leaving somebody to work it out from the period they chose — and
+  // whether those are the days the cards are measured against, which a picture cut by the month
+  // moves away from.
+  const drawn = useMemo(() => {
+    if (against === null) {
+      return null;
+    }
+
+    const covered = comparedSpan(period, against, granularity, site.timeZoneId, now);
 
     if (covered === null) {
       return null;
     }
 
-    const instants = spanInstants(covered, site.timeZoneId);
+    const measured = previousSpan(period, against, site.timeZoneId, now);
 
-    return format.dateTimeRange(instants.first, instants.last, {
-      timeZone: site.timeZoneId,
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-  }, [period, granularity, site.timeZoneId, now, format]);
+    return {
+      days: writtenDays(covered, site.timeZoneId, format),
+      theCards: measured?.first === covered.first && measured.last === covered.last,
+    };
+  }, [period, against, granularity, site.timeZoneId, now, format]);
 
-  const asking = against && lines !== null;
+  const asking = drawing && lines !== null;
   const asked = lines ?? window;
   const views = useSeries(
     site.id,
@@ -1210,9 +1311,20 @@ function useDashedLines({
     [views.data, visitors.data],
   );
 
-  return days === null
-    ? undefined
-    : { on: against, onChange: compare, activity: points, who: who.data, days };
+  if (drawn === null || called === undefined) {
+    return undefined;
+  }
+
+  // The control that draws the line is named after what it draws: the cards' words where the line
+  // is the cards' stretch, and its own days where it is not.
+  return {
+    on: drawing,
+    onChange: compare,
+    activity: points,
+    who: who.data,
+    days: drawn.days,
+    called: drawn.theCards ? called : drawn.days,
+  };
 }
 
 interface FirstVisitProps {

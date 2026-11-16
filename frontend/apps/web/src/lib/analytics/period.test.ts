@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { CHART_BYS } from '@/lib/analytics/chart-by';
+import { COMPARED_WITH, type ComparedWith } from '@/lib/analytics/compared-with';
 import {
+  AGAINST_WORDS,
   allTimeCutsFor,
   bucketsIn,
+  type Comparison,
   comparedSpan,
   comparedWindow,
+  comparisonsFor,
   cutOf,
   cutsFor,
   type DaySpan,
@@ -70,6 +74,26 @@ const WEEK = named('last-7-days');
 const MONTH = named('last-30-days');
 const TODAY = named('today');
 const YESTERDAY = named('yesterday');
+
+/** The day of the week a day falls on, Sunday first, as the calendar counts it. */
+function weekday(day: string): number {
+  return new Date(`${day}T12:00:00Z`).getUTCDay();
+}
+
+/** How many days back a stretch begins from the run of days it is set beside. */
+function stepBack(span: DaySpan, earlier: DaySpan): number {
+  return (Date.parse(span.first) - Date.parse(earlier.first)) / 86_400_000;
+}
+
+/** The day a number of days before another, written the way a period names one. */
+function daysBefore(day: string, days: number): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** A stretch somebody chose, of as many days as given, ending on the day given. */
+function endingOn(last: string, days: number): Period {
+  return chosen(daysBefore(last, days - 1), last);
+}
 
 /**
  * How many buckets a picture is cut into is what settles whether it can be drawn as anything but
@@ -544,17 +568,20 @@ describe('all time', () => {
 
   it('has nothing before it to be measured against', () => {
     expect(hasEarlier('all-time')).toBe(false);
-    expect(previousSpan(ALL_TIME, 'Etc/UTC', NOW)).toBeNull();
-    expect(previousWindow(ALL_TIME, 'Etc/UTC', NOW)).toBeNull();
+    expect(previousSpan(ALL_TIME, 'before', 'Etc/UTC', NOW)).toBeNull();
+    expect(previousWindow(ALL_TIME, 'before', 'Etc/UTC', NOW)).toBeNull();
 
     for (const granularity of GRANULARITIES) {
-      expect(comparedSpan(ALL_TIME, granularity, 'Etc/UTC', NOW)).toBeNull();
-      expect(comparedWindow(ALL_TIME, granularity, 'Etc/UTC', NOW)).toBeNull();
+      expect(comparedSpan(ALL_TIME, 'before', granularity, 'Etc/UTC', NOW)).toBeNull();
+      expect(comparedWindow(ALL_TIME, 'before', granularity, 'Etc/UTC', NOW)).toBeNull();
     }
   });
 
-  it('is the one named period with nothing before it', () => {
-    expect(PRESETS.filter((preset) => !hasEarlier(preset))).toStrictEqual(['all-time']);
+  it('is, with this year, a named period with nothing before it', () => {
+    expect(PRESETS.filter((preset) => !hasEarlier(preset))).toStrictEqual([
+      'this-year',
+      'all-time',
+    ]);
   });
 
   it('is told apart from every other period', () => {
@@ -961,37 +988,125 @@ describe('the whole window a run of days covers', () => {
 });
 
 describe('the days a period is measured against', () => {
-  it('sets today beside yesterday', () => {
-    expect(previousSpan(TODAY, 'Asia/Kolkata', NOW)).toStrictEqual({
-      first: '2026-08-17',
-      last: '2026-08-17',
+  /** A Tuesday in Kolkata, set beside the Tuesday before it rather than the Monday. */
+  it('sets today beside the same day a week before', () => {
+    expect(previousSpan(TODAY, 'before', 'Asia/Kolkata', NOW)).toStrictEqual({
+      first: '2026-08-11',
+      last: '2026-08-11',
     });
   });
 
-  it('sets a run of days beside the same number of days immediately before it', () => {
-    expect(previousSpan(WEEK, 'Asia/Kolkata', NOW)).toStrictEqual({
+  it('sets yesterday beside the same day a week before', () => {
+    expect(previousSpan(YESTERDAY, 'before', 'Asia/Kolkata', NOW)).toStrictEqual({
+      first: '2026-08-10',
+      last: '2026-08-10',
+    });
+  });
+
+  it('sets the last 7 days beside the 7 before them, which fall on the same weekdays', () => {
+    expect(previousSpan(WEEK, 'before', 'Asia/Kolkata', NOW)).toStrictEqual({
       first: '2026-08-05',
       last: '2026-08-11',
     });
   });
 
-  it('sets a stretch somebody chose beside the same number of days before it', () => {
-    expect(previousSpan(chosen('2026-08-01', '2026-08-14'), 'Asia/Kolkata', NOW)).toStrictEqual({
+  /**
+   * The thirty days to Tuesday the eighteenth of August begin on a Monday. The thirty immediately
+   * before them begin on a Saturday, and would set every weekend beside two weekdays; the thirty
+   * that end five weeks earlier begin on a Monday again.
+   */
+  it('sets the last 30 days beside the same weekdays five weeks earlier', () => {
+    const earlier = present(previousSpan(MONTH, 'before', 'Asia/Kolkata', NOW));
+
+    expect(earlier).toStrictEqual({ first: '2026-06-15', last: '2026-07-14' });
+    expect(weekday(earlier.first)).toBe(weekday('2026-07-20'));
+  });
+
+  it('sets the last 90 days beside the same weekdays thirteen weeks earlier', () => {
+    expect(previousSpan(named('last-90-days'), 'before', 'Asia/Kolkata', NOW)).toStrictEqual({
+      first: '2026-02-19',
+      last: '2026-05-19',
+    });
+  });
+
+  it('sets a stretch somebody chose beside the same weekdays, moved back by the fewest whole weeks that clear it', () => {
+    expect(
+      previousSpan(chosen('2026-08-01', '2026-08-14'), 'before', 'Asia/Kolkata', NOW),
+    ).toStrictEqual({
       first: '2026-07-18',
+      last: '2026-07-31',
+    });
+    expect(
+      previousSpan(chosen('2026-08-05', '2026-08-14'), 'before', 'Asia/Kolkata', NOW),
+    ).toStrictEqual({
+      first: '2026-07-22',
       last: '2026-07-31',
     });
   });
 
+  it.each([
+    [1, 7],
+    [2, 7],
+    [7, 7],
+    [8, 14],
+    [14, 14],
+    [21, 21],
+    [22, 28],
+    [28, 28],
+    [29, 35],
+    [30, 35],
+    [60, 63],
+    [90, 91],
+  ])('moves a run of %i days back %i days', (days, step) => {
+    const period = endingOn('2026-08-14', days);
+    const span = spanFor(period, 'Etc/UTC', NOW);
+
+    expect(stepBack(span, present(previousSpan(period, 'before', 'Etc/UTC', NOW)))).toBe(step);
+  });
+
+  it('lands every run of days on the same weekdays, and never on a day of its own', () => {
+    const lengths = [...Array.from({ length: 90 }, (_, at) => at + 1), 120];
+
+    for (const days of lengths) {
+      const period = endingOn('2026-08-14', days);
+      const span = spanFor(period, 'Etc/UTC', NOW);
+      const earlier = present(previousSpan(period, 'before', 'Etc/UTC', NOW));
+
+      expect(stepBack(span, earlier) % 7).toBe(0);
+      expect(earlier.last < span.first).toBe(true);
+    }
+  });
+
+  /**
+   * A day pressed on the picture that is today where the website is reads as Today, so the two
+   * have to be set beside the same days — or the same figures would move under the name.
+   */
+  it.each(COMPARED_WITH)(
+    'sets a stretch of the day that is today beside the same days as Today, set beside %s',
+    (against) => {
+      const today = todayIn('Asia/Kolkata', NOW);
+      const pressed = chosen(today, today);
+
+      expect(previousSpan(pressed, against, 'Asia/Kolkata', NOW)).toStrictEqual(
+        previousSpan(TODAY, against, 'Asia/Kolkata', NOW),
+      );
+      expect(previousWindow(pressed, against, 'Asia/Kolkata', NOW)).toStrictEqual(
+        previousWindow(TODAY, against, 'Asia/Kolkata', NOW),
+      );
+      expect(previousSpan(pressed, against, 'Asia/Kolkata', NOW)).not.toBeNull();
+    },
+  );
+
   /** A period named after the calendar steps back by one of those, so the dates line up. */
   it('sets this month beside the same run of days in the month before', () => {
-    expect(previousSpan(named('this-month'), 'Asia/Kolkata', NOW)).toStrictEqual({
+    expect(previousSpan(named('this-month'), 'before', 'Asia/Kolkata', NOW)).toStrictEqual({
       first: '2026-07-01',
       last: '2026-07-18',
     });
   });
 
   it('sets last month beside the whole of the month before it', () => {
-    expect(previousSpan(named('last-month'), 'Asia/Kolkata', NOW)).toStrictEqual({
+    expect(previousSpan(named('last-month'), 'before', 'Asia/Kolkata', NOW)).toStrictEqual({
       first: '2026-06-01',
       last: '2026-06-30',
     });
@@ -1004,7 +1119,7 @@ describe('the days a period is measured against', () => {
   it('pulls a date back to the last day a shorter month has', () => {
     const lastOfMarch = new Date('2026-03-31T09:00:00Z');
 
-    expect(previousSpan(named('this-month'), 'Asia/Kolkata', lastOfMarch)).toStrictEqual({
+    expect(previousSpan(named('this-month'), 'before', 'Asia/Kolkata', lastOfMarch)).toStrictEqual({
       first: '2026-02-01',
       last: '2026-02-28',
     });
@@ -1016,69 +1131,169 @@ describe('the days a period is measured against', () => {
  * Set beside what is left of them, any year reads as growth from almost nothing.
  */
 describe('a comparison that would reach into days no longer kept', () => {
-  it("hides the comparison when last year's same days are no longer kept", () => {
+  it("measures this year against nothing, since last year's same days are never all kept", () => {
     const year = named('this-year');
 
-    expect(previousSpan(year, 'Asia/Kolkata', NOW)).toBeNull();
-    expect(previousWindow(year, 'Asia/Kolkata', NOW)).toBeNull();
+    expect(previousSpan(year, 'before', 'Asia/Kolkata', NOW)).toBeNull();
+    expect(previousWindow(year, 'before', 'Asia/Kolkata', NOW)).toBeNull();
 
     for (const granularity of GRANULARITIES) {
-      expect(comparedSpan(year, granularity, 'Asia/Kolkata', NOW)).toBeNull();
-      expect(comparedWindow(year, granularity, 'Asia/Kolkata', NOW)).toBeNull();
+      expect(comparedSpan(year, 'before', granularity, 'Asia/Kolkata', NOW)).toBeNull();
+      expect(comparedWindow(year, 'before', granularity, 'Asia/Kolkata', NOW)).toBeNull();
     }
   });
 
-  it('measures a stretch against the days before it only while every one of them is kept', () => {
-    expect(previousSpan(chosen('2025-08-30', '2025-09-08'), 'Etc/UTC', NOW)).toStrictEqual({
+  it('measures a stretch against the same weekdays before it only while every one of them is kept', () => {
+    expect(
+      previousSpan(chosen('2025-09-03', '2025-09-12'), 'before', 'Etc/UTC', NOW),
+    ).toStrictEqual({
       first: '2025-08-20',
       last: '2025-08-29',
     });
-    expect(previousSpan(chosen('2025-08-29', '2025-09-07'), 'Etc/UTC', NOW)).toBeNull();
+    expect(previousSpan(chosen('2025-09-02', '2025-09-11'), 'before', 'Etc/UTC', NOW)).toBeNull();
   });
 
   /**
-   * Set week beside week, the dashed lines reach five days further back than the stretch the cards
+   * Set month beside month, the dashed lines reach a month further back than the stretch the cards
    * are measured against. At midnight on the thirtieth of October the cards' stretch begins on the
-   * first day still kept, and the lines' would begin five days before it.
+   * first day still kept, and the lines' would begin a month before it.
    */
-  it('never draws the earlier weeks from days no longer kept, while the cards still compare', () => {
+  it('never draws the earlier months from days no longer kept, while the cards still compare', () => {
     const midnight = new Date('2026-10-30T00:00:00Z');
-    const stretch = chosen('2025-11-30', '2025-12-29');
+    const stretch = chosen('2026-01-30', '2026-04-29');
 
-    expect(previousSpan(stretch, 'Etc/UTC', midnight)).toStrictEqual({
+    expect(previousSpan(stretch, 'before', 'Etc/UTC', midnight)).toStrictEqual({
       first: '2025-10-31',
-      last: '2025-11-29',
+      last: '2026-01-28',
     });
-    expect(previousWindow(stretch, 'Etc/UTC', midnight)).not.toBeNull();
-    expect(comparedSpan(stretch, 'day', 'Etc/UTC', midnight)).not.toBeNull();
-    expect(comparedSpan(stretch, 'week', 'Etc/UTC', midnight)).toBeNull();
-    expect(comparedWindow(stretch, 'week', 'Etc/UTC', midnight)).toBeNull();
+    expect(previousWindow(stretch, 'before', 'Etc/UTC', midnight)).not.toBeNull();
+    expect(comparedSpan(stretch, 'before', 'day', 'Etc/UTC', midnight)).not.toBeNull();
+    expect(comparedSpan(stretch, 'before', 'week', 'Etc/UTC', midnight)).not.toBeNull();
+    expect(comparedSpan(stretch, 'before', 'month', 'Etc/UTC', midnight)).toBeNull();
+    expect(comparedWindow(stretch, 'before', 'month', 'Etc/UTC', midnight)).toBeNull();
+  });
+
+  /**
+   * The line is drawn only beside cards that have something to be measured against. Ninety days to
+   * the twenty-ninth of May are measured against days from the thirtieth of November, gone by the
+   * thirtieth of November a year later — while their months, from the first of December, are not.
+   */
+  it('draws no earlier months where the cards have nothing to be measured against, even where those months are still kept', () => {
+    const quarter = chosen('2027-03-01', '2027-05-29');
+    const at = new Date('2027-11-30T00:00:00Z');
+
+    expect(keptFrom('Etc/UTC', at)).toBe('2026-12-01');
+    expect(previousSpan(quarter, 'before', 'Etc/UTC', at)).toBeNull();
+    expect(comparedSpan(quarter, 'before', 'month', 'Etc/UTC', at)).toBeNull();
+    expect(comparedWindow(quarter, 'before', 'month', 'Etc/UTC', at)).toBeNull();
   });
 });
 
 describe('the window a period is measured against', () => {
-  it('covers the whole of the earlier period once this one has finished', () => {
-    const { from, to } = present(previousWindow(YESTERDAY, 'Asia/Kolkata', NOW));
+  it('covers the whole of the earlier stretch once this period has finished', () => {
+    const { from, to } = present(previousWindow(YESTERDAY, 'before', 'Asia/Kolkata', NOW));
 
-    expect(from).toBe('2026-08-15T18:30:00.000Z');
-    expect(to).toBe('2026-08-16T18:30:00.000Z');
+    expect(from).toBe('2026-08-09T18:30:00.000Z');
+    expect(to).toBe('2026-08-10T18:30:00.000Z');
   });
 
   /**
-   * Today at ten in the morning has had ten hours in it and yesterday had twenty-four. Measured
-   * against the whole of yesterday, every morning would report a collapse in traffic and every
-   * night a recovery.
+   * Today at ten in the morning has had ten hours in it, and the same day last week had
+   * twenty-four. Measured against the whole of it, every morning would report a collapse in
+   * traffic and every night a recovery.
    */
   it('is cut to the same length as the part of this period that has happened', () => {
-    const { from, to } = present(previousWindow(TODAY, 'Etc/UTC', NOW));
+    const { from, to } = present(previousWindow(TODAY, 'before', 'Etc/UTC', NOW));
 
-    expect(from).toBe('2026-08-17T00:00:00.000Z');
-    expect(to).toBe('2026-08-17T10:00:00.000Z');
+    expect(from).toBe('2026-08-11T00:00:00.000Z');
+    expect(to).toBe('2026-08-11T10:00:00.000Z');
   });
 
-  it('is exactly as long as the period it is measured against', () => {
+  /**
+   * November has thirty days and October thirty-one. The days beneath the period say the first to
+   * the thirty-first of October, and the figures are counted over exactly those.
+   */
+  it('is the whole of the month before once last month has finished, however long either is', () => {
+    expect(
+      previousWindow(named('last-month'), 'before', 'Etc/UTC', new Date('2026-12-16T09:00:00Z')),
+    ).toStrictEqual({ from: '2026-10-01T00:00:00.000Z', to: '2026-11-01T00:00:00.000Z' });
+  });
+
+  /**
+   * The twenty-eighth of February is set beside the twenty-eighth of March. On the thirty-first,
+   * that day is over, and so is every other day of February: cut at the hour the thirty-first has
+   * reached, February would lose most of its last day and read as a fall overnight.
+   */
+  it('sets the last days of a month beside the whole of a shorter month before it', () => {
+    const february = { from: '2026-02-01T00:00:00.000Z', to: '2026-03-01T00:00:00.000Z' };
+    const lastOfMarch = new Date('2026-03-31T09:37:12Z');
+
+    expect(previousWindow(named('this-month'), 'before', 'Etc/UTC', lastOfMarch)).toStrictEqual(
+      february,
+    );
+    expect(
+      previousWindow(named('this-month'), 'before', 'Etc/UTC', new Date('2026-10-31T00:30:00Z')),
+    ).toStrictEqual({ from: '2026-09-01T00:00:00.000Z', to: '2026-10-01T00:00:00.000Z' });
+  });
+
+  it('cuts the same date of the month before at the hour this month has reached', () => {
+    expect(
+      previousWindow(named('this-month'), 'before', 'Etc/UTC', new Date('2026-03-28T09:37:12Z')),
+    ).toStrictEqual({ from: '2026-02-01T00:00:00.000Z', to: '2026-02-28T10:00:00.000Z' });
+  });
+
+  /**
+   * Sunday the first of November is the first whole day of winter time in London, and the Sunday
+   * a week before it is the twenty-five-hour day the clocks went back on. A day that has finished is
+   * set beside the whole of the day it is set beside.
+   */
+  it('sets a finished day beside the whole of a day the clocks changed on', () => {
+    expect(
+      previousWindow(YESTERDAY, 'before', 'Europe/London', new Date('2026-11-02T09:37:12Z')),
+    ).toStrictEqual({ from: '2026-10-24T23:00:00.000Z', to: '2026-10-26T00:00:00.000Z' });
+  });
+
+  /**
+   * Both windows hold the same hours, which is what a total is fair over. On a day the clocks
+   * changed on they end an hour apart on the clock, and a day whose midnight the clocks skipped
+   * begins when they resumed.
+   */
+  it.each([
+    [
+      'Europe/London',
+      '2026-11-01T09:37:12Z',
+      { from: '2026-11-01T00:00:00.000Z', to: '2026-11-01T10:00:00.000Z' },
+      { from: '2026-10-24T23:00:00.000Z', to: '2026-10-25T09:00:00.000Z' },
+    ],
+    [
+      'Europe/London',
+      '2026-10-25T09:37:12Z',
+      { from: '2026-10-24T23:00:00.000Z', to: '2026-10-25T10:00:00.000Z' },
+      { from: '2026-10-17T23:00:00.000Z', to: '2026-10-18T10:00:00.000Z' },
+    ],
+    [
+      'America/Havana',
+      '2026-03-15T13:37:12Z',
+      { from: '2026-03-15T04:00:00.000Z', to: '2026-03-15T14:00:00.000Z' },
+      { from: '2026-03-08T05:00:00.000Z', to: '2026-03-08T15:00:00.000Z' },
+    ],
+  ])(
+    'sets today in %s at %s beside the same hours of the same day a week before',
+    (zone, at, today, earlier) => {
+      const now = new Date(at);
+
+      expect(windowFor(TODAY, zone, now)).toStrictEqual(today);
+      expect(previousWindow(TODAY, 'before', zone, now)).toStrictEqual(earlier);
+    },
+  );
+
+  /**
+   * Kolkata keeps one clock all year. Where the clocks change inside one of the two stretches, each
+   * is cut at the same hour of its own last day, and the two differ by the hour the clocks moved.
+   */
+  it('is exactly as long as the period it is measured against where the clocks change in neither', () => {
     const current = windowFor(WEEK, 'Asia/Kolkata', NOW);
-    const earlier = present(previousWindow(WEEK, 'Asia/Kolkata', NOW));
+    const earlier = present(previousWindow(WEEK, 'before', 'Asia/Kolkata', NOW));
 
     expect(Date.parse(earlier.to) - Date.parse(earlier.from)).toBe(
       Date.parse(current.to) - Date.parse(current.from),
@@ -1087,9 +1302,235 @@ describe('the window a period is measured against', () => {
 
   it('ends where the period being looked at begins', () => {
     const current = windowFor(WEEK, 'Asia/Kolkata', NOW);
-    const earlier = present(previousWindow(WEEK, 'Asia/Kolkata', NOW));
+    const earlier = present(previousWindow(WEEK, 'before', 'Asia/Kolkata', NOW));
 
     expect(Date.parse(earlier.to)).toBeLessThanOrEqual(Date.parse(current.from));
+  });
+
+  /**
+   * Set beside the day before, ten hours of today are set beside the first ten hours of yesterday,
+   * and yesterday, which has finished, beside the whole of the day before it.
+   */
+  it('cuts the day before at the hour today has reached, and takes it whole beside a finished day', () => {
+    expect(previousWindow(TODAY, 'day-before', 'Etc/UTC', NOW)).toStrictEqual({
+      from: '2026-08-17T00:00:00.000Z',
+      to: '2026-08-17T10:00:00.000Z',
+    });
+    expect(previousWindow(YESTERDAY, 'day-before', 'Etc/UTC', NOW)).toStrictEqual({
+      from: '2026-08-16T00:00:00.000Z',
+      to: '2026-08-17T00:00:00.000Z',
+    });
+    expect(previousWindow(TODAY, '4-weeks-before', 'Etc/UTC', NOW)).toStrictEqual({
+      from: '2026-07-21T00:00:00.000Z',
+      to: '2026-07-21T10:00:00.000Z',
+    });
+  });
+
+  /**
+   * Monday the twenty-sixth of October is the first whole day of winter time in London, after a
+   * Sunday of twenty-five hours. Ten hours of the Monday are set beside the first ten hours of the
+   * Sunday, which end at nine on its clock.
+   */
+  it('sets today beside the same hours of a day before it the clocks changed on', () => {
+    expect(
+      previousWindow(TODAY, 'day-before', 'Europe/London', new Date('2026-10-26T09:37:12Z')),
+    ).toStrictEqual({ from: '2026-10-24T23:00:00.000Z', to: '2026-10-25T09:00:00.000Z' });
+  });
+});
+
+/** Which earlier stretches a period is offered, in the order they are listed. */
+function offered(period: Period, timeZone: string, now: Date): readonly ComparedWith[] {
+  return comparisonsFor(period, timeZone, now).map(({ against }) => against);
+}
+
+/** What each earlier stretch a period is offered is called, without the days it covers. */
+function namesOf(period: Period, timeZone: string, now: Date) {
+  return comparisonsFor(period, timeZone, now).map(({ against, words, days, weeks }) => ({
+    against,
+    words,
+    days,
+    weeks,
+  }));
+}
+
+/** The earlier stretches a period is offered, by which they are and the days they cover. */
+function stretchesOf(comparisons: readonly Comparison[]) {
+  return comparisons.map(({ against, span }) => ({ against, span }));
+}
+
+/**
+ * A run of days may be set beside more than one earlier stretch: each is a different question, and
+ * the reader chooses which they came for. A month is set beside the month before and nothing else.
+ */
+describe('the earlier stretches a period may be set beside', () => {
+  /** A Tuesday in Kolkata: the Tuesday before it, the Monday just gone, and the Tuesday four weeks back. */
+  it('offers a single day the same day a week before, the day before and the same day four weeks before', () => {
+    expect(stretchesOf(comparisonsFor(TODAY, 'Asia/Kolkata', NOW))).toStrictEqual([
+      { against: 'before', span: { first: '2026-08-11', last: '2026-08-11' } },
+      { against: 'day-before', span: { first: '2026-08-17', last: '2026-08-17' } },
+      { against: '4-weeks-before', span: { first: '2026-07-21', last: '2026-07-21' } },
+    ]);
+    expect(stretchesOf(comparisonsFor(YESTERDAY, 'Asia/Kolkata', NOW))).toStrictEqual([
+      { against: 'before', span: { first: '2026-08-10', last: '2026-08-10' } },
+      { against: 'day-before', span: { first: '2026-08-16', last: '2026-08-16' } },
+      { against: '4-weeks-before', span: { first: '2026-07-20', last: '2026-07-20' } },
+    ]);
+  });
+
+  it('offers the last 7 days the 7 before them and the same days four weeks before', () => {
+    expect(stretchesOf(comparisonsFor(WEEK, 'Asia/Kolkata', NOW))).toStrictEqual([
+      { against: 'before', span: { first: '2026-08-05', last: '2026-08-11' } },
+      { against: '4-weeks-before', span: { first: '2026-07-15', last: '2026-07-21' } },
+    ]);
+  });
+
+  /** Four weeks back from the last 30 days is a day they cover, and a month is a month. */
+  it('offers the last 30 and 90 days, and either month, their own stretch alone', () => {
+    for (const preset of ['last-30-days', 'last-90-days', 'this-month', 'last-month'] as const) {
+      expect(offered(named(preset), 'Asia/Kolkata', NOW)).toStrictEqual(['before']);
+    }
+  });
+
+  it('offers this year and all time nothing', () => {
+    expect(comparisonsFor(named('this-year'), 'Asia/Kolkata', NOW)).toStrictEqual([]);
+    expect(comparisonsFor(named('all-time'), 'Asia/Kolkata', NOW)).toStrictEqual([]);
+  });
+
+  /**
+   * The day before clears a single day alone, and four weeks earlier is offered beside a run's own
+   * stretch only while that is nearer: from twenty-two days the run's own is four weeks earlier.
+   */
+  it.each([
+    [1, ['before', 'day-before', '4-weeks-before']],
+    [2, ['before', '4-weeks-before']],
+    [7, ['before', '4-weeks-before']],
+    [14, ['before', '4-weeks-before']],
+    [21, ['before', '4-weeks-before']],
+    [22, ['before']],
+    [28, ['before']],
+    [29, ['before']],
+    [90, ['before']],
+  ])('offers a run of %i days %j', (days, expected) => {
+    expect(offered(endingOn('2026-08-14', days), 'Etc/UTC', NOW)).toStrictEqual(expected);
+  });
+
+  it('never offers a stretch that lands on a day of the period, or two that land on the same days', () => {
+    for (let days = 1; days <= 120; days += 1) {
+      const period = endingOn('2026-08-14', days);
+      const span = spanFor(period, 'Etc/UTC', NOW);
+      const comparisons = comparisonsFor(period, 'Etc/UTC', NOW);
+
+      for (const { span: earlier } of comparisons) {
+        expect(earlier.last < span.first).toBe(true);
+      }
+
+      expect(new Set(comparisons.map(({ span: earlier }) => earlier.first)).size).toBe(
+        comparisons.length,
+      );
+    }
+  });
+
+  /**
+   * On the sixteenth of November the first day still kept in UTC is the eighteenth of the November
+   * before, and a day is offered only the stretches that begin on it or after it.
+   */
+  it.each([
+    ['2025-12-16', ['before', 'day-before', '4-weeks-before']],
+    ['2025-12-15', ['before', 'day-before']],
+    ['2025-11-25', ['before', 'day-before']],
+    ['2025-11-24', ['day-before']],
+    ['2025-11-18', []],
+  ])('offers %s only the stretches still kept: %j', (day, expected) => {
+    const at = new Date('2026-11-16T09:37:12Z');
+
+    expect(keptFrom('Etc/UTC', at)).toBe('2025-11-18');
+    expect(offered(chosen(day, day), 'Etc/UTC', at)).toStrictEqual(expected);
+  });
+
+  it('measures a period against none of the stretches it is not offered', () => {
+    expect(previousSpan(MONTH, 'day-before', 'Asia/Kolkata', NOW)).toBeNull();
+    expect(previousWindow(WEEK, 'day-before', 'Asia/Kolkata', NOW)).toBeNull();
+    expect(previousSpan(named('this-month'), '4-weeks-before', 'Asia/Kolkata', NOW)).toBeNull();
+    expect(comparedSpan(MONTH, '4-weeks-before', 'day', 'Asia/Kolkata', NOW)).toBeNull();
+    expect(comparedWindow(MONTH, '4-weeks-before', 'day', 'Asia/Kolkata', NOW)).toBeNull();
+  });
+
+  it('measures a period against the very days it lists for each stretch', () => {
+    for (const period of [...PRESETS.map(named), endingOn('2026-08-14', 10)]) {
+      for (const { against, span } of comparisonsFor(period, 'Asia/Kolkata', NOW)) {
+        expect(previousSpan(period, against, 'Asia/Kolkata', NOW)).toStrictEqual(span);
+      }
+    }
+  });
+});
+
+/**
+ * The words a stretch is named by are settled by what the period is called and how far back its
+ * stretch was moved, so the cards can say what they were measured against without dates.
+ */
+describe('what a period is measured against, in words', () => {
+  it('names today, the last 7 days and the calendar months in words of their own', () => {
+    const wordsOf = (period: Period) =>
+      comparisonsFor(period, 'Asia/Kolkata', NOW).map(({ words }) => words);
+
+    expect(wordsOf(TODAY)).toStrictEqual([
+      'today.before',
+      'today.day-before',
+      'today.4-weeks-before',
+    ]);
+    expect(wordsOf(WEEK)).toStrictEqual(['last-7-days.before', 'weeks-earlier']);
+    expect(wordsOf(named('this-month'))).toStrictEqual(['this-month']);
+    expect(wordsOf(named('last-month'))).toStrictEqual(['last-month']);
+  });
+
+  it('names any other run of days the day before, or by how many days it covers and how many weeks earlier it is set', () => {
+    expect(namesOf(YESTERDAY, 'Asia/Kolkata', NOW)).toStrictEqual([
+      { against: 'before', words: 'weeks-earlier', days: 1, weeks: 1 },
+      { against: 'day-before', words: 'day-before', days: 1, weeks: 0 },
+      { against: '4-weeks-before', words: 'weeks-earlier', days: 1, weeks: 4 },
+    ]);
+    expect(namesOf(WEEK, 'Asia/Kolkata', NOW)[1]).toStrictEqual({
+      against: '4-weeks-before',
+      words: 'weeks-earlier',
+      days: 7,
+      weeks: 4,
+    });
+    expect(namesOf(MONTH, 'Asia/Kolkata', NOW)).toStrictEqual([
+      { against: 'before', words: 'weeks-earlier', days: 30, weeks: 5 },
+    ]);
+    expect(namesOf(named('last-90-days'), 'Asia/Kolkata', NOW)).toStrictEqual([
+      { against: 'before', words: 'weeks-earlier', days: 90, weeks: 13 },
+    ]);
+    expect(namesOf(chosen('2026-08-05', '2026-08-14'), 'Asia/Kolkata', NOW)).toStrictEqual([
+      { against: 'before', words: 'weeks-earlier', days: 10, weeks: 2 },
+      { against: '4-weeks-before', words: 'weeks-earlier', days: 10, weeks: 4 },
+    ]);
+  });
+
+  /** A day is named when it is chosen, never when it is read: a link to today's date is a date. */
+  it('names a stretch of the day that is today by its days rather than as Today', () => {
+    const today = todayIn('Asia/Kolkata', NOW);
+
+    expect(namesOf(chosen(today, today), 'Asia/Kolkata', NOW)).toStrictEqual([
+      { against: 'before', words: 'weeks-earlier', days: 1, weeks: 1 },
+      { against: 'day-before', words: 'day-before', days: 1, weeks: 0 },
+      { against: '4-weeks-before', words: 'weeks-earlier', days: 1, weeks: 4 },
+    ]);
+  });
+
+  it('names nothing where there is nothing to measure against', () => {
+    expect(comparisonsFor(named('this-year'), 'Asia/Kolkata', NOW)).toStrictEqual([]);
+    expect(comparisonsFor(named('all-time'), 'Asia/Kolkata', NOW)).toStrictEqual([]);
+    expect(comparisonsFor(chosen('2025-09-02', '2025-09-11'), 'Etc/UTC', NOW)).toStrictEqual([]);
+  });
+
+  /** A word nothing can be named by is a sentence written for a screen that never shows it. */
+  it('names some period by every word it has, and by no other', () => {
+    const said = [...PRESETS.map(named), chosen('2026-08-05', '2026-08-14')].flatMap((period) =>
+      comparisonsFor(period, 'Asia/Kolkata', NOW).map(({ words }) => words),
+    );
+
+    expect(new Set(said)).toStrictEqual(new Set(AGAINST_WORDS));
   });
 });
 
@@ -1099,30 +1540,46 @@ describe('the window a period is measured against', () => {
  */
 describe('the days the dashed lines are drawn from', () => {
   it('are the days the cards are measured against, by the day and by the hour', () => {
-    expect(comparedSpan(WEEK, 'day', 'Asia/Kolkata', NOW)).toStrictEqual(
-      previousSpan(WEEK, 'Asia/Kolkata', NOW),
+    expect(comparedSpan(WEEK, 'before', 'day', 'Asia/Kolkata', NOW)).toStrictEqual(
+      previousSpan(WEEK, 'before', 'Asia/Kolkata', NOW),
     );
-    expect(comparedSpan(TODAY, 'hour', 'Asia/Kolkata', NOW)).toStrictEqual(
-      previousSpan(TODAY, 'Asia/Kolkata', NOW),
+    expect(comparedSpan(TODAY, 'before', 'hour', 'Asia/Kolkata', NOW)).toStrictEqual(
+      previousSpan(TODAY, 'before', 'Asia/Kolkata', NOW),
     );
   });
 
+  /** Whichever stretch the cards are set beside, the line behind the picture is drawn from it. */
+  it('are the days of whichever stretch the cards are measured against', () => {
+    for (const against of COMPARED_WITH) {
+      expect(comparedSpan(TODAY, against, 'hour', 'Asia/Kolkata', NOW)).toStrictEqual(
+        previousSpan(TODAY, against, 'Asia/Kolkata', NOW),
+      );
+      expect(comparedWindow(TODAY, against, 'hour', 'Asia/Kolkata', NOW)).toStrictEqual(
+        previousWindow(TODAY, against, 'Asia/Kolkata', NOW),
+      );
+    }
+
+    expect(comparedSpan(WEEK, '4-weeks-before', 'day', 'Asia/Kolkata', NOW)).toStrictEqual({
+      first: '2026-07-15',
+      last: '2026-07-21',
+    });
+  });
+
   /**
-   * The first to the thirtieth of October begins on a Thursday. The thirty days before begin on a
-   * Tuesday, which would set every earlier week two days out; thirty-five days before is a Thursday
-   * again.
+   * The first to the thirtieth of October begins on a Thursday, and so do the thirty days five weeks
+   * earlier that the cards are measured against — the very days the earlier weeks are drawn from.
    */
   it('sets the dashed lines on the same weekday when cut by the week', () => {
-    const lines = present(comparedSpan(MONTH, 'week', 'Etc/UTC', LATER));
-    const weekday = (day: string) => new Date(`${day}T12:00:00Z`).getUTCDay();
+    const lines = present(comparedSpan(MONTH, 'before', 'week', 'Etc/UTC', LATER));
 
     expect(lines).toStrictEqual({ first: '2026-08-27', last: '2026-09-25' });
+    expect(lines).toStrictEqual(previousSpan(MONTH, 'before', 'Etc/UTC', LATER));
     expect(weekday(lines.first)).toBe(weekday('2026-10-01'));
     expect(weekday(lines.last)).toBe(weekday('2026-10-30'));
   });
 
   it('moves a quarter back by thirteen whole weeks', () => {
-    expect(comparedSpan(named('last-90-days'), 'week', 'Etc/UTC', LATER)).toStrictEqual({
+    expect(comparedSpan(named('last-90-days'), 'before', 'week', 'Etc/UTC', LATER)).toStrictEqual({
       first: '2026-05-03',
       last: '2026-07-31',
     });
@@ -1130,7 +1587,7 @@ describe('the days the dashed lines are drawn from', () => {
 
   /** The second of August to the thirtieth of October is set beside the same days of May to July. */
   it('sets the dashed lines on the same day of the month when cut by the month', () => {
-    expect(comparedSpan(named('last-90-days'), 'month', 'Etc/UTC', LATER)).toStrictEqual({
+    expect(comparedSpan(named('last-90-days'), 'before', 'month', 'Etc/UTC', LATER)).toStrictEqual({
       first: '2026-05-02',
       last: '2026-07-30',
     });
@@ -1138,45 +1595,90 @@ describe('the days the dashed lines are drawn from', () => {
 
   it('moves a stretch somebody chose back by as many months as it reaches into', () => {
     expect(
-      comparedSpan(chosen('2026-05-15', '2026-09-10'), 'month', 'Etc/UTC', LATER),
+      comparedSpan(chosen('2026-05-15', '2026-09-10'), 'before', 'month', 'Etc/UTC', LATER),
     ).toStrictEqual({ first: '2025-12-15', last: '2026-04-10' });
   });
 
   it('pulls a day back to the last one a shorter month has', () => {
     expect(
-      comparedSpan(chosen('2026-03-31', '2026-06-30'), 'month', 'Etc/UTC', LATER),
+      comparedSpan(chosen('2026-03-31', '2026-06-30'), 'before', 'month', 'Etc/UTC', LATER),
     ).toStrictEqual({ first: '2025-11-30', last: '2026-02-28' });
   });
 
-  /** The cards and the lines may name slightly different days, and each says which it means. */
-  it('is settled apart from the days the cards are measured against', () => {
-    expect(previousSpan(MONTH, 'Etc/UTC', LATER)).toStrictEqual({
+  /**
+   * This month is measured against the same dates of September, while its earlier weeks are the
+   * whole weeks nearest them that still clear the month — five, where September's dates are four
+   * and a bit away. The cards and the lines then name slightly different days, and each says which
+   * it means.
+   */
+  it('is settled apart from the days the cards are measured against on a month', () => {
+    const month = named('this-month');
+
+    expect(previousSpan(month, 'before', 'Etc/UTC', LATER)).toStrictEqual({
       first: '2026-09-01',
       last: '2026-09-30',
     });
-    expect(comparedSpan(MONTH, 'week', 'Etc/UTC', LATER)).toStrictEqual({
+    expect(comparedSpan(month, 'before', 'week', 'Etc/UTC', LATER)).toStrictEqual({
       first: '2026-08-27',
       last: '2026-09-25',
     });
   });
 
+  /**
+   * Ninety days to the twenty-ninth of May run from the first of March, through three months. Set
+   * beside the same weekdays thirteen weeks earlier they begin on the thirtieth of November, four
+   * months before March; moved back as far as that, the line would leave February out.
+   */
+  it('moves a run of days back by the months it reaches into, and no further, when cut by the month', () => {
+    const quarter = named('last-90-days');
+
+    expect(
+      comparedSpan(quarter, 'before', 'month', 'Etc/UTC', new Date('2027-05-29T10:00:00Z')),
+    ).toStrictEqual({ first: '2026-12-01', last: '2027-02-28' });
+    expect(
+      comparedSpan(quarter, 'before', 'month', 'Etc/UTC', new Date('2027-07-29T10:00:00Z')),
+    ).toStrictEqual({ first: '2027-02-01', last: '2027-04-29' });
+  });
+
   it('never covers days this period also covers', () => {
-    for (const preset of PRESETS) {
-      const span = spanFor(named(preset), 'Etc/UTC', LATER);
+    const periods = [
+      ...PRESETS.map(named),
+      ...[1, 2, 10, 21, 22, 30, 60, 90, 120].map((days) => endingOn('2026-10-29', days)),
+    ];
+    const pictures = periods.flatMap((period) =>
+      GRANULARITIES.flatMap((granularity) =>
+        COMPARED_WITH.map((against) => ({ period, granularity, against })),
+      ),
+    );
 
-      for (const granularity of GRANULARITIES) {
-        const lines = comparedSpan(named(preset), granularity, 'Etc/UTC', LATER);
+    for (const { period, granularity, against } of pictures) {
+      const span = spanFor(period, 'Etc/UTC', LATER);
+      const lines = comparedSpan(period, against, granularity, 'Etc/UTC', LATER);
 
-        if (lines !== null) {
-          expect(lines.last < span.first).toBe(true);
-        }
-      }
+      expect(lines === null || lines.last < span.first).toBe(true);
     }
+  });
+
+  /**
+   * Last month is October, thirty-one days, set beside September — and finished, the whole of
+   * every one of them is drawn, as the cards count them.
+   */
+  it('cuts the dashed days as the cards are cut, on a month longer than the one it is set beside', () => {
+    const at = new Date('2026-12-16T09:00:00Z');
+    const month = named('last-month');
+
+    expect(comparedWindow(month, 'before', 'day', 'Etc/UTC', at)).toStrictEqual(
+      previousWindow(month, 'before', 'Etc/UTC', at),
+    );
+    expect(comparedWindow(month, 'before', 'day', 'Etc/UTC', at)).toStrictEqual({
+      from: '2026-10-01T00:00:00.000Z',
+      to: '2026-11-01T00:00:00.000Z',
+    });
   });
 
   it('is cut to the same length as the part of this period that has happened', () => {
     const current = windowFor(MONTH, 'Etc/UTC', LATER);
-    const lines = present(comparedWindow(MONTH, 'week', 'Etc/UTC', LATER));
+    const lines = present(comparedWindow(MONTH, 'before', 'week', 'Etc/UTC', LATER));
 
     expect(lines).toStrictEqual({
       from: '2026-08-27T00:00:00.000Z',
@@ -1199,7 +1701,7 @@ describe('the window the dashed months are drawn from', () => {
 
   /** The earlier window a period's dashed months are asked about, at a given moment in UTC. */
   function linedUp(period: Period, at: string) {
-    return present(comparedWindow(period, 'month', 'Etc/UTC', new Date(at)));
+    return present(comparedWindow(period, 'before', 'month', 'Etc/UTC', new Date(at)));
   }
 
   it('ends on its last day at the hour this period has reached on its own', () => {
@@ -1216,6 +1718,36 @@ describe('the window the dashed months are drawn from', () => {
   it('covers no more of its last day than this period has of its own', () => {
     expect(linedUp(QUARTER, '2026-11-01T10:30:00Z').to).toBe('2026-07-01T11:00:00.000Z');
   });
+
+  /**
+   * Ninety days to the thirty-first of May are set beside three months earlier, which ends on the
+   * twenty-eighth of February, the day beside the twenty-eighth of May. That day is over, so the
+   * whole of it is drawn.
+   */
+  it('draws the whole of a last day pulled back to the end of a shorter month', () => {
+    expect(linedUp(QUARTER, '2027-05-31T10:30:00Z')).toStrictEqual({
+      from: '2026-12-03T00:00:00.000Z',
+      to: '2027-03-01T00:00:00.000Z',
+    });
+  });
+
+  /**
+   * Ninety days to the thirty-first of December are set beside the third of July to the thirtieth of
+   * September — ninety days as well, whose last day stands beside the thirtieth of December, already
+   * over. Being as long as the period makes it no less a day pulled back, and it is drawn whole.
+   */
+  it.each([
+    ['2026-12-31T10:30:00Z', { from: '2026-07-03T00:00:00.000Z', to: '2026-10-01T00:00:00.000Z' }],
+    ['2026-05-29T10:30:00Z', { from: '2025-12-01T00:00:00.000Z', to: '2026-03-01T00:00:00.000Z' }],
+  ])(
+    'draws the whole of a pulled-back last day on a stretch as long as the period, at %s',
+    (at, window) => {
+      expect(
+        daysIn(present(comparedSpan(QUARTER, 'before', 'month', 'Etc/UTC', new Date(at)))),
+      ).toBe(90);
+      expect(linedUp(QUARTER, at)).toStrictEqual(window);
+    },
+  );
 
   it('is the whole of the earlier stretch once this period has finished', () => {
     expect(linedUp(chosen('2027-01-01', '2027-03-31'), '2027-04-15T10:30:00Z')).toStrictEqual({

@@ -21,6 +21,10 @@
 - **Revised by**: [0063](0063-the-picture-is-drawn-by-the-day-the-week-or-the-month.md), which names
   a chosen stretch that is exactly this month, last month or this year by that period too, by the
   same rule and after it: a single day is still named first.
+- **Revised by**: [0075](0075-a-run-of-days-is-set-beside-the-same-weekdays-before-it.md), which sets
+  Today, Yesterday and every single day beside the same day a week before. Today's cards say "the
+  same day last week" and any other day's "the same day a week earlier"; a pressed today and Today
+  are still set beside the same stretch and give the same figures.
 
 ## Context
 

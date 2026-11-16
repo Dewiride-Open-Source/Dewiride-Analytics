@@ -27,6 +27,11 @@
   its first day still kept.
 - **Followed by**: [0070](0070-a-post-is-read-on-a-page-of-its-own.md), whose picture of one post is
   cut, drawn, pressed into and remembered as this picture is.
+- **Extended by**: [0075](0075-a-run-of-days-is-set-beside-the-same-weekdays-before-it.md). The cards'
+  stretch on a run of days is the same weekdays whole weeks earlier, which is also what the week cut
+  draws; by the month the line moves back as many whole months as the period reaches into; every
+  earlier window is cut on its own last day, and counted whole where that day was pulled back to the
+  end of a shorter month; and "This year" has no stretch to be measured against at all.
 
 ## Context
 

@@ -11,6 +11,9 @@
 - **Extended by**: [0063](0063-the-picture-is-drawn-by-the-day-the-week-or-the-month.md), which adds
   how finely the picture is cut to what an address carries, as `by`, and pulls a stretch older than
   the days still kept forward into them rather than opening it on noughts.
+- **Extended by**: [0076](0076-somebody-chooses-which-earlier-days-a-period-is-set-beside.md), which
+  adds which earlier days the overview's period is set beside to what an address carries, as `vs`,
+  and leaves it out of the links between screens, since no other screen sets a period beside any.
 
 ## Context
 

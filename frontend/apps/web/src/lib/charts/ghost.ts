@@ -9,9 +9,10 @@ import { LAYERS } from '@/lib/charts/frame';
  * reads as a reference rather than as a measurement, which is what an earlier period is.
  *
  * It is drawn against the buckets of the period being read rather than its own, because the two
- * are the same stretch of time offset by one period and the whole point is to read them off the
- * same place on the axis. Which days the dashed line actually covers is stated beneath the
- * drawing, and its figures are published in the table with the rest.
+ * are stretches of the same shape — the same weekdays, the same days of the month, or the same hours
+ * of the day before — set apart in time, and the whole point is to read them off the same place on
+ * the axis. Which days the dashed line actually covers is stated beneath the drawing, and its
+ * figures are published in the table with the rest.
  */
 
 /** How much of its colour a measure keeps when it is the period before rather than this one. */

@@ -172,14 +172,7 @@ final class Settings_Test extends Test_Case {
 
 		$settings = new Settings();
 
-		self::assertSame(
-			array(
-				'address'       => '',
-				'site_id'       => '',
-				'counted_roles' => array( 'editor' ),
-			),
-			$settings->all()
-		);
+		self::assertSame( array_merge( Settings::defaults(), array( 'counted_roles' => array( 'editor' ) ) ), $settings->all() );
 		self::assertFalse( $settings->is_complete() );
 	}
 
@@ -261,10 +254,12 @@ final class Settings_Test extends Test_Case {
 		);
 
 		self::assertSame(
-			array(
-				'address'       => self::ADDRESS,
-				'site_id'       => self::SITE_ID,
-				'counted_roles' => array( 'editor' ),
+			self::cleaned(
+				array(
+					'address'       => self::ADDRESS,
+					'site_id'       => self::SITE_ID,
+					'counted_roles' => array( 'editor' ),
+				)
 			),
 			$saved
 		);
@@ -442,7 +437,7 @@ final class Settings_Test extends Test_Case {
 		Functions\expect( 'add_settings_error' )->never();
 
 		self::assertSame(
-			Settings::defaults(),
+			self::cleaned(),
 			( new Settings() )->sanitize(
 				array(
 					'address' => '   ',
@@ -461,9 +456,9 @@ final class Settings_Test extends Test_Case {
 
 		$settings = new Settings();
 
-		self::assertSame( Settings::defaults(), $settings->sanitize( 'nonsense' ) );
+		self::assertSame( self::cleaned(), $settings->sanitize( 'nonsense' ) );
 		self::assertSame(
-			Settings::defaults(),
+			self::cleaned(),
 			$settings->sanitize(
 				array(
 					'address'       => array( self::ADDRESS ),
@@ -510,10 +505,12 @@ final class Settings_Test extends Test_Case {
 		);
 
 		self::assertSame(
-			array(
-				'address'       => self::ADDRESS,
-				'site_id'       => '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d',
-				'counted_roles' => array( 'editor' ),
+			self::cleaned(
+				array(
+					'address'       => self::ADDRESS,
+					'site_id'       => '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d',
+					'counted_roles' => array( 'editor' ),
+				)
 			),
 			$saved
 		);
@@ -689,5 +686,22 @@ final class Settings_Test extends Test_Case {
 		Functions\when( 'home_url' )->justReturn( $home );
 
 		self::assertSame( $expected, Settings::is_mixed_content( $address ) );
+	}
+
+	/**
+	 * What cleaning the form gives when it sent the given values and ticked no box.
+	 *
+	 * @param array<string, mixed> $values The values the form sent, cleaned.
+	 * @return array<string, mixed>
+	 */
+	private static function cleaned( array $values = array() ): array {
+		return array_merge(
+			Settings::defaults(),
+			array(
+				'report_server' => false,
+				'report_feeds'  => false,
+			),
+			$values
+		);
 	}
 }

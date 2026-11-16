@@ -1,4 +1,5 @@
-# A throwaway WordPress for the smoke harness: a database, WordPress itself and WP-CLI beside it.
+# A throwaway WordPress for the smoke harness: a database, WordPress itself, WP-CLI beside it, and a
+# stand-in for Dewiride Analytics that records what WordPress reports to it.
 #
 # run.sh chooses the images, makes up the database password and names the folder holding the
 # plugin under test, which is mounted read-only exactly where WordPress expects it. Nothing here
@@ -24,8 +25,10 @@ services:
       database:
         condition: service_healthy
     # WordPress neither updates itself nor runs its scheduled events while the harness drives it,
-    # so nothing changes underneath an assertion. The image reads these from wp-config.php on every
-    # request, which is why WP-CLI is given them as well.
+    # so nothing changes underneath an assertion. It is a `local` site, as a developer's own copy
+    # is, because every visitor here comes from the harness's private network, and the server's
+    # reports leave out private addresses everywhere else. The image reads these from
+    # wp-config.php on every request, which is why WP-CLI is given them as well.
     environment: &wordpress-environment
       WORDPRESS_DB_HOST: database
       WORDPRESS_DB_NAME: wordpress
@@ -34,10 +37,12 @@ services:
       WORDPRESS_CONFIG_EXTRA: |
         define( 'AUTOMATIC_UPDATER_DISABLED', true );
         define( 'DISABLE_WP_CRON', true );
+        define( 'WP_ENVIRONMENT_TYPE', 'local' );
     volumes:
       - wordpress:/var/www/html
       - ${PLUGIN_DIR:?PLUGIN_DIR names the folder holding the plugin}:/var/www/html/wp-content/plugins/dewiride-analytics:ro
       - ./theme:/var/www/html/wp-content/themes/dewiride-smoke:ro
+      - ./mu-plugins/dewiride-smoke.php:/var/www/html/wp-content/mu-plugins/dewiride-smoke.php:ro
 
   # WP-CLI runs as the user the WordPress image serves files as, so it can update WordPress.
   cli:
@@ -52,8 +57,33 @@ services:
       - wordpress:/var/www/html
       - ${PLUGIN_DIR:?PLUGIN_DIR names the folder holding the plugin}:/var/www/html/wp-content/plugins/dewiride-analytics:ro
       - ./theme:/var/www/html/wp-content/themes/dewiride-smoke:ro
+      - ./mu-plugins/dewiride-smoke.php:/var/www/html/wp-content/mu-plugins/dewiride-smoke.php:ro
       - .:/smoke:ro
+      - reports:/reports
     command: ["tail", "-f", "/dev/null"]
+
+  # A stand-in for Dewiride Analytics, which WordPress reaches by this service's name. It serves
+  # dw.js and records every batch of server reports in a volume the checks read them from.
+  collector:
+    image: ${SMOKE_NODE_IMAGE:?run.sh chooses the Node image}
+    command: ["node", "/smoke/collector.mjs"]
+    environment:
+      SMOKE_SITE_ID: ${SMOKE_SITE_ID:?run.sh names the Website ID}
+    volumes:
+      - .:/smoke:ro
+      - reports:/reports
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/dw.js').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
 volumes:
   wordpress:
+  reports:

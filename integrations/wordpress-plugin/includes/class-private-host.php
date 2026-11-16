@@ -54,4 +54,41 @@ final class Private_Host {
 
 		return false;
 	}
+
+	/**
+	 * Whether the server key may be sent to an address: one reached over https, or over http one
+	 * that is this computer or on a private network, named so or resolving only to private
+	 * addresses.
+	 *
+	 * A key lets whoever reads it report visits as the website, so it never crosses the internet
+	 * unencrypted. Where the site and the installation sit side by side, the name WordPress
+	 * reaches the installation by is often one only that network knows — a container's name — and
+	 * what it resolves to is what says the traffic stays there. Such a name reaches here only from
+	 * somebody who can already run code on the site — the address filter, or a single site's
+	 * administrator, since a network refuses private addresses on save — and could read the key
+	 * anyway, so the lookup guards against a mistaken address rather than against anybody: it reads
+	 * IPv4 records only, once, before the request resolves the name again.
+	 *
+	 * @param string $address An address, as the settings hold it.
+	 */
+	public static function may_receive_secrets( string $address ): bool {
+		$scheme = strtolower( (string) wp_parse_url( $address, PHP_URL_SCHEME ) );
+
+		if ( 'http' !== $scheme ) {
+			return 'https' === $scheme;
+		}
+
+		return self::matches( $address ) || self::resolves_privately( (string) wp_parse_url( $address, PHP_URL_HOST ) );
+	}
+
+	/**
+	 * Whether a name resolves, and only to addresses nobody on the internet can reach.
+	 *
+	 * @param string $host The name.
+	 */
+	private static function resolves_privately( string $host ): bool {
+		$resolved = '' === $host ? false : gethostbynamel( $host );
+
+		return is_array( $resolved ) && array() !== $resolved && array() === array_filter( $resolved, array( Address_Range::class, 'is_public' ) );
+	}
 }

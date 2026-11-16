@@ -81,7 +81,8 @@ Content-Type: application/json
 
 Recognised `surface` values: `cloudflare-worker`, `wordpress-plugin`, `netlify-edge`,
 `vercel-edge`, `aspnetcore-middleware`, `nextjs-middleware`, `log-import`. The names are reserved
-for the reporters this product will ship; none of them ships yet, and a reporter you write
+for the reporters this product ships. `wordpress-plugin` is the WordPress plugin's
+(`integrations/wordpress-plugin`, ADR 0074); the others are not built yet, and a reporter you write
 yourself names the surface it runs on.
 
 ### One observation

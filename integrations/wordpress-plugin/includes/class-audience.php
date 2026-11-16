@@ -40,10 +40,18 @@ final class Audience {
 	 * Whether the current visitor, on the current page, is counted.
 	 */
 	public function counts_current_visitor(): bool {
-		if ( is_preview() || is_customize_preview() || is_embed() || self::is_amp_page() ) {
-			return false;
-		}
+		return ! self::is_copy() && $this->counts_person();
+	}
 
+	/**
+	 * Whether the person making the current request is counted, whatever the page: anybody who is
+	 * not signed in, and somebody signed in with a ticked role.
+	 *
+	 * This alone decides about a request the site refused. Whoever sends a request writes its
+	 * query, and with it whether the page is asked for as a preview, an embed or an AMP copy, so
+	 * those cannot be allowed to leave out a probe; who is signed in is the site's own knowledge.
+	 */
+	public function counts_person(): bool {
 		if ( ! is_user_logged_in() ) {
 			return true;
 		}
@@ -61,6 +69,14 @@ final class Audience {
 	 */
 	public function counts_roles( array $roles ): bool {
 		return array() !== array_intersect( array_filter( $roles, 'is_string' ), $this->settings->counted_roles() );
+	}
+
+	/**
+	 * Whether the current page is not being read as itself: a preview, the Customizer, an embed
+	 * somewhere else, or an AMP copy.
+	 */
+	private static function is_copy(): bool {
+		return is_preview() || is_customize_preview() || is_embed() || self::is_amp_page();
 	}
 
 	/**

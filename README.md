@@ -117,7 +117,9 @@ and the [master plan](#master-plan) below it says what does not yet.
   plugin the dashboard hands out puts both on your pages for you instead: it leaves out people
   signed in to WordPress unless you choose their role, asks the common optimisation plugins to
   leave the tracker alone, and checks once a day that your home page reaches readers with it
-  intact.
+  intact. Give it a server key as well and WordPress reports the crawlers, feed readers and
+  scanners that reach it, through the endpoint below — on most hosts after each page has gone to
+  its visitor.
 - A collection endpoint your own server can report to, so the traffic that never runs a script —
   crawlers, feed readers, scanners probing for paths that do not exist — is counted too, with the
   status your site returned. Keys are created and withdrawn in the dashboard; the wire format is
@@ -331,18 +333,20 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-07.
 
 **4.1 Website integrations**
 
-- **Partly done** · WordPress plugin: counts the people who read a site, from the browser — nobody
+- **Done** · WordPress plugin: counts the people who read a site, from the browser — nobody
   signed in unless their role is chosen — asks the common optimisation plugins to leave the tracker
-  alone, and checks daily that the home page reaches readers with it; downloaded from the dashboard.
-  Reporting the robots and other programs that reach WordPress itself is still to come.
+  alone, and checks daily that the home page reaches readers with it; with a server key, reports
+  from WordPress itself the crawlers, AI fetchers, feed readers and scanners that never run the
+  tracker, and names each page a browser opens over https so its two halves count as one visit.
+  Downloaded from the dashboard, which creates the key in its WordPress steps.
 - **Not started** · Cloudflare Worker.
 - **Not started** · Netlify edge function.
 - **Not started** · Vercel edge middleware.
 - **Not started** · Next.js middleware.
 - **Not started** · ASP.NET Core middleware.
-- Until one of these reports from a website's own server, which the WordPress plugin does not do
-  yet, real websites report from the browser only, so the server-side signals — scanners,
-  scrapers, no script run — never fire outside the test suite.
+- The server-side signals — scanners, scrapers, no script run — fire for a WordPress website
+  with a server key saved, and for any website whose own reporter sends to the server collector;
+  every other website reports from the browser only.
 
 **4.2 Browser tracker**
 
@@ -708,7 +712,8 @@ run the pieces outside containers.
 6. **Put the tracker on your site.** Choose **Tracking code** on the dashboard and paste the two
    lines it gives you into your website's pages. On a WordPress site, choose **WordPress** there
    instead: it hands you the plugin, the steps to install it, and the two values to paste into its
-   settings. Traffic appears as soon as somebody visits.
+   settings, and creates the server key that lets WordPress report robots too. Traffic appears as
+   soon as somebody visits.
 
    The address in those lines is the one you are reading the dashboard on, so a site on the
    internet needs a dashboard the internet can reach — through a reverse proxy that sets

@@ -57,16 +57,25 @@ final class Settings_Page {
 	private $basename;
 
 	/**
+	 * The part of the page about the server's own reports.
+	 *
+	 * @var Server_Settings
+	 */
+	private $server_settings;
+
+	/**
 	 * Creates the page.
 	 *
-	 * @param Settings  $settings  The plugin's settings.
-	 * @param Tag_Check $tag_check The check of the tag visitors receive.
-	 * @param string    $basename  The plugin's basename.
+	 * @param Settings        $settings        The plugin's settings.
+	 * @param Tag_Check       $tag_check       The check of the tag visitors receive.
+	 * @param string          $basename        The plugin's basename.
+	 * @param Server_Settings $server_settings The part of the page about the server's own reports.
 	 */
-	public function __construct( Settings $settings, Tag_Check $tag_check, string $basename ) {
-		$this->settings  = $settings;
-		$this->tag_check = $tag_check;
-		$this->basename  = $basename;
+	public function __construct( Settings $settings, Tag_Check $tag_check, string $basename, Server_Settings $server_settings ) {
+		$this->settings        = $settings;
+		$this->tag_check       = $tag_check;
+		$this->basename        = $basename;
+		$this->server_settings = $server_settings;
 	}
 
 	/**
@@ -93,7 +102,8 @@ final class Settings_Page {
 	}
 
 	/**
-	 * Declares the page's two sections and their fields.
+	 * Declares the page's sections and their fields: connecting, who is counted, and robots and
+	 * other programs.
 	 */
 	public function add_fields(): void {
 		add_settings_section(
@@ -135,6 +145,8 @@ final class Settings_Page {
 			self::SLUG,
 			'dewiride_analytics_audience'
 		);
+
+		$this->server_settings->add_fields( self::SLUG );
 	}
 
 	/**
@@ -420,6 +432,7 @@ final class Settings_Page {
 			printf( '<tr><th scope="row">%s</th><td>', esc_html__( 'Tag check', 'dewiride-analytics' ) );
 			$this->print_tag_check();
 			echo '</td></tr>';
+			$this->server_settings->print_status_rows();
 		}
 
 		echo '</tbody></table>';

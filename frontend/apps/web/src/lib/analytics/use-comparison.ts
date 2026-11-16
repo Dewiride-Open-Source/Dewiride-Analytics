@@ -14,7 +14,7 @@ import { useRememberedAddress } from '@/lib/preferences/use-remembered-address';
  * setting two periods beside each other can send exactly that. Remembered as well, so somebody
  * who reads their weeks against the ones before finds the earlier days already drawn. Left off,
  * it says nothing in the address at all. Which earlier days are drawn is the cards' choice, made
- * beneath the period, and carried under a key of its own.
+ * beside the period, and carried under a key of its own.
  */
 
 /** Which of the closed set is in force, or nothing when this period is drawn alone. */

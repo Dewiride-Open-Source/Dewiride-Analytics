@@ -7,7 +7,7 @@
  * first is a real cost to reading the first, and most of the time somebody is looking at the
  * shape of this period rather than at two periods at once.
  *
- * Which earlier days those are is a separate choice, made beneath the period. The line behind the
+ * Which earlier days those are is a separate choice, made beside the period. The line behind the
  * picture is drawn from the stretch the cards are measured against by the hour and by the day, and
  * by the week on a run of days; by the month it is moved back by whole months, and by the week on a
  * month by whole weeks, so each earlier bucket lines up with its partner — and the caption says

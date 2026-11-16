@@ -79,11 +79,11 @@ needs each website's day-by-day figures kept for longer — its own decision, ow
    choice is the overview's alone. No other screen sets a period beside earlier days, so the links
    between screens leave it behind.
 
-3. **The control sits beneath the period.** In one column with the period, of one width whichever
-   period is chosen — wide enough for the longest phrase either holds — so neither the period nor
-   the buttons beside it move when the period changes, whether or not it is compared with anything,
-   and the two line up on both edges wherever the row wraps. The screen's heading is aligned with
-   the top of the row for the same reason. It is the browser's own list, as the period's is, named
+3. **The control sits beside the period.** At the end of the row of controls, each list as wide as
+   its own longest entry, so the header grows no taller for it; the row keeps to the right-hand edge
+   wherever it wraps, and on a phone each list takes the whole width. The screen's heading is
+   aligned with the top of the row, since both lists carry their days on a second line. It is the
+   browser's own list, as the period's is, named
    "Compared with", each entry named the way the cards name it — "vs yesterday" — with the days the
    stretch in force covers printed beneath it and read out with it. A period offered one stretch
    alone has nothing to choose, and the same two lines are written rather than offered, so the

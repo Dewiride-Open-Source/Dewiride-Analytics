@@ -158,7 +158,7 @@ export function PeriodPicker({
         value={value.kind === 'preset' ? value.preset : CHOSEN}
         onChange={(event) => pick(event.target.value)}
         onReach={onReach}
-        className="w-full"
+        className="w-full sm:w-auto"
       >
         {GROUPS.map((group) => (
           <optgroup key={group.name} label={t(`groups.${group.name}`)}>

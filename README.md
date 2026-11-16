@@ -451,7 +451,7 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-07.
 - **Done** · Totals and people only over time, by days, weeks (Monday to Sunday) or months; change
   against the same weekdays before — today against the same day last week, a run of days against
   the same days the fewest whole weeks earlier that clear it — and a month against the same dates of
-  the month before; a choice beneath the period of what a day is set beside instead — the day
+  the month before; a choice beside the period of what a day is set beside instead — the day
   before, or the same day four weeks earlier — and of four weeks earlier for a run of up to three
   weeks; that earlier stretch as a dashed line, lined up week for week or month for month; bars
   that can be pressed to look at the days they cover.

@@ -940,14 +940,17 @@ describe('all time, a month at a time', () => {
 
   /** The engine's own dash for a figure it was handed nothing for reads as a figure of its own. */
   it('calls a month never counted not counted in the card a hover opens, as the table does', () => {
-    for (const view of ['activity', 'who'] as const) {
+    for (const [view, written] of [
+      ['activity', '1,350'],
+      ['who', '1,350 visits'],
+    ] as const) {
       const measures = record({ view }).series.filter((one) => one.markArea === undefined);
 
       expect(measures.length).toBeGreaterThan(0);
 
       for (const measure of measures) {
         expect(measure.tooltip?.valueFormatter?.(undefined, 1)).toBe('Not counted');
-        expect(measure.tooltip?.valueFormatter?.(1350, 2)).toBe('1,350');
+        expect(measure.tooltip?.valueFormatter?.(1350, 2)).toBe(written);
       }
     }
   });
@@ -1561,6 +1564,49 @@ describe('the card a hover opens', () => {
 
     expect(cardHeading(option, 2)).toBe('Thursday, August 13');
     expect(screen.getByRole('row', { name: 'Aug 13 8 4 3 1' })).toBeInTheDocument();
+  });
+
+  /**
+   * "People 377" beside a band reads as so many people. The picture counts visits, and somebody who
+   * comes back the same day makes two of them — which the picture of how much counts as one visitor.
+   */
+  it('writes every figure of who came as a number of visits', () => {
+    for (const peopleOnly of [false, true]) {
+      const bands = show({ view: 'who', peopleOnly }).series.filter(
+        (one) => one.markArea === undefined,
+      );
+
+      expect(bands.length).toBeGreaterThan(0);
+
+      for (const band of bands) {
+        expect(band.tooltip?.valueFormatter?.(1, 0)).toBe('1 visit');
+        expect(band.tooltip?.valueFormatter?.(1350, 1)).toBe('1,350 visits');
+      }
+    }
+  });
+
+  it('writes the period before as visits too, and a day past its end as the engine does', () => {
+    for (const peopleOnly of [false, true]) {
+      const earlier = show({ view: 'who', peopleOnly, against: true }).series.at(-1);
+
+      expect(earlier?.lineStyle?.type).toBe('dashed');
+      expect(earlier?.tooltip?.valueFormatter?.(360, 0)).toBe('360 visits');
+      expect(earlier?.tooltip?.valueFormatter?.(null, 2)).toBe('-');
+    }
+  });
+
+  /** How much was read is named for what it counts, so its figures need nothing beside them. */
+  it('writes the figures of how much as plain numbers', () => {
+    const measures = show({ peopleOnly: true }).series.filter((one) => one.markArea === undefined);
+
+    expect(measures.map((one) => one.name)).toStrictEqual([
+      'Page views by people',
+      'Daily visitors judged to be people',
+    ]);
+
+    for (const measure of measures) {
+      expect(measure.tooltip?.valueFormatter?.(365, 0)).toBe('365');
+    }
   });
 });
 

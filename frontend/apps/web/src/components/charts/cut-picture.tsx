@@ -345,23 +345,28 @@ export function cutShortNote(
 }
 
 /**
- * How the card a hover opens writes a figure: as the reader writes a number, and a bucket with no
- * figure as the table calls it.
+ * How the card a hover opens writes a figure: as the reader writes a number, or with what it counts
+ * where the names beside the figures do not say, and a bucket with no figure as the table calls it.
  *
  * @param days Each bucket and the days it covers, which is what says why one has no figure.
  * @param unsettled Every month kept before its visits were all judged.
+ * @param written How a figure is written with what it counts, held steady across renders by the
+ * caller; as the reader writes a number where left out.
  */
-export function useFigure(days: readonly BucketDays[], unsettled: readonly string[]): FigureWriter {
+export function useFigure(
+  days: readonly BucketDays[],
+  unsettled: readonly string[],
+  written?: (value: number) => string,
+): FigureWriter {
   const t = useTranslations('dashboard.chart');
   const format = useFormatter();
 
   return useMemo(
     () =>
-      figureWriter(
-        (value) => format.number(value),
-        (at) => t(nothingIn(at === undefined ? undefined : days[at], unsettled)),
+      figureWriter(written ?? ((value) => format.number(value)), (at) =>
+        t(nothingIn(at === undefined ? undefined : days[at], unsettled)),
       ),
-    [format, t, days, unsettled],
+    [format, t, days, unsettled, written],
   );
 }
 

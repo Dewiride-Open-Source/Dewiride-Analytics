@@ -329,6 +329,7 @@
         "judgingAll": "This whole period is still being judged.",
         "stillJudging": "still being judged",
         "total": "All visits",
+        "visits": "{count, plural, one {# visit} other {# visits}}",
         "none": "No visits have been judged in this period yet.",
         "noneAction": "See how much was read",
         "against": "The dashed line is {days}{cut, select, week {, lined up week for week} month {, lined up month for month} other {}}."

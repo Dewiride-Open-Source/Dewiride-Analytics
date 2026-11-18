@@ -584,7 +584,11 @@ function WhoView({
     wording,
   );
   const { days, labels, rows, titles } = useWritten(series.buckets, series, buckets);
-  const figure = useFigure(days, unsettled);
+  // Every figure here is a number of visits, written as one beside the name of who made them. Bare,
+  // "People 377" reads as so many people, which is a different count: one person who comes back
+  // the same day makes two visits, and the picture of how much counts them once.
+  const visits = useCallback((count: number) => t('who.visits', { count }), [t]);
+  const figure = useFigure(days, unsettled, visits);
   const leftOut = useLeftOut(missing, unsettled, buckets.timeZoneId);
 
   const names = useMemo(
@@ -616,10 +620,10 @@ function WhoView({
   const option = useCallback(
     (palette: ChartPalette) =>
       whoOption(
-        { labels, titles, granularity, bands, names, figure, drawing, quiet, earlier },
+        { labels, titles, granularity, bands, names, figure, visits, drawing, quiet, earlier },
         palette,
       ),
-    [labels, titles, granularity, bands, names, figure, drawing, quiet, earlier],
+    [labels, titles, granularity, bands, names, figure, visits, drawing, quiet, earlier],
   );
 
   const { pick, pressable } = usePick(days, onPick, pressableFrom);

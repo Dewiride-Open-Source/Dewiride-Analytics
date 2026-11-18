@@ -87,6 +87,38 @@ public sealed record SessionEvidence
     /// </remarks>
     public int? ViewportHeight { get; init; }
 
+    /// <summary>
+    /// How far ahead of UTC the visitor's clock said it was, in minutes, where its page views agreed.
+    /// </summary>
+    /// <remarks>
+    /// What the browser said of its own clock, so 480 is eight hours ahead of UTC and a clock behind
+    /// UTC reads negative. Null where no page view gave one, and where the visit's page views gave
+    /// different ones, which is read as neither. Only the tracker reports it, and a reading of who is
+    /// here now does not ask, so it is null there too.
+    /// </remarks>
+    public short? TimezoneOffsetMinutes { get; init; }
+
+    /// <summary>
+    /// The browser the visit was made in, in the collector's own words, where it could tell.
+    /// </summary>
+    /// <remarks>
+    /// Taken from the list of brands a browser sends of its own accord where it sent one, and from
+    /// what it called itself otherwise — so a browser describing itself word for word as another is
+    /// told apart only where it names itself in that list. Null where nothing could tell, and in a
+    /// reading of who is here now, which names the browser on the screen but not to the engine.
+    /// </remarks>
+    public string? BrowserFamily { get; init; }
+
+    /// <summary>
+    /// The operating system the visit was made on, in the collector's own words, where it could tell.
+    /// </summary>
+    /// <remarks>
+    /// Taken from the platform a browser states of its own accord where it stated one, and from what
+    /// it called itself otherwise, so a phone is never filed under the system its description names
+    /// further along. Null where nothing could tell, and in a reading of who is here now.
+    /// </remarks>
+    public string? OperatingSystem { get; init; }
+
     /// <summary>Milliseconds the pages were actually in front of somebody, summed across the session.</summary>
     public int? EngagedMs { get; init; }
 

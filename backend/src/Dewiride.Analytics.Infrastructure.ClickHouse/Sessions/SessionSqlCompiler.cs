@@ -66,6 +66,14 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Sessions;
 /// the kind comes out.
 /// </para>
 /// <para>
+/// What a browser said about itself beyond its own description is read for the engine too: which
+/// browser and which system, from the first report to name one, as the visit list reads them; its
+/// language the same way, so a visit is judged on one account of it whatever order its reports
+/// arrived in; and its clock, where the visit's page views agreed on one. The browser and the system
+/// are words the collector chose from the catalogue it keeps, never the visitor's own text, and the
+/// clock is a number of minutes.
+/// </para>
+/// <para>
 /// One thing about a visit is read from beside the activity rather than out of it: whose crawler
 /// it was, where an earlier pass settled that from the name its address answers to. The address is
 /// cleared after three days, so the answer is kept under the visit's own name instead, and it is
@@ -282,6 +290,27 @@ public static class SessionSqlCompiler
 
         /// <summary>Tallest viewport reported.</summary>
         public const int ViewportHeight = 25;
+
+        /// <summary>
+        /// How far ahead of UTC the visitor's clock said it was, in minutes, where its page views
+        /// agreed; null where none gave one or they disagreed.
+        /// </summary>
+        /// <remarks>
+        /// Only page views carry it. Two page views giving different clocks are read as neither, so
+        /// a visit is never judged on whichever of two accounts happened to come first.
+        /// </remarks>
+        public const int TimezoneOffsetMinutes = 26;
+
+        /// <summary>The browser the visit was made in, in the collector's own words, or empty.</summary>
+        /// <remarks>
+        /// The first report to name one, as the visit list names it, so the browser a visit is
+        /// judged on is the browser a reader is shown beside it.
+        /// </remarks>
+        public const int BrowserFamily = 27;
+
+        /// <summary>The operating system the visit was made on, in the collector's own words, or empty.</summary>
+        /// <remarks>The first report to name one, as the visit list names it.</remarks>
+        public const int OperatingSystem = 28;
     }
 
     /// <summary>
@@ -330,7 +359,10 @@ public static class SessionSqlCompiler
                 "autonomous_system",
                 "network_owner",
                 "confirmed_operator",
-                "ip_address")}},
+                "ip_address",
+                "timezone_offset_minutes",
+                "browser_family",
+                "operating_system")}},
             {{ReconciledEvents.Reconciliation}},
             {{VisitGrouping.Of(VisitGrouping.EveryVisitor)}},
             attended AS
@@ -362,7 +394,7 @@ public static class SessionSqlCompiler
                         opens_page) AS requests,
                     groupUniqArray(toString(surface)) AS surfaces,
                     anyIf(user_agent, user_agent != '') AS user_agent,
-                    anyIf(language, language != '') AS language,
+                    argMinIf(language, (server_ts, event_id), language != '') AS language,
                     max(viewport_width) AS viewport_width,
                     max(viewport_height) AS viewport_height,
                     sumIf(page_engaged_ms, opens_page) AS engaged_ms,
@@ -394,7 +426,13 @@ public static class SessionSqlCompiler
                     anyIf(network_owner, network_owner != '') AS network_owner,
                     anyIf(confirmed_operator, confirmed_operator != '') AS stamped_operator,
                     argMinIf(source_channel, (server_ts, event_id), sending_host != '') AS from_kind,
-                    anyIf(ip_address, ip_address != '') AS ip_address
+                    anyIf(ip_address, ip_address != '') AS ip_address,
+                    if(
+                        min(timezone_offset_minutes) = max(timezone_offset_minutes),
+                        min(timezone_offset_minutes),
+                        NULL) AS clock_offset_minutes,
+                    argMinIf(browser_family, (server_ts, event_id), browser_family != '') AS browser,
+                    argMinIf(operating_system, (server_ts, event_id), operating_system != '') AS system_name
                 FROM attended
                 GROUP BY visitor_key, visit_ordinal
                 HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
@@ -447,7 +485,10 @@ public static class SessionSqlCompiler
             ip_address,
             read_ms,
             soonest_progress_ms,
-            viewport_height
+            viewport_height,
+            clock_offset_minutes,
+            browser,
+            system_name
         FROM visits
         LEFT JOIN confirmations USING (session_key)
         ORDER BY started_at, session_key

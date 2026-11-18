@@ -23,6 +23,15 @@ namespace Dewiride.Analytics.Classification.Detectors;
 /// A visit another site sent has that arrival beside what it did, and what it did counts.
 /// </para>
 /// <para>
+/// How far down a page came into view counts only where some page of the visit was on screen at
+/// all. The tracker reports the share a page's first screen would hold whether or not the page was
+/// ever shown, so a page opened behind another tab and closed unseen would otherwise count as seen a
+/// quarter of the way down — and with another site named as its sender, as a person. Such a visit is
+/// not thereby called silent: somebody who opens pages behind other tabs and closes them unseen has
+/// done nothing only a program does, so the depth still keeps it from reading as a visit on which
+/// nothing happened, and it is answered as one the product could not tell about.
+/// </para>
+/// <para>
 /// Every reading here is skipped when it was not observed. A session no browser surface reported
 /// on produces nothing from this detector, rather than producing evidence of absence — which is
 /// the single most important line in the engine. Treating "we were not watching" as "nothing
@@ -147,9 +156,21 @@ public sealed class EngagementDetector : IDetector
             ("seconds", Observed.Number(leftOpen / 1000))));
     }
 
+    /// <summary>
+    /// Whether any of the visit's pages was ever in front of somebody at all.
+    /// </summary>
+    /// <remarks>
+    /// The tracker counts time only while a page is on screen, and reports how far down a page came
+    /// into view whether or not it ever was. A page opened behind another tab and closed unseen, or
+    /// fetched ahead of somebody who never looked at it, reports the share its first screen would
+    /// have held and no time at all — and nothing was seen any way down it. All of the time counts
+    /// here, left open or not: a page left open was on screen.
+    /// </remarks>
+    private static bool WasOnScreen(SessionEvidence session) => session.EngagedMs is > 0;
+
     private static void AddScrolling(ImmutableArray<Signal>.Builder found, SessionEvidence session)
     {
-        if (session.MaxScrollDepthPercent is not (byte depth and >= MeaningfulScrollPercent))
+        if (!WasOnScreen(session) || session.MaxScrollDepthPercent is not (byte depth and >= MeaningfulScrollPercent))
         {
             return;
         }
@@ -225,7 +246,7 @@ public sealed class EngagementDetector : IDetector
     /// <summary>Whether anything beyond the tracker having run was seen.</summary>
     private static bool ShowedMoreThanTheTracker(SessionEvidence session) =>
         Read(session) >= MeaningfulReadMs
-        || session.MaxScrollDepthPercent >= MeaningfulScrollPercent
+        || (WasOnScreen(session) && session.MaxScrollDepthPercent >= MeaningfulScrollPercent)
         || session.HadPointerInteraction == true
         || session.HadKeyboardInteraction == true;
 
@@ -247,7 +268,9 @@ public sealed class EngagementDetector : IDetector
     /// A press, or a page seen a quarter of the way down, stops this being reported whatever they
     /// count for elsewhere, because "nothing was touched" cannot be said of a visit on which something
     /// was. So on a visit that came straight in a press can keep a visit from being called silent,
-    /// and never makes one a person.
+    /// and never makes one a person. A page whose first screen held a quarter of it stops this too
+    /// where it was never on screen at all: somebody who opens pages behind other tabs and closes them
+    /// unseen has done nothing only a program does.
     /// </para>
     /// </remarks>
     private static void AddSilence(ImmutableArray<Signal>.Builder found, SessionEvidence session)

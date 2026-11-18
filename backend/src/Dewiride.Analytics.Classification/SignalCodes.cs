@@ -121,7 +121,8 @@ public static class SignalCodes
     /// How far down counts the first screen, so a page no taller than four screens reaches a quarter
     /// by being shown. It says how much of a page was seen, and on its own it is no sign that
     /// anybody scrolled. On a visit that came straight in it is too light to count until the pages
-    /// have stayed fifteen seconds.
+    /// have stayed fifteen seconds. Never reported where none of the visit's pages was ever on
+    /// screen: a page opened behind another tab and closed unseen was seen no way down at all.
     /// </remarks>
     public const string Scrolled = "engagement.scrolled";
 
@@ -203,6 +204,52 @@ public static class SignalCodes
     public const string OversizedWindow = "browser.oversized_window";
 
     /// <summary>
+    /// A visit that came straight in, with nothing pressed, from a browser describing itself word for
+    /// word as a fleet of automated browsers measured on real traffic described itself.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Chrome on a Linux computer, asking for American English, with its clock eight hours ahead of
+    /// UTC: the description a fleet gave on real traffic, first over a rented network and then over
+    /// household and mobile ones, opening archive pages one at a time and staying past fifteen
+    /// seconds without a press. What is established is the description, not who gave it. Every part
+    /// of it is something the browser said about itself, so changing any one of them defeats it, and
+    /// a reader whose browser says all of it, who comes straight in — typing the address, from a
+    /// bookmark, or from an app that names no sender — and presses nothing is caught by it.
+    /// </para>
+    /// <para>
+    /// Reported only where nothing named a sender, and only where pointer and keys were both watched
+    /// for and neither was pressed. Pointing toward automation above the weight fifteen seconds carry.
+    /// Carries nothing.
+    /// </para>
+    /// </remarks>
+    public const string FleetDescription = "browser.fleet_description";
+
+    /// <summary>
+    /// A visit that came straight in, with nothing pressed, from a browser describing itself word for
+    /// word as a second fleet of automated browsers measured on real traffic described itself.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Chrome on a Linux computer, asking for American English, with its clock on UTC and a window
+    /// exactly 1,280 pixels wide and 800 tall: the description a fleet gave on real traffic, mostly
+    /// over small networks that carried nothing else and once over a rented one, opening one page at a
+    /// time and leaving within a minute without a press, and the one given by visits of nine or ten
+    /// pages each to other websites about once a week over a rented network. What is established is
+    /// the description, not who gave it. Every
+    /// part of it is something the browser said about itself, so changing any one of them defeats it,
+    /// and a reader whose browser says all of it, who comes straight in and presses nothing is caught
+    /// by it.
+    /// </para>
+    /// <para>
+    /// Reported only where nothing named a sender, and only where pointer and keys were both watched
+    /// for and neither was pressed. Pointing toward automation above the weight fifteen seconds carry.
+    /// Carries nothing.
+    /// </para>
+    /// </remarks>
+    public const string FixedWindowFleetDescription = "browser.fixed_window_fleet_description";
+
+    /// <summary>
     /// The visit arrived over a network whose business is renting computers.
     /// </summary>
     /// <remarks>
@@ -213,6 +260,25 @@ public static class SignalCodes
     /// instead — see <see cref="ArrivedFromAnotherSite"/>.
     /// </remarks>
     public const string HostingNetwork = "network.hosting";
+
+    /// <summary>
+    /// The visit arrived over a network a company keeps for its own computers.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Where the company runs computers of its own. Somebody following a link from that company's
+    /// pages arrives from their own connection, not from the company's network. Pointing toward
+    /// automation as heavily as a rented server, and never decided instead by what the visit then did,
+    /// because nobody rents a computer there: see <see cref="Identity.CompanyNetworks"/>.
+    /// </para>
+    /// <para>
+    /// Never reported where the visitor named one of that company's own crawlers. That visit is
+    /// already said to be what it called itself, a claim nothing here can confirm, and the network
+    /// beside it would read as the confirmation the company publishes no way to make. Carries the
+    /// company, as the catalogue names it.
+    /// </para>
+    /// </remarks>
+    public const string CompanyNetwork = "network.company_machines";
 
     /// <summary>
     /// Another site sent the visit: a search engine, an assistant, a social network or a link.

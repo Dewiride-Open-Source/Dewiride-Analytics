@@ -27,6 +27,10 @@
   a key answers the network only where another site sent the visit. On any other network, how far down a
   page was seen counts on a visit that came straight in only beside fifteen seconds, which settles what
   this left undecided for such a visit.
+- **Revised by**: [0077](0077-where-a-visit-ran-and-what-it-said-can-outweigh-how-it-read.md). The
+  release here does not reach a network a company keeps for its own computers, which nobody rents; and a
+  page short enough that another site sent reads a person only where some page of the visit was on
+  screen at all.
 
 ## Context
 

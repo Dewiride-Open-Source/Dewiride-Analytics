@@ -113,16 +113,16 @@ public sealed class EngagementDetectorTests
     /// <summary>
     /// How far down counts the first screen, so on a visit that came straight in it is too light to
     /// count until the pages have stayed. Where another site sent the visit it counts at 45, however
-    /// long the page stayed.
+    /// briefly the page was on screen.
     /// </summary>
     [Theory]
-    [InlineData(SourceChannel.Direct, 0, 20)]
+    [InlineData(SourceChannel.Direct, 1, 20)]
     [InlineData(SourceChannel.Direct, 14_999, 20)]
     [InlineData(SourceChannel.Direct, 15_000, 45)]
-    [InlineData(SourceChannel.Search, 0, 45)]
-    [InlineData(SourceChannel.Assistant, 0, 45)]
-    [InlineData(SourceChannel.Social, 0, 45)]
-    [InlineData(SourceChannel.Link, 0, 45)]
+    [InlineData(SourceChannel.Search, 1, 45)]
+    [InlineData(SourceChannel.Assistant, 1, 45)]
+    [InlineData(SourceChannel.Social, 1, 45)]
+    [InlineData(SourceChannel.Link, 1, 45)]
     public void How_Far_Down_A_Page_Was_Seen_Counts_By_Whether_Anything_Sent_The_Visit_Or_It_Stayed(
         SourceChannel sentBy,
         int engagedMs,
@@ -135,6 +135,46 @@ public sealed class EngagementDetectorTests
         seen.Weight.Should().Be(weight);
         seen.Direction.Should().Be(SignalDirection.TowardHuman);
         seen.Parameters["percent"].Should().Be("60");
+    }
+
+    /// <summary>
+    /// A page that was never on screen was seen no way down at all, whatever share its first screen
+    /// would have held and whatever sent the visit — and where nothing measured any time, nothing says
+    /// it was on screen either.
+    /// </summary>
+    [Theory]
+    [InlineData(SourceChannel.Direct, 0)]
+    [InlineData(SourceChannel.Search, 0)]
+    [InlineData(SourceChannel.Assistant, 0)]
+    [InlineData(SourceChannel.Social, 0)]
+    [InlineData(SourceChannel.Link, 0)]
+    [InlineData(SourceChannel.Social, null)]
+    [InlineData(SourceChannel.Direct, null)]
+    public void How_Far_Down_A_Page_Was_Seen_Is_Not_Reported_Where_Nothing_Was_Ever_On_Screen(
+        SourceChannel sentBy,
+        int? engagedMs)
+    {
+        var visit = Visits.AGlance() with { SentBy = sentBy, EngagedMs = engagedMs, MaxScrollDepthPercent = 60 };
+
+        Detector.Examine(visit).Should().NotContain(signal => signal.Code == SignalCodes.Scrolled);
+    }
+
+    /// <summary>
+    /// A page left open was on screen for all of its time, so how far down it was seen counts, though
+    /// none of the time counts as reading.
+    /// </summary>
+    [Fact]
+    public void A_Page_Left_Open_Was_On_Screen_So_How_Far_Down_It_Was_Seen_Still_Counts()
+    {
+        var visit = Visits.AGlance() with
+        {
+            SentBy = SourceChannel.Search,
+            EngagedMs = 30_000,
+            LeftOpenMs = 30_000,
+            MaxScrollDepthPercent = 60,
+        };
+
+        Weight(visit, SignalCodes.Scrolled).Should().Be(45);
     }
 
     /// <summary>
@@ -196,6 +236,7 @@ public sealed class EngagementDetectorTests
     [InlineData(SourceChannel.Direct, 8_000, 3_000, 40, false, false, true)]
     [InlineData(SourceChannel.Direct, 14_999, 2_000, 0, false, false, true)]
     [InlineData(SourceChannel.Direct, 0, 0, 0, false, false, false)]
+    [InlineData(SourceChannel.Direct, 0, 0, 34, false, false, false)]
     [InlineData(SourceChannel.Direct, 1_999, 0, 24, false, false, false)]
     [InlineData(SourceChannel.Direct, 3_000, 1_500, 0, false, false, false)]
     [InlineData(SourceChannel.Direct, 15_000, 0, 60, true, false, false)]
@@ -262,6 +303,19 @@ public sealed class EngagementDetectorTests
     {
         Detector.Examine(Untouched() with { MaxScrollDepthPercent = 34 })
             .Should().NotContain(signal => signal.Code == SignalCodes.NoEngagement);
+    }
+
+    /// <summary>
+    /// Pages opened behind other tabs and closed unseen are not seen any way down, and are not a visit
+    /// on which nothing happened either: somebody opening tabs to read later does that too.
+    /// </summary>
+    [Fact]
+    public void A_Page_Never_On_Screen_Still_Stops_A_Visit_Being_Called_Silent()
+    {
+        var found = Detector.Examine(Untouched() with { EngagedMs = 0, MaxScrollDepthPercent = 34 });
+
+        found.Should().NotContain(signal => signal.Code == SignalCodes.NoEngagement);
+        found.Should().NotContain(signal => signal.Code == SignalCodes.Scrolled);
     }
 
     [Fact]

@@ -67,6 +67,20 @@ public sealed class SessionEvidenceTests
         visit.DeclaredWebDriver.Should().BeNull();
     }
 
+    /// <summary>
+    /// What a browser said of its clock, its name and its system is unknown unless something read it,
+    /// and unknown is never a value any rule matches.
+    /// </summary>
+    [Fact]
+    public void What_A_Browser_Said_About_Its_Clock_And_Itself_Is_Unknown_Unless_Read()
+    {
+        var visit = Visit();
+
+        visit.TimezoneOffsetMinutes.Should().BeNull();
+        visit.BrowserFamily.Should().BeNull();
+        visit.OperatingSystem.Should().BeNull();
+    }
+
     private static SessionEvidence Visit() => new()
     {
         SessionKey = "visitor:1",

@@ -146,6 +146,46 @@ public sealed class SessionSqlCompilerTests
     }
 
     /// <summary>
+    /// The browser and the system a visit is judged on are the first report's to name one — the
+    /// expression the visit list settles them by — so a visit is judged on what a reader is shown
+    /// beside it.
+    /// </summary>
+    [Fact]
+    public void The_Browser_And_System_A_Visit_Is_Judged_On_Are_The_First_Report_To_Name_One()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+
+        sql.Should().Contain("argMinIf(browser_family, (server_ts, event_id), browser_family != '') AS browser");
+        sql.Should().Contain("argMinIf(operating_system, (server_ts, event_id), operating_system != '') AS system_name");
+    }
+
+    /// <summary>
+    /// The language a visit is judged on is the first report's to name one, so a visit whose reports
+    /// gave two is judged on the same one however they happened to reach the store.
+    /// </summary>
+    [Fact]
+    public void The_Language_A_Visit_Is_Judged_On_Does_Not_Depend_On_The_Order_Its_Reports_Arrived_In()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+
+        sql.Should().Contain("argMinIf(language, (server_ts, event_id), language != '') AS language");
+        sql.Should().NotContain("anyIf(language, language != '') AS language");
+    }
+
+    /// <summary>
+    /// A clock is read only where the visit's page views agreed on it. Two accounts of it are read as
+    /// neither, so a visit is never judged on whichever happened to come first.
+    /// </summary>
+    [Fact]
+    public void The_Clock_A_Visit_Is_Judged_On_Is_The_One_Its_Page_Views_Agreed_On()
+    {
+        var sql = SessionSqlCompiler.Compile(Window()).Sql;
+
+        sql.Should().Contain("min(timezone_offset_minutes) = max(timezone_offset_minutes)");
+        sql.Should().Contain("NULL) AS clock_offset_minutes");
+    }
+
+    /// <summary>
     /// A visit already under way when the window opens is reconstructed from its own beginning
     /// rather than from wherever the window starts, so what is left of it is recognised as an
     /// earlier visit and left out instead of being returned as a second, shorter one.

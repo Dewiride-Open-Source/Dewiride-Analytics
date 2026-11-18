@@ -29,7 +29,9 @@ namespace Dewiride.Analytics.Application.Telemetry;
 /// <para>
 /// Which networks those are is <see cref="HostingNetworks"/> — the same catalogue the engine weighs
 /// when it decides whether a visit was a person, so the two can never disagree about what a rented
-/// network is. An address on any other network is used exactly as it arrived.
+/// network is. An address on any other network is used exactly as it arrived, a network a company
+/// keeps for its own computers (<see cref="CompanyNetworks"/>) included: nobody leases those
+/// addresses in pools, and the company's machines are told apart by the address each one used.
 /// </para>
 /// </remarks>
 public static class VisitorConnection

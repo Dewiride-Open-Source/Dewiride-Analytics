@@ -27,6 +27,13 @@ namespace Dewiride.Analytics.Classification.Detectors;
 /// behaved like, with this shown against it and holding the conclusion back.
 /// </para>
 /// <para>
+/// A network a company keeps for its own computers is reported apart from a rented one. Nobody
+/// rents a computer there, so nobody reads from a desktop rented on it, and what a visit over it
+/// did never decides the visit instead: a browser a company runs on its own network stays, scrolls
+/// and presses as it is told to. A visitor naming one of that company's own crawlers is left to what
+/// it called itself, which nothing here can confirm.
+/// </para>
+/// <para>
 /// Silent about everything else. A network nobody catalogued, and a visit nothing could place at
 /// all, both produce nothing — never a signal that the visit was therefore a person. The
 /// catalogue can say where a visit came from and can never say where it did not.
@@ -46,12 +53,34 @@ public sealed class NetworkDetector : IDetector
     /// </remarks>
     private const int RentedServerWeight = 65;
 
+    /// <summary>
+    /// What arriving over a network a company keeps for its own computers is worth.
+    /// </summary>
+    /// <remarks>
+    /// The same as a rented server and for the same reasons: above the heaviest observation of a
+    /// person reading, and no higher, because it is one observation.
+    /// </remarks>
+    private const int CompanyMachineWeight = 65;
+
     /// <inheritdoc />
     public ImmutableArray<Signal> Examine(SessionEvidence session)
     {
         ArgumentNullException.ThrowIfNull(session);
 
-        if (!HostingNetworks.TryFind(session.AutonomousSystem, out var operatorName))
+        if (HostingNetworks.TryFind(session.AutonomousSystem, out var operatorName))
+        {
+            return
+            [
+                Observed.Signal(
+                    SignalCodes.HostingNetwork,
+                    SignalDirection.TowardAutomation,
+                    RentedServerWeight,
+                    ("operator", operatorName)),
+            ];
+        }
+
+        if (!CompanyNetworks.TryFind(session.AutonomousSystem, out var company)
+            || NamedOneOfItsOwnCrawlers(session, company))
         {
             return [];
         }
@@ -59,10 +88,24 @@ public sealed class NetworkDetector : IDetector
         return
         [
             Observed.Signal(
-                SignalCodes.HostingNetwork,
+                SignalCodes.CompanyNetwork,
                 SignalDirection.TowardAutomation,
-                RentedServerWeight,
-                ("operator", operatorName)),
+                CompanyMachineWeight,
+                ("operator", company)),
         ];
     }
+
+    /// <summary>
+    /// Whether the visitor named one of the company's own crawlers.
+    /// </summary>
+    /// <remarks>
+    /// That visit is already said to be what it called itself, a claim the company publishes no way
+    /// to confirm. Saying beside it that it came over the company's own network would read as that
+    /// confirmation, and would add weight to a conclusion the name alone reached.
+    /// </remarks>
+    /// <param name="session">The visit.</param>
+    /// <param name="company">The company whose network it came over.</param>
+    /// <returns><see langword="true"/> when the visitor named one of that company's crawlers.</returns>
+    private static bool NamedOneOfItsOwnCrawlers(SessionEvidence session, string company) =>
+        string.Equals(CrawlerCatalogue.Match(session.UserAgent)?.Operator, company, StringComparison.Ordinal);
 }

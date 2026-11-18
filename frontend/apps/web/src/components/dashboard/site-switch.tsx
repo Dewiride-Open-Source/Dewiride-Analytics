@@ -34,12 +34,12 @@ export function SiteSwitch({ sites, chosen, onChoose, onAdd }: SiteSwitchProps) 
   const t = useTranslations('dashboard.site');
 
   return (
-    <span className="relative flex min-w-0 flex-1 items-center sm:flex-none">
+    <span className="relative flex min-w-0 flex-1 items-center sm:flex-initial">
       <select
         aria-label={t('label')}
         value={chosen.id}
         onChange={(event) => (event.target.value === ADD ? onAdd() : onChoose(event.target.value))}
-        className="select-trigger w-full cursor-pointer appearance-none truncate rounded-md border border-border bg-surface py-1.5 pr-8 pl-3 text-sm font-medium text-foreground sm:w-auto sm:max-w-56"
+        className="select-trigger w-full cursor-pointer appearance-none truncate rounded-md border border-border bg-surface py-1.5 pr-8 pl-3 text-sm font-medium text-foreground sm:w-auto sm:max-w-[min(14rem,100%)]"
       >
         {sites.map((site) => (
           <option key={site.id} value={site.id}>

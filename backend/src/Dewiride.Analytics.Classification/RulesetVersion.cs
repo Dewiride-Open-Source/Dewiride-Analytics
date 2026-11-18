@@ -19,6 +19,45 @@ public readonly record struct RulesetVersion(int Major, int Minor) : IComparable
     /// <summary>The ruleset currently compiled into this build.</summary>
     /// <remarks>
     /// <para>
+    /// Thirteen, because machines of three kinds were being called people, and a page nobody looked
+    /// at was being called seen. Each was measured on real traffic.
+    /// </para>
+    /// <para>
+    /// A network a company keeps for its own computers is weighed as a rented one is, and is never
+    /// decided instead by what the visit then did. Browsers on Meta's own network opened each newly
+    /// published post of one blog seconds after the blog shared it to Facebook, two to five at once,
+    /// with Facebook named as the page that sent them; a visit another site sent, with the tracker
+    /// having run and the first screen holding a quarter of the page, was a person at nought seconds.
+    /// A visitor naming one of the company's own crawlers is left to what it called itself.
+    /// </para>
+    /// <para>
+    /// Three more networks on which two companies rent out computers join the catalogue. A visit that
+    /// came straight in over one and stayed fifteen seconds was a person.
+    /// </para>
+    /// <para>
+    /// The engine is told for the first time what a browser said of its clock, which browser it named
+    /// and which system it ran on. A visit that came straight in, with pointer and keys watched and
+    /// nothing pressed, from a browser describing itself exactly as one of two fleets measured on real
+    /// traffic did — Chrome on Linux, asking for American English, with its clock eight hours ahead of
+    /// UTC, or with its clock on UTC and a window exactly 1,280 by 800 — points toward automation above
+    /// the weight fifteen seconds carry. Every part of that is the browser's own account of itself,
+    /// and it is read as that.
+    /// </para>
+    /// <para>
+    /// How far down a page came into view counts only where some page of the visit was on screen at
+    /// all, so a page another site sent and nobody ever looked at is no longer a page seen a quarter of
+    /// the way down.
+    /// </para>
+    /// <para>
+    /// Categories move, so this is a major version: what twelve called a person, or could not tell
+    /// about, on a company's own network, in either fleet's description, or coming straight in over a
+    /// newly catalogued rented network, thirteen calls automation; a visit another site sent over such
+    /// a network is weighed as over any rented one, a person where it was used and otherwise one
+    /// thirteen could not tell about; and what twelve called a person because a page nobody looked at
+    /// counted as seen, thirteen calls a visit it could not tell about. Verdicts are kept per ruleset,
+    /// so every earlier answer stays on record and history is re-judged rather than rewritten.
+    /// </para>
+    /// <para>
     /// Twelve, because a visit that came straight in has only its time to speak for it. A fleet of
     /// browsers measured on real traffic opened one page in a window three thousand pixels tall and
     /// closed it, half of them within half a second, and the first screen alone counted as a quarter
@@ -171,7 +210,7 @@ public readonly record struct RulesetVersion(int Major, int Minor) : IComparable
     /// something that will never be reconstructed again.
     /// </para>
     /// </remarks>
-    public static RulesetVersion Current => new(12, 0);
+    public static RulesetVersion Current => new(13, 0);
 
     /// <summary>Compares two ruleset versions by major then minor component.</summary>
     /// <param name="other">The version to compare against.</param>

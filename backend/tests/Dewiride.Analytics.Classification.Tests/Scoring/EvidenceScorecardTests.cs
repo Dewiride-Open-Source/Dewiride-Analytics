@@ -505,6 +505,46 @@ public sealed class EvidenceScorecardTests
     }
 
     /// <summary>
+    /// A network a company keeps for its own computers is not a rented one: whatever a visit another
+    /// site sent then did over it, the network is weighed against it as any other objection.
+    /// </summary>
+    [Fact]
+    public void A_Companys_Own_Network_Is_Not_Released_By_What_A_Visit_Another_Site_Sent_Then_Did()
+    {
+        var verdict = Weigh(
+            Signal(SignalCodes.CompanyNetwork, SignalDirection.TowardAutomation, 65),
+            Sent("social"),
+            Tracker,
+            Key,
+            Pointer,
+            Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 45),
+            Signal(SignalCodes.ReadTime, SignalDirection.TowardHuman, 60));
+
+        verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+    }
+
+    /// <summary>
+    /// The fleet's description is weighed above the sixty fifteen seconds carry: at sixty the two would
+    /// tie and leave the visit one nothing could tell about, which is the weight it must clear.
+    /// </summary>
+    /// <param name="weight">What the description is weighed at.</param>
+    /// <param name="expected">What the stay is then called.</param>
+    [Theory]
+    [InlineData(60, TrafficCategory.Unknown)]
+    [InlineData(65, TrafficCategory.SuspiciousAutomation)]
+    public void A_Description_Has_To_Outweigh_A_Stay_To_Settle_It(int weight, TrafficCategory expected)
+    {
+        var verdict = Weigh(
+            Signal(SignalCodes.FleetDescription, SignalDirection.TowardAutomation, weight),
+            Tracker,
+            Signal(SignalCodes.Scrolled, SignalDirection.TowardHuman, 45),
+            Signal(SignalCodes.ReadTime, SignalDirection.TowardHuman, 60));
+
+        verdict.Category.Should().Be(expected);
+    }
+
+    /// <summary>
     /// An arrival is too light to count toward anything. On its own, or beside the tracker having
     /// run, it concludes nothing — the referring address it rests on is the visitor's own text.
     /// </summary>

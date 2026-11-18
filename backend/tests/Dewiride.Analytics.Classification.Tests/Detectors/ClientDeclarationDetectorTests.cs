@@ -1,3 +1,4 @@
+using System.Globalization;
 using Dewiride.Analytics.Classification.Detectors;
 using Dewiride.Analytics.Classification.Sessions;
 using Dewiride.Analytics.Domain.Telemetry;
@@ -207,9 +208,281 @@ public sealed class ClientDeclarationDetectorTests
         ]);
     }
 
+    /// <summary>
+    /// A browser saying it is Chrome on Linux, asking for American English, with its clock eight hours
+    /// ahead of UTC, on a visit that came straight in with nothing pressed: reported above the weight
+    /// fifteen seconds carry, and carrying nothing.
+    /// </summary>
+    [Fact]
+    public void A_Browser_Describing_Itself_As_The_Fleet_Did_Is_Reported()
+    {
+        var signal = Described(Visits.AStraightStayFromChromeOnLinuxEightHoursAhead());
+
+        signal.Should().NotBeNull();
+        signal.Direction.Should().Be(SignalDirection.TowardAutomation);
+        signal.Weight.Should().Be(65);
+        signal.Parameters.Should().BeEmpty();
+    }
+
+    /// <summary>Every part of the description has to be said, exactly as the fleet said it.</summary>
+    /// <param name="part">Which part differs.</param>
+    /// <param name="value">What it says instead.</param>
+    [Theory]
+    [InlineData("clock", "420")]
+    [InlineData("clock", "540")]
+    [InlineData("clock", "-480")]
+    [InlineData("clock", "0")]
+    [InlineData("language", "en-GB")]
+    [InlineData("language", "en-us")]
+    [InlineData("language", "en")]
+    [InlineData("language", "zh-CN")]
+    [InlineData("system", "Windows")]
+    [InlineData("system", "Android")]
+    [InlineData("system", "ChromeOS")]
+    [InlineData("browser", "Brave")]
+    [InlineData("browser", "Edge")]
+    [InlineData("browser", "Firefox")]
+    public void Each_Part_Of_The_Description_Has_To_Match(string part, string value)
+    {
+        var stay = Visits.AStraightStayFromChromeOnLinuxEightHoursAhead();
+
+        var changed = part switch
+        {
+            "clock" => stay with { TimezoneOffsetMinutes = short.Parse(value, CultureInfo.InvariantCulture) },
+            "language" => stay with { Language = value },
+            "system" => stay with { OperatingSystem = value },
+            _ => stay with { BrowserFamily = value },
+        };
+
+        Described(changed).Should().BeNull();
+    }
+
+    /// <summary>Where another site sent the visit, the description is not weighed at all.</summary>
+    /// <param name="sentBy">What kind of site sent it.</param>
+    [Theory]
+    [InlineData(SourceChannel.Search)]
+    [InlineData(SourceChannel.Assistant)]
+    [InlineData(SourceChannel.Social)]
+    [InlineData(SourceChannel.Link)]
+    public void A_Visit_Another_Site_Sent_Is_Not_Reported_Whatever_It_Said_About_Itself(SourceChannel sentBy)
+    {
+        Described(Visits.AStraightStayFromChromeOnLinuxEightHoursAhead() with { SentBy = sentBy })
+            .Should().BeNull();
+    }
+
+    /// <summary>A press of either kind puts the visit out of the description's reach.</summary>
+    /// <param name="touched">Whether the pointer was pressed.</param>
+    /// <param name="typed">Whether a key was pressed.</param>
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void A_Press_Keeps_The_Description_From_Being_Reported(bool touched, bool typed)
+    {
+        var visit = Visits.AStraightStayFromChromeOnLinuxEightHoursAhead() with
+        {
+            HadPointerInteraction = touched,
+            HadKeyboardInteraction = typed,
+        };
+
+        Described(visit).Should().BeNull();
+    }
+
+    /// <summary>
+    /// "Nothing was pressed" can be said only where both were watched for: a visit nothing could see
+    /// pressing on is not reported.
+    /// </summary>
+    /// <param name="pointerWatched">Whether the pointer was watched for.</param>
+    /// <param name="keysWatched">Whether keys were watched for.</param>
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    public void A_Visit_On_Which_Presses_Went_Unwatched_Is_Not_Reported(bool pointerWatched, bool keysWatched)
+    {
+        var visit = Visits.AStraightStayFromChromeOnLinuxEightHoursAhead() with
+        {
+            HadPointerInteraction = pointerWatched ? false : null,
+            HadKeyboardInteraction = keysWatched ? false : null,
+        };
+
+        Described(visit).Should().BeNull();
+    }
+
+    [Fact]
+    public void A_Visitor_Marked_As_A_Phone_Is_Not_Reported_Whatever_Else_It_Said()
+    {
+        Described(Visits.AStraightStayFromChromeOnLinuxEightHoursAhead() with { UserAgent = Visits.ChromeOnAPhone })
+            .Should().BeNull();
+    }
+
+    /// <summary>A description nobody read — as in a reading of who is here now — is not reported.</summary>
+    /// <param name="missing">Which part was not read.</param>
+    [Theory]
+    [InlineData("clock")]
+    [InlineData("system")]
+    [InlineData("browser")]
+    [InlineData("language")]
+    public void A_Description_Nobody_Read_Is_Not_Reported(string missing)
+    {
+        var stay = Visits.AStraightStayFromChromeOnLinuxEightHoursAhead();
+
+        var unread = missing switch
+        {
+            "clock" => stay with { TimezoneOffsetMinutes = null },
+            "system" => stay with { OperatingSystem = null },
+            "browser" => stay with { BrowserFamily = null },
+            _ => stay with { Language = null },
+        };
+
+        Described(unread).Should().BeNull();
+    }
+
+    /// <summary>The description is reported beside a window taller than a screen, and neither displaces the other.</summary>
+    [Fact]
+    public void The_Description_Stands_Beside_A_Window_Taller_Than_A_Screen()
+    {
+        var found = Detector.Examine(Visits.AStraightStayFromChromeOnLinuxEightHoursAhead() with
+        {
+            ViewportWidth = 1_200,
+            ViewportHeight = 3_000,
+        });
+
+        found.Select(signal => signal.Code)
+            .Should().BeEquivalentTo(SignalCodes.OversizedWindow, SignalCodes.FleetDescription);
+    }
+
+    /// <summary>
+    /// A browser saying it is Chrome on Linux, asking for American English, with its clock on UTC and a
+    /// window exactly 1,280 by 800, on a visit that came straight in with nothing pressed: reported at
+    /// the first fleet's weight under a code of its own, so the sentence names the description it gave.
+    /// </summary>
+    [Fact]
+    public void A_Browser_Describing_Itself_As_The_Second_Fleet_Did_Is_Reported()
+    {
+        var found = Detector.Examine(Visits.AStraightStayFromChromeOnLinuxOnUtcInAFixedWindow());
+
+        found.Select(signal => (signal.Code, signal.Direction, signal.Weight, signal.Parameters.Count))
+            .Should().BeEquivalentTo(
+            [
+                (SignalCodes.FixedWindowFleetDescription, SignalDirection.TowardAutomation, 65, 0),
+            ]);
+    }
+
+    /// <summary>Every part of the second description has to be said, exactly as that fleet said it.</summary>
+    /// <param name="part">Which part differs.</param>
+    /// <param name="value">What it says instead.</param>
+    [Theory]
+    [InlineData("clock", "60")]
+    [InlineData("clock", "-60")]
+    [InlineData("clock", "330")]
+    [InlineData("width", "1279")]
+    [InlineData("width", "1366")]
+    [InlineData("width", "800")]
+    [InlineData("height", "720")]
+    [InlineData("height", "801")]
+    [InlineData("height", "1280")]
+    [InlineData("language", "en-GB")]
+    [InlineData("system", "Windows")]
+    [InlineData("browser", "Brave")]
+    public void Each_Part_Of_The_Second_Description_Has_To_Match(string part, string value)
+    {
+        var stay = Visits.AStraightStayFromChromeOnLinuxOnUtcInAFixedWindow();
+
+        var changed = part switch
+        {
+            "clock" => stay with { TimezoneOffsetMinutes = short.Parse(value, CultureInfo.InvariantCulture) },
+            "width" => stay with { ViewportWidth = int.Parse(value, CultureInfo.InvariantCulture) },
+            "height" => stay with { ViewportHeight = int.Parse(value, CultureInfo.InvariantCulture) },
+            "language" => stay with { Language = value },
+            "system" => stay with { OperatingSystem = value },
+            _ => stay with { BrowserFamily = value },
+        };
+
+        Detector.Examine(changed).Select(signal => signal.Code)
+            .Should().NotContain(SignalCodes.FixedWindowFleetDescription)
+            .And.NotContain(SignalCodes.FleetDescription);
+    }
+
+    /// <summary>
+    /// Another site having sent the visit, a press, presses nobody watched for, or a phone put the
+    /// second description out of reach, as they put the first.
+    /// </summary>
+    /// <param name="difference">What is different about the visit.</param>
+    [Theory]
+    [InlineData("sent")]
+    [InlineData("pointer pressed")]
+    [InlineData("key pressed")]
+    [InlineData("presses unwatched")]
+    [InlineData("phone")]
+    public void A_Sender_A_Press_Or_A_Phone_Puts_The_Second_Description_Out_Of_Reach(string difference)
+    {
+        var stay = Visits.AStraightStayFromChromeOnLinuxOnUtcInAFixedWindow();
+
+        var changed = difference switch
+        {
+            "sent" => stay with { SentBy = SourceChannel.Search },
+            "pointer pressed" => stay with { HadPointerInteraction = true },
+            "key pressed" => stay with { HadKeyboardInteraction = true },
+            "presses unwatched" => stay with { HadPointerInteraction = null, HadKeyboardInteraction = null },
+            _ => stay with { UserAgent = Visits.ChromeOnAPhone },
+        };
+
+        Detector.Examine(changed).Select(signal => signal.Code)
+            .Should().NotContain(SignalCodes.FixedWindowFleetDescription);
+    }
+
+    /// <summary>
+    /// A second description any part of which nobody read is not reported. A clock nobody read is not
+    /// a clock of nought: page views that disagreed about the clock leave it unread, and are not UTC.
+    /// </summary>
+    /// <param name="missing">Which part was not read.</param>
+    [Theory]
+    [InlineData("clock")]
+    [InlineData("width")]
+    [InlineData("height")]
+    [InlineData("system")]
+    [InlineData("browser")]
+    [InlineData("language")]
+    public void A_Second_Description_Nobody_Read_Whole_Is_Not_Reported(string missing)
+    {
+        var stay = Visits.AStraightStayFromChromeOnLinuxOnUtcInAFixedWindow();
+
+        var unread = missing switch
+        {
+            "clock" => stay with { TimezoneOffsetMinutes = null },
+            "width" => stay with { ViewportWidth = null },
+            "height" => stay with { ViewportHeight = null },
+            "system" => stay with { OperatingSystem = null },
+            "browser" => stay with { BrowserFamily = null },
+            _ => stay with { Language = null },
+        };
+
+        Detector.Examine(unread).Select(signal => signal.Code)
+            .Should().NotContain(SignalCodes.FixedWindowFleetDescription)
+            .And.NotContain(SignalCodes.FleetDescription);
+    }
+
+    /// <summary>
+    /// A clock eight hours ahead in a window of exactly 1,280 by 800 completes the first description,
+    /// not the second, and a visit is never reported as both.
+    /// </summary>
+    [Fact]
+    public void The_Clock_Decides_Which_Description_A_Window_Of_That_Size_Completes()
+    {
+        var found = Detector.Examine(Visits.AStraightStayFromChromeOnLinuxOnUtcInAFixedWindow() with
+        {
+            TimezoneOffsetMinutes = 480,
+        });
+
+        found.Select(signal => signal.Code).Should().ContainSingle().Which.Should().Be(SignalCodes.FleetDescription);
+    }
+
     private static SessionEvidence Straight(int width, int height) =>
         Visits.AGlance() with { ViewportWidth = width, ViewportHeight = height };
 
     private static Signal? Reported(SessionEvidence visit) =>
         Detector.Examine(visit).SingleOrDefault(signal => signal.Code == SignalCodes.OversizedWindow);
+
+    private static Signal? Described(SessionEvidence visit) =>
+        Detector.Examine(visit).SingleOrDefault(signal => signal.Code == SignalCodes.FleetDescription);
 }

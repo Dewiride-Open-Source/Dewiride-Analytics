@@ -69,6 +69,37 @@ public sealed class ClientDeclarationDetector : IDetector
     /// </remarks>
     private const int OversizedWindowWeight = 55;
 
+    /// <summary>The clock the first fleet's browsers reported: eight hours ahead of UTC, in minutes.</summary>
+    private const short FleetClockOffsetMinutes = 480;
+
+    /// <summary>The clock the second fleet's browsers reported: no minutes either side of UTC.</summary>
+    private const short FixedWindowFleetClockOffsetMinutes = 0;
+
+    /// <summary>How wide the second fleet's browsers said their window was, in pixels.</summary>
+    private const int FixedWindowFleetWidth = 1280;
+
+    /// <summary>How tall the second fleet's browsers said their window was, in pixels.</summary>
+    private const int FixedWindowFleetHeight = 800;
+
+    /// <summary>The operating system both fleets' browsers named, in the collector's own words.</summary>
+    private const string FleetOperatingSystem = "Linux";
+
+    /// <summary>The browser both fleets' browsers named, in the collector's own words.</summary>
+    private const string FleetBrowserFamily = "Chrome";
+
+    /// <summary>The language both fleets' browsers asked for, exactly as they asked for it.</summary>
+    private const string FleetLanguage = "en-US";
+
+    /// <summary>
+    /// What either fleet's description is worth, pointing toward automation.
+    /// </summary>
+    /// <remarks>
+    /// Above the sixty that fifteen seconds said as the pages were left are worth, which is what made
+    /// the fleets' visits people. At sixty the two would tie and the visit would be one nothing could
+    /// tell about; anything less would leave it a person.
+    /// </remarks>
+    private const int FleetDescriptionWeight = 65;
+
     /// <inheritdoc />
     public ImmutableArray<Signal> Examine(SessionEvidence session)
     {
@@ -92,9 +123,80 @@ public sealed class ClientDeclarationDetector : IDetector
         }
 
         AddOversizedWindow(found, session);
+        AddFleetDescription(found, session);
 
         return found.ToImmutable();
     }
+
+    /// <summary>
+    /// Reports a browser that described itself word for word as one of two fleets measured on real
+    /// traffic described itself, on a visit nothing named a sender for and on which nothing was pressed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The first fleet opened archive pages one at a time, first over a rented network and then over
+    /// household and mobile ones, and stayed past fifteen seconds without a press, which with the
+    /// tracker having run made each visit a person. Its browsers all said the same four things about
+    /// themselves: Chrome, on Linux, asking for American English, with a clock eight hours ahead of
+    /// UTC.
+    /// </para>
+    /// <para>
+    /// The second opened one page at a time, mostly over small networks that carried nothing else and
+    /// once over a rented one, and left within a minute without a press. Its browsers said the same
+    /// first three things, with a clock on UTC and a window exactly 1,280 pixels wide and 800 tall.
+    /// The window is part of the description because the rest of it was also said by visits nothing
+    /// else ties to the fleet.
+    /// </para>
+    /// <para>
+    /// No reader in the record gave either description whole, came straight in and pressed nothing.
+    /// Every part of each is something a browser says about itself, so this establishes a description
+    /// and nothing about who gave it, and changing any one part defeats it. A press, where pointer and
+    /// keys were both watched for, and another site having sent the visit each put it out of reach:
+    /// neither fleet did either, and a reader who does is weighed as any other.
+    /// </para>
+    /// </remarks>
+    private static void AddFleetDescription(ImmutableArray<Signal>.Builder found, SessionEvidence session)
+    {
+        if (!SaidWhatBothFleetsSaid(session) || !CameStraightInAndPressedNothing(session))
+        {
+            return;
+        }
+
+        if (FleetItDescribedItselfAs(session) is { } code)
+        {
+            found.Add(Observed.Signal(code, SignalDirection.TowardAutomation, FleetDescriptionWeight));
+        }
+    }
+
+    /// <summary>Whether the three things both fleets said about themselves were said, exactly.</summary>
+    private static bool SaidWhatBothFleetsSaid(SessionEvidence session) =>
+        string.Equals(session.OperatingSystem, FleetOperatingSystem, StringComparison.Ordinal)
+        && string.Equals(session.BrowserFamily, FleetBrowserFamily, StringComparison.Ordinal)
+        && string.Equals(session.Language, FleetLanguage, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The observation reporting the fleet whose whole description the rest of what the browser said
+    /// completes, or nothing where it completes neither.
+    /// </summary>
+    private static string? FleetItDescribedItselfAs(SessionEvidence session) => session switch
+    {
+        { TimezoneOffsetMinutes: FleetClockOffsetMinutes } => SignalCodes.FleetDescription,
+        {
+            TimezoneOffsetMinutes: FixedWindowFleetClockOffsetMinutes,
+            ViewportWidth: FixedWindowFleetWidth,
+            ViewportHeight: FixedWindowFleetHeight,
+        } => SignalCodes.FixedWindowFleetDescription,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Whether nothing named a sender, pointer and keys were both watched for and neither was pressed,
+    /// and the visitor did not say it was a phone.
+    /// </summary>
+    private static bool CameStraightInAndPressedNothing(SessionEvidence session) =>
+        !session.SentByAnotherSite
+        && session is { HadPointerInteraction: false, HadKeyboardInteraction: false }
+        && !SaysItIsAPhone(session);
 
     /// <summary>
     /// Reports a window taller and narrower than an ordinary screen gives, on a visit nothing named a

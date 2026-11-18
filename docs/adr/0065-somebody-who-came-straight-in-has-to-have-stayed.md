@@ -30,6 +30,12 @@
   was seen was unchanged, so a page left open whose first screen held a quarter of it stayed a person;
   and which refused any rule on what the browser said about itself, its window named among them, on the
   ground that it is a setting the visitor chooses. On a visit that came straight in, a window now counts.
+- **Revised by**: [0077](0077-where-a-visit-ran-and-what-it-said-can-outweigh-how-it-read.md). A
+  browser describing itself exactly as one of two fleets did, Linux among it, counts on a visit that
+  came straight in with nothing pressed, which this refused for Linux. And a visit another site sent is
+  no longer judged exactly as here where it came over a network a company keeps for its own computers,
+  over one of three newly listed rented networks under 0056's release, or where none of its pages was
+  ever on screen.
 
 ## Context
 

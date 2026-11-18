@@ -154,6 +154,108 @@ internal static class Visits
     /// <summary>Microsoft's network, which carries its own cloud's machines and the desktops it rents out.</summary>
     public const uint MicrosoftNetwork = 8075;
 
+    /// <summary>Meta's own network, which carries its machines and rents nothing to anybody.</summary>
+    public const uint MetaNetwork = 32934;
+
+    /// <summary>A household network: Reliance Jio's.</summary>
+    public const uint HouseholdNetwork = 55836;
+
+    /// <summary>
+    /// The shape measured on Meta's network after a post was shared there: a social network named as
+    /// the sender, eight seconds on screen said as the page was left, the first screen a quarter of
+    /// the page, nothing pressed.
+    /// </summary>
+    /// <remarks>
+    /// Named for where it ran and what it did, never for which of the company's services it was.
+    /// </remarks>
+    public static SessionEvidence AFacebookLinkOpenedOnMetasOwnNetwork() => new()
+    {
+        SessionKey = "company-network",
+        StartedAt = Noon,
+        EndedAt = Noon.AddSeconds(8),
+        Requests = Pages(1, TimeSpan.Zero),
+        Surfaces = [IngestSurface.BrowserTracker],
+        UserAgent = ChromeOnLinux,
+        Language = "en-US",
+        ViewportWidth = 1050,
+        ViewportHeight = 1893,
+        EngagedMs = 8_000,
+        LeftOpenMs = 0,
+        MaxScrollDepthPercent = 25,
+        HadPointerInteraction = false,
+        HadKeyboardInteraction = false,
+        DeclaredWebDriver = false,
+        AutonomousSystem = MetaNetwork,
+        NetworkOwner = "FACEBOOK - Facebook, Inc.",
+        SentBy = SourceChannel.Social,
+    };
+
+    /// <summary>
+    /// The shape a fleet made on real traffic: an archive page opened straight, thirty seconds on
+    /// screen said as it was left, nothing pressed, from a browser saying it is Chrome on Linux,
+    /// asking for American English, with its clock eight hours ahead of UTC.
+    /// </summary>
+    /// <remarks>
+    /// Named for what the browser said and did, never for what it was. A reader whose browser says
+    /// all of that, comes straight in and presses nothing looks exactly like this.
+    /// </remarks>
+    public static SessionEvidence AStraightStayFromChromeOnLinuxEightHoursAhead() => new()
+    {
+        SessionKey = "fleet-description",
+        StartedAt = Noon,
+        EndedAt = Noon.AddSeconds(30),
+        Requests = Pages(1, TimeSpan.Zero),
+        Surfaces = [IngestSurface.BrowserTracker],
+        UserAgent = ChromeOnLinux,
+        Language = "en-US",
+        TimezoneOffsetMinutes = 480,
+        BrowserFamily = "Chrome",
+        OperatingSystem = "Linux",
+        ViewportWidth = 945,
+        ViewportHeight = 972,
+        EngagedMs = 30_000,
+        LeftOpenMs = 0,
+        MaxScrollDepthPercent = 40,
+        HadPointerInteraction = false,
+        HadKeyboardInteraction = false,
+        DeclaredWebDriver = false,
+    };
+
+    /// <summary>
+    /// The shape a second fleet made on real traffic: the same straight stay with nothing pressed,
+    /// from a browser saying it is Chrome on Linux, asking for American English, with its clock on
+    /// UTC and a window exactly 1,280 pixels wide and 800 tall.
+    /// </summary>
+    /// <remarks>
+    /// Named for what the browser said and did, never for what it was. A reader whose browser says
+    /// all of that, comes straight in and presses nothing looks exactly like this.
+    /// </remarks>
+    public static SessionEvidence AStraightStayFromChromeOnLinuxOnUtcInAFixedWindow() =>
+        AStraightStayFromChromeOnLinuxEightHoursAhead() with
+        {
+            SessionKey = "fixed-window-description",
+            TimezoneOffsetMinutes = 0,
+            ViewportWidth = 1280,
+            ViewportHeight = 800,
+        };
+
+    /// <summary>
+    /// A page another site sent that was never on screen: no time at all said as it was left, and the
+    /// share its first screen would have held reported as how far down it came into view.
+    /// </summary>
+    /// <remarks>
+    /// What a page opened behind another tab and closed unseen reports. Named for what it reported,
+    /// never for who opened it.
+    /// </remarks>
+    public static SessionEvidence APageAnotherSiteSentThatWasNeverOnScreen() => AGlance() with
+    {
+        SessionKey = "never-on-screen",
+        SentBy = SourceChannel.Link,
+        EngagedMs = 0,
+        LeftOpenMs = 0,
+        MaxScrollDepthPercent = 25,
+    };
+
     /// <summary>Something sweeping the site for a way in.</summary>
     public static SessionEvidence AScanner() => new()
     {

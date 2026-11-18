@@ -948,6 +948,9 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         found[0].Evidence.DeclaredWebDriver.Should().BeNull();
         found[0].Evidence.ViewportWidth.Should().BeNull();
         found[0].Evidence.ViewportHeight.Should().BeNull();
+        found[0].Evidence.TimezoneOffsetMinutes.Should().BeNull();
+        found[0].Evidence.BrowserFamily.Should().BeNull();
+        found[0].Evidence.OperatingSystem.Should().BeNull();
     }
 
     [Fact]
@@ -957,7 +960,12 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         var at = Yesterday;
 
         await WriteAsync(
-            Page(site.Id, "measured", at, "/", Chrome),
+            Page(site.Id, "measured", at, "/", Chrome) with
+            {
+                TimezoneOffsetMinutes = 330,
+                BrowserFamily = "Chrome",
+                OperatingSystem = "Windows",
+            },
             Read(site.Id, "measured", at.AddMinutes(1), Chrome));
 
         var found = await ReadSessionsAsync(site);
@@ -970,7 +978,30 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         found[0].Evidence.ViewportWidth.Should().Be(1440);
         found[0].Evidence.ViewportHeight.Should().Be(900);
         found[0].Evidence.Language.Should().Be("en-GB");
+        found[0].Evidence.TimezoneOffsetMinutes.Should().Be(330);
+        found[0].Evidence.BrowserFamily.Should().Be("Chrome");
+        found[0].Evidence.OperatingSystem.Should().Be("Windows");
         found[0].Evidence.Surfaces.Should().Contain(IngestSurface.BrowserTracker);
+    }
+
+    /// <summary>
+    /// Two page views of one visit giving two different clocks are read as neither, so a visit is
+    /// never judged on whichever of them happened to arrive first.
+    /// </summary>
+    [Fact]
+    public async Task A_Clock_The_Page_Views_Disagree_About_Is_Not_Read()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = Yesterday;
+
+        await WriteAsync(
+            Page(site.Id, "two-clocks", at, "/", Chrome) with { TimezoneOffsetMinutes = 480 },
+            Page(site.Id, "two-clocks", at.AddMinutes(1), "/about", Chrome) with { TimezoneOffsetMinutes = 330 });
+
+        var found = await ReadSessionsAsync(site);
+
+        found.Should().ContainSingle();
+        found[0].Evidence.TimezoneOffsetMinutes.Should().BeNull();
     }
 
     /// <summary>
@@ -1520,6 +1551,129 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
         visits[0].Verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
         visits[0].Verdict.Strength.Should().Be(EvidenceStrength.Moderate);
         visits[0].Verdict.Contradicting.Should().NotContain(signal => signal.Code == SignalCodes.OversizedWindow);
+    }
+
+    /// <summary>
+    /// A post opened over Meta's own network, Facebook named as the page that sent it, eight seconds
+    /// on screen and the first screen a quarter of it: carried from the reports to the verdict, the
+    /// network outweighs what the visit did.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_Facebook_Sent_Over_Metas_Own_Network_Is_Read_Back_As_Something_Automated()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = YesterdayAtNoon;
+
+        await WriteAsync(
+            OnMetasNetwork(SentFrom(Page(site.Id, "meta", at, "/posts/hello", Chrome), "https://m.facebook.com/")),
+            OnMetasNetwork(Left(site.Id, "meta", at.AddSeconds(8), "/posts/hello", 8_000) with { ScrollDepthPercent = 25 }));
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        visits[0].Verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        visits[0].Verdict.Supporting.Single(signal => signal.Code == SignalCodes.CompanyNetwork)
+            .Parameters["operator"].Should().Be("Meta");
+    }
+
+    /// <summary>
+    /// Thirty seconds on an archive page that came straight in, nothing pressed, from a browser saying
+    /// it is Chrome on Linux, asking for American English, with its clock eight hours ahead of UTC:
+    /// carried from the reports to the verdict, the description outweighs the stay.
+    /// </summary>
+    [Fact]
+    public async Task A_Stay_Described_As_The_Fleet_Describes_Itself_Is_Read_Back_As_Something_Automated()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = YesterdayAtNoon;
+
+        await WriteAsync(FleetStay(site.Id, "fleet", at));
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        visits[0].Verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        visits[0].Verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.FleetDescription);
+    }
+
+    /// <summary>
+    /// The same stay from a browser with its clock on UTC and a window exactly 1,280 by 800, carried
+    /// from the reports to the verdict: a clock of nought is read as a clock, not as one nobody read,
+    /// and the second fleet's description outweighs the stay.
+    /// </summary>
+    [Fact]
+    public async Task A_Stay_Described_As_The_Second_Fleet_Describes_Itself_Is_Read_Back_As_Something_Automated()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = YesterdayAtNoon;
+        var stay = FleetStay(site.Id, "fixed-window-fleet", at);
+
+        await WriteAsync(
+        [
+            stay[0] with { TimezoneOffsetMinutes = 0, ViewportWidth = 1280, ViewportHeight = 800 },
+            .. stay[1..],
+        ]);
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        visits[0].Verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        visits[0].Verdict.Supporting.Select(signal => signal.Code)
+            .Should().Contain(SignalCodes.FixedWindowFleetDescription)
+            .And.NotContain(SignalCodes.FleetDescription);
+    }
+
+    /// <summary>The same stay, another site named as its sender, is somebody reading.</summary>
+    [Fact]
+    public async Task The_Same_Stay_Another_Site_Sent_Is_Read_Back_As_A_Person()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = YesterdayAtNoon;
+        var stay = FleetStay(site.Id, "fleet-sent", at);
+
+        await WriteAsync([SentFrom(stay[0], Bing), .. stay[1..]]);
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        visits[0].Verdict.Supporting.Concat(visits[0].Verdict.Contradicting)
+            .Should().NotContain(signal => signal.Code == SignalCodes.FleetDescription);
+    }
+
+    /// <summary>
+    /// A page another site sent that was never on screen — its report of leaving saying no time at
+    /// all, and its first screen a third of the page — carried from the reports to the verdict: it was
+    /// seen no way down, and the product could not tell.
+    /// </summary>
+    [Fact]
+    public async Task A_Page_Another_Site_Sent_That_Was_Never_On_Screen_Is_Read_Back_As_Could_Not_Be_Told()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var at = YesterdayAtNoon;
+
+        await WriteAsync(
+            SentFrom(Page(site.Id, "unseen", at, "/posts/hello", Chrome), Bing),
+            Left(site.Id, "unseen", at.AddSeconds(4), "/posts/hello", 0) with { ScrollDepthPercent = 34 });
+
+        await JudgeAsync(site);
+
+        var visits = await VisitsAsync(site);
+
+        visits.Should().ContainSingle();
+        visits[0].Verdict.Category.Should().Be(TrafficCategory.Unknown);
+        visits[0].Verdict.Supporting.Should().NotContain(signal => signal.Code == SignalCodes.Scrolled);
     }
 
     /// <summary>
@@ -2122,6 +2276,45 @@ public sealed class JudgingTests(AnalyticsStackFixture stack)
     /// <summary>The same activity, arriving from a computer rented in a datacentre.</summary>
     private static RawEvent Rented(RawEvent observed) =>
         observed with { AutonomousSystem = RentedNetwork, NetworkOwner = "ALIBABA-CN-NET Alibaba US Technology Co., Ltd." };
+
+    /// <summary>The same activity, over the network Meta keeps for its own computers.</summary>
+    private static RawEvent OnMetasNetwork(RawEvent observed) =>
+        observed with { AutonomousSystem = 32934, NetworkOwner = "FACEBOOK - Facebook, Inc." };
+
+    /// <summary>
+    /// An archive page opened straight, a report of how it was going at fifteen seconds and one of it
+    /// being left at thirty, nothing pressed, from a browser saying it is Chrome on Linux, asking for
+    /// American English, with its clock eight hours ahead of UTC.
+    /// </summary>
+    private static RawEvent[] FleetStay(Guid siteId, string visitor, DateTimeOffset at)
+    {
+        const string chromeOnLinux =
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36";
+
+        return
+        [
+            Page(siteId, visitor, at, "/tag/hcl/", chromeOnLinux) with
+            {
+                Language = "en-US",
+                TimezoneOffsetMinutes = 480,
+                BrowserFamily = "Chrome",
+                OperatingSystem = "Linux",
+                ViewportWidth = 945,
+                ViewportHeight = 972,
+            },
+            Progress(siteId, visitor, at.AddSeconds(15), "/tag/hcl/", 15_000) with
+            {
+                UserAgent = chromeOnLinux,
+                Language = null,
+            },
+            Left(siteId, visitor, at.AddSeconds(30), "/tag/hcl/", 30_000) with
+            {
+                UserAgent = chromeOnLinux,
+                Language = null,
+                ScrollDepthPercent = 40,
+            },
+        ];
+    }
 
     /// <summary>
     /// A page the site's own server says it delivered to a browser, with the name it gave the

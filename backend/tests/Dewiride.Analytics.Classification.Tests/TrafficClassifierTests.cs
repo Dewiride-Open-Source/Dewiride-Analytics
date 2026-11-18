@@ -62,7 +62,7 @@ public sealed class TrafficClassifierTests
     [Fact]
     public void A_Page_Seen_A_Quarter_Of_The_Way_Down_That_Came_Straight_In_And_Did_Not_Stay_Is_Not_A_Person()
     {
-        var verdict = Engine.Classify(Visits.AGlance() with { MaxScrollDepthPercent = 60 });
+        var verdict = Engine.Classify(Visits.AGlance() with { EngagedMs = 483, MaxScrollDepthPercent = 60 });
 
         verdict.Category.Should().Be(TrafficCategory.Unknown);
         verdict.Strength.Should().Be(EvidenceStrength.Weak);
@@ -512,16 +512,18 @@ public sealed class TrafficClassifierTests
     /// long it stayed, how far down, what was pressed and whether it came over a rented network, so a
     /// change to the rules for direct traffic that reaches these shapes fails here.
     /// <see cref="A_Visit_Another_Site_Sent_Is_Weighed_As_It_Was_Whatever_Else_Was_Seen"/> holds pages
-    /// left open, silence, rate, breadth, missing paths and a window taller than a screen.
+    /// left open, silence, rate, breadth, missing paths and a window taller than a screen, and
+    /// <see cref="A_Page_Another_Site_Sent_That_Was_Never_On_Screen_Is_Not_A_Person"/> a page nobody
+    /// ever had in front of them.
     /// </summary>
     [Theory]
     [InlineData(0, 0, false, false, false, TrafficCategory.Unknown, EvidenceStrength.Weak)]
     [InlineData(0, 24, false, false, false, TrafficCategory.Unknown, EvidenceStrength.Weak)]
-    [InlineData(0, 25, false, false, false, TrafficCategory.LikelyHuman, EvidenceStrength.Moderate)]
-    [InlineData(0, 34, false, false, false, TrafficCategory.LikelyHuman, EvidenceStrength.Moderate)]
+    [InlineData(1, 25, false, false, false, TrafficCategory.LikelyHuman, EvidenceStrength.Moderate)]
+    [InlineData(1, 34, false, false, false, TrafficCategory.LikelyHuman, EvidenceStrength.Moderate)]
     [InlineData(0, 0, true, false, false, TrafficCategory.LikelyHuman, EvidenceStrength.Moderate)]
     [InlineData(0, 0, false, true, false, TrafficCategory.LikelyHuman, EvidenceStrength.Moderate)]
-    [InlineData(0, 34, true, false, false, TrafficCategory.LikelyHuman, EvidenceStrength.Strong)]
+    [InlineData(1, 34, true, false, false, TrafficCategory.LikelyHuman, EvidenceStrength.Strong)]
     [InlineData(1_999, 34, false, false, false, TrafficCategory.LikelyHuman, EvidenceStrength.Moderate)]
     [InlineData(2_000, 0, false, false, false, TrafficCategory.LikelyHuman, EvidenceStrength.Moderate)]
     [InlineData(2_000, 34, false, false, false, TrafficCategory.LikelyHuman, EvidenceStrength.Strong)]
@@ -556,6 +558,291 @@ public sealed class TrafficClassifierTests
         verdict.Category.Should().Be(category);
         verdict.Strength.Should().Be(strength);
         verdict.Supporting.Should().NotContain(signal => signal.Code == SignalCodes.BriefStay);
+    }
+
+    /// <summary>
+    /// A page another site sent that was never on screen — opened behind another tab and closed
+    /// unseen — was seen no way down at all, however much of it its first screen would have held, and
+    /// the tracker having run and the arrival are not enough for a person.
+    /// </summary>
+    [Theory]
+    [InlineData(25, false, TrafficCategory.Unknown, EvidenceStrength.Weak)]
+    [InlineData(34, false, TrafficCategory.Unknown, EvidenceStrength.Weak)]
+    [InlineData(34, true, TrafficCategory.Unknown, EvidenceStrength.Strong)]
+    public void A_Page_Another_Site_Sent_That_Was_Never_On_Screen_Is_Not_A_Person(
+        int depth,
+        bool rented,
+        TrafficCategory category,
+        EvidenceStrength strength)
+    {
+        var verdict = Engine.Classify(Visits.APageAnotherSiteSentThatWasNeverOnScreen() with
+        {
+            MaxScrollDepthPercent = (byte)depth,
+            AutonomousSystem = rented ? Visits.MicrosoftNetwork : 0,
+        });
+
+        verdict.Category.Should().Be(category);
+        verdict.Strength.Should().Be(strength);
+        verdict.Supporting.Concat(verdict.Contradicting)
+            .Should().NotContain(signal => signal.Code == SignalCodes.Scrolled);
+    }
+
+    /// <summary>
+    /// A moment on screen is enough for how far down the page came into view to count, as it always
+    /// has where another site sent the visit.
+    /// </summary>
+    [Fact]
+    public void A_Page_Another_Site_Sent_That_Was_On_Screen_For_A_Moment_Is_Still_A_Person()
+    {
+        var verdict = Engine.Classify(Visits.APageAnotherSiteSentThatWasNeverOnScreen() with { EngagedMs = 483 });
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.Scrolled);
+    }
+
+    /// <summary>
+    /// A page opened over the network a company keeps for its own computers, with the company's own
+    /// pages named as the sender: the network outweighs what the visit did, and what it did is shown
+    /// against the conclusion.
+    /// </summary>
+    [Fact]
+    public void A_Page_A_Social_Network_Sent_To_Metas_Own_Network_Is_Something_Automated()
+    {
+        var verdict = Engine.Classify(Visits.AFacebookLinkOpenedOnMetasOwnNetwork());
+
+        verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        verdict.Supporting.Single(signal => signal.Code == SignalCodes.CompanyNetwork)
+            .Parameters["operator"].Should().Be("Meta");
+        verdict.Contradicting.Select(signal => signal.Code).Should().BeEquivalentTo(
+            SignalCodes.ArrivedFromAnotherSite,
+            SignalCodes.ScriptExecuted,
+            SignalCodes.ReadTime,
+            SignalCodes.Scrolled);
+    }
+
+    /// <summary>
+    /// Nobody rents a computer on a company's own network, so a press and a long read there are not
+    /// a reader on a rented desktop: the network still outweighs them.
+    /// </summary>
+    [Fact]
+    public void What_Was_Pressed_On_Metas_Own_Network_Does_Not_Answer_It()
+    {
+        var verdict = Engine.Classify(Visits.AFacebookLinkOpenedOnMetasOwnNetwork() with
+        {
+            EngagedMs = 165_000,
+            HadPointerInteraction = true,
+            HadKeyboardInteraction = true,
+        });
+
+        verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+    }
+
+    /// <summary>
+    /// The same page, sent the same way, opened over a household network: somebody followed the link.
+    /// </summary>
+    [Fact]
+    public void The_Same_Page_Opened_Over_A_Household_Network_Is_Still_A_Person()
+    {
+        var verdict = Engine.Classify(Visits.AFacebookLinkOpenedOnMetasOwnNetwork() with
+        {
+            AutonomousSystem = Visits.HouseholdNetwork,
+            NetworkOwner = "RELIANCEJIO-IN Reliance Jio Infocomm Limited",
+        });
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Supporting.Should().NotContain(signal => signal.Code == SignalCodes.CompanyNetwork);
+    }
+
+    /// <summary>
+    /// A visitor naming one of Meta's own crawlers is judged exactly as it would be on any other
+    /// network: what it called itself is a claim the company publishes no way to confirm, and its
+    /// network is not taken for that confirmation.
+    /// </summary>
+    [Fact]
+    public void A_Crawler_Naming_Itself_As_One_Of_Metas_On_Metas_Network_Is_Judged_As_It_Was()
+    {
+        var elsewhere = Visits.ANamedCrawler("Mozilla/5.0 (compatible; meta-webindexer/1.1)");
+
+        var onMetasNetwork = Engine.Classify(elsewhere with { AutonomousSystem = Visits.MetaNetwork });
+        var onNoNetwork = Engine.Classify(elsewhere);
+
+        onMetasNetwork.Category.Should().Be(onNoNetwork.Category);
+        onMetasNetwork.Strength.Should().Be(onNoNetwork.Strength);
+        onMetasNetwork.Supporting.Select(signal => signal.Code)
+            .Should().Equal(onNoNetwork.Supporting.Select(signal => signal.Code));
+    }
+
+    /// <summary>
+    /// A visitor naming another company's crawler over Meta's network is still called what it named
+    /// itself, with the network among the reasons.
+    /// </summary>
+    [Fact]
+    public void A_Crawler_Naming_Another_Companys_Crawler_On_Metas_Network_Has_The_Network_Among_Its_Reasons()
+    {
+        var crawler = Visits.ANamedCrawler("Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)");
+
+        var verdict = Engine.Classify(crawler with { AutonomousSystem = Visits.MetaNetwork });
+
+        verdict.Category.Should().Be(TrafficCategory.SuspectedAiCrawler);
+        verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.CompanyNetwork);
+    }
+
+    /// <summary>
+    /// A stay that came straight in over a network newly known to rent out computers: the network
+    /// outweighs the fifteen seconds, as it does over every rented network.
+    /// </summary>
+    /// <param name="autonomousSystem">The network.</param>
+    [Theory]
+    [InlineData(46475u)]
+    [InlineData(25697u)]
+    [InlineData(202053u)]
+    public void A_Stay_That_Came_Straight_In_Over_A_Newly_Listed_Rented_Network_Is_Something_Automated(
+        uint autonomousSystem)
+    {
+        var verdict = Engine.Classify(Visits.AGlance() with
+        {
+            EngagedMs = 30_000,
+            LeftOpenMs = 0,
+            MaxScrollDepthPercent = 10,
+            AutonomousSystem = autonomousSystem,
+        });
+
+        verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+    }
+
+    /// <summary>
+    /// A reader another site sent over one of those networks, who pressed and read, is a person with
+    /// the network shown against them — as over every rented network.
+    /// </summary>
+    [Fact]
+    public void A_Reader_Another_Site_Sent_Over_UpClouds_Network_Who_Pressed_Is_Still_A_Person()
+    {
+        var verdict = Engine.Classify(Visits.AReader() with
+        {
+            SentBy = SourceChannel.Link,
+            AutonomousSystem = 202053,
+        });
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        verdict.Contradicting.Should().Contain(signal => signal.Code == SignalCodes.HostingNetwork);
+    }
+
+    /// <summary>
+    /// Thirty seconds on an archive page from a browser describing itself exactly as the fleet did:
+    /// the description outweighs the stay, and the stay is shown against the conclusion.
+    /// </summary>
+    [Fact]
+    public void A_Stay_From_A_Browser_Describing_Itself_As_The_Fleet_Did_Is_Something_Automated()
+    {
+        var verdict = Engine.Classify(Visits.AStraightStayFromChromeOnLinuxEightHoursAhead());
+
+        verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        verdict.Supporting.Should().Contain(signal => signal.Code == SignalCodes.FleetDescription);
+        verdict.Contradicting.Select(signal => signal.Code).Should().BeEquivalentTo(
+            SignalCodes.ScriptExecuted,
+            SignalCodes.ReadTime,
+            SignalCodes.Scrolled);
+    }
+
+    /// <summary>
+    /// The reason a short stay did not settle the question has no place beside an answer the
+    /// description settled.
+    /// </summary>
+    [Fact]
+    public void The_Reason_A_Short_Stay_Did_Not_Count_Is_Not_Given_Beside_The_Fleets_Description()
+    {
+        var verdict = Engine.Classify(Visits.AStraightStayFromChromeOnLinuxEightHoursAhead() with { EngagedMs = 8_000 });
+
+        verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        verdict.Supporting.Concat(verdict.Contradicting)
+            .Should().NotContain(signal => signal.Code == SignalCodes.BriefStay);
+    }
+
+    /// <summary>
+    /// The same stay with any one thing different is weighed as any other: another site named as the
+    /// sender, a press, or a single word of the description changed.
+    /// </summary>
+    /// <param name="change">What differs.</param>
+    [Theory]
+    [InlineData("sent by a search")]
+    [InlineData("pointer pressed")]
+    [InlineData("clock at UTC")]
+    [InlineData("Brave")]
+    [InlineData("Firefox")]
+    [InlineData("British English")]
+    public void The_Same_Stay_With_Anything_Else_Different_Is_Still_A_Person(string change)
+    {
+        var stay = Visits.AStraightStayFromChromeOnLinuxEightHoursAhead();
+
+        var changed = change switch
+        {
+            "sent by a search" => stay with { SentBy = SourceChannel.Search },
+            "pointer pressed" => stay with { HadPointerInteraction = true },
+            "clock at UTC" => stay with { TimezoneOffsetMinutes = 0 },
+            "Brave" => stay with { BrowserFamily = "Brave" },
+            "Firefox" => stay with { BrowserFamily = "Firefox" },
+            _ => stay with { Language = "en-GB" },
+        };
+
+        var verdict = Engine.Classify(changed);
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Supporting.Concat(verdict.Contradicting)
+            .Should().NotContain(signal => signal.Code == SignalCodes.FleetDescription);
+    }
+
+    /// <summary>
+    /// The same stay from a browser describing itself exactly as the second fleet did — its clock on
+    /// UTC and its window exactly 1,280 by 800 — is something automated in the same way, and gives the
+    /// second fleet's description as its reason rather than the first's.
+    /// </summary>
+    [Fact]
+    public void A_Stay_From_A_Browser_Describing_Itself_As_The_Second_Fleet_Did_Is_Something_Automated()
+    {
+        var verdict = Engine.Classify(Visits.AStraightStayFromChromeOnLinuxOnUtcInAFixedWindow());
+
+        verdict.Category.Should().Be(TrafficCategory.SuspiciousAutomation);
+        verdict.Strength.Should().Be(EvidenceStrength.Moderate);
+        verdict.Supporting.Select(signal => signal.Code)
+            .Should().Contain(SignalCodes.FixedWindowFleetDescription)
+            .And.NotContain(SignalCodes.FleetDescription);
+    }
+
+    /// <summary>
+    /// The second fleet's stay in a window of any other size, or with anything else different, is
+    /// weighed as any other.
+    /// </summary>
+    /// <param name="change">What differs.</param>
+    [Theory]
+    [InlineData("a window 720 tall")]
+    [InlineData("a window 1,366 wide")]
+    [InlineData("sent by a search")]
+    [InlineData("key pressed")]
+    [InlineData("British English")]
+    public void The_Second_Fleets_Stay_With_Anything_Else_Different_Is_Still_A_Person(string change)
+    {
+        var stay = Visits.AStraightStayFromChromeOnLinuxOnUtcInAFixedWindow();
+
+        var changed = change switch
+        {
+            "a window 720 tall" => stay with { ViewportHeight = 720 },
+            "a window 1,366 wide" => stay with { ViewportWidth = 1366 },
+            "sent by a search" => stay with { SentBy = SourceChannel.Search },
+            "key pressed" => stay with { HadKeyboardInteraction = true },
+            _ => stay with { Language = "en-GB" },
+        };
+
+        var verdict = Engine.Classify(changed);
+
+        verdict.Category.Should().Be(TrafficCategory.LikelyHuman);
+        verdict.Supporting.Concat(verdict.Contradicting)
+            .Should().NotContain(signal => signal.Code == SignalCodes.FixedWindowFleetDescription);
     }
 
     /// <summary>
@@ -668,6 +955,11 @@ public sealed class TrafficClassifierTests
             TrafficCategory.LikelyHuman,
             EvidenceStrength.Moderate,
             [Arrival, TrackerRan, SeenDown]),
+        ["a page never on screen, its first screen a third of it"] = new(
+            SentGlance with { LeftOpenMs = 0, MaxScrollDepthPercent = 34 },
+            TrafficCategory.Unknown,
+            EvidenceStrength.Weak,
+            [Arrival, TrackerRan]),
         ["a page left open"] = new(
             SentAndLeftOpen,
             TrafficCategory.Unknown,
@@ -807,7 +1099,7 @@ public sealed class TrafficClassifierTests
         [
             Visits.AReader(),
             Visits.AGlance() with { EngagedMs = 16_000 },
-            Visits.AGlance() with { SentBy = SourceChannel.Search, MaxScrollDepthPercent = 60 },
+            Visits.AGlance() with { SentBy = SourceChannel.Search, EngagedMs = 483, MaxScrollDepthPercent = 60 },
             Visits.AGlance() with { SentBy = SourceChannel.Search, HadPointerInteraction = true },
             Visits.AGlance() with { SentBy = SourceChannel.Search, EngagedMs = 3_000 },
         ];
@@ -823,7 +1115,7 @@ public sealed class TrafficClassifierTests
         SessionEvidence[] undecided =
         [
             Visits.AGlance(),
-            Visits.AGlance() with { MaxScrollDepthPercent = 60 },
+            Visits.AGlance() with { EngagedMs = 483, MaxScrollDepthPercent = 60 },
             Visits.AGlance() with { HadPointerInteraction = true },
             Visits.AGlance() with { EngagedMs = 3_000 },
         ];

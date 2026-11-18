@@ -87,4 +87,54 @@ public sealed class NetworkDetectorTests
 
         found.Should().BeEmpty();
     }
+
+    /// <summary>
+    /// A network a company keeps for its own computers is reported as that, with the company named as
+    /// the catalogue names it, and as heavily as a rented server.
+    /// </summary>
+    [Fact]
+    public void A_Visit_Over_A_Network_A_Company_Keeps_For_Its_Own_Computers_Is_Reported_As_One()
+    {
+        var signal = detector.Examine(Visits.AFacebookLinkOpenedOnMetasOwnNetwork()).Should().ContainSingle().Which;
+
+        signal.Code.Should().Be(SignalCodes.CompanyNetwork);
+        signal.Direction.Should().Be(SignalDirection.TowardAutomation);
+        signal.Weight.Should().Be(65);
+        signal.Parameters.Should().ContainSingle().Which.Should().Be(new KeyValuePair<string, string>("operator", "Meta"));
+    }
+
+    /// <summary>Nobody rents a computer there, so it is never reported as a rented network.</summary>
+    [Fact]
+    public void A_Companys_Own_Network_Is_Not_Reported_As_A_Rented_One()
+    {
+        detector.Examine(Visits.AFacebookLinkOpenedOnMetasOwnNetwork())
+            .Should().NotContain(signal => signal.Code == SignalCodes.HostingNetwork);
+    }
+
+    /// <summary>
+    /// A visitor naming one of the company's own crawlers is left to what it called itself, a claim
+    /// the company publishes no way to confirm; the network beside it would read as that confirmation.
+    /// </summary>
+    /// <param name="userAgent">What it called itself.</param>
+    [Theory]
+    [InlineData("facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)")]
+    [InlineData("Mozilla/5.0 (compatible; meta-webindexer/1.1)")]
+    [InlineData("meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)")]
+    public void A_Visitor_Naming_One_Of_The_Companys_Own_Crawlers_Is_Not_Reported_Against_Its_Network(string userAgent)
+    {
+        detector.Examine(Visits.AFacebookLinkOpenedOnMetasOwnNetwork() with { UserAgent = userAgent })
+            .Should().BeEmpty();
+    }
+
+    /// <summary>A visitor naming another company's crawler over the network is reported against it.</summary>
+    [Fact]
+    public void A_Visitor_Naming_Another_Companys_Crawler_Is_Reported_Against_The_Network()
+    {
+        var found = detector.Examine(Visits.AFacebookLinkOpenedOnMetasOwnNetwork() with
+        {
+            UserAgent = "Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)",
+        });
+
+        found.Should().ContainSingle().Which.Code.Should().Be(SignalCodes.CompanyNetwork);
+    }
 }

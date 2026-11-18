@@ -80,6 +80,11 @@ public readonly record struct HostingNetwork(uint AutonomousSystem, string Opera
 /// and how it arrived.
 /// </para>
 /// <para>
+/// <b>A network a company keeps for its own computers is not here.</b> Nobody rents a computer on
+/// one, so the reason a visit over a rented network can still be decided by what it did does not
+/// reach it; those networks are <see cref="CompanyNetworks"/>.
+/// </para>
+/// <para>
 /// <b>Keeping this current is an accepted ongoing cost</b>, on the same terms as the crawler
 /// catalogue beside it. It is consulted when a visit is judged, so adding an entry is a code change
 /// and a re-judging, with no migration and nothing to backfill.
@@ -143,6 +148,9 @@ public static class HostingNetworks
         new(12876, "Scaleway"),
         new(31898, "Oracle Cloud"),
         new(36351, "IBM Cloud"),
+        new(202053, "UpCloud"),
+        new(25697, "UpCloud"),
+        new(46475, "Limestone Networks"),
 
         new(60781, "Leaseweb"),
         new(19148, "Leaseweb"),

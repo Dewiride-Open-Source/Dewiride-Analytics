@@ -140,6 +140,31 @@ public sealed class ClientProfilerTests
     }
 
     /// <summary>
+    /// The description a fleet measured on real traffic gave is stored in the two words the engine
+    /// reads it by — which is what lets the engine, which sees only the stored words, recognise it.
+    /// </summary>
+    [Fact]
+    public void Chrome_On_A_Linux_Computer_Is_Stored_In_The_Words_The_Engine_Reads()
+    {
+        const string linuxChrome =
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36";
+        var hints = new ClientHints
+        {
+            Mobile = false,
+            Platform = "\"Linux\"",
+            Brands = "\"Chromium\";v=\"152\", \"Google Chrome\";v=\"152\", \"Not?A_Brand\";v=\"24\"",
+        };
+
+        var stated = ClientProfiler.Profile(linuxChrome, hints);
+        var implied = ClientProfiler.Profile(linuxChrome, null);
+
+        stated.OperatingSystem.Should().Be("Linux");
+        stated.BrowserFamily.Should().Be("Chrome");
+        implied.OperatingSystem.Should().Be("Linux");
+        implied.BrowserFamily.Should().Be("Chrome");
+    }
+
+    /// <summary>
     /// Brave's user agent is byte-identical to Chrome's by design, so the brand list is the only
     /// place it can be recognised at all.
     /// </summary>

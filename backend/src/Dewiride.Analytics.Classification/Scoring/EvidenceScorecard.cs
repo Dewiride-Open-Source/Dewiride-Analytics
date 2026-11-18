@@ -291,14 +291,20 @@ public static class EvidenceScorecard
     /// </list>
     /// <para>
     /// Named automation measured on every network almost never arrived from another site, and neither
-    /// did the fleets measured on these networks, while the visits measured on Microsoft's network that
-    /// a search sent read, saw a quarter of a page, pressed and typed as people on household
+    /// did the fleets measured on rented networks, while the visits measured on Microsoft's network
+    /// that a search sent read, saw a quarter of a page, pressed and typed as people on household
     /// connections do. The network stays among the reasons, pointing the other way, so a person
     /// concluded here is never stated more firmly than some signs. The second observation is
     /// ordinarily the browser having run the tracker at all, so what this rests on in practice is an
     /// arrival and one key or press of the pointer, or an arrival, 15 seconds in all said as the pages
     /// were left and one page seen a quarter of the way down — and it is described as that rather
     /// than as more corroboration than it is.
+    /// </para>
+    /// <para>
+    /// A network a company keeps for its own computers is not a rented one, and none of this reaches
+    /// it. Nobody reads from a desktop rented there, and the browsers measured on one arrived with the
+    /// company's own pages named as the sender; a visit over one is weighed as any other, and the
+    /// network outweighs what it did.
     /// </para>
     /// </remarks>
     /// <param name="evidence">What the detectors observed.</param>

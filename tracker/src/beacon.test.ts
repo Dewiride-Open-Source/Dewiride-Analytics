@@ -98,6 +98,22 @@ describe('what the beacon reports when a page is opened', () => {
     }
   });
 
+  /**
+   * The engine reads a clock eight hours ahead of UTC as 480, so the minutes are said ahead of UTC —
+   * the opposite sign to the one the browser hands over.
+   */
+  it('says how far its clock is ahead of UTC, in minutes, as the engine reads it', () => {
+    const offset = vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(-480);
+
+    try {
+      page.open();
+
+      expect(only(page.sent, 'pageview')['timezoneOffsetMinutes']).toBe(480);
+    } finally {
+      offset.mockRestore();
+    }
+  });
+
   it('passes on the browser admitting it is being driven by automation', () => {
     Object.defineProperty(navigator, 'webdriver', { value: true, configurable: true });
 

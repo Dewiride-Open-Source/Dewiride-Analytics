@@ -1130,10 +1130,13 @@
       "script_executed": "A real browser ran your tracking code.",
       "images_only": "Pictures on the page were fetched but nothing was run — a browser with scripts turned off.",
       "no_language_declared": "It did not say which language it prefers. Browsers always do.",
-      "oversized_window": "Its browser reported a window {height, number} pixels tall, taller and narrower than an ordinary screen."
+      "oversized_window": "Its browser reported a window {height, number} pixels tall, taller and narrower than an ordinary screen.",
+      "fleet_description": "It came straight here, clicked or typed nothing, and described itself exactly as a group of automated browsers we've measured does: Chrome on Linux, in US English, with its clock 8 hours ahead of UTC.",
+      "fixed_window_fleet_description": "It came straight here, clicked or typed nothing, and described itself exactly as a group of automated browsers we've measured does: Chrome on Linux, in US English, with its clock matching UTC and a window exactly 1,280 by 800 pixels."
     },
     "network": {
-      "hosting": "It came over a network where {operator} rents out computers."
+      "hosting": "It came over a network where {operator} rents out computers.",
+      "company_machines": "It came over a network {operator} keeps for its own computers."
     },
     "arrival": {
       "from_another_site": {

@@ -11,6 +11,9 @@
 - **Revised by**: [0065](0065-somebody-who-came-straight-in-has-to-have-stayed.md). A key pressed
   answers the network only on a visit another site sent; one that came straight in is weighed as any
   other, whatever was pressed.
+- **Revised by**: [0077](0077-where-a-visit-ran-and-what-it-said-can-outweigh-how-it-read.md). A
+  second catalogue holds networks a company keeps for its own computers, weighed as a rented network is
+  and never answered by what the visit did; three more rented networks join this one.
 
 ## Context
 

@@ -18,6 +18,10 @@
   straight in, a page left open whose first screen held a quarter of it, or on which something was
   pressed, reads "Couldn't tell" rather than a person. What another site sent reads as here. And on such
   a visit a window taller than a screen now counts, which this refused.
+- **Revised by**: [0077](0077-where-a-visit-ran-and-what-it-said-can-outweigh-how-it-read.md). Two
+  fleets' exact accounts of themselves — browser, system, language and clock, and for one of them the
+  window — count on a visit that came straight in with nothing pressed, which this refused; and how far
+  down a page was seen, unchanged here, counts only where a page was on screen at all.
 
 ## Context
 

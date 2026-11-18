@@ -25,6 +25,9 @@ WITH
             network_owner,
             confirmed_operator,
             ip_address,
+            timezone_offset_minutes,
+            browser_family,
+            operating_system,
             referrer AS source_address,
             if(
                 referrer_domain != ''
@@ -82,6 +85,9 @@ WITH
             network_owner,
             confirmed_operator,
             ip_address,
+            timezone_offset_minutes,
+            browser_family,
+            operating_system,
             source_address,
             sending_host,
             transform(
@@ -331,7 +337,7 @@ WITH
                 opens_page) AS requests,
             groupUniqArray(toString(surface)) AS surfaces,
             anyIf(user_agent, user_agent != '') AS user_agent,
-            anyIf(language, language != '') AS language,
+            argMinIf(language, (server_ts, event_id), language != '') AS language,
             max(viewport_width) AS viewport_width,
             max(viewport_height) AS viewport_height,
             sumIf(page_engaged_ms, opens_page) AS engaged_ms,
@@ -363,7 +369,13 @@ WITH
             anyIf(network_owner, network_owner != '') AS network_owner,
             anyIf(confirmed_operator, confirmed_operator != '') AS stamped_operator,
             argMinIf(source_channel, (server_ts, event_id), sending_host != '') AS from_kind,
-            anyIf(ip_address, ip_address != '') AS ip_address
+            anyIf(ip_address, ip_address != '') AS ip_address,
+            if(
+                min(timezone_offset_minutes) = max(timezone_offset_minutes),
+                min(timezone_offset_minutes),
+                NULL) AS clock_offset_minutes,
+            argMinIf(browser_family, (server_ts, event_id), browser_family != '') AS browser,
+            argMinIf(operating_system, (server_ts, event_id), operating_system != '') AS system_name
         FROM attended
         GROUP BY visitor_key, visit_ordinal
         HAVING started_at >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
@@ -416,7 +428,10 @@ SELECT
     ip_address,
     read_ms,
     soonest_progress_ms,
-    viewport_height
+    viewport_height,
+    clock_offset_minutes,
+    browser,
+    system_name
 FROM visits
 LEFT JOIN confirmations USING (session_key)
 ORDER BY started_at, session_key

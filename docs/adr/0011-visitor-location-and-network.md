@@ -3,6 +3,9 @@
 - **Status**: accepted
 - **Date**: 2026-08-19
 - **Supersedes**: nothing. Widens the envelope recorded in ADR 0005.
+- **Revised by**: [0077](0077-where-a-visit-ran-and-what-it-said-can-outweigh-how-it-read.md). The
+  engine now reads the browser and system named here, beside the clock a browser reported, for two
+  fleets' exact accounts of themselves; classification is no longer untouched by them.
 
 ## Context
 

@@ -166,8 +166,11 @@ and the [master plan](#master-plan) below it says what does not yet.
   browser string. Only a visit that does not look like a person is ever asked about, so a visit that
   looks like somebody reading is never the reason an address is sent anywhere, though an address it
   shares with a visit read as machinery is; a person taken for machinery — somebody reading over a
-  rented network who came straight to the page, or somebody in a window far taller and narrower than a
-  screen who came straight in and left inside 15 seconds — is asked about as machinery is. An install
+  rented network who came straight to the page, somebody reading over the network a company keeps for
+  its own computers however they arrived, somebody in a window far taller and narrower than a screen
+  who came straight in and left inside 15 seconds, or somebody whose browser described itself exactly
+  as one of two measured fleets' did and who came straight in and pressed nothing — is asked about as
+  machinery is. An install
   with no way out to the internet can be given the lists
   by hand, or go without either check: traffic is measured the same, and every crawler simply reads
   as a claim.
@@ -175,7 +178,7 @@ and the [master plan](#master-plan) below it says what does not yet.
 ## Master plan
 
 Every capability the product is meant to have, phase by phase, in the order the work is picked
-up. Each line is marked with one of four states. Last reviewed 2026-11-07.
+up. Each line is marked with one of four states. Last reviewed 2026-11-18.
 
 - **Done** — shipped and visible on the dashboard, or collected on every capture surface.
 - **Partly done** — a real piece ships; the line says what is still missing.
@@ -234,6 +237,13 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-07.
   pages stayed 15 seconds and the visit did not come over a rented network, and it says how tall the window
   was. A phone that says it is one is left out, and so is a 16:9 or 16:10 screen held upright, with up to
   about a fifth of its width taken by a side panel.
+- **Done** · A visit that came straight in with nothing pressed, from a browser describing itself exactly
+  as one of two fleets measured on real traffic did — Chrome on Linux, asking for US English, with its
+  clock eight hours ahead of UTC, or with its clock on UTC and a window exactly 1,280 by 800 — reads
+  "Something automated" however long it stayed, and says what the browser said about itself.
+- **Done** · How far down a page came into view counts only where some page of the visit was on screen
+  at all: a page another website sent that was opened behind another tab and closed unseen is not seen a
+  quarter of the way down, and on its own reads "Couldn't tell".
 
 **2.2 Weak spot to close**
 
@@ -565,6 +575,10 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-07.
   read for 15 seconds or more with a quarter of the page seen, is called a person with the network
   shown against it; one another website sent that did none of that is "Couldn't tell"; one that came
   straight in is still weighed as machinery, whatever was pressed.
+- **Done** · A network a company keeps for its own computers — Meta's, over which browsers were
+  measured opening each newly shared post within seconds of the share — is weighed as heavily as a
+  rented one and never decided by what the visit then did, so a visit over it reads as machinery, with
+  the company named. A visitor naming a crawler is judged by the name, as before.
 - **Not started** · Region shown — stored, never shown.
 - **Not started** · Network number shown.
 - **Not started** · A "datacentre / hosting" label on rows and lists.
@@ -664,8 +678,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-07.
 - **Not started** · The synthetic traffic tool, with its own README stating it is regression
   protection only.
 - **Not started** · A recorded-traffic test collection with hand-written labels.
-- **Not started** · Stored but unused data — use it or stop collecting it: time-zone offset,
-  clock drift, response size, content type, mobile hint, region.
+- **Not started** · Stored but unused data — use it or stop collecting it: clock drift, response
+  size, content type, mobile hint, region.
 - **Not started** · Commercial edition: clustering across customers, the curated intelligence
   feed, alerting, single sign-on, directory sync.
 

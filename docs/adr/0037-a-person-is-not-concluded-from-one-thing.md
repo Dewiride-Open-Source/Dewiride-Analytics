@@ -28,6 +28,9 @@
   came straight in, how far down a page was seen and a short read are too light to count until its pages
   have stayed fifteen seconds, and a press counts for nothing however long they stayed. What another site
   sent reads as here.
+- **Revised by**: [0077](0077-where-a-visit-ran-and-what-it-said-can-outweigh-how-it-read.md). How far
+  down a page was seen counts only where some page of the visit was on screen at all, so a page another
+  site sent that nobody ever had in front of them is no longer two things agreeing.
 
 ## Context
 

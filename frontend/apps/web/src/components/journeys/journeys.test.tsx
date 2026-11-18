@@ -148,6 +148,46 @@ const TALL_WINDOW_THAT_STAYED = {
   ],
 };
 
+/** A post Facebook sent, opened over the network Meta keeps for its own computers. */
+const COMPANY_NETWORK = {
+  ...BRIEF,
+  id: 'visit-company-network',
+  pageCount: 1,
+  category: 'suspicious-automation',
+  strength: 'moderate',
+  supporting: [
+    {
+      code: 'network.company_machines',
+      direction: 'toward-automation',
+      weight: 65,
+      values: { operator: 'Meta' },
+    },
+  ],
+  contradicting: [
+    { code: 'browser.script_executed', direction: 'toward-human', weight: 35, values: {} },
+  ],
+};
+
+/** A page opened straight from a browser describing itself as a measured fleet did. */
+function describedAs(code: string) {
+  return {
+    ...BRIEF,
+    id: `visit-${code}`,
+    pageCount: 1,
+    category: 'suspicious-automation',
+    strength: 'moderate',
+    supporting: [{ code, direction: 'toward-automation', weight: 65, values: {} }],
+    contradicting: [
+      {
+        code: 'engagement.read_time',
+        direction: 'toward-human',
+        weight: 60,
+        values: { seconds: '30' },
+      },
+    ],
+  };
+}
+
 /** A page on screen for five seconds, and for fifteen more with no sign of ever being closed. */
 const PARTLY_LEFT_OPEN = {
   ...BRIEF,
@@ -973,6 +1013,41 @@ describe('the user journey screen', () => {
         'Its browser reported a window 3,000 pixels tall, taller and narrower than an ordinary screen.',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('names the company whose own network a visit came over, where that is the reason', async () => {
+    engineWith(GROUPS, [COMPANY_NETWORK]);
+
+    show();
+
+    await userEvent.click(await screen.findByText('1 page'));
+
+    const reason = screen
+      .getByText('It came over a network Meta keeps for its own computers.')
+      .closest('li');
+
+    expect(reason?.querySelector('svg')).toHaveClass('text-accent-strong');
+    expect(screen.getByText('A real browser ran your tracking code.')).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      'browser.fleet_description',
+      "It came straight here, clicked or typed nothing, and described itself exactly as a group of automated browsers we've measured does: Chrome on Linux, in US English, with its clock 8 hours ahead of UTC.",
+    ],
+    [
+      'browser.fixed_window_fleet_description',
+      "It came straight here, clicked or typed nothing, and described itself exactly as a group of automated browsers we've measured does: Chrome on Linux, in US English, with its clock matching UTC and a window exactly 1,280 by 800 pixels.",
+    ],
+  ])('says what a browser said about itself, where %s is the reason', async (code, sentence) => {
+    engineWith(GROUPS, [describedAs(code)]);
+
+    show();
+
+    await userEvent.click(await screen.findByText('1 page'));
+
+    expect(screen.getByText(sentence)).toBeInTheDocument();
+    expect(screen.getByText('Your pages were on screen for 30 seconds.')).toBeInTheDocument();
   });
 
   it('says what time counted and what was not, where a page was never closed', async () => {

@@ -124,8 +124,8 @@ public sealed class RulesetVersionTests
     /// it obliges whoever changed the rules to say so here as well.
     /// </remarks>
     [Fact]
-    public void The_Compiled_Ruleset_Is_The_One_Where_Somebody_Who_Came_Straight_In_Has_To_Have_Stayed()
+    public void The_Compiled_Ruleset_Is_The_One_In_Which_Where_A_Visit_Ran_And_What_It_Said_Can_Outweigh_How_It_Read()
     {
-        RulesetVersion.Current.Should().Be(new RulesetVersion(12, 0));
+        RulesetVersion.Current.Should().Be(new RulesetVersion(13, 0));
     }
 }

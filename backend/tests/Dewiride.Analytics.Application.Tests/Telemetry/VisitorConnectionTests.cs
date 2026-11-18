@@ -40,6 +40,16 @@ public sealed class VisitorConnectionTests
     }
 
     /// <summary>
+    /// A network a company keeps for its own computers leases nothing in pools, so the machines on
+    /// it are told apart by the address each one used — never gathered under the network.
+    /// </summary>
+    [Fact]
+    public void An_Address_On_A_Network_A_Company_Keeps_For_Its_Own_Computers_Is_Used_As_It_Arrived()
+    {
+        VisitorConnection.Identifying("198.51.100.24", 32934).Should().Be("198.51.100.24");
+    }
+
+    /// <summary>
     /// The whole point. A pool of rented addresses is sold as a way of not being recognised, and
     /// read literally it turns one program into as many visitors as it held addresses.
     /// </summary>

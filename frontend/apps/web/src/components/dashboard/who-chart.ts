@@ -20,8 +20,14 @@ export interface WhoChart {
   readonly bands: readonly TrafficBand[];
   /** What each tone is called, in the reader's own language. */
   readonly names: Readonly<Record<VerdictTone, string>>;
-  /** How the card a hover opens writes a band's figure. */
+  /**
+   * How the card a hover opens writes a band's figure: as a number of visits, since the name beside
+   * it is who made them — and a band of people read as so many people would be a different count,
+   * the one the picture of how much draws.
+   */
   readonly figure: FigureWriter;
+  /** How a number of visits is written, for the line of the period before. */
+  readonly visits: (count: number) => string;
   readonly drawing: Drawing;
   /**
    * The buckets drawn quietly: a week or a month the period cuts short, at either end, and those
@@ -74,6 +80,7 @@ export function whoOption(chart: WhoChart, palette: ChartPalette): EChartsCoreOp
         // Straight, like the bands. A curve drawn through the counted points invents traffic
         // everywhere between them, which is as untrue of the earlier period as of this one.
         smooth: false,
+        figure: chart.visits,
       }),
     );
   }

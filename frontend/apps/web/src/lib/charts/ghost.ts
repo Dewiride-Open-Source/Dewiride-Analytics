@@ -18,6 +18,12 @@ import { LAYERS } from '@/lib/charts/frame';
 /** How much of its colour a measure keeps when it is the period before rather than this one. */
 const FADED = 0.6;
 
+/**
+ * What the card a hover opens writes for a bucket past the end of the period before: the mark the
+ * engine writes there itself wherever it is left to write the line's figures.
+ */
+const NO_FIGURE = '-';
+
 /** One measure over the earlier period. */
 export interface Ghost {
   /** What it is called, already marked as the earlier period's. */
@@ -36,11 +42,18 @@ export interface Ghost {
    * difference in how it was drawn.
    */
   readonly smooth: number | false;
+  /**
+   * How the card a hover opens writes one of its figures, where the measure it is set against is
+   * written with what it counts — so the two are written alike. The engine writes them where left
+   * out.
+   */
+  readonly figure?: (value: number) => string;
 }
 
 /** The earlier period's line. */
 export function ghostSeries(ghost: Ghost): Record<string, unknown> {
   const faded = color.modifyAlpha(ghost.colour, FADED);
+  const { figure } = ghost;
 
   return {
     name: ghost.name,
@@ -53,5 +66,13 @@ export function ghostSeries(ghost: Ghost): Record<string, unknown> {
     z: LAYERS.earlier,
     lineStyle: { width: 1.5, type: 'dashed', color: faded },
     itemStyle: { color: faded },
+    ...(figure
+      ? {
+          tooltip: {
+            valueFormatter: (value: unknown) =>
+              typeof value === 'number' ? figure(value) : NO_FIGURE,
+          },
+        }
+      : {}),
   };
 }

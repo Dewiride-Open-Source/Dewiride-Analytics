@@ -1,8 +1,8 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SiteLive } from '@/components/live/site-live';
-import type { Live, LiveVisitor, Site } from '@/lib/api/schemas';
+import type { Live, LiveArrivals, LiveVisitor, Site } from '@/lib/api/schemas';
 import { engineDoing, respondWith } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
 
@@ -60,11 +60,27 @@ function visitor(overrides: Partial<LiveVisitor> = {}): LiveVisitor {
   };
 }
 
+/** Nobody sent by any kind of site. */
+const NOBODY_SENT: LiveArrivals = { search: 0, assistant: 0, social: 0, link: 0 };
+
+/**
+ * A reading carrying the visitors given, counting how each of them arrived as an answer carrying
+ * everybody would. A test of a reading cut short says how many each kind of site sent in all.
+ */
 function reading(visitors: readonly LiveVisitor[], overrides: Partial<Live> = {}): Live {
+  const arrivals = { ...NOBODY_SENT };
+
+  for (const one of visitors) {
+    if (one.context.kind !== 'direct') {
+      arrivals[one.context.kind] += 1;
+    }
+  }
+
   return {
     at: AT,
     from: FROM,
     visitorsSeen: visitors.length,
+    arrivals,
     visitors: [...visitors],
     minutes: [],
     pages: [],
@@ -142,6 +158,20 @@ function press() {
  */
 function list(): HTMLElement {
   return screen.getByRole('heading', { name: "Who's here" }).closest('section') as HTMLElement;
+}
+
+/**
+ * The sentence at the foot of the list, set apart from the same words said once to anybody listening
+ * when what the list is kept to changes.
+ */
+function footSaying(words: string): HTMLElement {
+  const said = within(list())
+    .getAllByText(words)
+    .filter((one) => one.getAttribute('role') !== 'status');
+
+  expect(said).toHaveLength(1);
+
+  return said[0] as HTMLElement;
 }
 
 /** The card carrying the figure and what can be named among the visitors behind it. */
@@ -230,14 +260,29 @@ describe('who is here now', () => {
     );
   });
 
-  it('is the only part of the screen that announces itself', async () => {
-    engineReading([reading([visitor()])]);
+  /**
+   * Neither the chips nor the counts on them speak up: a busy half hour would read itself aloud. The
+   * list says what it shows only once what it is kept to changes, so on a reading it says nothing.
+   */
+  it('is the only part of the screen that announces itself on a reading', async () => {
+    engineReading([
+      reading([
+        visitor({ visitor: 'a1', category: 'security-scanner', strength: 'strong' }),
+        visitor({
+          visitor: 'a2',
+          currentPath: '/searched',
+          context: { ...visitor().context, source: 'Google', kind: 'search' },
+        }),
+      ]),
+    ]);
 
     const { container } = renderScreen(<SiteLive site={SITE} />);
 
     await screen.findByText('Visitors');
 
+    expect(within(headline()).getAllByRole('button')).toHaveLength(5);
     expect(container.querySelectorAll('[aria-live]')).toHaveLength(1);
+    expect(within(list()).getByRole('status')).toBeEmptyDOMElement();
   });
 
   it('names what it can and counts the rest', async () => {
@@ -290,7 +335,10 @@ describe('who is here now', () => {
 
     await screen.findByRole('heading', { name: 'Visitors' });
 
-    expect(within(headline()).getByText('Probing for a way in')).toBeInTheDocument();
+    expect(
+      within(headline()).getByRole('button', { name: 'Probing for a way in 1' }),
+    ).toBeInTheDocument();
+    expect(within(list()).getByText('Probing for a way in')).toBeInTheDocument();
   });
 
   it('describes a page somebody is on now in the present, and one they left in the past', async () => {
@@ -340,7 +388,7 @@ describe('who is here now', () => {
 
     await screen.findByText('Visitors');
 
-    expect(screen.queryByText(/most recently active are listed/)).not.toBeInTheDocument();
+    expect(within(list()).queryByText(/most recently active/)).not.toBeInTheDocument();
   });
 
   /**
@@ -982,6 +1030,618 @@ describe('a visitor somebody has opened', () => {
     await screen.findByRole('heading', { name: 'What happened in this visit' });
 
     expect(screen.queryByRole('heading', { name: 'What we saw' })).not.toBeInTheDocument();
+  });
+});
+
+describe('keeping the list to one kind of visitor', () => {
+  /** Sent by a search engine. */
+  const SEARCHED = visitor({
+    visitor: 'a1',
+    currentPath: '/searched',
+    context: { ...visitor().context, source: 'Google', kind: 'search' },
+  });
+
+  /** Nothing named a sender for them. */
+  const TYPED = visitor({ visitor: 'a2', currentPath: '/typed' });
+
+  /** Recognised as probing for a way in, and sent by a link on another site. */
+  const SCANNING = visitor({
+    visitor: 'a3',
+    currentPath: '/.env',
+    category: 'security-scanner',
+    strength: 'strong',
+    context: { ...visitor().context, source: 'forum.example.net', kind: 'link' },
+  });
+
+  /** Recognised as a search engine's crawler. */
+  const CRAWLING = visitor({
+    visitor: 'a4',
+    currentPath: '/sitemap.xml',
+    category: 'known-search-crawler',
+    strength: 'verified',
+  });
+
+  /** One chip on the card at the top, found by everything it says. */
+  function chip(name: string): HTMLElement {
+    return within(headline()).getByRole('button', { name });
+  }
+
+  /** The pill beside the heading of the list, which shows everybody again. */
+  function pill(choice: string): HTMLElement {
+    return within(list()).getByRole('button', { name: `Show everyone, not only ${choice}` });
+  }
+
+  /** The page line of every row on the list, in the order the rows are drawn. */
+  function listed(): string[] {
+    return within(list())
+      .queryAllByText(/^(Reading|Last on) \//)
+      .map((row) => row.textContent ?? '');
+  }
+
+  /**
+   * The figure on each chip counts everybody each kind of site sent, as the visitor count counts
+   * everybody: a list cut short at a hundred would otherwise make a sweep from one place read as a
+   * trickle.
+   */
+  it('counts how visitors arrived over the whole half hour rather than the rows listed', async () => {
+    engineReading([
+      reading([SEARCHED, TYPED], {
+        visitorsSeen: 214,
+        arrivals: { search: 120, assistant: 3, social: 0, link: 7 },
+      }),
+    ]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    const arrived = await screen.findByRole('group', { name: 'How they arrived' });
+
+    expect(
+      within(arrived)
+        .getAllByRole('button')
+        .map((one) => one.textContent),
+    ).toEqual([
+      'From a search engine 120',
+      'From an AI assistant 3',
+      'From a social network 0',
+      'From a link on another site 7',
+    ]);
+  });
+
+  it('keeps the list to the visitors a search engine sent once its chip is pressed', async () => {
+    engineReading([reading([SEARCHED, TYPED, SCANNING])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    await press().click(chip('From a search engine 1'));
+
+    expect(chip('From a search engine 1')).toHaveAttribute('aria-pressed', 'true');
+    expect(listed()).toEqual(['Reading /searched']);
+    expect(pill('From a search engine')).toHaveTextContent('Only From a search engine');
+  });
+
+  it('keeps the list to one recognised kind of visitor once its chip is pressed', async () => {
+    engineReading([reading([SEARCHED, TYPED, SCANNING])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /.env');
+
+    await press().click(chip('Probing for a way in 1'));
+
+    expect(chip('Probing for a way in 1')).toHaveAttribute('aria-pressed', 'true');
+    expect(listed()).toEqual(['Reading /.env']);
+    expect(pill('Probing for a way in')).toBeInTheDocument();
+  });
+
+  it('keeps the list to one chip at a time', async () => {
+    engineReading([reading([SEARCHED, TYPED, SCANNING])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    await press().click(chip('From a search engine 1'));
+    await press().click(chip('Probing for a way in 1'));
+
+    expect(chip('Probing for a way in 1')).toHaveAttribute('aria-pressed', 'true');
+    expect(chip('From a search engine 1')).toHaveAttribute('aria-pressed', 'false');
+    expect(listed()).toEqual(['Reading /.env']);
+  });
+
+  it('shows everybody again when the pressed chip is pressed again', async () => {
+    engineReading([reading([SEARCHED, TYPED, SCANNING])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    await press().click(chip('From a search engine 1'));
+    await press().click(chip('From a search engine 1'));
+
+    expect(listed()).toEqual(['Reading /searched', 'Reading /typed', 'Reading /.env']);
+    expect(
+      within(list()).queryByRole('button', { name: /^Show everyone/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  /** The pill goes the moment it is pressed, so the keyboard is handed on rather than dropped. */
+  it('shows everybody again from the pill, and hands the keyboard to the heading of the list', async () => {
+    engineReading([reading([SEARCHED, TYPED, SCANNING])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    await press().click(chip('From a search engine 1'));
+    await press().click(pill('From a search engine'));
+
+    expect(listed()).toEqual(['Reading /searched', 'Reading /typed', 'Reading /.env']);
+    expect(chip('From a search engine 1')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('heading', { name: "Who's here" })).toHaveFocus();
+  });
+
+  it('leaves the figures, the pages and the minutes counting everybody', async () => {
+    engineReading([
+      reading([SEARCHED, TYPED, SCANNING], {
+        minutes: [
+          { start: '2026-08-29T10:29:00.000Z', pageViews: 6 },
+          { start: '2026-08-29T10:30:00.000Z', pageViews: 3 },
+        ],
+        pages: [
+          { path: '/searched', visitors: 1 },
+          { path: '/typed', visitors: 1 },
+          { path: '/.env', visitors: 1 },
+        ],
+      }),
+    ]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    await press().click(chip('From a search engine 1'));
+
+    const pages = screen
+      .getByRole('heading', { name: "What's being read" })
+      .closest('section') as HTMLElement;
+
+    expect(screen.getByText('Visitors').parentElement).toHaveTextContent('3');
+    expect(within(headline()).getByText('Page views').parentElement).toHaveTextContent('9');
+    expect(within(pages).getByText('/typed')).toBeInTheDocument();
+    expect(within(pages).getByText('/.env')).toBeInTheDocument();
+    await press().click(screen.getByText('Show these figures as a table'));
+
+    const minutes = await screen.findByRole('table');
+
+    expect(
+      within(minutes)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent),
+    ).toEqual(['6', '3']);
+  });
+
+  it('admits a kept list is the most recently active when there are more of them', async () => {
+    engineReading([
+      reading(
+        [
+          SEARCHED,
+          visitor({ visitor: 'a5', currentPath: '/searched-too', context: SEARCHED.context }),
+          TYPED,
+        ],
+        { visitorsSeen: 214, arrivals: { ...NOBODY_SENT, search: 40 } },
+      ),
+    ]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    await press().click(chip('From a search engine 40'));
+
+    expect(listed()).toEqual(['Reading /searched', 'Reading /searched-too']);
+    expect(footSaying('Showing the 2 most recently active.')).toBeInTheDocument();
+  });
+
+  it('says nobody like that is here when nobody arrived that way', async () => {
+    engineReading([reading([SEARCHED, TYPED])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    await press().click(chip('From a social network 0'));
+
+    expect(listed()).toEqual([]);
+    expect(footSaying('Nobody like that is here right now.')).toBeInTheDocument();
+  });
+
+  /**
+   * A sweep can put every visitor one kind of site sent further back than the hundred most recently
+   * active, and saying nobody like that is here would then be false.
+   */
+  it('says when those visitors are further back than the list reaches', async () => {
+    engineReading([
+      reading([SEARCHED, TYPED], {
+        visitorsSeen: 214,
+        arrivals: { ...NOBODY_SENT, search: 1, assistant: 6 },
+      }),
+    ]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    await press().click(chip('From an AI assistant 6'));
+
+    expect(listed()).toEqual([]);
+    expect(footSaying('None of the 2 most recently active.')).toBeInTheDocument();
+    expect(within(list()).queryByText(/^Nobody like that/)).not.toBeInTheDocument();
+  });
+
+  it('opens kept to what a link names', async () => {
+    engineReading([reading([SEARCHED, TYPED, SCANNING])]);
+
+    renderScreen(<SiteLive site={SITE} />, { searchParams: '?sourceKind=search' });
+
+    await screen.findByText('Reading /searched');
+
+    expect(listed()).toEqual(['Reading /searched']);
+    expect(chip('From a search engine 1')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  /**
+   * On anything narrower than a wide screen the chips stand three cards above the list, so a press
+   * would otherwise change something nobody can see — and leave the keyboard on a chip scrolled off
+   * the screen.
+   */
+  it('brings the list into sight once a chip is pressed far above it, and the keyboard with it', async () => {
+    engineReading([reading([SEARCHED, TYPED, SCANNING])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    const heading = screen.getByRole('heading', { name: "Who's here" });
+
+    vi.spyOn(heading, 'getBoundingClientRect').mockReturnValue({
+      top: 1800,
+      bottom: 1824,
+    } as DOMRect);
+    const scrolled = vi.spyOn(heading, 'scrollIntoView');
+
+    await press().click(chip('From a search engine 1'));
+
+    expect(scrolled).toHaveBeenCalledWith({ block: 'start' });
+    expect(heading).toHaveFocus();
+  });
+
+  it('leaves the page and the keyboard where they are when the list is already in sight', async () => {
+    engineReading([reading([SEARCHED, TYPED, SCANNING])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    const scrolled = vi.spyOn(
+      screen.getByRole('heading', { name: "Who's here" }),
+      'scrollIntoView',
+    );
+
+    await press().click(chip('From a search engine 1'));
+
+    expect(scrolled).not.toHaveBeenCalled();
+    expect(chip('From a search engine 1')).toHaveFocus();
+  });
+
+  /** Showing everybody again from the chip leaves the reader at the chips they were using. */
+  it('moves nothing when the pressed chip is let go', async () => {
+    engineReading([reading([SEARCHED, TYPED, SCANNING])]);
+
+    renderScreen(<SiteLive site={SITE} />, { searchParams: '?sourceKind=search' });
+
+    await screen.findByText('Reading /searched');
+
+    const heading = screen.getByRole('heading', { name: "Who's here" });
+
+    vi.spyOn(heading, 'getBoundingClientRect').mockReturnValue({
+      top: 1800,
+      bottom: 1824,
+    } as DOMRect);
+    const scrolled = vi.spyOn(heading, 'scrollIntoView');
+
+    await press().click(chip('From a search engine 1'));
+
+    expect(listed()).toEqual(['Reading /searched', 'Reading /typed', 'Reading /.env']);
+    expect(scrolled).not.toHaveBeenCalled();
+    expect(chip('From a search engine 1')).toHaveFocus();
+  });
+
+  /** One chip at a time is the rule, and an address cannot press two. */
+  it('keeps the list to the kind of visitor where a link names a way of arriving as well', async () => {
+    engineReading([reading([SEARCHED, TYPED, SCANNING])]);
+
+    renderScreen(<SiteLive site={SITE} />, {
+      searchParams: '?category=security-scanner&sourceKind=search',
+    });
+
+    await screen.findByText('Reading /.env');
+
+    expect(listed()).toEqual(['Reading /.env']);
+    expect(chip('Probing for a way in 1')).toHaveAttribute('aria-pressed', 'true');
+    expect(chip('From a search engine 1')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  /** Spelled as the User journey spells it, so the link means one thing on either screen. */
+  it('writes the choice into the address over the entry somebody is on, and leaves it plain again', async () => {
+    const watching = vi.fn();
+
+    engineReading([reading([SEARCHED, TYPED, SCANNING])]);
+
+    renderScreen(<SiteLive site={SITE} />, { watchingAddress: watching });
+
+    await screen.findByText('Reading /searched');
+
+    await press().click(chip('From a search engine 1'));
+
+    await waitFor(() =>
+      expect(watching).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryString: '?sourceKind=search',
+          options: expect.objectContaining({ history: 'replace' }),
+        }),
+      ),
+    );
+
+    await press().click(chip('Probing for a way in 1'));
+
+    await waitFor(() =>
+      expect(watching.mock.calls.at(-1)?.[0].queryString).toBe('?category=security-scanner'),
+    );
+
+    await press().click(chip('Probing for a way in 1'));
+
+    await waitFor(() => expect(watching.mock.calls.at(-1)?.[0].queryString).toBe(''));
+  });
+
+  /**
+   * An address is written by whoever sent the link. One naming something this screen never keeps
+   * the list to — a person among them, since nobody is recognised as one mid-visit — is read as
+   * everybody rather than as a list of nobody under a chip at nought.
+   */
+  it.each([
+    '?sourceKind=carrier-pigeon',
+    '?sourceKind=direct',
+    '?category=likely-human',
+    '?category=unknown',
+    '?category=marvellous',
+  ])('reads %s as everybody', async (address) => {
+    engineReading([reading([SEARCHED, TYPED, SCANNING])]);
+
+    renderScreen(<SiteLive site={SITE} />, { searchParams: address });
+
+    await screen.findByText('Reading /searched');
+
+    const chips = within(headline()).getAllByRole('button');
+
+    expect(listed()).toHaveLength(3);
+    expect(chips.map((one) => one.textContent)).toEqual([
+      'From a search engine 1',
+      'From an AI assistant 0',
+      'From a social network 0',
+      'From a link on another site 1',
+      'Probing for a way in 1',
+    ]);
+    expect(chips.every((one) => one.getAttribute('aria-pressed') === 'false')).toBe(true);
+    expect(
+      within(list()).queryByRole('button', { name: /^Show everyone/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  /**
+   * A reading in which the last of them left keeps the pressed chip where it was, at nought, so the
+   * way back to everybody stays under the hand that pressed it. Let go, it stays while the keyboard
+   * is on it, and goes once the keyboard moves on.
+   */
+  it('keeps a recognised kind pressed at nought once its last visitor has gone, and under the keyboard once it is let go', async () => {
+    engineReading([reading([SCANNING, CRAWLING, TYPED]), reading([CRAWLING, TYPED])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /.env');
+
+    await press().click(chip('Probing for a way in 1'));
+    await beat(2);
+
+    const atNought = await within(headline()).findByRole('button', {
+      name: 'Probing for a way in 0',
+    });
+
+    expect(atNought).toHaveAttribute('aria-pressed', 'true');
+    expect(footSaying('Nobody like that is here right now.')).toBeInTheDocument();
+
+    await press().click(atNought);
+
+    expect(atNought).toHaveFocus();
+    expect(atNought).toHaveAttribute('aria-pressed', 'false');
+    expect(listed()).toEqual(['Reading /sitemap.xml', 'Reading /typed']);
+
+    await press().tab();
+
+    expect(
+      within(headline()).queryByRole('button', { name: /^Probing for a way in/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  /** A reading never pulls a chip out from under the keyboard, pressed or not. */
+  it('keeps a recognised kind the keyboard is on once its last visitor has gone, until the keyboard moves on', async () => {
+    engineReading([reading([SCANNING, TYPED]), reading([TYPED])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /.env');
+
+    act(() => chip('Probing for a way in 1').focus());
+    await beat(2);
+
+    const atNought = await within(headline()).findByRole('button', {
+      name: 'Probing for a way in 0',
+    });
+
+    expect(atNought).toHaveFocus();
+    expect(atNought).toHaveAttribute('aria-pressed', 'false');
+
+    await press().tab();
+
+    expect(screen.queryByRole('heading', { name: 'Recognised right now' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * The four ways of arriving are always there, so they go first: beneath the recognised row, which
+   * comes and goes with the crawlers in the half hour, they would jump under a reader's pointer.
+   */
+  it('draws the ways of arriving above what has been recognised', async () => {
+    engineReading([reading([SCANNING, SEARCHED])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    const arrived = await screen.findByRole('heading', { name: 'How they arrived' });
+    const recognised = screen.getByRole('heading', { name: 'Recognised right now' });
+
+    expect(
+      arrived.compareDocumentPosition(recognised) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  /** The chip that shows everybody again stays for as long as the list is kept to something. */
+  it('keeps the chips while the list is kept to something, even once nobody is left in the half hour', async () => {
+    engineReading([
+      reading([SEARCHED, TYPED]),
+      reading([], { visitorsSeen: 0, arrivals: NOBODY_SENT }),
+    ]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    await press().click(rowOf('/searched'));
+    await press().click(chip('From a search engine 1'));
+    await beat(2);
+
+    expect(await screen.findByText('Gone')).toBeInTheDocument();
+    expect(chip('From a search engine 0')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  /**
+   * A chip says only that it is pressed, so what the list now shows is said to anybody listening —
+   * once, when the choice changes, and never again on a reading.
+   */
+  it('says what the list now shows once a chip is pressed, and nothing more on a reading', async () => {
+    engineReading([reading([SEARCHED, TYPED, SCANNING])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    await press().click(chip('From a search engine 1'));
+
+    const said = within(list()).getByRole('status');
+
+    expect(said).toHaveTextContent('Showing 1 visitor.');
+
+    said.textContent = '';
+    await beat(2);
+
+    expect(said).toBeEmptyDOMElement();
+  });
+
+  it('says when nobody like that is here, and when everybody is shown again', async () => {
+    engineReading([reading([SEARCHED, TYPED])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    await press().click(chip('From an AI assistant 0'));
+
+    expect(within(list()).getByRole('status')).toHaveTextContent(
+      'Nobody like that is here right now.',
+    );
+
+    await press().click(chip('From an AI assistant 0'));
+
+    expect(within(list()).getByRole('status')).toHaveTextContent('Showing everyone.');
+  });
+
+  it('says nothing when it opens kept to what a link names', async () => {
+    engineReading([reading([SEARCHED, TYPED])]);
+
+    renderScreen(<SiteLive site={SITE} />, { searchParams: '?sourceKind=search' });
+
+    await screen.findByText('Reading /searched');
+
+    expect(within(list()).getByRole('status')).toBeEmptyDOMElement();
+  });
+
+  /** What a list was kept to is a question asked of this visit to the screen, never a habit. */
+  it('forgets what the list was kept to once the screen is opened afresh', async () => {
+    engineReading([reading([SEARCHED, TYPED])]);
+
+    const first = renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+    await press().click(chip('From a search engine 1'));
+    first.unmount();
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /typed');
+
+    expect(listed()).toEqual(['Reading /searched', 'Reading /typed']);
+    expect(chip('From a search engine 1')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  /**
+   * A row somebody is holding open after its visitor left is hidden while the list is kept to
+   * something it is not, and comes back, still open, once everybody is shown again.
+   */
+  it('hides a row held open while it is not one of those the list is kept to, and keeps it', async () => {
+    engineReading([reading([SEARCHED, TYPED]), reading([SEARCHED])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /typed');
+
+    await press().click(rowOf('/typed'));
+    await beat(2);
+
+    expect(await screen.findByText('Gone')).toBeInTheDocument();
+
+    await press().click(chip('From a search engine 1'));
+
+    expect(listed()).toEqual(['Reading /searched']);
+
+    await press().click(chip('From a search engine 1'));
+
+    expect(listed()).toEqual(['Reading /searched', 'Last on /typed']);
+    expect(screen.getByText('Last on /typed').closest('details')).toHaveAttribute('open');
+  });
+
+  it('keeps a row held open after its visitor left while it is one of those the list is kept to', async () => {
+    engineReading([reading([SEARCHED, TYPED]), reading([TYPED])]);
+
+    renderScreen(<SiteLive site={SITE} />);
+
+    await screen.findByText('Reading /searched');
+
+    await press().click(rowOf('/searched'));
+    await press().click(chip('From a search engine 1'));
+    await beat(2);
+
+    expect(await screen.findByText('Gone')).toBeInTheDocument();
+    expect(listed()).toEqual(['Last on /searched']);
+    expect(footSaying('Nobody like that is here right now.')).toBeInTheDocument();
   });
 });
 

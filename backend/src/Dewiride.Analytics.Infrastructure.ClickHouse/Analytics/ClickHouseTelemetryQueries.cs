@@ -774,6 +774,7 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client, Keepi
     {
         var visitors = ImmutableArray.CreateBuilder<LiveVisitor>();
         var seen = 0;
+        var arrivals = LiveArrivals.None;
 
         await using var reader = await ExecuteAsync(
                 AnalyticsSqlCompiler.Compile(scope, query),
@@ -782,14 +783,20 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client, Keepi
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            visitors.Add(Present(reader));
+            // Counted over every group the window produced and repeated on each row, so the first
+            // says how busy the site is, and how each kind of site sent its visitors, rather than how
+            // long its own list was allowed to be. A window holding nobody returns no row, and
+            // nought is then the honest answer for every one of them.
+            if (visitors.Count == 0)
+            {
+                seen = SeenIn(reader);
+                arrivals = ArrivalsIn(reader);
+            }
 
-            // Counted over every group the window produced and repeated on each row, so the answer
-            // says how busy the site is rather than how long its own list was allowed to be.
-            seen = SeenIn(reader);
+            visitors.Add(Present(reader));
         }
 
-        return new LiveVisitors(seen, visitors.DrainToImmutable());
+        return new LiveVisitors(seen, arrivals, visitors.DrainToImmutable());
     }
 
     /// <inheritdoc />
@@ -923,6 +930,16 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client, Keepi
     /// <summary>How many visitors the window held, which every row of the answer repeats.</summary>
     private static int SeenIn(ClickHouseDataReader reader) =>
         (int)reader.GetFieldValue<uint>(Column.VisitorsSeen);
+
+    /// <summary>
+    /// How many of the visitors the window held each kind of site sent, which every row of the
+    /// answer repeats.
+    /// </summary>
+    private static LiveArrivals ArrivalsIn(ClickHouseDataReader reader) => new(
+        (int)reader.GetFieldValue<uint>(Column.SentBySearch),
+        (int)reader.GetFieldValue<uint>(Column.SentByAssistant),
+        (int)reader.GetFieldValue<uint>(Column.SentBySocial),
+        (int)reader.GetFieldValue<uint>(Column.SentByLink));
 
     /// <summary>Turns the pages a visitor was on into what the engine reads them as.</summary>
     private static ImmutableArray<ObservedRequest> Asked(Tuple<long, string, short?>[] rows) =>

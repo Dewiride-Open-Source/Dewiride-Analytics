@@ -114,6 +114,7 @@ public sealed class LiveTrafficReader(
             now,
             window.From,
             visitors.VisitorsSeen,
+            visitors.Arrivals,
             [.. visitors.Visitors.Select(Read)],
             [.. minutes],
             [.. pages]);
@@ -252,6 +253,10 @@ public sealed class LiveTrafficReader(
 /// How many visitors reported in that stretch, counted over all of them rather than over the ones
 /// this reading had room for.
 /// </param>
+/// <param name="Arrivals">
+/// How many of those visitors each kind of site sent, counted over all of them as
+/// <paramref name="VisitorsSeen"/> is. Somebody nothing named a sender for is under none of them.
+/// </param>
 /// <param name="Visitors">Those it had room for, the one most recently active first.</param>
 /// <param name="Minutes">Every minute the stretch covers, oldest first, including the empty ones.</param>
 /// <param name="Pages">
@@ -262,6 +267,7 @@ public sealed record LiveTraffic(
     DateTimeOffset At,
     DateTimeOffset From,
     int VisitorsSeen,
+    LiveArrivals Arrivals,
     ImmutableArray<LiveReading> Visitors,
     ImmutableArray<LiveMinute> Minutes,
     ImmutableArray<LivePage> Pages);

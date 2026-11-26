@@ -11,7 +11,8 @@ import { LiveVisitors } from '@/components/live/live-visitors';
 import { Button, buttonStyle } from '@/components/ui/button';
 import { FailureNotice } from '@/components/ui/failure-notice';
 import { Link } from '@/i18n/navigation';
-import { type LiveRow, rowsToShow } from '@/lib/analytics/live';
+import { type LiveNarrowing, type LiveRow, rowsToShow } from '@/lib/analytics/live';
+import { useLiveNarrowing } from '@/lib/analytics/use-live-narrowing';
 import type { Live, Site } from '@/lib/api/schemas';
 import { useLiveTraffic } from '@/lib/queries/sites';
 import { DASHBOARD } from '@/lib/routes';
@@ -29,11 +30,17 @@ interface SiteLiveProps {
  * stays there if it never comes; a tab nobody is looking at asks nothing; and a row somebody has
  * opened is held even after its visitor has gone, because a panel disappearing from under a reader
  * is the one failure a screen like this can actually cause.
+ *
+ * What the list of who is here is kept to belongs to the screen as well: it is chosen on one card
+ * and keeps another, and it is asked of nothing. A reading is the same whatever is pressed — the
+ * hundred most recently active visitors and the counts over everybody — so pressing a chip waits for
+ * no answer, and the list it keeps is the part of those hundred that match.
  */
 export function SiteLive({ site }: SiteLiveProps) {
   const t = useTranslations('live');
   const [watching, setWatching] = useState(true);
   const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
+  const { narrowing, narrow } = useLiveNarrowing();
   const live = useLiveTraffic(site.id, watching);
 
   // The rows on screen are worked out once per reading rather than on every render, because they
@@ -94,6 +101,8 @@ export function SiteLive({ site }: SiteLiveProps) {
         rows={shown}
         opened={opened}
         onOpen={hold}
+        narrowing={narrowing}
+        onNarrow={narrow}
       />
     </div>
   );
@@ -127,6 +136,9 @@ interface ReadingProps {
   readonly rows: readonly LiveRow[];
   readonly opened: ReadonlySet<string>;
   readonly onOpen: (visitor: string, open: boolean) => void;
+  /** What the list of who is here is kept to. */
+  readonly narrowing: LiveNarrowing;
+  readonly onNarrow: (narrowing: LiveNarrowing) => void;
 }
 
 /**
@@ -136,7 +148,16 @@ interface ReadingProps {
  * screen it stays there through as many failed attempts as it takes, and the strip above says so
  * quietly: a red panel appearing and vanishing every ten seconds is worse than the fault it reports.
  */
-function Reading({ site, answer, failure, rows, opened, onOpen }: ReadingProps) {
+function Reading({
+  site,
+  answer,
+  failure,
+  rows,
+  opened,
+  onOpen,
+  narrowing,
+  onNarrow,
+}: ReadingProps) {
   const t = useTranslations('live.empty');
 
   if (failure !== null) {
@@ -169,7 +190,7 @@ function Reading({ site, answer, failure, rows, opened, onOpen }: ReadingProps) 
   return (
     <div className={COLUMNS}>
       <div className="flex flex-col gap-6">
-        <LiveHeadline answer={answer} />
+        <LiveHeadline answer={answer} narrowing={narrowing} onNarrow={onNarrow} />
 
         <LivePages pages={answer.pages} visitorsSeen={answer.visitorsSeen} />
       </div>
@@ -184,9 +205,10 @@ function Reading({ site, answer, failure, rows, opened, onOpen }: ReadingProps) 
 
         <LiveVisitors
           siteId={site.id}
+          answer={answer}
           rows={rows}
-          visitorsSeen={answer.visitorsSeen}
-          at={answer.at}
+          narrowing={narrowing}
+          onNarrow={onNarrow}
           timeZoneId={site.timeZoneId}
           opened={opened}
           onOpen={onOpen}

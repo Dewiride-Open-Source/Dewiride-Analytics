@@ -26,6 +26,7 @@ import {
   signalDirectionSchema,
   sitemapProblemSchema,
   sitemapStateSchema,
+  sourceKindSchema,
   trafficCategorySchema,
 } from '@/lib/api/schemas';
 import messages from '../../messages/en.json';
@@ -265,6 +266,10 @@ describe('the engine vocabulary', () => {
   });
 
   it('is accepted whole by the shapes the answers are checked against', () => {
+    // The kinds of sending site are also the counts a reading of the present carries, one per
+    // kind: a kind only the engine knows would go uncounted on the screen, and one only the
+    // dashboard knows would leave every reading unreadable.
+    expect([...sourceKindSchema.options].sort()).toEqual([...senders].sort());
     expect([...trafficCategorySchema.options].sort()).toEqual([...categories].sort());
     expect([...evidenceStrengthSchema.options].sort()).toEqual([...strengths].sort());
     expect([...captureSurfaceSchema.options].sort()).toEqual([...surfaces].sort());

@@ -1195,6 +1195,18 @@ public static class AnalyticsSqlCompiler
 
         /// <summary>How many visitors the window held altogether, before the list was cut short.</summary>
         public const int VisitorsSeen = 30;
+
+        /// <summary>How many of them a search engine sent, counted over all of them.</summary>
+        public const int SentBySearch = 31;
+
+        /// <summary>How many an AI assistant sent.</summary>
+        public const int SentByAssistant = 32;
+
+        /// <summary>How many a social network sent.</summary>
+        public const int SentBySocial = 33;
+
+        /// <summary>How many a link on any other site sent.</summary>
+        public const int SentByLink = 34;
     }
 
     /// <summary>
@@ -1238,6 +1250,15 @@ public static class AnalyticsSqlCompiler
     /// How many visitors there were is counted over every visitor the window holds opening a page
     /// rather than over the rows that fitted, so a busy site says how busy it is instead of
     /// describing the size of its own answer.
+    /// </para>
+    /// <para>
+    /// How many of them each kind of site sent is counted over the same visitors in the same step,
+    /// from the very value each row's own kind is read back from, so a figure and the rows it counts
+    /// are one answer. It is counted where everybody is counted rather than beside the columns handed
+    /// back: there the rows already carry every page each visitor was on, and a second window over
+    /// them would hold all of that in memory once more before the list is cut short. Somebody nothing
+    /// named a sender for is held as an empty text and falls under none of the four, so the four are
+    /// not a breakdown of everybody.
     /// </para>
     /// </remarks>
     private static CompiledStatement CompileSiteLiveVisitors(TenantScope scope, SiteLiveVisitorsQuery query)
@@ -1311,7 +1332,11 @@ public static class AnalyticsSqlCompiler
                             (server_ts, event_id),
                             operating_system != '') AS system_name,
                         {{LiveActivity.SeenArriving(12)}} AS seen_arriving,
-                        toUInt32(count() OVER ()) AS visitors_seen
+                        toUInt32(count() OVER ()) AS visitors_seen,
+                        {{SentBy(SourceChannel.Search)}},
+                        {{SentBy(SourceChannel.Assistant)}},
+                        {{SentBy(SourceChannel.Social)}},
+                        {{SentBy(SourceChannel.Link)}}
                     FROM present
                     GROUP BY visitor_key
                     HAVING {{LiveActivity.OpenedAPage}}
@@ -1347,7 +1372,11 @@ public static class AnalyticsSqlCompiler
                 browser,
                 system_name,
                 seen_arriving,
-                visitors_seen
+                visitors_seen,
+                sent_by_search,
+                sent_by_assistant,
+                sent_by_social,
+                sent_by_link
             FROM gathered
             ORDER BY last_seen DESC, visitor_key
             LIMIT {limit:UInt32}
@@ -1363,6 +1392,27 @@ public static class AnalyticsSqlCompiler
                 new QueryParameter(MaxRequestsParameter, (uint)SiteLiveVisitorsQuery.MostRequests),
                 new QueryParameter(LimitParameter, (uint)query.Limit),
             ]);
+    }
+
+    /// <summary>
+    /// Counts how many of the visitors a reading of who is here gathers one kind of site sent.
+    /// </summary>
+    /// <remarks>
+    /// Spelled from the catalogue's own function rather than typed out, so the kind counted is the
+    /// one each row's <c>from_kind</c> reads back as and the one the catalogue binds as every
+    /// sending site's kind. Both the spelling and the column name are fixed identifiers written in
+    /// this assembly; nothing a caller or a visitor wrote takes part.
+    /// </remarks>
+    /// <param name="kind">
+    /// The kind of site. Never <see cref="SourceChannel.Direct"/>, which the store holds as an empty
+    /// text and which no visitor could therefore be counted under.
+    /// </param>
+    /// <returns>The column, named <c>sent_by_</c> followed by the kind's spelling.</returns>
+    private static string SentBy(SourceChannel kind)
+    {
+        var spelling = TrafficSources.Spelling(kind);
+
+        return $"toUInt32(countIf(from_kind = '{spelling}') OVER ()) AS sent_by_{spelling}";
     }
 
     /// <summary>

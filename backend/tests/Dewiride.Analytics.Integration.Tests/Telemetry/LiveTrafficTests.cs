@@ -15,9 +15,10 @@ namespace Dewiride.Analytics.Integration.Tests.Telemetry;
 /// These readings answer a screen that renews itself every few seconds, so what they get wrong is
 /// wrong in front of somebody watching. Six properties matter more than the rest and each has a
 /// test here: one visitor is one row however many surfaces saw them, somebody who has gone is gone,
-/// a page left open keeps nobody here, how busy a site is does not shrink to the length of the list
-/// an answer had room for, every visitor counted stands on exactly one of the pages listed, and
-/// nobody is said to have come straight here unless the window saw them arrive.
+/// a page left open keeps nobody here, how busy a site is and how each kind of site sent its
+/// visitors do not shrink to the length of the list an answer had room for, every visitor counted
+/// stands on exactly one of the pages listed, and nobody is said to have come straight here unless
+/// the window saw them arrive.
 /// </remarks>
 /// <param name="stack">The running stack.</param>
 [Collection(SharedStackDefinition.Name)]
@@ -145,6 +146,75 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
 
         here.Visitors.Should().HaveCount(4);
         here.VisitorsSeen.Should().Be(12);
+    }
+
+    /// <summary>
+    /// How each kind of site sent the visitors here is counted over everybody the window holds, on the
+    /// terms the figure beside it is: the list stops, and the counts must not. The three listed here
+    /// came straight in, so counting the list would say nobody was sent by anything at all.
+    /// </summary>
+    [Fact]
+    public async Task How_Visitors_Arrived_Is_Counted_Over_Everybody_And_Not_Over_The_List()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+        [
+            .. Enumerable.Range(1, 4).Select(index =>
+                FromBrowser(siteId, Now.AddMinutes(-index), $"typed-it-{index}", "/")),
+            .. Enumerable.Range(5, 5).Select(index => Referred(
+                FromBrowser(siteId, Now.AddMinutes(-index), $"searcher-{index}", "/posts/hello"),
+                SearchResults,
+                SearchHost)),
+            .. Enumerable.Range(10, 2).Select(index => Referred(
+                FromBrowser(siteId, Now.AddMinutes(-index), $"asked-an-assistant-{index}", "/posts/hello"),
+                "https://chatgpt.com/",
+                "chatgpt.com")),
+            Referred(
+                FromBrowser(siteId, Now.AddMinutes(-12), "followed-a-link", "/posts/hello"),
+                "https://notes.example.org/reading-list",
+                "notes.example.org"),
+        ]);
+
+        var here = await WhoIsHere(siteId, limit: 3);
+
+        here.VisitorsSeen.Should().Be(12);
+        here.Visitors.Should().HaveCount(3)
+            .And.OnlyContain(visitor => visitor.Context.Channel == SourceChannel.Direct);
+        here.Arrivals.Should().Be(new LiveArrivals(Search: 5, Assistant: 2, Social: 0, Link: 1));
+    }
+
+    /// <summary>
+    /// The kinds of site are not a breakdown of everybody. Somebody nothing in the window named a
+    /// sender for — who typed the address, came from another page of the site, or arrived from a
+    /// referrer naming no host — was sent by nothing anybody can name, and is counted under none of
+    /// them. Neither is a page left open that goes on naming a search engine: somebody who opened no
+    /// page in the window is not here, and a count of how they arrived must not say otherwise.
+    /// </summary>
+    [Fact]
+    public async Task Somebody_Nothing_Named_A_Sender_For_Is_Counted_Under_No_Way_Of_Arriving()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+        [
+            FromBrowser(siteId, Now.AddMinutes(-6), "typed-it", "/"),
+            Referred(FromBrowser(siteId, Now.AddMinutes(-5), "already-here", "/pricing"), OwnPage, SiteDomain),
+            Referred(FromBrowser(siteId, Now.AddMinutes(-4), "nameless", "/"), "about:blank", string.Empty),
+            Referred(FromBrowser(siteId, Now.AddMinutes(-45), "left-open", "/long-read"), SearchResults, SearchHost),
+            .. Enumerable.Range(1, 44).Select(minute => Referred(
+                Engaged(siteId, Now.AddMinutes(-45 + minute), "left-open", "/long-read"),
+                SearchResults,
+                SearchHost)),
+        ]);
+
+        var here = await WhoIsHere(siteId);
+
+        here.VisitorsSeen.Should().Be(3);
+        here.Visitors.Select(visitor => visitor.VisitorKey)
+            .Should().BeEquivalentTo("typed-it", "already-here", "nameless");
+        here.Visitors.Should().OnlyContain(visitor => visitor.Context.Channel == SourceChannel.Direct);
+        here.Arrivals.Should().Be(LiveArrivals.None);
     }
 
     [Fact]

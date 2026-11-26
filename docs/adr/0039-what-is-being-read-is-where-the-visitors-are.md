@@ -14,6 +14,10 @@
   the pages being read and the half hour's total are "counted per minute and per page by rules that
   agree almost always and not quite always" is withdrawn here for the pages, and whose trail is now
   read under the reading its row came from rather than under a fresh present moment.
+- **Extended by**: [0078](0078-who-is-here-can-be-kept-to-one-kind-of-visitor.md), under which the
+  recognised groups become chips that keep the list to one of them, still counted from the rows a
+  reading carries, beside four chips for how many of everybody each kind of site sent, counted over
+  the whole half hour.
 
 ## Context
 

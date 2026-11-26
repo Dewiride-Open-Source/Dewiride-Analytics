@@ -809,6 +809,7 @@ public sealed record VisitPressed(string Name, string Control, string? Target, s
 /// </param>
 /// <param name="From">Where the stretch of minutes it covers begins.</param>
 /// <param name="VisitorsSeen">How many visitors reported in that stretch, counted over all of them.</param>
+/// <param name="Arrivals">How many of those visitors each kind of site sent, counted over all of them.</param>
 /// <param name="Visitors">Those this answer carried, the one most recently active first.</param>
 /// <param name="Minutes">Every minute the stretch covers, oldest first, including the empty ones.</param>
 /// <param name="Pages">
@@ -820,9 +821,31 @@ public sealed record LiveResponse(
     DateTimeOffset At,
     DateTimeOffset From,
     int VisitorsSeen,
+    LiveArrivalsResponse Arrivals,
     IReadOnlyList<LiveVisitorSummary> Visitors,
     IReadOnlyList<LiveMinuteRow> Minutes,
     IReadOnlyList<LivePageRow> Pages);
+
+/// <summary>
+/// How many of the visitors a reading of the present moment holds each kind of site sent.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Four figures under fixed names rather than a list of the kinds that sent somebody, so a kind
+/// nobody arrived by is a nought on the wire rather than an absence every screen has to fill in.
+/// </para>
+/// <para>
+/// Counted over everybody the stretch holds, as <see cref="LiveResponse.VisitorsSeen"/> is, and from
+/// the very value each row's <see cref="VisitContextResponse.Kind"/> is written from. Somebody
+/// nothing named a sender for is under none of the four, so they are not a breakdown of the visitors
+/// seen.
+/// </para>
+/// </remarks>
+/// <param name="Search">How many a search engine sent.</param>
+/// <param name="Assistant">How many an AI assistant sent.</param>
+/// <param name="Social">How many a social network sent.</param>
+/// <param name="Link">How many a link on any other site sent.</param>
+public sealed record LiveArrivalsResponse(int Search, int Assistant, int Social, int Link);
 
 /// <summary>
 /// One visitor who has been on the site in the last stretch of minutes.

@@ -284,7 +284,11 @@ WITH
                     referrer_domain != '' AND sending_host = '',
                     (surface != 'BrowserTracker', surface = 'NoScriptPixel', server_ts, event_id),
                     kind = 'PageView')) AS seen_arriving,
-            toUInt32(count() OVER ()) AS visitors_seen
+            toUInt32(count() OVER ()) AS visitors_seen,
+            toUInt32(countIf(from_kind = 'search') OVER ()) AS sent_by_search,
+            toUInt32(countIf(from_kind = 'assistant') OVER ()) AS sent_by_assistant,
+            toUInt32(countIf(from_kind = 'social') OVER ()) AS sent_by_social,
+            toUInt32(countIf(from_kind = 'link') OVER ()) AS sent_by_link
         FROM present
         GROUP BY visitor_key
         HAVING countIf(kind = 'PageView') > 0
@@ -327,7 +331,11 @@ SELECT
     browser,
     system_name,
     seen_arriving,
-    visitors_seen
+    visitors_seen,
+    sent_by_search,
+    sent_by_assistant,
+    sent_by_social,
+    sent_by_link
 FROM gathered
 ORDER BY last_seen DESC, visitor_key
 LIMIT {limit:UInt32}

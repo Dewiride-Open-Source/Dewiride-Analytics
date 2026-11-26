@@ -13,9 +13,14 @@ import { cn } from '@/lib/styling';
  * them read as a family; sharing a component would make each of them slightly wrong.
  */
 
+/**
+ * The shape the two share. Both are bordered controls, so both wear the glow every bordered control
+ * in the product does: quiet at rest, the accent's bloom when pointed at, and its ring when reached
+ * with a keyboard.
+ */
 const shape =
-  'inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-sm ' +
-  'transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ' +
+  'glow-control inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 ' +
+  'text-sm focus-visible:outline-2 focus-visible:outline-offset-2 ' +
   'focus-visible:outline-accent-strong';
 
 interface ChipProps {
@@ -24,16 +29,27 @@ interface ChipProps {
   readonly onPress: () => void;
   /** A marker before the name, where the choice has a colour of its own. */
   readonly leading?: ReactNode;
+  /**
+   * How many the choice stands for, already written the way the reader writes numbers, where a
+   * figure belongs after its name.
+   */
+  readonly count?: string;
+  /** Told when the keyboard arrives on the chip, for a set that must not take a chip from under it. */
+  readonly onFocus?: () => void;
+  /** Told when the keyboard leaves it. */
+  readonly onBlur?: () => void;
   readonly children: ReactNode;
 }
 
 /** One choice among several, which pressing turns on and pressing again turns off. */
-export function Chip({ pressed, onPress, leading, children }: ChipProps) {
+export function Chip({ pressed, onPress, leading, count, onFocus, onBlur, children }: ChipProps) {
   return (
     <button
       type="button"
       aria-pressed={pressed}
       onClick={onPress}
+      onFocus={onFocus}
+      onBlur={onBlur}
       className={cn(
         shape,
         pressed
@@ -43,6 +59,16 @@ export function Chip({ pressed, onPress, leading, children }: ChipProps) {
     >
       {leading}
       {children}
+      {count === undefined ? null : (
+        <>
+          {/*
+            A real space between the name and the figure, so what a screen reader reads out is
+            "A person 6" rather than one word nobody would recognise. The gap between them on
+            screen is drawn by the layout and says nothing to anybody listening.
+          */}{' '}
+          <span className="tabular-nums">{count}</span>
+        </>
+      )}
     </button>
   );
 }

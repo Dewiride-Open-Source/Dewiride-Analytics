@@ -1405,14 +1405,31 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// <summary>
     /// How busy a site is, and how much of that one answer had room for, are separate figures. A
     /// reading capped at a hundred visitors on a site holding three hundred has to say three
-    /// hundred, or a sweep would be reported as exactly as busy as the list is long.
+    /// hundred, or a sweep would be reported as exactly as busy as the list is long. How many of
+    /// them each kind of site sent is counted beside it, over the same visitors and from the value
+    /// each row's own kind is read back from — and there rather than beside the columns handed back,
+    /// which carry every page each visitor was on and would be held in memory a second time.
     /// </summary>
     [Fact]
     public void A_Reading_Of_Who_Is_Here_Counts_Everybody_Before_It_Is_Cut_Short()
     {
         var statement = AnalyticsSqlCompiler.Compile(Scope(), LiveVisitors());
+        var start = statement.Sql.IndexOf("gathered AS", StringComparison.Ordinal);
+        var end = statement.Sql.IndexOf("GROUP BY visitor_key", start, StringComparison.Ordinal);
+        var gathered = statement.Sql[start..end];
+        var handedBack = statement.Sql[statement.Sql.LastIndexOf("\nSELECT\n", StringComparison.Ordinal)..];
 
-        statement.Sql.Should().Contain("toUInt32(count() OVER ()) AS visitors_seen");
+        handedBack.Should().Contain("FROM gathered", "nothing may stand between the visitors and the list cut from them");
+        gathered.Should().Contain("toUInt32(count() OVER ()) AS visitors_seen");
+
+        foreach (var kind in new[] { "search", "assistant", "social", "link" })
+        {
+            gathered.Should().Contain($"toUInt32(countIf(from_kind = '{kind}') OVER ()) AS sent_by_{kind}");
+            handedBack.Should().Contain($"sent_by_{kind}");
+        }
+
+        gathered.Should().NotContain("'direct'", "somebody nothing named a sender for is held as an empty text");
+        handedBack.Should().NotContain("OVER (");
         statement.Sql.Should().Contain("LIMIT {limit:UInt32}");
         statement.Sql.IndexOf("visitors_seen", StringComparison.Ordinal)
             .Should().BeLessThan(statement.Sql.IndexOf("LIMIT {limit:UInt32}", StringComparison.Ordinal));

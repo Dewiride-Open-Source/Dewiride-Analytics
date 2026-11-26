@@ -15,6 +15,9 @@
 - **Revised by**: [0061](0061-a-page-left-open-keeps-nobody-on-the-live-screen.md), under which a
   visitor is here while a page they opened is inside the stretch, so a page left open on a screen
   no longer keeps somebody on the list.
+- **Extended by**: [0078](0078-who-is-here-can-be-kept-to-one-kind-of-visitor.md), under which the
+  list can be kept to one kind of visitor — what has been recognised, or how they arrived — and how
+  many of everybody here each kind of site sent is counted over the whole stretch.
 
 ## Context
 

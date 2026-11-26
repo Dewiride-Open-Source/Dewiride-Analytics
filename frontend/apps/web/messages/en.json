@@ -906,6 +906,9 @@
       "settles": "Judged once their visit finishes.",
       "link": "See finished visits"
     },
+    "arrived": {
+      "title": "How they arrived"
+    },
     "activity": {
       "title": "Minute by minute",
       "measure": "Pages read",
@@ -939,7 +942,13 @@
       "pages": "{count, plural, one {# page} other {# pages}}",
       "active": "{minutes, plural, =0 {Just now} one {1 min ago} other {# min ago}}",
       "gone": "Gone",
-      "capped": "{count, plural, one {Showing the most recently active visitor.} other {Showing the # most recently active.}}"
+      "capped": "{count, plural, one {Showing the most recently active visitor.} other {Showing the # most recently active.}}",
+      "only": "Only",
+      "showEveryone": "Show everyone, not only {choice}",
+      "nobody": "Nobody like that is here right now.",
+      "notAmongLatest": "{carried, plural, other {None of the # most recently active.}}",
+      "showing": "{count, plural, one {Showing # visitor.} other {Showing # visitors.}}",
+      "showingEveryone": "Showing everyone."
     },
     "empty": {
       "title": "Nobody is here right now",

@@ -277,8 +277,9 @@ public interface ITelemetryQueries
     /// <param name="query">The stretch of minutes, and how many visitors to carry back.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// The visitors, the one most recently active first, and how many there were altogether — which
-    /// is counted over the whole window and is therefore right even when the list was cut short.
+    /// The visitors, the one most recently active first, how many there were altogether and how many
+    /// of them each kind of site sent — both counted over the whole window and therefore right even
+    /// when the list was cut short.
     /// </returns>
     Task<LiveVisitors> GetSiteLiveVisitorsAsync(
         TenantScope scope,
@@ -998,16 +999,40 @@ public readonly record struct VisitPress(
 /// Everyone seen on a site in the last stretch of minutes.
 /// </summary>
 /// <remarks>
-/// How many there were is counted over the whole window and the list may be shorter than it, so a
-/// reading that had room for a hundred of two hundred visitors still says two hundred rather than
-/// quietly reporting the size of its own answer.
+/// How many there were, and how each kind of site sent them, is counted over the whole window and the
+/// list may be shorter than it, so a reading that had room for a hundred of two hundred visitors still
+/// says two hundred rather than quietly reporting the size of its own answer.
 /// </remarks>
 /// <param name="VisitorsSeen">How many visitors opened a page during the window.</param>
+/// <param name="Arrivals">How many of those each kind of site sent, counted over all of them.</param>
 /// <param name="Visitors">The visitors, the one most recently active first.</param>
-public sealed record LiveVisitors(int VisitorsSeen, ImmutableArray<LiveVisitor> Visitors)
+public sealed record LiveVisitors(int VisitorsSeen, LiveArrivals Arrivals, ImmutableArray<LiveVisitor> Visitors);
+
+/// <summary>
+/// How many of the visitors a reading of the present moment holds each kind of site sent.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Counted over everybody the window holds rather than over the rows a reading had room for, and from
+/// the very value each row's <see cref="VisitContext.Channel"/> is read from, so a figure here and the
+/// rows naming what sent each visitor are one answer.
+/// </para>
+/// <para>
+/// Not a breakdown of the visitors seen. Where nothing in the window named another site as having
+/// sent somebody — they came straight here, or were already here when it opened — they are counted
+/// under none of the four, because nothing having said who sent them is not a kind of site. And what
+/// a referrer names is written by whoever sent the request, so a figure here says how visitors
+/// arrived and never who they are.
+/// </para>
+/// </remarks>
+/// <param name="Search">How many a search engine sent.</param>
+/// <param name="Assistant">How many an AI assistant sent.</param>
+/// <param name="Social">How many a social network sent.</param>
+/// <param name="Link">How many a link on any other site sent, whether the catalogue names that site or not.</param>
+public readonly record struct LiveArrivals(int Search, int Assistant, int Social, int Link)
 {
-    /// <summary>What a site nobody has been on answers with.</summary>
-    public static LiveVisitors None { get; } = new(0, []);
+    /// <summary>What a window nobody was sent to answers with.</summary>
+    public static LiveArrivals None { get; } = new(0, 0, 0, 0);
 }
 
 /// <summary>

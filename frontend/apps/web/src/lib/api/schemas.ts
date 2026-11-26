@@ -987,6 +987,21 @@ export const liveVisitorSchema = z.object({
 });
 
 /**
+ * How many of the visitors the half hour holds each kind of site sent.
+ *
+ * Counted over everybody the visitor count counts rather than over the visitors one answer carried,
+ * each by the kind of the very site their own row names after "From". Somebody nothing named a
+ * sender for is counted under none of the four, so the four are not a breakdown of the visitor
+ * count and need not add up to it. Every kind is present, nought included.
+ */
+export const liveArrivalsSchema = z.object({
+  search: z.number().int(),
+  assistant: z.number().int(),
+  social: z.number().int(),
+  link: z.number().int(),
+} satisfies Record<SourceKind, z.ZodNumber>);
+
+/**
  * What is happening on a website at this moment.
  *
  * How many visitors there have been and how many of them one answer carried are separate figures,
@@ -1001,6 +1016,7 @@ export const liveSchema = z.object({
   at: timestamp,
   from: timestamp,
   visitorsSeen: z.number().int(),
+  arrivals: liveArrivalsSchema,
   visitors: z.array(liveVisitorSchema),
   minutes: z.array(liveMinuteSchema),
   pages: z.array(livePageSchema),
@@ -1129,6 +1145,7 @@ export type VisitSourceKind = z.infer<typeof visitSourceKindSchema>;
 export type LiveMinute = z.infer<typeof liveMinuteSchema>;
 export type LivePage = z.infer<typeof livePageSchema>;
 export type LiveVisitor = z.infer<typeof liveVisitorSchema>;
+export type LiveArrivals = z.infer<typeof liveArrivalsSchema>;
 export type Live = z.infer<typeof liveSchema>;
 export type LiveTrail = z.infer<typeof liveTrailSchema>;
 export type ServerKey = z.infer<typeof serverKeySchema>;

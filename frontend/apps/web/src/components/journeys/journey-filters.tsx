@@ -117,22 +117,9 @@ export function JourneyFilterPanel({
                       )}
                     />
                   }
+                  count={counted ? format.number(tally.journeys) : undefined}
                 >
-                  {/*
-                    A real space between the name and the figure, so what a screen reader reads
-                    out is "A person 6" rather than one word nobody would recognise. The gap
-                    between them on screen is drawn by the layout and says nothing to anybody
-                    listening.
-                  */}
                   {categories(tally.category)}
-                  {counted ? (
-                    <>
-                      {' '}
-                      <span className="tabular-nums opacity-70">
-                        {format.number(tally.journeys)}
-                      </span>
-                    </>
-                  ) : null}
                 </Chip>
               ))}
             </div>

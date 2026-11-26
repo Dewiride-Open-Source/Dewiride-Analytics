@@ -637,6 +637,10 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-18.
 - **Done** · A page left open keeps nobody on the list: a visitor is shown while a page they opened
   is inside the half hour, so a tab left on a screen overnight does not appear as active every
   minute, and everybody listed has opened a page that belongs to a visit.
+- **Done** · How the visitors here arrived — from a search engine, an AI assistant, a social network
+  or a link on another site — counted over the whole half hour beside what has been recognised;
+  pressing any of them keeps the list of who is here to those visitors, and the address carries the
+  choice.
 - **Not started** · Similar visits active — 3.5.
 
 **8.5 Question-led entry points**

@@ -124,6 +124,27 @@ public sealed class LiveTrafficReaderTests
         reading.Visitors.Should().HaveCount(2);
     }
 
+    /// <summary>
+    /// How each kind of site sent the visitors here is counted by the store over everybody the
+    /// window holds. Counted again from the rows a reading had room for, it would describe the
+    /// newest hundred on a busy site and call them everybody — so the figures travel as the store
+    /// gave them, whatever the rows carried say.
+    /// </summary>
+    [Fact]
+    public async Task Carries_How_Everybody_Arrived_As_The_Store_Counted_It()
+    {
+        Answering(
+            312,
+            new LiveArrivals(Search: 140, Assistant: 9, Social: 4, Link: 21),
+            Visitor("one", Watching.AReader()));
+
+        var reading = await Read();
+
+        reading.Arrivals.Should().Be(new LiveArrivals(Search: 140, Assistant: 9, Social: 4, Link: 21));
+        reading.Visitors.Should().ContainSingle()
+            .Which.Visitor.Context.Channel.Should().Be(SourceChannel.Direct);
+    }
+
     [Fact]
     public async Task Stamps_The_Reading_With_The_Moment_It_Was_Taken()
     {
@@ -142,6 +163,7 @@ public sealed class LiveTrafficReaderTests
         var reading = await Read();
 
         reading.VisitorsSeen.Should().Be(0);
+        reading.Arrivals.Should().Be(LiveArrivals.None);
         reading.Visitors.Should().BeEmpty();
         reading.Minutes.Should().BeEmpty();
         reading.Pages.Should().BeEmpty();
@@ -342,14 +364,16 @@ public sealed class LiveTrafficReaderTests
 
     private void Answering(params LiveVisitor[] visitors) => Answering(visitors.Length, visitors);
 
-    private void Answering(int seen, params LiveVisitor[] visitors)
+    private void Answering(int seen, params LiveVisitor[] visitors) => Answering(seen, LiveArrivals.None, visitors);
+
+    private void Answering(int seen, LiveArrivals arrivals, params LiveVisitor[] visitors)
     {
         _telemetry
             .GetSiteLiveVisitorsAsync(
                 Arg.Any<TenantScope>(),
                 Arg.Any<SiteLiveVisitorsQuery>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new LiveVisitors(seen, [.. visitors]));
+            .Returns(new LiveVisitors(seen, arrivals, [.. visitors]));
 
         _telemetry
             .GetSiteLiveActivityAsync(

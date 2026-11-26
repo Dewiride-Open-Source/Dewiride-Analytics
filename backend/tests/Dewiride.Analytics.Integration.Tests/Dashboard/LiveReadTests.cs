@@ -150,6 +150,56 @@ public sealed class LiveReadTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// How many of the visitors here each kind of site sent travels beside how many there are, under
+    /// the names the dashboard reads it by, with a nought for a kind nobody arrived by rather than no
+    /// figure at all. Another page of the site itself sent nobody: a visitor who came from one is
+    /// counted, and is counted under none of the four.
+    /// </summary>
+    [Fact]
+    public async Task A_Reading_Says_How_Many_Each_Kind_Of_Site_Sent()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        await WriteAsync(
+            Arrived(site.Id, "typed-it", "/"),
+            Arrived(site.Id, "already-here", "/pricing") with
+            {
+                Referrer = $"https://{site.Domain}/posts/hello",
+                ReferrerDomain = site.Domain,
+            },
+            Arrived(site.Id, "from-a-search", "/posts/hello") with
+            {
+                Referrer = "https://www.google.com/",
+                ReferrerDomain = "www.google.com",
+            },
+            Arrived(site.Id, "from-a-network", "/posts/hello") with
+            {
+                Referrer = "https://www.reddit.com/r/dotnet/",
+                ReferrerDomain = "www.reddit.com",
+            });
+
+        var browser = await SignedInAsync(site.Id, SiteRole.Viewer);
+
+        using (browser)
+        {
+            var response = await browser.GetAsync($"/api/sites/{site.Id}/live");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var written = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Cancellation.Token));
+
+            var arrivals = written.RootElement.GetProperty("arrivals");
+
+            written.RootElement.GetProperty("visitorsSeen").GetInt32().Should().Be(4);
+            arrivals.EnumerateObject().Select(figure => figure.Name)
+                .Should().BeEquivalentTo("search", "assistant", "social", "link");
+            arrivals.GetProperty("search").GetInt32().Should().Be(1);
+            arrivals.GetProperty("assistant").GetInt32().Should().Be(0);
+            arrivals.GetProperty("social").GetInt32().Should().Be(1);
+            arrivals.GetProperty("link").GetInt32().Should().Be(0);
+        }
+    }
+
+    /// <summary>
     /// An answer about this moment is out of date the instant it is given, and nothing in the
     /// address it was asked at says who asked. Some of these answers carry a renewed sign-in with
     /// them, so a shared cache holding one would be handing over a session rather than a stale

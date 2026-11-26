@@ -1641,6 +1641,11 @@ internal static class SiteEndpoints
             reading.At,
             reading.From,
             reading.VisitorsSeen,
+            new LiveArrivalsResponse(
+                reading.Arrivals.Search,
+                reading.Arrivals.Assistant,
+                reading.Arrivals.Social,
+                reading.Arrivals.Link),
             [.. reading.Visitors.Select(Here)],
             [.. reading.Minutes.Select(minute => new LiveMinuteRow(minute.Start, minute.PageViews))],
             [.. reading.Pages.Select(page => new LivePageRow(page.Path, page.Visitors))]));

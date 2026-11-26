@@ -69,7 +69,17 @@ public sealed partial class AnalyticsSqlCompilerTests
 
     /// <summary>What a kept month holds once for everybody and once for the people it held.</summary>
     private static readonly string[] KeptForEachPopulation =
-        ["page_views", "visitors", "best_day", "best_day_page_views", "page_views_by_weekday", "page_views_by_hour"];
+    [
+        "page_views",
+        "visitors",
+        "best_day",
+        "best_day_page_views",
+        "page_views_by_weekday",
+        "page_views_by_hour",
+        "best_hour_day",
+        "best_hour",
+        "best_hour_page_views",
+    ];
 
     /// <summary>What a kept month holds once, whoever a question is about.</summary>
     private static readonly string[] KeptForBoth =

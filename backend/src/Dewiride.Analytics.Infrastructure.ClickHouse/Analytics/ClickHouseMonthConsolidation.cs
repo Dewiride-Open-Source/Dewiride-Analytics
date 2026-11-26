@@ -50,12 +50,18 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
         "visitors",
         "best_day",
         "best_day_page_views",
+        "best_hour_day",
+        "best_hour",
+        "best_hour_page_views",
         "page_views_by_weekday",
         "page_views_by_hour",
         "people_page_views",
         "people_visitors",
         "people_best_day",
         "people_best_day_page_views",
+        "people_best_hour_day",
+        "people_best_hour",
+        "people_best_hour_page_views",
         "people_page_views_by_weekday",
         "people_page_views_by_hour",
         "verdict_categories",
@@ -129,7 +135,8 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
     {
         long pageViews = 0;
         long visitors = 0;
-        var busiest = new BusiestDay();
+        var busiestDay = new Peak<DateOnly>();
+        var busiestHour = new Peak<DateTime>();
         var byWeekday = new long[MonthFigures.Weekdays];
         var byHour = new long[MonthFigures.Hours];
 
@@ -153,16 +160,27 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
 
                 case "day":
                     byWeekday[slot - 1] += delivered;
-                    busiest.Offer(day, delivered);
+                    busiestDay.Offer(day, delivered);
                     break;
 
                 default:
+                    // One row per hour on the clock, so the hour the clocks go back through is offered
+                    // twice, each time with its own pages.
                     byHour[slot] += delivered;
+                    busiestHour.Offer(day.ToDateTime(new TimeOnly(slot, 0), DateTimeKind.Unspecified), delivered);
                     break;
             }
         }
 
-        return new MonthFigures(pageViews, visitors, busiest.Day, busiest.PageViews, [.. byWeekday], [.. byHour]);
+        return new MonthFigures(
+            pageViews,
+            visitors,
+            busiestDay.When,
+            busiestDay.PageViews,
+            busiestHour.When,
+            busiestHour.PageViews,
+            [.. byWeekday],
+            [.. byHour]);
     }
 
     /// <inheritdoc />
@@ -273,12 +291,14 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
             (ulong)month.Everybody.Visitors,
             month.Everybody.BestDay is { } best ? Midnight(best) : DBNull.Value,
             (ulong)month.Everybody.BestDayPageViews,
+            .. BestHourOf(month.Everybody),
             Unsigned(month.Everybody.ByWeekday),
             Unsigned(month.Everybody.ByHour),
             (ulong)month.People.PageViews,
             (ulong)month.People.Visitors,
             month.People.BestDay is { } peopleBest ? Midnight(peopleBest) : DBNull.Value,
             (ulong)month.People.BestDayPageViews,
+            .. BestHourOf(month.People),
             Unsigned(month.People.ByWeekday),
             Unsigned(month.People.ByHour),
             month.Verdicts.Select(tally => StoredNames.CategoryNames[tally.Category]).ToArray(),
@@ -349,6 +369,17 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
                 reader.GetDateTimeOffset(8),
                 reader.GetDateTimeOffset(9)),
             reader.GetString(2));
+
+    /// <summary>
+    /// A month's best hour as it is kept: the day it fell on and which hour of that day, on the website's
+    /// clock, and the pages delivered in it; no day, hour nought and no pages where it has none.
+    /// </summary>
+    private static object[] BestHourOf(MonthFigures figures) =>
+    [
+        figures.BestHour is { } hour ? Midnight(DateOnly.FromDateTime(hour)) : DBNull.Value,
+        (byte)(figures.BestHour?.Hour ?? 0),
+        (ulong)figures.BestHourPageViews,
+    ];
 
     private static DateTime Midnight(DateOnly day) => day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
 

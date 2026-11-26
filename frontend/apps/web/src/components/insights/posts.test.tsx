@@ -36,6 +36,8 @@ const RECORD: InsightsAnswer = {
   pageViews: 4321,
   visitors: 1234,
   bestDay: { day: '2026-09-16', pageViews: 412 },
+  bestHour: { day: '2026-09-02', hour: 14, pageViews: 50 },
+  bestHourFrom: null,
   weekdays: [10, 20, 40, 10, 10, 5, 5],
   busiestWeekdays: [2],
   hours: Array.from({ length: 24 }, (_, hour) => (hour === 14 ? 50 : 0)),

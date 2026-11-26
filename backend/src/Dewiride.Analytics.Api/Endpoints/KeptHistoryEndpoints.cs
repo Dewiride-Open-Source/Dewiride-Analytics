@@ -59,7 +59,7 @@ internal static class KeptHistoryEndpoints
 
         routes.MapGet("/api/sites/{siteId:guid}/insights", InsightsAsync)
             .WithName("SiteInsights")
-            .WithSummary("Returns what a website's whole record says about when it is read: its totals, its best day, its busiest day of the week and hour, and every month's page views.");
+            .WithSummary("Returns what a website's whole record says about when it is read: its totals, its best day and best hour, its busiest day of the week and hour of the day, and every month's page views.");
     }
 
     private static async Task<Results<Ok<AllTimeResponse>, NotFound, ProblemHttpResult>> AllTimeAsync(
@@ -272,6 +272,8 @@ internal static class KeptHistoryEndpoints
                 insights.BestDay is { } best
                     ? new InsightsBestDay(best.ToString(DayFormat, CultureInfo.InvariantCulture), insights.BestDayPageViews)
                     : null,
+                BestHourOf(insights),
+                insights.BestHourFrom?.ToString("yyyy-MM", CultureInfo.InvariantCulture),
                 insights.Weekdays,
                 insights.BusiestWeekdays,
                 insights.Hours,
@@ -285,6 +287,18 @@ internal static class KeptHistoryEndpoints
                 KeptHistory.Missing(reading.Months),
                 KeptHistory.Unjudged(reading.Months)));
     }
+
+    /// <summary>
+    /// The best hour as an answer writes it: the day it fell on and which hour of that day, on the
+    /// website's clock; nothing where no hour had a page delivered in it.
+    /// </summary>
+    private static InsightsBestHour? BestHourOf(KeptInsights insights) =>
+        insights.BestHour is { } hour
+            ? new InsightsBestHour(
+                DateOnly.FromDateTime(hour).ToString(DayFormat, CultureInfo.InvariantCulture),
+                hour.Hour,
+                insights.BestHourPageViews)
+            : null;
 
     /// <summary>
     /// Reads a website's record and decides where each of its months is read from.

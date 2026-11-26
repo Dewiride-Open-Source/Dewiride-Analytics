@@ -1012,6 +1012,12 @@ public sealed record AllTimeResponse(
 /// <param name="PageViews">Pages delivered, the figure <see cref="AllTimeResponse"/> gives.</param>
 /// <param name="Visitors">Daily visitors, the figure <see cref="AllTimeResponse"/> gives.</param>
 /// <param name="BestDay">The day the most pages were delivered, or nothing where none were.</param>
+/// <param name="BestHour">The clock hour the most pages were delivered in, or nothing where none were.</param>
+/// <param name="BestHourFrom">
+/// The month, as <c>yyyy-MM</c> on the website's calendar, the best hour is worked out from: the one after
+/// the newest kept month that holds pages and names no hour of them, which no hour before it can be told
+/// against. Nothing where the best hour covers the whole record.
+/// </param>
 /// <param name="Weekdays">Pages delivered on each day of the week, Monday first.</param>
 /// <param name="BusiestWeekdays">
 /// Every place in <paramref name="Weekdays"/> sharing the most, in order, or none where nothing was read.
@@ -1036,6 +1042,8 @@ public sealed record InsightsResponse(
     long PageViews,
     long Visitors,
     InsightsBestDay? BestDay,
+    InsightsBestHour? BestHour,
+    string? BestHourFrom,
     IReadOnlyList<long> Weekdays,
     IReadOnlyList<int> BusiestWeekdays,
     IReadOnlyList<long> Hours,
@@ -1050,6 +1058,18 @@ public sealed record InsightsResponse(
 /// <param name="Day">The day, as <c>yyyy-MM-dd</c> on the website's calendar.</param>
 /// <param name="PageViews">Pages delivered on it.</param>
 public sealed record InsightsBestDay(string Day, long PageViews);
+
+/// <summary>
+/// The clock hour a website had the most pages delivered in: the earliest of a tie.
+/// </summary>
+/// <remarks>
+/// An hour on the clock rather than an hour of the day: the hour the clocks go back through is two
+/// hours, each with its own pages, and either can be the best.
+/// </remarks>
+/// <param name="Day">The day it fell on, as <c>yyyy-MM-dd</c> on the website's calendar.</param>
+/// <param name="Hour">Which hour of that day, counted from midnight on the website's clock: 0 to 23.</param>
+/// <param name="PageViews">Pages delivered in it.</param>
+public sealed record InsightsBestHour(string Day, int Hour, long PageViews);
 
 /// <summary>
 /// How much of a website's record one month holds.

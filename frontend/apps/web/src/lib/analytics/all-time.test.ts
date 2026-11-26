@@ -28,6 +28,8 @@ function record(overrides: Partial<Insights> = {}): Insights {
     pageViews: 0,
     visitors: 0,
     bestDay: null,
+    bestHour: null,
+    bestHourFrom: null,
     weekdays: [0, 0, 0, 0, 0, 0, 0],
     busiestWeekdays: [],
     hours: Array.from({ length: 24 }, () => 0),

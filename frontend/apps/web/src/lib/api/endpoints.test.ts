@@ -313,6 +313,8 @@ describe('asking the engine about all time', () => {
       pageViews: 120,
       visitors: 40,
       bestDay: { day: '2026-07-21', pageViews: 12 },
+      bestHour: { day: '2026-07-21', hour: 23, pageViews: 3 },
+      bestHourFrom: null,
       weekdays: [1, 2, 3, 4, 5, 6, 7],
       busiestWeekdays: [6],
       hours: Array.from({ length: 24 }, (_, hour) => hour),
@@ -366,6 +368,24 @@ describe('asking the engine about all time', () => {
       engineAnswering(200, { ...RECORD, hours: [1, 2, 3] });
 
       await expect(readInsights(SITE, 'everybody')).rejects.toThrow();
+    });
+
+    /** An hour counted from midnight on the website's clock runs from nought to twenty-three. */
+    it('refuses a best hour outside the day', async () => {
+      for (const hour of [-1, 24]) {
+        engineAnswering(200, { ...RECORD, bestHour: { day: '2026-07-21', hour, pageViews: 3 } });
+
+        await expect(readInsights(SITE, 'everybody')).rejects.toThrow();
+      }
+    });
+
+    it('reads the best hour, and the month it is known from where an older month names none', async () => {
+      engineAnswering(200, { ...RECORD, bestHourFrom: '2026-07' });
+
+      await expect(readInsights(SITE, 'everybody')).resolves.toMatchObject({
+        bestHour: { day: '2026-07-21', hour: 23, pageViews: 3 },
+        bestHourFrom: '2026-07',
+      });
     });
   });
 

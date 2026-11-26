@@ -59,6 +59,8 @@ public sealed class MonthlyConsolidationTests
         Visitors: 40,
         BestDay: new DateOnly(2026, 1, 12),
         BestDayPageViews: 9,
+        BestHour: new DateTime(2026, 1, 12, 20, 0, 0, DateTimeKind.Unspecified),
+        BestHourPageViews: 5,
         ByWeekday: [20, 20, 20, 20, 20, 10, 10],
         ByHour: [.. Enumerable.Repeat(5L, MonthFigures.Hours)]);
 

@@ -19,6 +19,9 @@
   screen and whose views are read the way this screen reads a whole record.
 - **Followed by**: [0070](0070-a-post-is-read-on-a-page-of-its-own.md), whose page lays one post's
   months and years out in this screen's table, read as this screen reads a whole record.
+- **Revised by**: [0079](0079-a-month-keeps-its-best-hour-beside-its-best-day.md). The best day shares
+  its row with the best hour ever, worked out from the months as the best day is, and a kept month names
+  one more day: the one its busiest hour fell on.
 
 ## Context
 
@@ -207,9 +210,9 @@ The engine:
   `A_Record_Can_Fall_When_Its_Month_Is_Counted_Again`, `Every_Weekday_Sharing_The_Most_Is_Busiest`,
   `Every_Hour_Sharing_The_Most_Is_Busiest`, `Nothing_Read_Has_No_Best_Day_And_No_Busiest_Day_Or_Hour`,
   `A_Month_Answered_From_Its_Reports_Is_Folded_On_The_Websites_Clock`,
-  `Two_Hours_The_Clocks_Show_Alike_Are_One_Hour_Of_The_Day`,
-  `A_Day_Of_A_Kept_Month_Is_Not_Counted_Again_From_The_Reports`,
-  `A_Day_From_The_Reports_Takes_The_Record_Only_By_Beating_It`,
+  `Two_Hours_The_Clocks_Show_Alike_Are_One_Hour_Of_The_Day_And_Two_Hours_On_The_Clock`,
+  `A_Day_Or_An_Hour_Of_A_Kept_Month_Is_Not_Counted_Again_From_The_Reports`,
+  `A_Day_Or_An_Hour_From_The_Reports_Takes_The_Record_Only_By_Beating_It`,
   `A_Kept_Month_Covers_The_Days_It_Was_Measured_On`, `The_Month_Running_Now_Counts_Today_Among_Its_Days`,
   `Today_Is_The_Day_It_Is_On_The_Websites_Clock`,
   `A_Finished_Month_Answered_From_Its_Reports_Covers_Its_Days_From_The_First_Day`,

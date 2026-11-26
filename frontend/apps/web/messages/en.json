@@ -664,8 +664,10 @@
     "times": {
       "title": "Most popular times",
       "bestDay": "Best day ever",
+      "bestHour": "Best hour ever",
+      "bestHourSince": "Best hour since {month}",
       "weekday": "Busiest day of the week",
-      "hour": "Busiest hour",
+      "hour": "Busiest hour of the day",
       "share": "{share} of page views",
       "shareEach": "{share} of page views each",
       "bar": "{when}: {count, plural, one {# page view} other {# page views}}",

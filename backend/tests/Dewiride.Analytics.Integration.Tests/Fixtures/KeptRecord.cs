@@ -134,8 +134,8 @@ internal static class KeptRecord
         stack.Services.GetRequiredService<IMonthConsolidation>().KeepAsync([month], Cancellation.Token);
 
     /// <summary>
-    /// A month as an engine kept it: everybody's figures, half as many daily visitors as pages,
-    /// nobody judged a person, and one kind of visit.
+    /// A month as an engine kept it: everybody's figures, every page in the first hour of its first
+    /// day, half as many daily visitors as pages, nobody judged a person, and one kind of visit.
     /// </summary>
     /// <param name="site">The website.</param>
     /// <param name="calendar">Its calendar.</param>
@@ -145,13 +145,14 @@ internal static class KeptRecord
     public static ConsolidatedMonth Counted(Site site, ZoneCalendar calendar, DateOnly month, long pageViews)
     {
         var window = new TimeRange(calendar.FirstInstantOn(month), calendar.FirstInstantOn(month.AddMonths(1)));
-        var nobody = new MonthFigures(0, 0, null, 0, [.. new long[7]], [.. new long[24]]);
+        var nobody = new MonthFigures(0, 0, null, 0, null, 0, [.. new long[7]], [.. new long[24]]);
+        var midnight = month.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
 
         return new ConsolidatedMonth(
             new MonthToCount(site.Id, site.TimeZoneId, month, window),
             null,
             DateTime.DaysInMonth(month.Year, month.Month),
-            new MonthFigures(pageViews, pageViews / 2, month, pageViews, [.. new long[7]], [.. new long[24]]),
+            new MonthFigures(pageViews, pageViews / 2, month, pageViews, midnight, pageViews, [.. new long[7]], [.. new long[24]]),
             nobody,
             [new VerdictTally(TrafficCategory.KnownSearchCrawler, pageViews, pageViews)],
             RulesetVersion.Current,

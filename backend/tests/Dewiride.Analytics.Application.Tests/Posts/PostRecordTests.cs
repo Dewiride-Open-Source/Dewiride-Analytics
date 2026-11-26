@@ -518,7 +518,7 @@ public sealed class PostRecordTests
             new TimeRange(Midnight(month), ends),
             month == FirstMonth ? WebsiteFirstDay : null,
             DaysMeasured.In(month, WebsiteFirstDay, month.AddMonths(1).AddDays(-1)),
-            new MonthFigures(100, 50, null, 0, [.. new long[MonthFigures.Weekdays]], [.. new long[MonthFigures.Hours]]),
+            new MonthFigures(100, 50, null, 0, null, 0, [.. new long[MonthFigures.Weekdays]], [.. new long[MonthFigures.Hours]]),
             [],
             ends);
     }

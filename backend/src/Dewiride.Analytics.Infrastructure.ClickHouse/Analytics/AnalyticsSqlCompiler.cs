@@ -896,6 +896,9 @@ public static class AnalyticsSqlCompiler
     /// <summary>
     /// What is read of a kept month, by who the question is about, in the order it comes back.
     /// </summary>
+    /// <remarks>
+    /// The best hour comes last, as the day it fell on, which hour of that day and its pages (ADR 0079).
+    /// </remarks>
     /// <param name="prefix">What the columns kept for that population begin with, written here.</param>
     /// <returns>The columns.</returns>
     private static KeptColumn[] KeptFiguresOf(string prefix) =>
@@ -914,6 +917,9 @@ public static class AnalyticsSqlCompiler
         new("verdict_visits", "verdict_visits"),
         new("verdict_page_views", "verdict_page_views"),
         new("judged_to", "judged_to"),
+        new($"{prefix}best_hour_day", "best_hour_day"),
+        new($"{prefix}best_hour", "best_hour"),
+        new($"{prefix}best_hour_page_views", "best_hour_page_views"),
     ];
 
     /// <summary>

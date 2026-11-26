@@ -77,12 +77,13 @@ public sealed class MonthConsolidationTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// The busiest day is the tallest bar of the month's daily series, and the weekdays and hours
-    /// are that series and the hourly one folded — so the figures a reader is shown about when
-    /// people read are the bars they could have counted themselves while the month was held.
+    /// The busiest day is the tallest bar of the month's daily series and the best hour the tallest of
+    /// its hourly one, and the weekdays and hours are those series folded — so the figures a reader is
+    /// shown about when people read are the bars they could have counted themselves while the month
+    /// was held.
     /// </summary>
     [Fact]
-    public async Task A_Kept_Months_Busiest_Day_Weekdays_And_Hours_Are_Its_Daily_And_Hourly_Series_Folded()
+    public async Task A_Kept_Months_Busiest_Day_And_Hour_Weekdays_And_Hours_Are_Its_Daily_And_Hourly_Series()
     {
         var (site, calendar, month) = await LastMonthReadAndScrapedAsync();
 
@@ -99,9 +100,12 @@ public sealed class MonthConsolidationTests(AnalyticsStackFixture stack)
             $"/api/sites/{site.Id}/series?metric=pageviews&granularity=hour&{Span(calendar, month)}");
 
         var busiest = daily.Points.MaxBy(point => point.Value);
+        var tallest = hourly.Points.MaxBy(point => point.Value);
 
         Day(kept["best_day"]).Should().Be(calendar.DateOf(busiest.BucketStart)).And.Be(month.AddDays(2));
         Long(kept["best_day_page_views"]).Should().Be(busiest.Value).And.Be(7);
+        BestHourOf(kept).Should().Be((calendar.DateOf(tallest.BucketStart), LocalHour(calendar, tallest.BucketStart), tallest.Value));
+        BestHourOf(kept).Should().Be((month.AddDays(2), 15, 5L));
 
         Longs(kept["page_views_by_weekday"]).Should().Equal(
             Enumerable.Range(0, 7).Select(weekday => daily.Points
@@ -118,11 +122,11 @@ public sealed class MonthConsolidationTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// Asked about people, the busiest day is counted from the people alone: the scraper's five pages
-    /// on the third leave the reader's two.
+    /// Asked about people, the busiest day and hour are counted from the people alone: the scraper's
+    /// five pages at three in the afternoon of the third leave the reader's two at ten that morning.
     /// </summary>
     [Fact]
-    public async Task A_Kept_Months_Busiest_Day_For_People_Is_Counted_From_The_People_Alone()
+    public async Task A_Kept_Months_Busiest_Day_And_Hour_For_People_Are_Counted_From_The_People_Alone()
     {
         var (site, _, month) = await LastMonthReadAndScrapedAsync();
 
@@ -132,16 +136,18 @@ public sealed class MonthConsolidationTests(AnalyticsStackFixture stack)
 
         Day(kept["people_best_day"]).Should().Be(month.AddDays(2));
         Long(kept["people_best_day_page_views"]).Should().Be(2);
+        BestHourOf(kept, "people_").Should().Be((month.AddDays(2), 10, 2L));
         Longs(kept["people_page_views_by_hour"]).Sum().Should().Be(3);
     }
 
     /// <summary>
-    /// Of two days as busy, the earlier is the busiest, for everybody and for the people alone —
-    /// here with the later day's reports written first. A busiest day kept for a month outlives the
-    /// reports that could correct it, so it cannot depend on the order the store hands days back in.
+    /// Of two days as busy, the earlier is the busiest, and of two hours as busy the earlier too, for
+    /// everybody and for the people alone — here with the later day's reports written first. A peak
+    /// kept for a month outlives the reports that could correct it, so it cannot depend on the order
+    /// the store hands days and hours back in.
     /// </summary>
     [Fact]
-    public async Task A_Kept_Months_Busiest_Day_Is_The_Earliest_Of_Two_As_Busy()
+    public async Task A_Kept_Months_Busiest_Day_And_Hour_Are_The_Earliest_Of_Two_As_Busy()
     {
         var calendar = new ZoneCalendar(Kolkata);
         var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain(), timeZoneId: Kolkata);
@@ -164,6 +170,8 @@ public sealed class MonthConsolidationTests(AnalyticsStackFixture stack)
         Long(kept["best_day_page_views"]).Should().Be(3);
         Day(kept["people_best_day"]).Should().Be(month.AddDays(3));
         Long(kept["people_best_day_page_views"]).Should().Be(3);
+        BestHourOf(kept).Should().Be((month.AddDays(3), 10, 3L));
+        BestHourOf(kept, "people_").Should().Be((month.AddDays(3), 10, 3L));
     }
 
     [Fact]
@@ -199,7 +207,10 @@ public sealed class MonthConsolidationTests(AnalyticsStackFixture stack)
     /// begins: in Kolkata at 18:30 the evening before on the clock reports are stamped by, in
     /// Kathmandu at 18:15, and in London at midnight or an hour before it — where a month across a
     /// change of the clocks begins on one offset and ends on the other, so its end is not its
-    /// beginning and a whole number of days.
+    /// beginning and a whole number of days. Its best hour is named on that clock too: three in the
+    /// afternoon of the third wherever the website is, the tallest bar of that day's hourly series —
+    /// asked of the day, because the hourly series covers 31 days at most, and a month across a
+    /// change of the clocks can be an hour longer.
     /// </summary>
     /// <param name="timeZoneId">The website's zone.</param>
     /// <param name="acrossAClockChange">Whether the month kept is one the clocks changed in.</param>
@@ -219,11 +230,51 @@ public sealed class MonthConsolidationTests(AnalyticsStackFixture stack)
         var monthly = await KeptRecord.GetAsync<SeriesResponse>(
             browser,
             $"/api/sites/{site.Id}/series?metric=pageviews&granularity=month&{Span(calendar, month)}");
+        var third = $"from={KeptRecord.Moment(calendar.MidnightOn(month.AddDays(2)))}&to={KeptRecord.Moment(calendar.MidnightOn(month.AddDays(3)))}";
+        var hourly = await KeptRecord.GetAsync<SeriesResponse>(
+            browser,
+            $"/api/sites/{site.Id}/series?metric=pageviews&granularity=hour&{third}");
+        var tallest = hourly.Points.MaxBy(point => point.Value);
 
         Instant(kept["begins_at"]).Should().Be(monthly.Points.Should().ContainSingle().Subject.BucketStart);
         Instant(kept["begins_at"]).Should().Be(calendar.MidnightOn(month));
         Instant(kept["ends_at"]).Should().Be(calendar.MidnightOn(month.AddMonths(1)));
         ((string?)kept["time_zone"]).Should().Be(timeZoneId);
+        BestHourOf(kept).Should().Be((calendar.DateOf(tallest.BucketStart), LocalHour(calendar, tallest.BucketStart), tallest.Value));
+        BestHourOf(kept).Should().Be((month.AddDays(2), 15, 5L));
+    }
+
+    /// <summary>
+    /// A month kept by an engine whose arithmetic kept no hour is counted again while its reports
+    /// remain, and gains its best hour, for everybody and for the people alone — which is what lets
+    /// the best hour reach back over every month still held, rather than only over months counted
+    /// from now on.
+    /// </summary>
+    [Fact]
+    public async Task A_Month_Kept_Without_Its_Best_Hour_Is_Counted_Again_While_Its_Reports_Remain()
+    {
+        var (site, calendar, month) = await LastMonthReadAndScrapedAsync();
+        var older = KeptRecord.Counted(site, calendar, month, 40);
+
+        await KeptRecord.KeepAsync(
+            stack,
+            older with
+            {
+                Everybody = older.Everybody with { BestHour = null, BestHourPageViews = 0 },
+                CountingRules = 2,
+                CountedAt = older.Month.Window.To,
+            });
+
+        Long(Of(await KeptRecord.RowsAsync(stack, site.Id), month)["counting_rules"]).Should().Be(2);
+
+        await KeptRecord.CountAsync(stack, site);
+
+        var kept = Of(await KeptRecord.RowsAsync(stack, site.Id), month);
+
+        Long(kept["counting_rules"]).Should().Be(CountingRules.Current).And.Be(3);
+        Long(kept["page_views"]).Should().Be(8);
+        BestHourOf(kept).Should().Be((month.AddDays(2), 15, 5L));
+        BestHourOf(kept, "people_").Should().Be((month.AddDays(2), 10, 2L));
     }
 
     /// <summary>
@@ -581,6 +632,13 @@ public sealed class MonthConsolidationTests(AnalyticsStackFixture stack)
 
     private static int LocalHour(ZoneCalendar calendar, DateTimeOffset instant) =>
         TimeZoneInfo.ConvertTime(instant, TimeZoneInfo.FindSystemTimeZoneById(calendar.TimeZoneId)).Hour;
+
+    /// <summary>
+    /// A kept month's best hour, for everybody or for the people alone: the day it fell on, which hour
+    /// of that day, and its pages.
+    /// </summary>
+    private static (DateOnly Day, int Hour, long PageViews) BestHourOf(Dictionary<string, object?> kept, string prefix = "") =>
+        (Day(kept[$"{prefix}best_hour_day"]), (int)Long(kept[$"{prefix}best_hour"]), Long(kept[$"{prefix}best_hour_page_views"]));
 
     private static DateTimeOffset Later(DateTimeOffset one, DateTimeOffset other) => one > other ? one : other;
 

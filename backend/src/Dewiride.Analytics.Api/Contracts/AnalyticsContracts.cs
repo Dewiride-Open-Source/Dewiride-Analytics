@@ -1161,6 +1161,53 @@ public sealed record PostsPageResponse(
     IReadOnlyList<InsightsPost> Shown);
 
 /// <summary>
+/// One page of every page of a website, each with how often it was viewed across the website's whole record,
+/// all from one reading.
+/// </summary>
+/// <remarks>
+/// Read a page at a time on the terms <see cref="PagesResponse"/> is: ask again with <c>offset</c> advanced
+/// by the <c>limit</c> asked for. The most viewed come first, and the path breaks a tie, so successive pages
+/// of one reading neither repeat a page nor skip one. Only the 10,000 most viewed of the pages that match can
+/// be listed: a page further along than they reach, like a page past the end, has nothing on it and still
+/// says how many pages match.
+/// </remarks>
+/// <param name="Matching">
+/// How many pages were viewed and hold every word searched for, in their path or in the path as it reads
+/// with its escaped letters written out; every page viewed where nothing was.
+/// </param>
+/// <param name="ViewsFrom">
+/// The month, as <c>yyyy-MM</c> on the website's calendar, the pages' views are counted from: the first month
+/// whose pages were kept, or the first answered from its reports where that is earlier. Nothing where no page
+/// matched.
+/// </param>
+/// <param name="LeftOut">
+/// Whether a month the views are read from what was kept of left out pages delivered to whoever the reading is
+/// about: a month keeps only its busiest pages, so a page viewed rarely then may have had views it does not
+/// show.
+/// </param>
+/// <param name="MostPageViews">
+/// How often the most viewed of the pages that match was viewed, whatever the page, so every page can be drawn
+/// to the same scale. Nought where none matched.
+/// </param>
+/// <param name="Shown">The page, the most viewed first.</param>
+public sealed record AllPagesResponse(
+    long Matching,
+    string? ViewsFrom,
+    bool LeftOut,
+    long MostPageViews,
+    IReadOnlyList<ListedPageRow> Shown);
+
+/// <summary>
+/// One page of a website, and how often it was viewed.
+/// </summary>
+/// <param name="Path">
+/// The page's path, exactly as it was asked for. Written by whoever made the request, so it is text to show
+/// and never anything else.
+/// </param>
+/// <param name="PageViews">Pages delivered at it since the answer's <c>viewsFrom</c>, to whoever the reading is about.</param>
+public sealed record ListedPageRow(string Path, long PageViews);
+
+/// <summary>
 /// What one of a website's posts has done, all from one reading: its views, every month it was read in,
 /// and its recent weeks day by day.
 /// </summary>

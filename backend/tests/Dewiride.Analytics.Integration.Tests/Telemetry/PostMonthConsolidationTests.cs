@@ -160,7 +160,7 @@ public sealed class PostMonthConsolidationTests(AnalyticsStackFixture stack)
                 month,
                 PostFingerprint.Of(["/posts/new/"]),
                 now.AddHours(-2),
-                new PostMonthViews("/posts/new/", 1, 0)));
+                new PathMonthViews("/posts/new/", 1, 0)));
 
         await SitemapSeed.WriteAsync(stack, KeptPosts.Post(site.Id, "/posts/older/", listedAt));
         await KeptRecord.CountAsync(stack, site);

@@ -146,7 +146,7 @@ public sealed class PostReadingTests(AnalyticsStackFixture stack)
         await WriteAsync(FromBrowser(site.Id, Midnight.AddHours(4), "reader", path));
         await KeptPosts.KeepAsync(
             stack,
-            KeptPosts.Counted(site, calendar, month, PostFingerprint.Of([path]), Midnight, new PostMonthViews(path, 3, 1)));
+            KeptPosts.Counted(site, calendar, month, PostFingerprint.Of([path]), Midnight, new PathMonthViews(path, 3, 1)));
 
         var found = await SeriesAsync(site.Id, [path]);
         var missed = await SeriesAsync(site.Id, [other]);
@@ -181,7 +181,7 @@ public sealed class PostReadingTests(AnalyticsStackFixture stack)
 
         await KeptPosts.KeepAsync(
             stack,
-            KeptPosts.Counted(site, calendar, month, fingerprint, counted, new PostMonthViews("/posts/new/", 40, 20), new PostMonthViews("/posts/old/", 9, 9)));
+            KeptPosts.Counted(site, calendar, month, fingerprint, counted, new PathMonthViews("/posts/new/", 40, 20), new PathMonthViews("/posts/old/", 9, 9)));
         await KeptPosts.KeepAsync(
             stack,
             KeptPosts.Counted(
@@ -190,9 +190,9 @@ public sealed class PostReadingTests(AnalyticsStackFixture stack)
                 month,
                 fingerprint,
                 recounted,
-                new PostMonthViews("/posts/elsewhere/", 100, 100),
-                new PostMonthViews("/posts/new/", 7, 3),
-                new PostMonthViews("/posts/old/", 5, 2)));
+                new PathMonthViews("/posts/elsewhere/", 100, 100),
+                new PathMonthViews("/posts/new/", 7, 3),
+                new PathMonthViews("/posts/old/", 5, 2)));
 
         var kept = await KeptAsync(site.Id, [.. paths], population);
 

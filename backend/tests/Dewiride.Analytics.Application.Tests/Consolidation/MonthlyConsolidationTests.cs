@@ -93,6 +93,10 @@ public sealed class MonthlyConsolidationTests
             .Returns(ImmutableArray<KeptPostMonth>.Empty);
         _months.CountPostsAsync(Arg.Any<MonthToCount>(), Arg.Any<Population>(), Arg.Any<ImmutableArray<string>>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray<PathViews>.Empty);
+        _months.SurveyPagesAsync(SiteId, Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray<KeptPageMonth>.Empty);
+        _months.CountPagesAsync(Arg.Any<MonthToCount>(), Arg.Any<CancellationToken>())
+            .Returns(new CountedPages([], default));
         _catalogue.CountedPathsAsync(SiteId, Arg.Any<CancellationToken>())
             .Returns(ImmutableArray<string>.Empty);
         Surveying(new MonthSurvey(new DateOnly(2026, 1, 19), [Month(1), Month(2), Month(3)]));
@@ -211,7 +215,10 @@ public sealed class MonthlyConsolidationTests
                 "KeepAsync",
                 "SurveyPostsAsync",
                 "CountPostsAsync",
-                "KeepPostsAsync");
+                "KeepPostsAsync",
+                "SurveyPagesAsync",
+                "CountPagesAsync",
+                "KeepPagesAsync");
     }
 
     /// <summary>
@@ -236,7 +243,7 @@ public sealed class MonthlyConsolidationTests
         var kept = KeptPosts();
 
         kept.Select(month => month.Month.Month).Should().Equal(new DateOnly(2026, 1, 1), new DateOnly(2026, 2, 1));
-        kept[0].Views.Should().Equal(new PostMonthViews("/a/", 5, 0), new PostMonthViews("/b/", 3, 2));
+        kept[0].Views.Should().Equal(new PathMonthViews("/a/", 5, 0), new PathMonthViews("/b/", 3, 2));
         kept[0].Fingerprint.Should().Be(PostFingerprint.Of(paths));
         kept[0].CountingRules.Should().Be(CountingRules.Posts);
         kept[0].CountedTo.Should().Be(Midnight(2026, 2));
@@ -268,21 +275,109 @@ public sealed class MonthlyConsolidationTests
     }
 
     /// <summary>
-    /// The months' totals are kept before the posts are counted, so a pass over posts that cannot even
-    /// read what was kept of them leaves the totals kept.
+    /// The months' totals are kept before the posts are counted, and a pass over posts that cannot even
+    /// read what was kept of them is logged on its own: the totals stay kept, and the pages are counted
+    /// and kept regardless.
     /// </summary>
     [Fact]
-    public async Task A_Pass_Over_Posts_That_Fails_Leaves_The_Months_Totals_Kept()
+    public async Task A_Pass_Over_Posts_That_Fails_Leaves_The_Months_Totals_And_Pages_Kept()
     {
         ListingPosts(["/a/"]);
         _months.SurveyPostsAsync(SiteId, Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("The store went away."));
 
-        Func<Task> act = CatchUpAsync;
+        await CatchUpAsync();
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
         Kept().Select(month => month.Month.Month).Should().Equal(new DateOnly(2026, 1, 1), new DateOnly(2026, 2, 1));
+        KeptPages().Select(month => month.Month.Month).Should().Equal(new DateOnly(2026, 1, 1), new DateOnly(2026, 2, 1));
         await _months.DidNotReceive().KeepPostsAsync(Arg.Any<IReadOnlyCollection<ConsolidatedPostMonth>>(), Arg.Any<CancellationToken>());
+        _logger.Collector.GetSnapshot().Should().Contain(record =>
+            record.Id.Id == 5210 && record.Level == LogLevel.Error);
+    }
+
+    /// <summary>
+    /// A month's busiest pages are kept on a row of their own, one month to a write: the paths kept, with the
+    /// people's pages beside everybody's, and what the paths left out added up to, under the pages' own
+    /// version of the arithmetic.
+    /// </summary>
+    [Fact]
+    public async Task A_Months_Pages_Are_Kept_With_What_The_Bound_Left_Out()
+    {
+        var counted = new CountedPages(
+            [new PathMonthViews("/a/", 9, 4), new PathMonthViews("/b/", 7, 0)],
+            new PagesLeftOut(3, 5, 1));
+        _months.CountPagesAsync(Arg.Any<MonthToCount>(), Arg.Any<CancellationToken>()).Returns(counted);
+
+        await CatchUpAsync();
+
+        await _months.Received(2).KeepPagesAsync(
+            Arg.Is<IReadOnlyCollection<ConsolidatedPageMonth>>(months => months.Count == 1),
+            Arg.Any<CancellationToken>());
+
+        var kept = KeptPages();
+
+        kept.Select(month => month.Month.Month).Should().Equal(new DateOnly(2026, 1, 1), new DateOnly(2026, 2, 1));
+        kept[0].Month.Should().Be(new MonthToCount(SiteId, Zone, new DateOnly(2026, 1, 1), Window(new DateOnly(2026, 1, 1))));
+        kept[0].Views.Should().Equal(counted.Kept);
+        kept[0].LeftOut.Should().Be(new PagesLeftOut(3, 5, 1));
+        kept[0].CountingRules.Should().Be(CountingRules.Pages);
+        kept[0].Ruleset.Should().Be(RulesetVersion.Current);
+        kept[0].CountedTo.Should().Be(Midnight(2026, 2));
+        kept[0].JudgedTo.Should().Be(Midnight(2026, 2));
+        kept[0].CountedAt.Should().Be(Now);
+    }
+
+    /// <summary>
+    /// A month whose pages fail to count is left as it was and tried again, and stops neither the pages of
+    /// the months after it nor any month's totals or posts.
+    /// </summary>
+    [Fact]
+    public async Task A_Months_Pages_That_Fail_To_Count_Stop_Neither_The_Other_Months_Pages_Nor_Their_Totals_Or_Posts()
+    {
+        ListingPosts(["/a/"]);
+        _months.CountPagesAsync(Arg.Is<MonthToCount>(month => month.Month.Month == 1), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("The store went away."));
+
+        await CatchUpAsync();
+
+        Kept().Select(month => month.Month.Month).Should().Equal(new DateOnly(2026, 1, 1), new DateOnly(2026, 2, 1));
+        KeptPosts().Select(month => month.Month.Month).Should().Equal(new DateOnly(2026, 1, 1), new DateOnly(2026, 2, 1));
+        KeptPages().Select(month => month.Month.Month).Should().Equal(new DateOnly(2026, 2, 1));
+        _logger.Collector.GetSnapshot().Should().Contain(record =>
+            record.Id.Id == 5209 && record.Level == LogLevel.Warning);
+    }
+
+    /// <summary>
+    /// The pages are counted after everything else, and a pass over them that cannot even read what was kept
+    /// of them is logged on its own, with the months' totals and posts already kept.
+    /// </summary>
+    [Fact]
+    public async Task A_Pass_Over_Pages_That_Fails_Leaves_The_Months_Totals_And_Posts_Kept()
+    {
+        ListingPosts(["/a/"]);
+        _months.SurveyPagesAsync(SiteId, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("The store went away."));
+
+        await CatchUpAsync();
+
+        Kept().Select(month => month.Month.Month).Should().Equal(new DateOnly(2026, 1, 1), new DateOnly(2026, 2, 1));
+        KeptPosts().Select(month => month.Month.Month).Should().Equal(new DateOnly(2026, 1, 1), new DateOnly(2026, 2, 1));
+        await _months.DidNotReceive().KeepPagesAsync(Arg.Any<IReadOnlyCollection<ConsolidatedPageMonth>>(), Arg.Any<CancellationToken>());
+        _logger.Collector.GetSnapshot().Should().Contain(record =>
+            record.Id.Id == 5211 && record.Level == LogLevel.Error);
+    }
+
+    /// <summary>
+    /// Every page is counted whether or not the website lists any posts, so a website with no sitemap still
+    /// keeps its busiest pages.
+    /// </summary>
+    [Fact]
+    public async Task A_Website_That_Lists_No_Posts_Has_Its_Pages_Counted()
+    {
+        await CatchUpAsync();
+
+        await _months.DidNotReceive().SurveyPostsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        KeptPages().Select(month => month.Month.Month).Should().Equal(new DateOnly(2026, 1, 1), new DateOnly(2026, 2, 1));
     }
 
     /// <summary>
@@ -670,6 +765,14 @@ public sealed class MonthlyConsolidationTests
             .Where(call => call.GetMethodInfo().Name == nameof(IMonthConsolidation.KeepPostsAsync))
             .Select(call => (IReadOnlyCollection<ConsolidatedPostMonth>)call.GetArguments()[0]!)
             .Single(),
+    ];
+
+    /// <summary>What the writes of pages held, one month to each, in the order they were made.</summary>
+    private ConsolidatedPageMonth[] KeptPages() =>
+    [
+        .. _months.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IMonthConsolidation.KeepPagesAsync))
+            .SelectMany(call => (IReadOnlyCollection<ConsolidatedPageMonth>)call.GetArguments()[0]!),
     ];
 
     /// <summary>Has the website list posts at these paths.</summary>

@@ -11,7 +11,11 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type Population, withPopulation } from '@/lib/analytics/people-only';
 import {
+  DEFAULT_LIST,
   DEFAULT_POSTS_ORDER,
+  LIST_OF_KEY,
+  LISTS,
+  type ListKind,
   POSTS_ORDERS,
   POSTS_PAGE_SIZE,
   POSTS_PAGE_SIZES,
@@ -29,18 +33,19 @@ import { offsetOf } from '@/lib/paging';
 import { ALL_POSTS } from '@/lib/routes';
 
 /**
- * Which page of the list of every post is on the screen, kept in the address itself.
+ * Which page of the list of every post, or of every page, is on the screen, kept in the address
+ * itself.
  *
- * Everything that makes the list the one being read — what was searched for, the order, the page,
- * how many a page holds, and whose views are counted — is in the address, so the way back from a
- * post is the same page of the same list, a reload keeps it, and it can be sent to somebody. What
- * the list opens on where nobody has said is left out of the address, so the plain address of the
- * screen stays plain.
+ * Everything that makes the list the one being read — which list it is, what was searched for, the
+ * order, the page, how many a page holds, and whose views are counted — is in the address, so the
+ * way back from a post is the same page of the same list, a reload keeps it, and it can be sent to
+ * somebody. What the list opens on where nobody has said is left out of the address, so the plain
+ * address of the screen stays plain.
  *
- * The order, the page and how many a page holds are each a decision, and each is a new entry in the
- * browser's history, so the button somebody already has takes it back. A search is written over the
- * entry it is typed on: it changes as the words go down, and a reader who typed a title should not
- * have to press the way back once for every pause in it.
+ * The list, the order, the page and how many a page holds are each a decision, and each is a new
+ * entry in the browser's history, so the button somebody already has takes it back. A search is
+ * written over the entry it is typed on: it changes as the words go down, and a reader who typed a
+ * title should not have to press the way back once for every pause in it.
  */
 
 /** A search, read out of an address exactly as the engine reads one. */
@@ -71,12 +76,38 @@ const writeListing = createSerializer(LISTING);
 /** Reads a page of the list out of what an address says, by the rules the list itself reads it by. */
 const readListing = createLoader(LISTING);
 
+/**
+ * Which list is on the screen, read only where it is one the screen lists.
+ *
+ * Kept apart from the page of the list: only the posts open onto a page of their own, so the way
+ * back a post names is only ever a page of the posts.
+ */
+const LISTED = {
+  list: parseAsStringLiteral(LISTS).withDefault(DEFAULT_LIST).withOptions({ history: 'push' }),
+};
+
+/** What the list chosen is called in the address. */
+const LISTED_NAMES = { list: LIST_OF_KEY };
+
+/** Everything the screen reads out of its address but whose views are counted. */
+const CHOSEN = { ...LISTING, ...LISTED };
+
+/** Writes which list is chosen as the screen's own address says it. */
+const writeList = createSerializer(LISTED, { urlKeys: LISTED_NAMES });
+
 export interface ListingOptions extends PeopleOptions {
   /** The website whose posts are listed, or nothing while which one it is has still to be read. */
   readonly siteId?: string;
 }
 
 export interface ChosenListing extends ChosenPeople {
+  /** Which list is on the screen: the posts, or every page. */
+  readonly list: ListKind;
+  /**
+   * Shows the other list, from its first page, keeping what was searched for and how many a page
+   * holds. The list already chosen can be pressed again, and is then the same list on the same page.
+   */
+  readonly showList: (list: ListKind) => void;
   /** The page on the screen, and what it is a page of. */
   readonly listing: PostsListing;
   /** Which page it is, counting from one. */
@@ -98,9 +129,9 @@ export interface ChosenListing extends ChosenPeople {
  * Reads the page of the list out of the address, and writes another back into it.
  *
  * Where somebody is in the list only means anything in the list they were reading, so whatever
- * makes it another list — another search, another order, another size of page, or other people —
- * starts it again at its first page, in the same entry of the history as the change itself. The way
- * back is then the page they were on, of the list they were reading.
+ * makes it another list — the other list, another search, another order, another size of page, or
+ * other people — starts it again at its first page, in the same entry of the history as the change
+ * itself. The way back is then the page they were on, of the list they were reading.
  *
  * Another website chosen is another list too, though nothing about it is in the address: the bar
  * across the top chooses it. Its list opens on its first page at once, and the page is then taken
@@ -110,7 +141,9 @@ export interface ChosenListing extends ChosenPeople {
  * into an address that says nothing, as the screen the population is the subject of asks for.
  */
 export function usePostsListing({ siteId, ...options }: ListingOptions = {}): ChosenListing {
-  const [{ search, order, page, size }, write] = useQueryStates(LISTING);
+  const [{ list, search, order, page, size }, write] = useQueryStates(CHOSEN, {
+    urlKeys: LISTED_NAMES,
+  });
   const people = usePeopleOnly(options);
   const keepToPeople = people.showOnlyPeople;
   const { moved: elsewhere, settle } = useListedOn(siteId);
@@ -133,6 +166,15 @@ export function usePostsListing({ siteId, ...options }: ListingOptions = {}): Ch
       void write({ search: searchFrom(searched), page: null }, { history: 'replace' });
     },
     [write],
+  );
+
+  const showList = useCallback(
+    (shown: ListKind) => {
+      if (shown !== list) {
+        void write({ list: shown, page: null });
+      }
+    },
+    [list, write],
   );
 
   // The order already chosen can be pressed again, and is then the same list on the same page.
@@ -179,6 +221,8 @@ export function usePostsListing({ siteId, ...options }: ListingOptions = {}): Ch
   return {
     ...people,
     showOnlyPeople,
+    list,
+    showList,
     listing,
     page: onPage,
     written,
@@ -233,6 +277,19 @@ export function listAddress(written: string, population: Population): string {
   const query = withPopulation(asked, population).toString();
 
   return query === '' ? ALL_POSTS : `${ALL_POSTS}?${query}`;
+}
+
+/**
+ * The address of the list of every page, from its first page, counting whoever the screen it is
+ * reached from counts.
+ *
+ * @param population Whose views the screen it is reached from counts, which the list goes on
+ * counting.
+ */
+export function everyPageAddress(population: Population): string {
+  const asked = new URLSearchParams(writeList({ list: 'pages' }));
+
+  return `${ALL_POSTS}?${withPopulation(asked, population)}`;
 }
 
 /**

@@ -99,7 +99,7 @@ internal sealed class SitePosts(ControlPlaneDbContext database, IOptions<Sitemap
     /// Compared by the database over this website's rows alone, reached by the post's key, so only the paths
     /// that match come back rather than every post's title and address. A post's path is compared rather
     /// than its whole address, which begins with the website's name, and a whole address searched for is
-    /// compared by the path it names (<see cref="PostMatch.PathIn"/>). The text travels as a value bound to
+    /// compared by the path it names (<see cref="PostSearch.PathIn"/>). The text travels as a value bound to
     /// the statement, in a pattern whose every wildcard is escaped (<see cref="PostMatch"/>), and case is set
     /// aside as far as the database's locale sets it aside.
     /// </para>
@@ -123,7 +123,7 @@ internal sealed class SitePosts(ControlPlaneDbContext database, IOptions<Sitemap
         }
 
         var named = PostMatch.Holding(text);
-        var spelled = PostMatch.Holding(PostMatch.PathIn(text));
+        var spelled = PostMatch.Holding(PostSearch.PathIn(text));
         var matching = await ListedPosts.Of(database, scope.SiteId)
             .Where(post =>
                 (post.Title != null && EF.Functions.ILike(post.Title, named, PostMatch.Escape))

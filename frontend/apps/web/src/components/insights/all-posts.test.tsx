@@ -2,7 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AllPosts } from '@/components/insights/all-posts';
-import type { InsightsPost, PostsPage, Site, SitemapStatus } from '@/lib/api/schemas';
+import type { AllPages, InsightsPost, PostsPage, Site, SitemapStatus } from '@/lib/api/schemas';
 import { sitemapStatusKey } from '@/lib/queries/keys';
 import { engineDoing, respondWith } from '@/test/engine';
 import { renderScreen } from '@/test/harness';
@@ -117,6 +117,15 @@ interface Engine {
 /** What the engine answers with where it is having trouble. */
 const TROUBLE = { status: 500, title: 'The engine is having trouble.' };
 
+/** What the engine answers every question about the website's pages with: none match. */
+const NO_PAGES: AllPages = {
+  matching: 0,
+  viewsFrom: null,
+  leftOut: false,
+  mostPageViews: 0,
+  shown: [],
+};
+
 /** An answer that never comes. */
 function never(): Promise<Response> {
   return new Promise<Response>(() => {});
@@ -169,6 +178,10 @@ function engineWith({
       }
 
       return refusing ? respondWith(500, TROUBLE) : respondWith(200, pageFrom(listed, asked));
+    }
+
+    if (path.includes('/insights/pages?')) {
+      return respondWith(200, NO_PAGES);
     }
 
     if (path.endsWith('/settings')) {
@@ -531,6 +544,21 @@ describe('the list of every post', () => {
       ['limit', '50'],
       ['offset', '50'],
     ]);
+  });
+
+  it('opens on the list its address names', async () => {
+    const engine = engineWith({});
+
+    renderScreen(<AllPosts />, { searchParams: 'of=pages&search=post' });
+
+    expect(screen.getByRole('heading', { name: 'All pages', level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Pages' })).toHaveAttribute('aria-checked', 'true');
+    expect(
+      await screen.findByRole('heading', { name: 'No pages match your search' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Search your pages' })).toHaveValue('post');
+    expect(postsAsked(engine)).toHaveLength(0);
+    expect(engine.all().some(({ path }) => path.endsWith('/sitemap'))).toBe(false);
   });
 
   /** An address is written by whoever sent the link, and anything it says that is not a page opens the first. */

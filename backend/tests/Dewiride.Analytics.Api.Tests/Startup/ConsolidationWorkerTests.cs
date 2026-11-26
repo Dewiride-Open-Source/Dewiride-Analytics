@@ -47,6 +47,10 @@ public sealed class ConsolidationWorkerTests : IAsyncDisposable
         _roster.ListAsync(Arg.Any<CancellationToken>()).Returns([First, Second]);
         _months.SurveyAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .Returns(new MonthSurvey(null, []));
+        _months.SurveyPagesAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray<KeptPageMonth>.Empty);
+        _months.CountPagesAsync(Arg.Any<MonthToCount>(), Arg.Any<CancellationToken>())
+            .Returns(new CountedPages([], default));
         _catalogue.CountedPathsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray<string>.Empty);
     }

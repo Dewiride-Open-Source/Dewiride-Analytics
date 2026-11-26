@@ -18,12 +18,13 @@ import type {
   Granularity,
   PeriodGranularity,
 } from '@/lib/analytics/period';
-import type { PostsListing } from '@/lib/analytics/posts';
+import type { PagesListing, PostsListing } from '@/lib/analytics/posts';
 import type { NewSite } from '@/lib/api/endpoints';
 import {
   addSite,
   listSites,
   readActions,
+  readAllPages,
   readAllTime,
   readAllTimeSeries,
   readAllTimeTraffic,
@@ -65,6 +66,7 @@ import type {
 } from '@/lib/api/schemas';
 import {
   actionsKey,
+  allPagesKey,
   allTimeKey,
   allTimeSeriesKey,
   allTimeTrafficKey,
@@ -322,6 +324,43 @@ export function usePostsPage(
     queryFn: listsPosts(reading) ? () => readPostsPage(site.id, population, listing) : skipToken,
     placeholderData: (previous, previousQuery) =>
       previousQuery !== undefined && namedAlike(key, previousQuery.queryKey, POSTS_LIST_NAMED_BY)
+        ? previous
+        : undefined,
+    retry: false,
+    staleTime: ALL_TIME_FRESH_FOR,
+  });
+}
+
+/**
+ * How many parts at the start of the name of a page of a website's pages say which list it is a page
+ * of: the website, its zone and the population.
+ */
+const PAGES_LIST_NAMED_BY = 6;
+
+/**
+ * One page of the list of every page of a website, for one population, searched and paged as asked.
+ *
+ * Read from the record alone, with nothing asked about the sitemap. While another page of the same
+ * list is on its way — another page, another search, or another size of page — the page already on
+ * the screen stays there until the answer lands. Only a page of the same list is kept like that: a
+ * page about other people, another zone or another website is never shown in the meantime.
+ *
+ * @param site The website.
+ * @param population Whose views are counted.
+ * @param listing The page, and what it is a page of.
+ */
+export function useAllPages(
+  site: Pick<Site, 'id' | 'timeZoneId'>,
+  population: Population,
+  listing: PagesListing,
+) {
+  const key = allPagesKey(site.id, site.timeZoneId, population, listing);
+
+  return useQuery({
+    queryKey: key,
+    queryFn: () => readAllPages(site.id, population, listing),
+    placeholderData: (previous, previousQuery) =>
+      previousQuery !== undefined && namedAlike(key, previousQuery.queryKey, PAGES_LIST_NAMED_BY)
         ? previous
         : undefined,
     retry: false,

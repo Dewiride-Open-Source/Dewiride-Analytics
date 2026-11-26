@@ -20,8 +20,10 @@ Two rules shape everything here:
   the key that tells one visitor's activity from another's is worked out with a secret that
   changes every day, so once an address is gone there is no key that joins a reader's activity
   from one day to the next — and no screen or figure ever tries to. Every report of a visit is
-  deleted after twelve months; what is kept after that is each month's totals, and how many times
-  each of the website's posts was read that month, until the website is removed.
+  deleted after twelve months; what is kept after that is each month's totals, how many times each
+  of the website's posts was read that month, and how many times each of its busiest few thousand
+  pages that at least two visitors opened was viewed — a visitor counted afresh each day and on each
+  device or network — until the website is removed.
 
 ## Where this is today
 
@@ -78,8 +80,11 @@ and the [master plan](#master-plan) below it says what does not yet.
   has been read since its views were first counted, on average per day and in its best month, a chart
   of its views over the period you choose by the hour, day, week, month or year, every month and year
   by total views or by average per day, and its last thirteen weeks day by day. Every post is listed
-  on a screen of its own, searchable by title or address, the most read or the newest first. How it
-  behaves, and how to switch it off, is under [Reading a website's sitemap](#reading-a-websites-sitemap).
+  on a screen of its own, searchable by title or address, the most read or the newest first, and
+  beside it every page of the website, with or without a sitemap, searchable by address, with how
+  often each has been viewed, a finished month counting only its busiest pages that more than one
+  visitor opened. How it behaves, and how to switch it off, is under
+  [Reading a website's sitemap](#reading-a-websites-sitemap).
 - Where your readers are, by country, by town, and by the network they arrived over, ranked by how
   many people were in each place rather than by how much browsing they did. Towns are named as an
   estimate, because that is what they are; the network view is there because a hundred rented
@@ -178,7 +183,7 @@ and the [master plan](#master-plan) below it says what does not yet.
 ## Master plan
 
 Every capability the product is meant to have, phase by phase, in the order the work is picked
-up. Each line is marked with one of four states. Last reviewed 2026-11-18.
+up. Each line is marked with one of four states. Last reviewed 2026-11-26.
 
 - **Done** — shipped and visible on the dashboard, or collected on every capture surface.
 - **Partly done** — a real piece ships; the line says what is still missing.
@@ -188,7 +193,7 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-18.
 ### Phase 1 — Public statements
 
 - **Done** · README: every report of a visit is kept for 12 months; each website's monthly totals,
-  and each post's views month by month, until the website is removed.
+  and each post's views and its busiest pages' views month by month, until the website is removed.
 - **Done** · README: a page counts as read only when its arrival reached us.
 - **Done** · README: multi-customer analysis is planned, not present.
 - **Done** · README: the daily key does not recognise a returning reader.
@@ -497,6 +502,10 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-18.
   total views or by average per day, and its last 13 weeks day by day, for everybody or people only.
 - **Done** · Every post in one list, with how often each was read: searchable by title or address, the
   most read or the newest first, a page at a time.
+- **Done** · Every page in one list beside the posts, with how often each was viewed since views were
+  first counted, a finished month keeping only its busiest pages that more than one visitor opened:
+  searchable by address, the most viewed first, a page at a time as far as the 10,000 most viewed, for
+  everybody or people only.
 
 ### Phase 6 — AI analytics
 
@@ -1003,7 +1012,8 @@ pasted or installed — and a copyleft beacon is not a reasonable thing to ask s
 
 Self-hosting is not a crippled tier. The full detection engine, every screen that shows or
 judges your traffic, and unlimited websites and traffic are free, and every edition keeps twelve
-months of traffic and verdicts, and each website's monthly totals until the website is removed.
+months of traffic and verdicts, and each website's monthly totals, its posts' monthly views and its
+busiest pages' monthly views until the website is removed.
 What the hosted service adds today is the running of it: an account anyone can create, plans and
 billing. Analysis that only exists because it sees many
 customers' traffic at once — which no single installation could produce for itself — is planned

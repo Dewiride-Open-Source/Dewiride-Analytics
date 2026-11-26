@@ -1,3 +1,4 @@
+using System.Globalization;
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Consolidation;
 
@@ -28,8 +29,9 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// month is kept.
 /// </para>
 /// <para>
-/// A month's posts are counted by statements of their own, held to a version of their own,
-/// <see cref="CountingRules.Posts"/>, so a change to one recounts the months of the other not at all.
+/// A month's posts and its busiest pages are counted by statements of their own, each held to a version of
+/// its own, <see cref="CountingRules.Posts"/> and <see cref="CountingRules.Pages"/>, so a change to how one
+/// of the three is counted recounts the months of the others not at all.
 /// </para>
 /// </remarks>
 public static class ConsolidationSqlCompiler
@@ -39,6 +41,12 @@ public static class ConsolidationSqlCompiler
 
     /// <summary>What the counting statements ask of the store, ahead of anything a person is reading.</summary>
     private const string Restraint = "SETTINGS max_threads = 1, max_execution_time = 600";
+
+    /// <summary>Where a month's posts are kept.</summary>
+    private const string PostTable = "consolidated_post_months";
+
+    /// <summary>Where a month's busiest pages are kept.</summary>
+    private const string PageTable = "consolidated_page_months";
 
     /// <summary>What the calendar reads of each kept month: how it was counted.</summary>
     private static readonly KeptColumn[] Described =
@@ -226,33 +234,26 @@ public static class ConsolidationSqlCompiler
     /// </summary>
     /// <remarks>
     /// Each month as its newest count, on the terms the calendar reads a month's totals by. Only how a
-    /// month was counted is read, never the posts it holds: that is all choosing what to count again
-    /// needs, and a month of fifty thousand posts is not read on every run to decide nothing.
+    /// month was counted is read, and which list of posts it was counted for, never the posts it holds:
+    /// that is all choosing what to count again needs, and a month of fifty thousand posts is not read on
+    /// every run to decide nothing.
     /// </remarks>
     /// <param name="siteId">The website.</param>
     /// <returns>The statement and its bound value.</returns>
-    public static CompiledStatement CompilePostSurvey(Guid siteId)
-    {
-        const string sql = """
-            SELECT
-                month,
-                time_zone,
-                posts_fingerprint,
-                ruleset_major,
-                ruleset_minor,
-                ruleset_judged_to,
-                counting_rules,
-                counted_to,
-                judged_to,
-                counted_at
-            FROM consolidated_post_months
-            WHERE site_id = {site_id:UUID}
-            ORDER BY month, counted_at DESC
-            LIMIT 1 BY month
-            """;
+    public static CompiledStatement CompilePostSurvey(Guid siteId) =>
+        new(KeptDescriptions(PostTable, ",\n    posts_fingerprint"), [new QueryParameter(StatementBindings.SiteId, siteId)]);
 
-        return new CompiledStatement(sql, [new QueryParameter(StatementBindings.SiteId, siteId)]);
-    }
+    /// <summary>
+    /// Compiles the reading of how each month whose pages were kept for a website was counted.
+    /// </summary>
+    /// <remarks>
+    /// On the terms <see cref="CompilePostSurvey"/> reads the months of posts by: how each month was
+    /// counted, as its newest count, and nothing of the pages it holds.
+    /// </remarks>
+    /// <param name="siteId">The website.</param>
+    /// <returns>The statement and its bound value.</returns>
+    public static CompiledStatement CompilePageSurvey(Guid siteId) =>
+        new(KeptDescriptions(PageTable, string.Empty), [new QueryParameter(StatementBindings.SiteId, siteId)]);
 
     /// <summary>
     /// Compiles the count of the pages delivered at every path of a website in one month, for everybody
@@ -275,4 +276,150 @@ public static class ConsolidationSqlCompiler
             $"{PostViewsStatement.Text(population)}\n{Restraint}",
             PostViewsStatement.Bound(month.SiteId, month.Window, population));
     }
+
+    /// <summary>
+    /// Compiles the count of the pages delivered at every path of a website in one month, for everybody
+    /// and for the visits judged to be people, and of which of them the month keeps.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One statement for both populations: the month's reports settled as the list of pages settles them,
+    /// everybody's pages counted from the reports with identity settled and the people's from the reports
+    /// the verdicts on people cover — each by the arithmetic of the list of pages for that population, from
+    /// <see cref="PostViewsStatement"/> — and both brought together path by path.
+    /// </para>
+    /// <para>
+    /// A path can be kept when at least <see cref="KeptPages.FewestVisitors"/> different visitor keys were
+    /// delivered a page at it and it is no longer than <see cref="KeptPages.LongestPath"/> characters. Of
+    /// those, the month keeps the <see cref="KeptPages.MostPerPopulation"/> most viewed by everybody and as
+    /// many of the most viewed by people — of the paths a person was delivered a page at — ties broken by
+    /// the path's bytes, and keeps every other path only as what they add up to. The busiest of each kind
+    /// are gathered in the same pass over the paths as the totals, each holding no more than it keeps,
+    /// whatever was asked for that month; ranking every path instead would hold every path at once, and a
+    /// count of a month never spills past the memory a statement is allowed.
+    /// </para>
+    /// <para>
+    /// The figures <see cref="KeptPages"/> sets are written into the statement as they are, so the test that
+    /// holds <see cref="CountingRules.Pages"/> to its text fails when one of them changes. Nothing a path
+    /// holds is part of the statement: every path is grouped on and read back.
+    /// </para>
+    /// </remarks>
+    /// <param name="month">The month.</param>
+    /// <returns>
+    /// The statement and its bound values. It answers one row: the paths kept, everybody's and the
+    /// people's pages delivered at each of them, and how many other paths there were and the pages
+    /// delivered at them.
+    /// </returns>
+    public static CompiledStatement CompilePageCount(MonthToCount month)
+    {
+        ArgumentNullException.ThrowIfNull(month);
+
+        var most = Literal(KeptPages.MostPerPopulation);
+
+        var sql = $$"""
+            {{PostViewsStatement.Reported(Population.People)}},
+                viewed AS
+                (
+                    SELECT
+                        path,
+                        toInt64(sum(everybody)) AS page_views,
+                        toInt64(sum(of_people)) AS people_views,
+                        toInt64(sum(seen_by)) AS visitors
+                    FROM
+                    (
+                        SELECT
+                            path,
+                            page_views AS everybody,
+                            toInt64(0) AS of_people,
+                            visitors AS seen_by
+                        FROM
+                        (
+                            {{PostViewsStatement.ByPathWithVisitors(ReconciledEvents.Identified, 16)}}
+                        )
+                        UNION ALL
+                        SELECT
+                            path,
+                            toInt64(0) AS everybody,
+                            page_views AS of_people,
+                            toInt64(0) AS seen_by
+                        FROM
+                        (
+                            {{PostViewsStatement.ByPath(JudgedPeople.Attributed, 16)}}
+                        )
+                    )
+                    GROUP BY path
+                    HAVING page_views > 0
+                )
+            SELECT
+                arrayMap(entry -> entry.1, kept) AS paths,
+                arrayMap(entry -> entry.2, kept) AS page_views,
+                arrayMap(entry -> entry.3, kept) AS people_page_views,
+                toInt64(counted_paths - length(kept)) AS left_out_paths,
+                toInt64(counted_page_views - arraySum(page_views)) AS left_out_page_views,
+                toInt64(counted_people_views - arraySum(people_page_views)) AS left_out_people_page_views
+            FROM
+            (
+                SELECT
+                    counted_paths,
+                    counted_page_views,
+                    counted_people_views,
+                    arrayDistinct(arrayConcat(
+                        arrayMap(busy -> (busy.2, -busy.1, busy.3), busiest),
+                        arrayMap(busy -> (busy.2, busy.3, -busy.1), busiest_for_people))) AS kept
+                FROM
+                (
+                    SELECT
+                        toInt64(count()) AS counted_paths,
+                        toInt64(sum(page_views)) AS counted_page_views,
+                        toInt64(sum(people_views)) AS counted_people_views,
+                        groupArraySortedIf({{most}})((-page_views, path, people_views), keepable) AS busiest,
+                        groupArraySortedIf({{most}})((-people_views, path, page_views), keepable AND people_views > 0) AS busiest_for_people
+                    FROM
+                    (
+                        SELECT
+                            path,
+                            page_views,
+                            people_views,
+                            lengthUTF8(path) <= {{Literal(KeptPages.LongestPath)}} AND visitors >= {{Literal(KeptPages.FewestVisitors)}} AS keepable
+                        FROM viewed
+                    )
+                )
+            )
+            {{Restraint}}
+            """;
+
+        return new CompiledStatement(
+            sql,
+            [
+                .. StatementBindings.Window(month.SiteId, month.Window),
+                StatementBindings.LongestVisit(),
+            ]);
+    }
+
+    /// <summary>
+    /// Writes the reading of how each month kept in a table of months of paths was counted, as its newest
+    /// count, with anything that table says of its months besides.
+    /// </summary>
+    /// <param name="table">The table. Written in this file and never supplied by a caller.</param>
+    /// <param name="also">The columns read after how the month was counted, each beginning a line of its own.</param>
+    /// <returns>The statement, which binds <c>site_id</c>.</returns>
+    private static string KeptDescriptions(string table, string also) => $$"""
+        SELECT
+            month,
+            time_zone,
+            ruleset_major,
+            ruleset_minor,
+            ruleset_judged_to,
+            counting_rules,
+            counted_to,
+            judged_to,
+            counted_at{{also}}
+        FROM {{table}}
+        WHERE site_id = {site_id:UUID}
+        ORDER BY month, counted_at DESC
+        LIMIT 1 BY month
+        """;
+
+    /// <summary>Writes a whole number as a statement holds it.</summary>
+    private static string Literal(int value) => value.ToString(CultureInfo.InvariantCulture);
 }

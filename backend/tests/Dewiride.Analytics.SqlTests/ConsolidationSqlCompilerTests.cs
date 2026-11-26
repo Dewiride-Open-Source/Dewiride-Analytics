@@ -68,6 +68,16 @@ public sealed partial class ConsolidationSqlCompilerTests
         [2] = "e5af8eae2fb2c40baae2448bf894392d885de75b944862697c6efc59f9f9793c",
     };
 
+    /// <summary>
+    /// What the arithmetic of each version of a month's busiest pages reads as, on the terms of
+    /// <see cref="ArithmeticOf"/>: raise <see cref="CountingRules.Pages"/> and add its entry here when the
+    /// test below fails — which a change to how many pages a month keeps makes it do too.
+    /// </summary>
+    private static readonly Dictionary<int, string> ArithmeticOfPages = new()
+    {
+        [1] = "fe3e8bb45b90852db51018feb184cf9fa6f567c054b58c87c794fa302d436fdb",
+    };
+
     /// <summary>Two of a website's posts, as the collector stores their paths.</summary>
     private static readonly string[] Posts = ["/posts/a-first-post/", "/posts/another/"];
 
@@ -125,6 +135,70 @@ public sealed partial class ConsolidationSqlCompilerTests
         var statement = ConsolidationSqlCompiler.CompilePostSurvey(SiteId);
 
         Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Page_Count()
+    {
+        var statement = ConsolidationSqlCompiler.CompilePageCount(May);
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void Kept_Page_Month_Descriptions()
+    {
+        var statement = ConsolidationSqlCompiler.CompilePageSurvey(SiteId);
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    /// <summary>
+    /// A month's pages are counted by the arithmetic of the list of pages for each population, in one
+    /// statement: the same reports, settled and kept as the list of pages of people keeps them, and the
+    /// pages delivered at each path counted from them as the list counts them — everybody's from the
+    /// reports with identity settled, and the people's from the reports the verdicts on people cover.
+    /// </summary>
+    [Fact]
+    public void A_Months_Pages_Are_Counted_By_The_Arithmetic_Of_The_List_Of_Pages()
+    {
+        var counted = Flattened(ConsolidationSqlCompiler.CompilePageCount(May).Sql);
+        var pages = AnalyticsSqlCompiler.Compile(Scope(), new SitePagesQuery(May.Window, 10));
+        var pagesOfPeople = AnalyticsSqlCompiler.Compile(Scope(), new SitePagesQuery(May.Window, 10) { Population = Population.People });
+
+        ConsolidationSqlCompiler.CompilePageCount(May).Sql.Should().StartWith(Selection(pagesOfPeople.Sql));
+        counted.Should().Contain(Delivered(pages.Sql));
+
+        foreach (var population in Enum.GetValues<Population>())
+        {
+            counted.Should().Contain(EachVisitorAtEachPath(ConsolidationSqlCompiler.CompilePostCount(May, population).Sql));
+        }
+    }
+
+    /// <summary>
+    /// A month keeps, of the paths at least two visitors were delivered a page at and no longer than the
+    /// bound, the busiest for everybody and the busiest of those a person was delivered a page at — each
+    /// gathered with the totals, holding no more than it keeps, rather than by numbering every path — and
+    /// counts every other path only in what the paths it did not keep add up to.
+    /// </summary>
+    [Fact]
+    public void A_Months_Pages_Keep_The_Busiest_For_Everybody_And_For_People_And_No_Path_Longer_Than_The_Bound()
+    {
+        var sql = ConsolidationSqlCompiler.CompilePageCount(May).Sql;
+        var ranked = sql[sql.IndexOf("\nSELECT", StringComparison.Ordinal)..];
+
+        sql.Should().Contain("toInt64(countIf(visitor_key != '' AND delivered > 0)) AS visitors");
+        sql.Should().Contain(
+            $"lengthUTF8(path) <= {KeptPages.LongestPath} AND visitors >= {KeptPages.FewestVisitors} AS keepable");
+        sql.Should().Contain(
+            $"groupArraySortedIf({KeptPages.MostPerPopulation})((-page_views, path, people_views), keepable) AS busiest");
+        sql.Should().Contain(
+            $"groupArraySortedIf({KeptPages.MostPerPopulation})((-people_views, path, page_views), keepable AND people_views > 0) AS busiest_for_people");
+        sql.Should().Contain("toInt64(counted_paths - length(kept)) AS left_out_paths");
+        sql.Should().Contain("toInt64(counted_page_views - arraySum(page_views)) AS left_out_page_views");
+        sql.Should().Contain("toInt64(counted_people_views - arraySum(people_page_views)) AS left_out_people_page_views");
+        ranked.Should().NotContain("OVER");
+        ranked.Should().NotContain(" IN (");
     }
 
     /// <summary>
@@ -237,11 +311,13 @@ public sealed partial class ConsolidationSqlCompilerTests
         var verdicts = () => ConsolidationSqlCompiler.CompileVerdicts(null!);
         var survey = () => ConsolidationSqlCompiler.CompileSurvey(SiteId, " ", Now);
         var posts = () => ConsolidationSqlCompiler.CompilePostCount(null!, Population.Everybody);
+        var pages = () => ConsolidationSqlCompiler.CompilePageCount(null!);
 
         count.Should().Throw<ArgumentNullException>();
         verdicts.Should().Throw<ArgumentNullException>();
         survey.Should().Throw<ArgumentException>();
         posts.Should().Throw<ArgumentNullException>();
+        pages.Should().Throw<ArgumentNullException>();
     }
 
     /// <summary>
@@ -275,6 +351,21 @@ public sealed partial class ConsolidationSqlCompilerTests
     }
 
     /// <summary>
+    /// The busiest pages of a month are held to a version of their own, on the same terms: a change to the
+    /// arithmetic they share with the list of pages, or to how many pages a month keeps, fails until
+    /// <see cref="CountingRules.Pages"/> is raised, which has the months of pages still held counted again —
+    /// and none of the months' totals or posts.
+    /// </summary>
+    [Fact]
+    public void The_Version_Of_The_Pages_Arithmetic_Moves_With_The_Statements_That_Count_Them()
+    {
+        ArithmeticOfPages.Should().ContainKey(CountingRules.Pages);
+        Fingerprint(PageCountingStatements()).Should().Be(
+            ArithmeticOfPages[CountingRules.Pages],
+            "the statement that counts a month's pages changed, so raise CountingRules.Pages and record the new fingerprint");
+    }
+
+    /// <summary>
     /// The fingerprint of the arithmetic: a hash of the text of every statement that counts a month,
     /// or its posts, with line endings as the repository keeps them.
     /// </summary>
@@ -299,17 +390,34 @@ public sealed partial class ConsolidationSqlCompilerTests
         ConsolidationSqlCompiler.CompilePostCount(May, Population.People),
     ];
 
+    private static CompiledStatement[] PageCountingStatements() => [ConsolidationSqlCompiler.CompilePageCount(May)];
+
     private static CompiledStatement[] EveryCountingStatement() =>
-        [.. MonthCountingStatements(), .. PostCountingStatements()];
+        [.. MonthCountingStatements(), .. PostCountingStatements(), .. PageCountingStatements()];
 
     private static CompiledStatement[] EverySurvey() =>
     [
         ConsolidationSqlCompiler.CompileSurvey(SiteId, Zone, Now),
         ConsolidationSqlCompiler.CompilePostSurvey(SiteId),
+        ConsolidationSqlCompiler.CompilePageSurvey(SiteId),
     ];
 
     /// <summary>Everything a statement reads before its own selection: the reports, settled and kept.</summary>
     private static string Selection(string sql) => sql[..sql.IndexOf("\nSELECT", StringComparison.Ordinal)];
+
+    /// <summary>
+    /// The grouping of a statement that counts the pages delivered to each visitor at each path, laid out
+    /// on one line.
+    /// </summary>
+    private static string EachVisitorAtEachPath(string sql)
+    {
+        var flattened = Flattened(sql);
+        var start = flattened.IndexOf("SELECT path, visitor_key,", StringComparison.Ordinal);
+        var end = flattened.IndexOf("GROUP BY path, visitor_key", start, StringComparison.Ordinal)
+            + "GROUP BY path, visitor_key".Length;
+
+        return flattened[start..end];
+    }
 
     /// <summary>The pages-delivered expression of the overview, laid out on one line.</summary>
     private static string Delivered(string sql)

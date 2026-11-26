@@ -29,4 +29,13 @@ public static class CountingRules
     /// months' totals, and the other way round.
     /// </remarks>
     public const int Posts = 2;
+
+    /// <summary>The version this build counts a month's busiest pages with.</summary>
+    /// <remarks>
+    /// A number of its own on the terms <see cref="Posts"/> is, held by a test of its own to the
+    /// statement that counts a month's pages — the bound <see cref="KeptPages"/> sets included — so a
+    /// change to how pages are counted recounts the months of pages still held, and neither the months'
+    /// totals nor their posts.
+    /// </remarks>
+    public const int Pages = 1;
 }

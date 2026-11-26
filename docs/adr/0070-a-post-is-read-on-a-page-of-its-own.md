@@ -21,6 +21,9 @@
   [0064](0064-a-month-outlives-the-reports-it-was-counted-from.md) revised it, whose picture of a
   website — cut by the hour, the day, the week, the month or the year, drawn, pressed into and
   remembered — the post's picture is.
+- **Followed by**: [0080](0080-a-website-s-busiest-pages-are-kept-a-month-at-a-time.md), whose list of
+  every page sits beside this decision's list of every post. A search of pages is compared by the
+  telemetry store as a bound value; a search of posts is still compared by PostgreSQL, as below.
 
 ## Context
 
@@ -160,7 +163,7 @@ nothing, or nothing holds what was searched for, the answer is given without ask
 text — the path rather than the whole address, because every address a website lists begins with the
 website's name, and a search for that name, or for the brand it is named after, would otherwise find every
 post. An address pasted whole is compared by the path it names, spelled as a post's path is, so it still
-finds its post (`PostMatch.PathIn`). Letters are compared without regard to case, with `%`, `_` and `\`
+finds its post (`PostSearch.PathIn`). Letters are compared without regard to case, with `%`, `_` and `\`
 escaped so that each stands only for itself (`ILIKE … ESCAPE '\'`). The text is read as words — each run
 of space or control characters one space, the NUL that PostgreSQL text cannot hold among them — and
 refused over a hundred characters. It is bound to the statement, never part of it, and logged no more
@@ -305,11 +308,11 @@ The engine:
   facts unchanged; `PostSearchTests`: `Nothing_Asked_Is_No_Search`,
   `A_Search_Is_Read_As_Words_With_Every_Run_Of_Space_Or_Control_Characters_As_One_Space`,
   `A_Search_As_Long_As_Allowed_Is_Read_And_One_Character_Longer_Is_Refused`,
-  `A_Search_Is_Measured_Once_Its_Space_Is_Folded` and
-  `Text_That_Is_Not_Well_Formed_Is_Read_With_The_Replacement_Character`; and `PostMatchTests`:
-  `Wildcards_And_The_Escape_Character_Stand_For_Themselves`, `Every_Other_Character_Is_Left_As_Written`,
+  `A_Search_Is_Measured_Once_Its_Space_Is_Folded`,
+  `Text_That_Is_Not_Well_Formed_Is_Read_With_The_Replacement_Character`,
   `A_Whole_Web_Address_Is_Compared_By_The_Path_It_Names` and
-  `Text_That_Is_No_Whole_Web_Address_Is_Compared_As_Written`.
+  `Text_That_Is_No_Whole_Web_Address_Is_Compared_As_Written`; and `PostMatchTests`:
+  `Wildcards_And_The_Escape_Character_Stand_For_Themselves` and `Every_Other_Character_Is_Left_As_Written`.
 - The list against real stores, `SitePostsReadTests`: `Every_Post_Is_Listed_With_The_Views_Insights_Gives_It`
   (both populations, its first post Insights' most read),
   `Posts_Are_Listed_Most_Read_First_Unless_The_Newest_Are_Asked_For`, `Posts_Of_People_Count_The_Reader_Alone`,

@@ -567,6 +567,37 @@ export const postsPageSchema = z.object({
 });
 
 /**
+ * One page of a website, as the list of every page names it: the address its views are counted
+ * under, as it was asked for, and how often it was viewed from the month the answer's `viewsFrom`
+ * names on. The address is written by whoever asked for the page, so it is only ever text.
+ */
+export const listedPageSchema = z.object({
+  path: z.string(),
+  pageViews: z.number().int(),
+});
+
+/**
+ * One page of the list of every page of a website, as its whole record reads them, for one
+ * population.
+ *
+ * `matching` is how many pages were viewed and hold every word searched for, the whole list where
+ * nothing was. `viewsFrom` is the first month the views are counted from, and nothing where no page
+ * matched. `leftOut` says some month kept before the months still read from their visits left pages
+ * out of what it kept for this population: a page too few visitors opened that month, or too far
+ * down its list, counts there only towards the month's own total. `mostPageViews` is the most any
+ * matching page was viewed, whichever page of the list is asked for, so a bar is drawn to the same
+ * rule on every page; nought where none matched. `shown` is the page itself, the most viewed first,
+ * and empty for a page past the end of the list.
+ */
+export const allPagesSchema = z.object({
+  matching: z.number().int(),
+  viewsFrom: calendarMonth.nullable(),
+  leftOut: z.boolean(),
+  mostPageViews: z.number().int(),
+  shown: z.array(listedPageSchema),
+});
+
+/**
  * One post's whole record, for one population, in one answer: the post as Insights names it, every
  * month of its life, and its recent weeks a day at a time.
  *
@@ -1114,6 +1145,10 @@ export type InsightsPosts = z.infer<typeof insightsPostsSchema>;
 export type PostsOrder = z.infer<typeof postsOrderSchema>;
 
 export type PostsPage = z.infer<typeof postsPageSchema>;
+
+export type ListedPage = z.infer<typeof listedPageSchema>;
+
+export type AllPages = z.infer<typeof allPagesSchema>;
 
 export type PostInsights = z.infer<typeof postInsightsSchema>;
 

@@ -1,5 +1,4 @@
 using System.Text;
-using Dewiride.Analytics.Domain.Telemetry;
 
 namespace Dewiride.Analytics.Infrastructure.Posts;
 
@@ -40,26 +39,5 @@ internal static class PostMatch
         }
 
         return pattern.Append('%').ToString();
-    }
-
-    /// <summary>
-    /// The text a post's path is compared with: where the text is a whole web address, the path it names,
-    /// spelled as a post's path is; otherwise the text as written.
-    /// </summary>
-    /// <remarks>
-    /// Every address a website lists begins with the website's own name, so comparing whole addresses would
-    /// find every post for a search for that name; a path is what tells one post from another. An address
-    /// pasted whole still finds its post: what precedes its path and what follows it are let go.
-    /// </remarks>
-    /// <param name="text">The text, which may hold anything.</param>
-    /// <returns>The text to compare a post's path with.</returns>
-    public static string PathIn(string text)
-    {
-        ArgumentNullException.ThrowIfNull(text);
-
-        return Uri.TryCreate(text, UriKind.Absolute, out var address)
-            && (address.Scheme == Uri.UriSchemeHttps || address.Scheme == Uri.UriSchemeHttp)
-                ? PagePath.Of(address)
-                : text;
     }
 }

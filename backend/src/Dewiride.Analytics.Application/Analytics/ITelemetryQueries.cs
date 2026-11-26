@@ -243,6 +243,33 @@ public interface ITelemetryQueries
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Returns the months a website's busiest pages were kept for, and whether each left any page out.
+    /// </summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">The moment to read them at.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Each month, oldest first, as its newest count.</returns>
+    Task<ImmutableArray<MonthOfPages>> GetKeptPageMonthsAsync(
+        TenantScope scope,
+        KeptPageMonthsQuery query,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns one slice of every page of a website, with its views across the website's whole record.
+    /// </summary>
+    /// <param name="scope">Proof the caller may read this site.</param>
+    /// <param name="query">Where views begin to be counted from the reports, the words searched for, the slice, and who the pages were delivered to.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// The slice, most viewed first, with how many pages match and how often the most viewed of them was
+    /// viewed — both across every slice.
+    /// </returns>
+    Task<AllPagesSlice> GetAllPagesAsync(
+        TenantScope scope,
+        AllPagesQuery query,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Returns individual judged visits, each with the evidence behind its verdict and what the
     /// visit itself was.
     /// </summary>
@@ -349,6 +376,39 @@ public sealed record KeptMonthOfPost(
     DateTimeOffset CountedAt,
     TimeRange Counted,
     DateTimeOffset JudgedTo);
+
+/// <summary>
+/// One month a website's busiest pages were kept for, and whether it left any page out.
+/// </summary>
+/// <remarks>
+/// A month keeps only its busiest pages, so a page viewed rarely in it may have views the month did not
+/// keep. Whether it did is said for everybody and for the people apart, since a page left out that no
+/// person was delivered changes nothing that is counted for people.
+/// </remarks>
+/// <param name="Month">The first of the month, on the calendar it was counted on.</param>
+/// <param name="LeftOut">Whether the month left out any page that was delivered to anybody.</param>
+/// <param name="PeopleLeftOut">Whether it left out any page that was delivered in a visit judged to be a person.</param>
+public readonly record struct MonthOfPages(DateOnly Month, bool LeftOut, bool PeopleLeftOut)
+{
+    /// <summary>Whether the month left out any page delivered to whoever a question is about.</summary>
+    /// <param name="population">Who the question is about.</param>
+    /// <returns><see langword="true"/> where it did.</returns>
+    public bool LeftOutFor(Population population) => population == Population.People ? PeopleLeftOut : LeftOut;
+}
+
+/// <summary>
+/// One slice of every page of a website.
+/// </summary>
+/// <param name="Matching">How many pages match, across every slice: every page viewed where nothing was searched for.</param>
+/// <param name="MostPageViews">
+/// Pages delivered at the most viewed page that matches, whatever the slice, so every slice can be drawn to
+/// one scale; nought where none matches.
+/// </param>
+/// <param name="Shown">
+/// The slice, most viewed first: nothing where it begins past the end, or past the
+/// <see cref="AllPagesQuery.MostListed"/> most viewed.
+/// </param>
+public sealed record AllPagesSlice(long Matching, long MostPageViews, ImmutableArray<PathViews> Shown);
 
 /// <summary>
 /// One slice of a window's judged visits, newest first.

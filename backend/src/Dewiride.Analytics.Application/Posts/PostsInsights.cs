@@ -100,26 +100,27 @@ public static class PostsInsights
     }
 
     /// <summary>
-    /// Decides where a post's views begin to be counted from the reports.
+    /// Decides where the views of a website's posts, or of its pages, begin to be counted from the
+    /// reports.
     /// </summary>
     /// <remarks>
     /// The first month of the record that is the one running now, or a finished month nothing was kept
-    /// of the posts of while every report of it is still held. Every month from there on is still held,
-    /// so all of them are counted from their reports, and the posts kept for any of them are left
-    /// unread rather than counted twice.
+    /// of the posts — or of the pages — of while every report of it is still held. Every month from there
+    /// on is still held, so all of them are counted from their reports, and what was kept for any of them
+    /// is left unread rather than counted twice.
     /// </remarks>
     /// <param name="record">The website's record, month by month, oldest first.</param>
-    /// <param name="postMonths">The months whose posts were kept.</param>
+    /// <param name="keptMonths">The months whose posts, or whose pages, were kept.</param>
     /// <param name="asOf">The moment the record is read at.</param>
     /// <returns>The month, or nothing where the record is empty.</returns>
     public static RecordedMonth? LiveFrom(
         ImmutableArray<RecordedMonth> record,
-        IReadOnlyCollection<DateOnly> postMonths,
+        IReadOnlyCollection<DateOnly> keptMonths,
         DateTimeOffset asOf)
     {
-        ArgumentNullException.ThrowIfNull(postMonths);
+        ArgumentNullException.ThrowIfNull(keptMonths);
 
-        var kept = postMonths.ToHashSet();
+        var kept = keptMonths.ToHashSet();
         var running = record.Length - 1;
 
         return record
@@ -130,19 +131,19 @@ public static class PostsInsights
     }
 
     /// <summary>
-    /// The month a post's views are counted from: the first whose posts were kept, or the first answered
-    /// from its reports where that is earlier.
+    /// The month the views of a website's posts, or of its pages, are counted from: the first whose posts
+    /// or pages were kept, or the first answered from its reports where that is earlier.
     /// </summary>
-    /// <param name="postMonths">The months whose posts were kept.</param>
+    /// <param name="keptMonths">The months whose posts, or whose pages, were kept.</param>
     /// <param name="liveFrom">Where views begin to be counted from the reports, as <see cref="LiveFrom"/> decides.</param>
-    /// <returns>The month, or nothing where the record is empty and no post has a view.</returns>
-    public static DateOnly? ViewsFrom(IReadOnlyCollection<DateOnly> postMonths, RecordedMonth? liveFrom)
+    /// <returns>The month, or nothing where the record is empty and nothing has a view.</returns>
+    public static DateOnly? ViewsFrom(IReadOnlyCollection<DateOnly> keptMonths, RecordedMonth? liveFrom)
     {
-        ArgumentNullException.ThrowIfNull(postMonths);
+        ArgumentNullException.ThrowIfNull(keptMonths);
 
         return liveFrom is null
             ? null
-            : postMonths.Where(month => month < liveFrom.Month).DefaultIfEmpty(liveFrom.Month).Min();
+            : keptMonths.Where(month => month < liveFrom.Month).DefaultIfEmpty(liveFrom.Month).Min();
     }
 
     /// <summary>

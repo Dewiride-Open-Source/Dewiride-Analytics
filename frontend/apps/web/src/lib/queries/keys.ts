@@ -6,7 +6,7 @@ import type {
   Granularity,
   PeriodGranularity,
 } from '@/lib/analytics/period';
-import type { PostsListing } from '@/lib/analytics/posts';
+import type { PagesListing, PostsListing } from '@/lib/analytics/posts';
 import type {
   ActionGrouping,
   EngagementRanking,
@@ -149,6 +149,32 @@ export function postsPageKey(
     limit,
     offset,
     stage,
+  ] as const;
+}
+
+/**
+ * One page of the list of every page of a website, for one population, in its zone. What was
+ * searched for and the page are each a different question, and the zone is in the name for the
+ * reason it is in the record's: every month the views are counted in is the website's own. The list
+ * a page belongs to — the website, its zone and the population — is named first, as it is for a page
+ * of the posts.
+ */
+export function allPagesKey(
+  siteId: string,
+  timeZoneId: string,
+  population: Population,
+  { search, limit, offset }: PagesListing,
+) {
+  return [
+    'sites',
+    siteId,
+    'insights',
+    'pages',
+    timeZoneId,
+    population,
+    search,
+    limit,
+    offset,
   ] as const;
 }
 

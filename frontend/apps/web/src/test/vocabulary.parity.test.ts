@@ -12,6 +12,7 @@ import {
 } from '@/lib/analytics/period';
 import {
   DEFAULT_POSTS_ORDER,
+  PAGES_LISTED_MOST,
   POSTS_ORDERS,
   POSTS_PAGE_SIZES,
   POSTS_SEARCH_MOST,
@@ -114,6 +115,15 @@ const POST_SEARCH = path.join(
 const SITE_POSTS = path.join(
   REPOSITORY,
   'backend/src/Dewiride.Analytics.Application/Posts/ISitePosts.cs',
+);
+
+/**
+ * Where the engine states how many of a website's pages one question may ask for, each question
+ * stating its own most under the same name.
+ */
+const ANALYTICS_QUERY = path.join(
+  REPOSITORY,
+  'backend/src/Dewiride.Analytics.Application/Analytics/AnalyticsQuery.cs',
 );
 
 /** Where the engine names the words a question about a website's numbers is asked in. */
@@ -507,6 +517,33 @@ describe('the list of every post', () => {
     expect([...POSTS_ORDERS].sort()).toEqual([...orders].sort());
     expect([...sentencesUnder('insights.allPosts.order.by')].sort()).toEqual([...orders].sort());
     expect(orders).toContain(DEFAULT_POSTS_ORDER);
+  });
+});
+
+/**
+ * The list of every page is paged in the same sizes as the list of every post, and every one of them
+ * is a page the engine lists whole. It is paged no further down than the engine reads, so no page
+ * it offers is one the engine answers as past the end. Several of the engine's questions state their
+ * most under one name, so the one read is the one stated by the question every page is asked with,
+ * and by no other.
+ */
+describe('the list of every page', () => {
+  it('offers no page of every page longer than the engine lists at once', () => {
+    const [most] = declared(
+      ANALYTICS_QUERY,
+      /record AllPagesQuery\b(?:(?!\n\s*public sealed record )[\s\S])*?public const int MostPages = (\d+);/g,
+    );
+
+    expect(Math.max(...POSTS_PAGE_SIZES)).toBeLessThanOrEqual(Number(most));
+  });
+
+  it('lists no further than the engine reads', () => {
+    const [most] = declared(
+      ANALYTICS_QUERY,
+      /record AllPagesQuery\b(?:(?!\n\s*public sealed record )[\s\S])*?public const int MostListed = ([\d_]+);/g,
+    );
+
+    expect(PAGES_LISTED_MOST).toBe(Number(most?.replaceAll('_', '')));
   });
 });
 

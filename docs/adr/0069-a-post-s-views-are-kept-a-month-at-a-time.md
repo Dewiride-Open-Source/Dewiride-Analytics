@@ -20,6 +20,9 @@
   bind its paths — its own, and where it landed — as values, compared once the reports are reconciled;
   every statement that counts or reads every post still names none. Its list of every post gives each
   the views this decision gives it on Insights.
+- **Extended by**: [0080](0080-a-website-s-busiest-pages-are-kept-a-month-at-a-time.md), which keeps the
+  views of a website's busiest pages a month at a time as this keeps a post's, within a bound, by the
+  same arithmetic of the list of pages.
 
 ## Context
 

@@ -24,6 +24,7 @@ import { writtenMonth } from '@/lib/analytics/all-time';
 import type { Population } from '@/lib/analytics/people-only';
 import { withChoices } from '@/lib/analytics/period';
 import { type PostsLook, postsLook, postsNote, viewsCountedSince } from '@/lib/analytics/posts';
+import { everyPageAddress } from '@/lib/analytics/use-posts-listing';
 import type { InsightsPosts, Site, SitemapStatus } from '@/lib/api/schemas';
 import type { Formatter } from '@/lib/charts/bucket-names';
 import { sentences } from '@/lib/charts/use-left-out';
@@ -123,6 +124,7 @@ function SitePosts({ site, population, firstMonth, onCheckAddress, headingRef }:
         mayChange={mayChange}
         onCheckAddress={onCheckAddress}
         headingRef={headingRef}
+        everyPage={everyPageAddress(population)}
       />
     );
   }
@@ -223,11 +225,17 @@ interface NoPostsProps {
   readonly mayChange: boolean;
   readonly onCheckAddress: () => void;
   readonly headingRef: RefObject<HTMLHeadingElement | null>;
+  /**
+   * The address of the list of every page, which needs no sitemap, where the screen offers the way
+   * to it here rather than beside the list itself.
+   */
+  readonly everyPage?: string;
 }
 
 /**
  * The one card standing where the posts would be, for each reason there are none, with the one thing
- * somebody who manages the website can do about it.
+ * somebody who manages the website can do about it; and, where the screen offers it, the way to every
+ * page of the website, which can be listed whatever its sitemap says.
  */
 export function NoPosts({
   look,
@@ -236,6 +244,7 @@ export function NoPosts({
   mayChange,
   onCheckAddress,
   headingRef,
+  everyPage,
 }: NoPostsProps) {
   const t = useTranslations('insights.posts');
   const sitemap = useTranslations('siteSettings.sitemap');
@@ -246,6 +255,12 @@ export function NoPosts({
     t,
     sitemap,
   );
+  const ask =
+    mayChange && asks !== null ? (
+      <Button tone={asks === 'add' ? 'primary' : 'secondary'} onClick={onCheckAddress}>
+        {asks === 'add' ? t('none.action') : t('check')}
+      </Button>
+    ) : null;
 
   return (
     <ListEmpty
@@ -254,13 +269,34 @@ export function NoPosts({
       body={body}
       headingRef={headingRef}
       action={
-        mayChange && asks !== null ? (
-          <Button tone={asks === 'add' ? 'primary' : 'secondary'} onClick={onCheckAddress}>
-            {asks === 'add' ? t('none.action') : t('check')}
-          </Button>
-        ) : undefined
+        ask === null && everyPage === undefined ? undefined : (
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+            {ask}
+            {everyPage === undefined ? null : <SeeAll href={everyPage} words={t('everyPage')} />}
+          </div>
+        )
       }
     />
+  );
+}
+
+interface SeeAllProps {
+  /** Where it leads. */
+  readonly href: string;
+  /** What it is called. */
+  readonly words: string;
+}
+
+/** A way to a screen listing more than this one shows, counting the same people. */
+function SeeAll({ href, words }: SeeAllProps) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex min-h-10 items-center gap-1.5 rounded-md text-sm font-medium text-accent-strong transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong"
+    >
+      {words}
+      <ArrowRight aria-hidden className="size-4" />
+    </Link>
   );
 }
 
@@ -380,13 +416,7 @@ function EveryPost({ posts, population }: EveryPostProps) {
   const t = useTranslations('insights.posts');
 
   return (
-    <Link
-      href={withChoices(ALL_POSTS, { population })}
-      className="inline-flex min-h-10 items-center gap-1.5 rounded-md text-sm font-medium text-accent-strong transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong"
-    >
-      {t('seeAll', { count: posts })}
-      <ArrowRight aria-hidden className="size-4" />
-    </Link>
+    <SeeAll href={withChoices(ALL_POSTS, { population })} words={t('seeAll', { count: posts })} />
   );
 }
 

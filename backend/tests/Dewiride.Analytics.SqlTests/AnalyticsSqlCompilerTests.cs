@@ -64,6 +64,20 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// <summary>The paths one post is read at: its own, and the path its page landed at.</summary>
     private static readonly ImmutableArray<string> OnePostsPaths = ["/posts/a-first-post/", "/posts/first-post-moved/"];
 
+    /// <summary>
+    /// The month the views of every page begin to be counted from the reports in: May 2026, beginning where
+    /// the standard window does.
+    /// </summary>
+    private static readonly RecordedMonth PagesLiveFrom = new(
+        new DateOnly(2026, 5, 1),
+        From,
+        new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
+        new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero),
+        null);
+
+    /// <summary>Two words a website's pages are searched for: one typed, and the path of an address pasted whole.</summary>
+    private static readonly ImmutableArray<string> SearchedWords = ["guide", "/caf%C3%A9/"];
+
     /// <summary>The free-text narrowings a hostile value is proved to reach the store as a value.</summary>
     private static readonly string[] FreeTextNarrowings = ["towns", "browsers", "entry_pages"];
 
@@ -231,15 +245,170 @@ public sealed partial class AnalyticsSqlCompilerTests
         Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
 
+    [Fact]
+    public void Kept_Page_Months()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new KeptPageMonthsQuery(To));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void All_Pages()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), AllPages(Population.Everybody));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void All_Pages_Of_People()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), AllPages(Population.People));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    [Fact]
+    public void All_Pages_Searched()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new AllPagesQuery(To, PagesLiveFrom, SearchedWords, 25, 50));
+
+        Snapshot.Matches(CompiledStatementReport.Render(statement));
+    }
+
+    /// <summary>
+    /// Every page is listed by the arithmetic of the list of pages: the same reports, settled and kept the
+    /// same way, and the same pages delivered counted from them path by path, for everybody and for people
+    /// alike — and the months kept before them read as their newest counts, of the population asked about.
+    /// </summary>
+    /// <param name="population">Who the pages are listed for.</param>
+    [Theory]
+    [InlineData(Population.Everybody)]
+    [InlineData(Population.People)]
+    public void Every_Page_Is_Listed_By_The_Arithmetic_Of_The_List_Of_Pages(Population population)
+    {
+        var listed = AnalyticsSqlCompiler.Compile(Scope(), AllPages(population));
+        var pages = AnalyticsSqlCompiler.Compile(Scope(), new SitePagesQuery(Window(), 10) { Population = population });
+        var posts = AnalyticsSqlCompiler.Compile(Scope(), PostViews(population)).Sql;
+        var counted = posts[posts.IndexOf("\nSELECT", StringComparison.Ordinal)..posts.LastIndexOf("HAVING", StringComparison.Ordinal)];
+        var kept = population == Population.People ? "people_page_views" : "page_views";
+
+        listed.Sql.Should().StartWith(pages.Sql[..pages.Sql.IndexOf("\nSELECT", StringComparison.Ordinal)]);
+        Flattened(listed.Sql).Should().Contain(Flattened(counted).Trim());
+        Flattened(listed.Sql).Should().Contain($", {kept} AS counted FROM consolidated_page_months");
+        Flattened(listed.Sql).Should().Contain("AND month < {before:Date} ORDER BY month, counted_at DESC LIMIT 1 BY month");
+    }
+
+    /// <summary>
+    /// What somebody searched a website's pages for reaches the store as words bound to the statement,
+    /// exactly as written, and never as part of it — whatever they hold.
+    /// </summary>
+    [Fact]
+    public void A_Pages_Search_Is_Bound_And_Never_Written()
+    {
+        ImmutableArray<string> hostile =
+        [
+            "') OR 1=1 --",
+            "/{words:Array(String)}/",
+            "x'); DROP TABLE events; --",
+            "%' OR path LIKE '%",
+            "\\",
+        ];
+
+        foreach (var population in Enum.GetValues<Population>())
+        {
+            var statement = AnalyticsSqlCompiler.Compile(
+                Scope(),
+                new AllPagesQuery(To, PagesLiveFrom, hostile, 25, 0) { Population = population });
+
+            foreach (var word in hostile)
+            {
+                statement.Sql.Should().NotContain(word);
+            }
+
+            statement.Parameters.Should().ContainSingle(parameter => parameter.Name == "words")
+                .Which.Value.Should().BeEquivalentTo(hostile, options => options.WithStrictOrdering());
+        }
+    }
+
+    /// <summary>
+    /// A page is found only where every word searched for is in its path, or in its path as it reads with
+    /// its escaped letters written out — whatever their case — and only once its views have been added up
+    /// across the reports and the months kept, so a page is found whole or not at all. The letters written
+    /// out are worked out once for each path, outside the reading of each word, and what they leave that is
+    /// not text is read as text.
+    /// </summary>
+    [Fact]
+    public void Every_Word_Searched_For_Is_Required_Of_An_Address_After_Grouping()
+    {
+        var sql = Flattened(
+            AnalyticsSqlCompiler.Compile(Scope(), new AllPagesQuery(To, PagesLiveFrom, SearchedWords, 25, 0)).Sql);
+        var grouped = sql.IndexOf(
+            "FROM kept_views ) GROUP BY path ) WHERE page_views > 0 AND arrayAll(",
+            StringComparison.Ordinal);
+        var searched = sql.IndexOf("{words:Array(String)}", StringComparison.Ordinal);
+
+        sql.Should().Contain("toInt64(sum(page_views)) AS page_views, toValidUTF8(decodeURLComponent(path)) AS readable");
+        sql.Should().Contain(
+            "arrayAll( word -> positionCaseInsensitiveUTF8(path, word) > 0 OR positionCaseInsensitiveUTF8(readable, word) > 0,");
+        Regex.Count(sql, "decodeURLComponent").Should().Be(1);
+        Regex.Count(sql, @"\{words:").Should().Be(1);
+        grouped.Should().BePositive();
+        searched.Should().BeGreaterThan(grouped);
+    }
+
+    /// <summary>
+    /// The pages that match are counted, and the most viewed of them gathered — most viewed first, the path
+    /// breaking a tie — in one aggregation over them, as many as reach the end of the slice asked for and
+    /// never more than ten thousand, written into the statement as it is. Nothing from the reports on numbers
+    /// the pages or reads across every one of them at once, so a reading holds no more pages than a slice can
+    /// reach however many match. The answer is one row whatever the slice — how many match, and the pages
+    /// gathered, the first of them the most viewed — so a slice asked for past the end still says how many
+    /// match and how often the most viewed was viewed. The slice itself is bound.
+    /// </summary>
+    [Fact]
+    public void The_Pages_List_Always_Carries_Its_Busiest_Page_And_How_Many_Match()
+    {
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new AllPagesQuery(To, PagesLiveFrom, [], 25, 50));
+        CompiledStatement[] listings =
+        [
+            statement,
+            AnalyticsSqlCompiler.Compile(Scope(), AllPages(Population.People)),
+            AnalyticsSqlCompiler.Compile(Scope(), new AllPagesQuery(To, PagesLiveFrom, SearchedWords, 25, 0)),
+        ];
+
+        AllPagesQuery.MostListed.Should().Be(10_000);
+
+        foreach (var listing in listings)
+        {
+            var listed = listing.Sql[listing.Sql.IndexOf("reported AS", StringComparison.Ordinal)..];
+
+            Flattened(listed).Should().EndWith(
+                ") SELECT matching, -tupleElement(busiest[1], 1) AS most_page_views, " +
+                "arraySlice(busiest, {offset:UInt32} + 1, {limit:UInt32}) AS shown " +
+                "FROM ( SELECT toInt64(count()) AS matching, " +
+                "groupArraySorted(least({offset:UInt32} + {limit:UInt32}, 10000))((-page_views, path)) AS busiest " +
+                "FROM viewed )");
+            listed.Should().NotContain("OVER");
+            listed.Should().NotContain("row_number");
+        }
+
+        statement.Parameters.Should().Contain(new QueryParameter("limit", 25u));
+        statement.Parameters.Should().Contain(new QueryParameter("offset", 50u));
+    }
+
     /// <summary>
     /// Two engines can count one month twice, and the store replaces one row with the other only
     /// when it next merges. A month is read as its newest count, whatever has been merged so far — its
-    /// totals and its posts alike.
+    /// totals, its posts and its pages alike.
     /// </summary>
     [Fact]
     public void A_Kept_Month_Is_Read_As_Its_Newest_Count()
     {
-        foreach (var statement in EveryQuestionAboutKeptMonths().Concat(EveryQuestionAboutKeptPosts()))
+        foreach (var statement in EveryQuestionAboutKeptMonths()
+                     .Concat(EveryQuestionAboutKeptPosts())
+                     .Concat(EveryQuestionAboutKeptPages()))
         {
             statement.Sql.Should().Contain("ORDER BY month, counted_at DESC");
             statement.Sql.Should().Contain("LIMIT 1 BY month");
@@ -2365,16 +2534,55 @@ public sealed partial class AnalyticsSqlCompilerTests
     public void Asking_For_An_Impossible_Number_Of_Pages_Is_Refused(int limit)
     {
         var act = () => new SitePagesQuery(Window(), limit);
+        var every = () => new AllPagesQuery(To, PagesLiveFrom, [], limit, 0);
 
         act.Should().Throw<ArgumentOutOfRangeException>();
+        every.Should().Throw<ArgumentOutOfRangeException>();
+        AllPagesQuery.MostPages.Should().Be(SitePagesQuery.MostPages);
     }
 
     [Fact]
     public void Starting_The_Page_List_Before_Its_Beginning_Is_Refused()
     {
         var act = () => new SitePagesQuery(Window(), 10, -1);
+        var every = () => new AllPagesQuery(To, PagesLiveFrom, [], 10, -1);
 
         act.Should().Throw<ArgumentOutOfRangeException>();
+        every.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    /// <summary>
+    /// Every page is listed for words, or for none — never for words that are missing or empty, nor for more
+    /// than a search can hold — and from a month that has begun.
+    /// </summary>
+    [Fact]
+    public void Asking_For_Every_Page_By_Words_No_Search_Holds_Or_From_A_Month_Not_Begun_Is_Refused()
+    {
+        ImmutableArray<string> tooMany = [.. Enumerable.Range(0, AllPagesQuery.MostWords + 1).Select(word => $"w{word}")];
+        Func<AnalyticsQuery>[] unworded =
+        [
+            () => new AllPagesQuery(To, PagesLiveFrom, default, 10, 0),
+            () => new AllPagesQuery(To, PagesLiveFrom, ["guide", ""], 10, 0),
+        ];
+        Func<AnalyticsQuery>[] overreaching =
+        [
+            () => new AllPagesQuery(To, PagesLiveFrom, tooMany, 10, 0),
+            () => new AllPagesQuery(From.AddTicks(-1), PagesLiveFrom, [], 10, 0),
+        ];
+        var unmonthed = () => new AllPagesQuery(To, null!, [], 10, 0);
+
+        foreach (var ask in unworded)
+        {
+            ask.Should().ThrowExactly<ArgumentException>();
+        }
+
+        foreach (var ask in overreaching)
+        {
+            ask.Should().ThrowExactly<ArgumentOutOfRangeException>();
+        }
+
+        unmonthed.Should().ThrowExactly<ArgumentNullException>();
+        new AllPagesQuery(From, PagesLiveFrom, [], 10, 0).LiveFrom.Should().Be(From);
     }
 
     /// <summary>
@@ -3567,9 +3775,26 @@ public sealed partial class AnalyticsSqlCompilerTests
         AnalyticsSqlCompiler.Compile(Scope(), KeptMonthsOfPost(Population.People)),
     ];
 
+    /// <summary>
+    /// The questions about what was kept of a website's pages: the months, and the list of every page asked
+    /// of both populations, searched and not.
+    /// </summary>
+    /// <returns>The four statements.</returns>
+    private static CompiledStatement[] EveryQuestionAboutKeptPages() =>
+    [
+        AnalyticsSqlCompiler.Compile(Scope(), new KeptPageMonthsQuery(To)),
+        AnalyticsSqlCompiler.Compile(Scope(), AllPages(Population.Everybody)),
+        AnalyticsSqlCompiler.Compile(Scope(), AllPages(Population.People)),
+        AnalyticsSqlCompiler.Compile(Scope(), new AllPagesQuery(To, PagesLiveFrom, SearchedWords, 25, 50)),
+    ];
+
     /// <summary>How many pages were delivered at two of the website's posts over the standard window.</summary>
     private static PostViewsQuery PostViews(Population population) =>
         new(Window(), ["/posts/a-first-post/", "/posts/another/"]) { Population = population };
+
+    /// <summary>The first slice of every page of the website, counted from the reports from May on.</summary>
+    private static AllPagesQuery AllPages(Population population) =>
+        new(To, PagesLiveFrom, [], 25, 0) { Population = population };
 
     /// <summary>How many pages were delivered at one post in each bucket of the standard window.</summary>
     private static PostSeriesQuery PostSeries(TimeGranularity granularity, Population population) =>
@@ -3607,14 +3832,14 @@ public sealed partial class AnalyticsSqlCompilerTests
             .Split(' ')[0];
 
     /// <summary>
-    /// One question of each of the fourteen shapes that may be asked about a population from activity.
+    /// One question of each of the fifteen shapes that may be asked about a population from activity.
     /// </summary>
     /// <remarks>
     /// Held together so that a property every one of them has to have is asserted over all of
     /// them, and so that the next question given a population cannot be added without it.
     /// </remarks>
     /// <param name="population">Who to ask about.</param>
-    /// <returns>The fourteen questions.</returns>
+    /// <returns>The fifteen questions.</returns>
     private static AnalyticsQuery[] EveryQuestion(Population population) =>
     [
         new OverviewQuery(Window()) { Population = population },
@@ -3631,9 +3856,10 @@ public sealed partial class AnalyticsSqlCompilerTests
         new SiteVisitFlowQuery(Window(), Visits(), VisitPosition.Entry, 10) { Population = population },
         PostViews(population),
         PostSeries(TimeGranularity.Day, population),
+        AllPages(population),
     ];
 
-    /// <summary>The fourteen, compiled.</summary>
+    /// <summary>The fifteen, compiled.</summary>
     /// <param name="population">Who to ask about.</param>
     /// <returns>The statements.</returns>
     private static CompiledStatement[] EveryStatementAbout(Population population) =>
@@ -3677,6 +3903,7 @@ public sealed partial class AnalyticsSqlCompilerTests
         AnalyticsSqlCompiler.Compile(Scope(), Facets()),
         .. EveryQuestionAboutKeptMonths(),
         .. EveryQuestionAboutKeptPosts(),
+        .. EveryQuestionAboutKeptPages(),
         .. EveryStatementAbout(Population.People),
     ];
 
@@ -3744,6 +3971,14 @@ public sealed partial class AnalyticsSqlCompilerTests
     /// <returns>The pattern.</returns>
     [GeneratedRegex(@"\('(\w+)', \1\)")]
     private static partial Regex OfferedDetail();
+
+    /// <summary>A statement laid out on one line, so a fragment is found wherever a statement nests it.</summary>
+    private static string Flattened(string sql) => Whitespace().Replace(sql, " ");
+
+    /// <summary>Finds a run of whitespace.</summary>
+    /// <returns>The pattern.</returns>
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex Whitespace();
 
     /// <summary>
     /// A question from outside the vocabulary, built the only way one can be.

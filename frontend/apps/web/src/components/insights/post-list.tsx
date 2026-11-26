@@ -11,7 +11,7 @@ import { postCalled, postScreen } from '@/lib/analytics/post';
 import { postLink } from '@/lib/analytics/posts';
 import { shareOf } from '@/lib/analytics/share';
 import { usePeopleOnly } from '@/lib/analytics/use-people-only';
-import type { InsightsPost } from '@/lib/api/schemas';
+import type { InsightsPost, ListedPage } from '@/lib/api/schemas';
 import { cn } from '@/lib/styling';
 
 /** How many rows stand in for the newest posts while they are on their way. */
@@ -204,6 +204,57 @@ interface PostRowProps {
  * words, and the row is what somebody aims at.
  */
 export function PostRow({ post, most, list }: PostRowProps) {
+  return (
+    <ListedRow pageViews={post.pageViews} most={most}>
+      <div className="flex items-start">
+        <PostTitle post={post} list={list} />
+        <OpenPost post={post} className="-my-2.5" />
+      </div>
+      <PostFacts post={post} />
+    </ListedRow>
+  );
+}
+
+interface PageRowProps {
+  readonly page: ListedPage;
+  /** The most any page of the list has been viewed, which every bar is drawn against. */
+  readonly most: number;
+}
+
+/**
+ * One page of the list of every page: its address, and how often it was viewed.
+ *
+ * The address is written by whoever asked for the page, so it is only ever text, never a way to
+ * anywhere, and it reads left to right whatever it is written in. It takes two lines at most,
+ * broken wherever it has to be to fit a phone, and the whole of it is there for anybody who points
+ * at it.
+ */
+export function PageRow({ page, most }: PageRowProps) {
+  const path = readablePath(page.path);
+
+  return (
+    <ListedRow pageViews={page.pageViews} most={most}>
+      <bdi dir="ltr" title={path} className="line-clamp-2 min-w-0 wrap-anywhere">
+        {path}
+      </bdi>
+    </ListedRow>
+  );
+}
+
+interface ListedRowProps {
+  /** How often what the row stands for was viewed. */
+  readonly pageViews: number;
+  /** The most any row of the list was viewed, which every bar is drawn against. */
+  readonly most: number;
+  /** What the row stands for, and whatever is said of it beneath. */
+  readonly children: ReactNode;
+}
+
+/**
+ * One row of a list of what was viewed: what it stands for, how often it was viewed, and a bar
+ * behind it drawn against the most viewed row of the list.
+ */
+function ListedRow({ pageViews, most, children }: ListedRowProps) {
   const t = useTranslations('insights.posts');
 
   return (
@@ -211,18 +262,14 @@ export function PostRow({ post, most, list }: PostRowProps) {
       <span
         aria-hidden
         className="absolute inset-y-0 left-0 -z-10 rounded-md bg-accent-soft"
-        style={{ width: barWidth(post.pageViews, most) }}
+        style={{ width: barWidth(pageViews, most) }}
       />
       <div className="flex items-center gap-4 px-3 py-2.5">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm font-medium text-foreground">
-          <div className="flex items-start">
-            <PostTitle post={post} list={list} />
-            <OpenPost post={post} className="-my-2.5" />
-          </div>
-          <PostFacts post={post} />
+          {children}
         </div>
         <span className="shrink-0 whitespace-nowrap text-sm font-medium text-foreground tabular-nums">
-          {t('views', { count: post.pageViews })}
+          {t('views', { count: pageViews })}
         </span>
       </div>
     </li>
@@ -230,10 +277,10 @@ export function PostRow({ post, most, list }: PostRowProps) {
 }
 
 /**
- * A row's bar: none for a post nobody has read, and otherwise never so narrow that it vanishes.
+ * A row's bar: none for a row nobody viewed, and otherwise never so narrow that it vanishes.
  *
- * @param views How much the post was read.
- * @param most The most any row was read.
+ * @param views How often the row was viewed.
+ * @param most The most any row was viewed.
  */
 function barWidth(views: number, most: number): string {
   return views > 0 ? `${Math.max(shareOf(views, most) * 100, 2)}%` : '0%';

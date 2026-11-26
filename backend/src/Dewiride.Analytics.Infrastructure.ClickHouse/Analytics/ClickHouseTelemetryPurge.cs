@@ -43,7 +43,14 @@ internal sealed class ClickHouseTelemetryPurge(IClickHouseClient client) : ITele
     /// by, since every read is scoped through a site that no longer exists.
     /// </remarks>
     private static readonly string[] SiteScopedTables =
-        ["events", "session_classifications", "name_confirmations", "consolidated_months", "consolidated_post_months"];
+    [
+        "events",
+        "session_classifications",
+        "name_confirmations",
+        "consolidated_months",
+        "consolidated_post_months",
+        "consolidated_page_months",
+    ];
 
     /// <inheritdoc />
     public async Task PurgeSiteAsync(Guid siteId, CancellationToken cancellationToken)

@@ -261,14 +261,16 @@ public sealed class TelemetrySchemaTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
-    /// A website's months, and the months of its posts, are kept until the website is removed, even
-    /// after it stops being measured, or until its closed account's records are deleted: one row per
-    /// website and month, replaced whole by its newest count, with no rule that would ever expire it.
+    /// A website's months, and the months of its posts and of its busiest pages, are kept until the
+    /// website is removed, even after it stops being measured, or until its closed account's records are
+    /// deleted: one row per website and month, replaced whole by its newest count, with no rule that would
+    /// ever expire it.
     /// </summary>
     /// <param name="table">The table the months are kept in.</param>
     [Theory]
     [InlineData("consolidated_months")]
     [InlineData("consolidated_post_months")]
+    [InlineData("consolidated_page_months")]
     public async Task Kept_Months_Are_One_Row_Per_Month_And_Never_Expire(string table)
     {
         var definition = await TableDefinitionAsync(table);
@@ -277,6 +279,45 @@ public sealed class TelemetrySchemaTests(AnalyticsStackFixture stack)
         definition.Should().Contain("PARTITION BY toYear(month)");
         definition.Should().Contain("ORDER BY (site_id, month)");
         definition.Should().NotContain("TTL");
+    }
+
+    /// <summary>
+    /// A month of a website's busiest pages is kept for as long as the website is, and the paths it keeps
+    /// were written by whoever asked for them. So the table has nowhere an address, a user agent, a visitor
+    /// key or anything after a path could go: the month, the paths and how often each was viewed, what the
+    /// others added up to, and how it was counted.
+    /// </summary>
+    [Fact]
+    public async Task A_Month_Of_Pages_Is_Its_Paths_And_How_Often_Each_Was_Viewed_And_Nothing_Else()
+    {
+        var columns = await TelemetryStore.RowsAsync(
+            Client,
+            """
+            SELECT name, type
+            FROM system.columns
+            WHERE database = currentDatabase() AND table = 'consolidated_page_months'
+            ORDER BY position
+            """);
+
+        columns.Select(column => $"{column["name"]} {column["type"]}").Should().Equal(
+            "site_id UUID",
+            "month Date",
+            "time_zone LowCardinality(String)",
+            "begins_at DateTime64(3, 'UTC')",
+            "ends_at DateTime64(3, 'UTC')",
+            "paths Array(String)",
+            "page_views Array(UInt64)",
+            "people_page_views Array(UInt64)",
+            "left_out_paths UInt64",
+            "left_out_page_views UInt64",
+            "left_out_people_page_views UInt64",
+            "ruleset_major UInt16",
+            "ruleset_minor UInt16",
+            "ruleset_judged_to DateTime64(3, 'UTC')",
+            "counting_rules UInt16",
+            "counted_to DateTime64(3, 'UTC')",
+            "judged_to DateTime64(3, 'UTC')",
+            "counted_at DateTime64(3, 'UTC')");
     }
 
     /// <summary>

@@ -40,39 +40,4 @@ public sealed class PostMatchTests
     {
         PostMatch.Holding(text).Should().Be($"%{text}%");
     }
-
-    /// <summary>
-    /// A whole web address is compared by the path it names, spelled as a post's path is: its scheme and the
-    /// website's name before it and whatever follows it let go, and letters an address escapes escaped.
-    /// </summary>
-    /// <param name="text">The address searched for.</param>
-    /// <param name="path">The path it is compared as.</param>
-    [Theory]
-    [InlineData("https://example.com/posts/older/", "/posts/older/")]
-    [InlineData("HTTP://EXAMPLE.COM/posts/older/?utm_source=newsletter#top", "/posts/older/")]
-    [InlineData("https://example.com/café/", "/caf%C3%A9/")]
-    [InlineData("https://example.com", "/")]
-    public void A_Whole_Web_Address_Is_Compared_By_The_Path_It_Names(string text, string path)
-    {
-        PostMatch.PathIn(text).Should().Be(path);
-    }
-
-    /// <summary>
-    /// Anything that is not a whole web address — part of a path, an address without its scheme, another
-    /// kind of address, words — is compared exactly as it was written.
-    /// </summary>
-    /// <param name="text">The text searched for.</param>
-    [Theory]
-    [InlineData("/posts/older/")]
-    [InlineData("posts/older")]
-    [InlineData("example.com/posts/older/")]
-    [InlineData("ftp://example.com/posts/older/")]
-    [InlineData("mailto:someone@example.com")]
-    [InlineData("file:///posts/older/")]
-    [InlineData("https://")]
-    [InlineData("Moved House")]
-    public void Text_That_Is_No_Whole_Web_Address_Is_Compared_As_Written(string text)
-    {
-        PostMatch.PathIn(text).Should().Be(text);
-    }
 }

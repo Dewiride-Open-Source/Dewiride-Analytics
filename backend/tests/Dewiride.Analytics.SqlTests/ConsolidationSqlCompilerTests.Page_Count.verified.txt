@@ -1,0 +1,266 @@
+﻿--- statement ---
+WITH
+    windowed AS
+    (
+        SELECT kind, surface, path, visitor_key, correlation_id, server_ts
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    ),
+    stamped AS
+    (
+        SELECT
+            correlation_id,
+            visitor_key,
+            surface IN ('BrowserTracker', 'NoScriptPixel') AS from_browser,
+            toUnixTimestamp64Milli(server_ts) AS at_ms
+        FROM windowed
+        WHERE correlation_id != ''
+          AND visitor_key != ''
+    ),
+    bundled AS
+    (
+        SELECT
+            correlation_id AS name,
+            groupArray((visitor_key, at_ms, from_browser)) AS reports
+        FROM stamped
+        GROUP BY correlation_id
+        HAVING countIf(NOT from_browser) > 0
+    ),
+    echoed AS
+    (
+        SELECT
+            name,
+            delivered.1 AS reported_key,
+            delivered.2 AS delivery_ms,
+            arrayFilter(report -> abs(report.2 - delivery_ms) <= 120000, reports) AS around,
+            arrayDistinct(arrayMap(report -> report.1, arrayFilter(report -> NOT report.3, around))) AS reporters,
+            arrayDistinct(arrayMap(report -> report.1, arrayFilter(report -> report.3, around))) AS answerers,
+            if(length(reporters) = 1 AND length(answerers) = 1, answerers[1], '') AS answered_by
+        FROM bundled
+        ARRAY JOIN arrayDistinct(arrayMap(report -> (report.1, report.2), arrayFilter(report -> NOT report.3, reports))) AS delivered
+    ),
+    timeline AS
+    (
+        SELECT
+            visitor_key AS reporter,
+            toUnixTimestamp64Milli(server_ts) AS at_ms,
+            '' AS identifier,
+            toUInt8(0) AS is_name,
+            '' AS answerer
+        FROM windowed
+        WHERE surface NOT IN ('BrowserTracker', 'NoScriptPixel')
+          AND correlation_id = ''
+          AND (visitor_key) IN
+          (
+              SELECT visitor_key
+              FROM stamped
+              WHERE NOT from_browser
+          )
+        GROUP BY reporter, at_ms
+        UNION ALL
+        SELECT
+            reported_key AS reporter,
+            delivery_ms AS at_ms,
+            name AS identifier,
+            toUInt8(1) AS is_name,
+            answered_by AS answerer
+        FROM echoed
+    ),
+    tallied AS
+    (
+        SELECT
+            *,
+            -at_ms AS backwards_ms,
+            if(answerer = '', 0, row_number() OVER (
+                PARTITION BY reporter, answerer
+                ORDER BY at_ms, identifier)) AS answer_number
+        FROM timeline
+    ),
+    weighed AS
+    (
+        SELECT
+            reporter,
+            at_ms,
+            identifier,
+            sum(is_name) OVER ahead - sum(is_name) OVER behind AS names_near,
+            countIf(answerer != '') OVER ahead - countIf(answerer != '') OVER behind AS answered_near,
+            argMaxIf((answerer, answer_number), (at_ms, identifier), answerer != '') OVER ahead AS last_answer,
+            argMinIf((answerer, answer_number), (at_ms, identifier), answerer != '') OVER since AS first_answer,
+            if(answered_near > 0
+                   AND first_answer.1 = last_answer.1
+                   AND last_answer.2 - first_answer.2 + 1 = answered_near
+                   AND 2 * answered_near >= names_near
+                   AND last_answer.1 != reporter,
+               last_answer.1,
+               '') AS browser_key
+        FROM tallied
+        WINDOW
+            ahead AS (PARTITION BY reporter ORDER BY at_ms RANGE BETWEEN UNBOUNDED PRECEDING AND 1680000 FOLLOWING),
+            behind AS (PARTITION BY reporter ORDER BY at_ms RANGE BETWEEN UNBOUNDED PRECEDING AND 1680001 PRECEDING),
+            since AS (PARTITION BY reporter ORDER BY backwards_ms RANGE BETWEEN UNBOUNDED PRECEDING AND 1680000 FOLLOWING)
+    ),
+    linked AS
+    (
+        SELECT
+            reporter AS reported_key,
+            at_ms AS changed_ms,
+            browser_key
+        FROM
+        (
+            SELECT
+                reporter,
+                at_ms,
+                browser_key,
+                lagInFrame(browser_key, 1, '') OVER (
+                    PARTITION BY reporter
+                    ORDER BY at_ms, identifier
+                    ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS before
+            FROM weighed
+        )
+        WHERE browser_key != before
+    ),
+    identified AS
+    (
+        SELECT
+            windowed.* EXCEPT (visitor_key),
+            if(linked.browser_key != '' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'), linked.browser_key, windowed.visitor_key) AS visitor_key
+        FROM windowed
+        ASOF LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
+            AND toUnixTimestamp64Milli(windowed.server_ts) >= linked.changed_ms
+    ),
+    people AS
+    (
+        SELECT
+            splitByChar(':', session_key)[1] AS visitor_key,
+            began,
+            ended
+        FROM
+        (
+            SELECT
+                session_key,
+                argMax(category, (ruleset_major, ruleset_minor, classified_at)) AS category,
+                argMax(started_at, (ruleset_major, ruleset_minor, classified_at)) AS began,
+                argMax(ended_at, (ruleset_major, ruleset_minor, classified_at)) AS ended
+            FROM session_classifications
+            WHERE site_id = {site_id:UUID}
+              AND started_at >= fromUnixTimestamp64Milli({from_ms:Int64} - {longest_visit_seconds:Int64} * 1000, 'UTC')
+              AND started_at < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+            GROUP BY session_key
+        )
+        WHERE category = 'LikelyHuman'
+    ),
+    attributed AS
+    (
+        SELECT identified.*
+        FROM identified
+        INNER JOIN people ON identified.visitor_key = people.visitor_key
+        WHERE identified.server_ts >= people.began
+          AND identified.server_ts <= people.ended
+    ),
+    viewed AS
+    (
+        SELECT
+            path,
+            toInt64(sum(everybody)) AS page_views,
+            toInt64(sum(of_people)) AS people_views,
+            toInt64(sum(seen_by)) AS visitors
+        FROM
+        (
+            SELECT
+                path,
+                page_views AS everybody,
+                toInt64(0) AS of_people,
+                visitors AS seen_by
+            FROM
+            (
+                SELECT
+                    path,
+                    toInt64(sum(page_views)) AS page_views,
+                    toInt64(countIf(visitor_key != '' AND delivered > 0)) AS visitors
+                FROM
+                (
+                    SELECT
+                        path,
+                        visitor_key,
+                        greatest(
+                            countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),
+                            countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) AS delivered,
+                        if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
+                    FROM identified
+                    GROUP BY path, visitor_key
+                )
+                GROUP BY path
+            )
+            UNION ALL
+            SELECT
+                path,
+                toInt64(0) AS everybody,
+                page_views AS of_people,
+                toInt64(0) AS seen_by
+            FROM
+            (
+                SELECT
+                    path,
+                    toInt64(sum(page_views)) AS page_views
+                FROM
+                (
+                    SELECT
+                        path,
+                        visitor_key,
+                        greatest(
+                            countIf(kind = 'PageView' AND surface IN ('BrowserTracker', 'NoScriptPixel')),
+                            countIf(kind = 'PageView' AND surface NOT IN ('BrowserTracker', 'NoScriptPixel'))) AS delivered,
+                        if(visitor_key = '', countIf(kind = 'PageView'), delivered) AS page_views
+                    FROM attributed
+                    GROUP BY path, visitor_key
+                )
+                GROUP BY path
+            )
+        )
+        GROUP BY path
+        HAVING page_views > 0
+    )
+SELECT
+    arrayMap(entry -> entry.1, kept) AS paths,
+    arrayMap(entry -> entry.2, kept) AS page_views,
+    arrayMap(entry -> entry.3, kept) AS people_page_views,
+    toInt64(counted_paths - length(kept)) AS left_out_paths,
+    toInt64(counted_page_views - arraySum(page_views)) AS left_out_page_views,
+    toInt64(counted_people_views - arraySum(people_page_views)) AS left_out_people_page_views
+FROM
+(
+    SELECT
+        counted_paths,
+        counted_page_views,
+        counted_people_views,
+        arrayDistinct(arrayConcat(
+            arrayMap(busy -> (busy.2, -busy.1, busy.3), busiest),
+            arrayMap(busy -> (busy.2, busy.3, -busy.1), busiest_for_people))) AS kept
+    FROM
+    (
+        SELECT
+            toInt64(count()) AS counted_paths,
+            toInt64(sum(page_views)) AS counted_page_views,
+            toInt64(sum(people_views)) AS counted_people_views,
+            groupArraySortedIf(5000)((-page_views, path, people_views), keepable) AS busiest,
+            groupArraySortedIf(5000)((-people_views, path, page_views), keepable AND people_views > 0) AS busiest_for_people
+        FROM
+        (
+            SELECT
+                path,
+                page_views,
+                people_views,
+                lengthUTF8(path) <= 2048 AND visitors >= 2 AS keepable
+            FROM viewed
+        )
+    )
+)
+SETTINGS max_threads = 1, max_execution_time = 600
+
+--- bound values ---
+site_id = 0197c0de-0000-7000-8000-000000000001
+from_ms = 1777573800000
+to_ms = 1780252200000
+longest_visit_seconds = 86400

@@ -729,6 +729,7 @@
       "undated": "{count, plural, one {# post has no publishing date, so it isn't shown here.} other {# posts have no publishing dates, so they aren't shown here.}}",
       "latest": "Latest posts",
       "seeAll": "{count, plural, one {See your post} other {See all # posts}}",
+      "everyPage": "See every page",
       "best": {
         "title": "Most popular post",
         "views": "{count, plural, one {<figure>#</figure> view} other {<figure>#</figure> views}}",
@@ -845,6 +846,11 @@
       "title": "All posts",
       "caption": "Every post on {site}, and how often each one has been read.",
       "back": "Back to Insights",
+      "list": {
+        "label": "What to list",
+        "posts": "Posts",
+        "pages": "Pages"
+      },
       "search": {
         "label": "Search your posts",
         "placeholder": "Search by title or address",
@@ -872,6 +878,46 @@
         "title": "Nothing on this page",
         "body": "Your list of posts ends before this page.",
         "action": "Go to the first page"
+      }
+    },
+    "allPages": {
+      "title": "All pages",
+      "caption": "Every page on {site}, and how often each one has been viewed.",
+      "search": {
+        "label": "Search your pages",
+        "placeholder": "Search by address",
+        "clear": "Clear search"
+      },
+      "count": "{pages, plural, one {# page} other {# pages}}",
+      "found": "{matching, plural, =0 {No pages match your search} one {# page matches your search} other {# pages match your search}}",
+      "nav": {
+        "label": "Pages of the list"
+      },
+      "leftOut": "A page few visitors opened in an earlier month may show fewer views than it had.",
+      "mostListed": "Only the {most, number} most viewed are listed. Search to find any other page.",
+      "mostListedSearched": "Only the {most, number} most viewed are listed. Add a word to narrow the search.",
+      "noMatch": {
+        "title": "No pages match your search",
+        "body": "Try fewer words, or part of a page's address.",
+        "action": "Clear search"
+      },
+      "pastTheEnd": {
+        "title": "Nothing on this page",
+        "body": "Your list of pages ends before this page.",
+        "action": "Go to the first page"
+      },
+      "empty": {
+        "title": "No pages viewed yet",
+        "body": "Once {site} has its first visit, each page that's opened appears here with how often it was viewed.",
+        "action": "Get your tracking code"
+      },
+      "absent": {
+        "title": "No people yet",
+        "body": "None of the visits to your pages so far has been judged to be a person."
+      },
+      "noneKept": {
+        "title": "No pages to list yet",
+        "body": "Earlier months keep only pages more than one visitor opened, and none has been viewed since."
       }
     },
     "empty": {

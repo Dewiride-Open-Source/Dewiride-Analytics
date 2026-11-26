@@ -1,14 +1,17 @@
+using System.Collections.Immutable;
 using System.Text;
+using Dewiride.Analytics.Domain.Telemetry;
 
 namespace Dewiride.Analytics.Application.Posts;
 
 /// <summary>
-/// Reads what somebody searched a website's posts for.
+/// Reads what somebody searched a website's posts or pages for.
 /// </summary>
 /// <remarks>
 /// <para>
 /// A search is written by whoever asks, so it is only ever a value: compared with what each post is called
-/// and with its address, and never logged, repeated, or made part of a statement.
+/// and with its address, or with the path of each of a website's pages, and never logged, repeated, or made
+/// part of a statement.
 /// </para>
 /// <para>
 /// It is read as words. Every run of space or of control characters is one space, and none is left at
@@ -40,6 +43,38 @@ public static class PostSearch
 
         return words.Length <= MostCharacters;
     }
+
+    /// <summary>
+    /// The text a path is compared with: where the text is a whole web address, the path it names, spelled
+    /// as the collector stores a path; otherwise the text as written.
+    /// </summary>
+    /// <remarks>
+    /// Every address a website lists begins with the website's own name, so comparing whole addresses would
+    /// find every post for a search for that name; a path is what tells one page from another. An address
+    /// pasted whole still finds its page: what precedes its path and what follows it are let go.
+    /// </remarks>
+    /// <param name="text">The text, which may hold anything.</param>
+    /// <returns>The text to compare a path with.</returns>
+    public static string PathIn(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        return Uri.TryCreate(text, UriKind.Absolute, out var address)
+            && (address.Scheme == Uri.UriSchemeHttps || address.Scheme == Uri.UriSchemeHttp)
+                ? PagePath.Of(address)
+                : text;
+    }
+
+    /// <summary>
+    /// The words a search holds, each as a path is compared with it, so an address pasted among other
+    /// words is compared by the path it names.
+    /// </summary>
+    /// <param name="text">The search as <see cref="TryRead"/> read it, or nothing where nothing was searched for.</param>
+    /// <returns>Each word once, in the order it was first written; none where nothing was searched for.</returns>
+    public static ImmutableArray<string> WordsOf(string? text) =>
+        text is null
+            ? []
+            : [.. text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(PathIn).Distinct(StringComparer.Ordinal)];
 
     /// <summary>
     /// Brings every run of space or of control characters down to one space, with none left at either end.

@@ -1162,6 +1162,66 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client, Keepi
         return months.DrainToImmutable();
     }
 
+    /// <inheritdoc />
+    public async Task<ImmutableArray<MonthOfPages>> GetKeptPageMonthsAsync(
+        TenantScope scope,
+        KeptPageMonthsQuery query,
+        CancellationToken cancellationToken)
+    {
+        var months = ImmutableArray.CreateBuilder<MonthOfPages>();
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            months.Add(new MonthOfPages(KeptRows.Day(reader, 0), reader.GetByte(1) == 1, reader.GetByte(2) == 1));
+        }
+
+        return months.DrainToImmutable();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// One row comes back whatever the slice: how many pages match, how often the most viewed of them was
+    /// viewed, and the slice itself, most viewed first, each page as its views made negative and its path. The
+    /// store gathers the most viewed only as far as the end of the slice — never more than
+    /// <see cref="AllPagesQuery.MostListed"/> — and hands back only the slice, so a slice further along than
+    /// they reach has nothing in it and still says how many match and how often the most viewed was viewed.
+    /// </remarks>
+    public async Task<AllPagesSlice> GetAllPagesAsync(
+        TenantScope scope,
+        AllPagesQuery query,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        await using var reader = await ExecuteAsync(
+                AnalyticsSqlCompiler.Compile(scope, query),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        // An aggregate with no grouping always produces exactly one row, including where no page
+        // matches, where it produces nought and gathers nothing.
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return new AllPagesSlice(0, 0, []);
+        }
+
+        var matching = reader.GetInt64(0);
+        var mostPageViews = reader.GetInt64(1);
+        var shown = await reader
+            .GetFieldValueAsync<Tuple<long, string>[]>(2, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new AllPagesSlice(
+            matching,
+            mostPageViews,
+            [.. shown.Select(page => new PathViews(page.Item2, -page.Item1))]);
+    }
+
     /// <summary>
     /// Reads a series: one bucket a row, where it begins and what it counted.
     /// </summary>

@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
+using System.Globalization;
 using Dewiride.Analytics.Application.Analytics;
 using Dewiride.Analytics.Application.Tenancy;
 using Dewiride.Analytics.Classification;
@@ -31,13 +32,14 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// lets the rest of the system treat them as ordinary data.
 /// </para>
 /// <para>
-/// Fourteen of the questions that read activity may be asked of people alone. Each then has two
+/// Fifteen of the questions that read activity may be asked of people alone. Each then has two
 /// shapes chosen by what was asked, on the terms the visit list's two shapes were chosen: the
 /// everybody shape reads no verdict and binds nothing for one, and the people shape is that
 /// statement with the two expressions <see cref="JudgedPeople"/> writes placed after the settled
 /// identity and its first aggregation reading from them. Three more, a website's kept months, the
 /// views kept for its posts and the months kept of one post, are asked of people by reading the
-/// figures kept for them beside everybody's.
+/// figures kept for them beside everybody's — and the list of every page, one of the fifteen, reads
+/// the months kept before its reports the same way.
 /// </para>
 /// </remarks>
 public static class AnalyticsSqlCompiler
@@ -69,6 +71,7 @@ public static class AnalyticsSqlCompiler
     private const string MaxRequestsParameter = "max_requests";
     private const string BeforeParameter = "before";
     private const string PostPathsParameter = "post_paths";
+    private const string WordsParameter = "words";
 
     /// <summary>
     /// What keeps a series to one post's paths: a line of its own directly after the selection the
@@ -110,10 +113,10 @@ public static class AnalyticsSqlCompiler
         }.ToFrozenDictionary();
 
     /// <summary>
-    /// Which kept column a question about a website's posts reads the pages delivered from, by who it is
-    /// about, on the terms of <see cref="KeptFigureColumns"/>.
+    /// Which kept column a question about a website's posts or pages reads the pages delivered from, by
+    /// who it is about, on the terms of <see cref="KeptFigureColumns"/>.
     /// </summary>
-    private static readonly FrozenDictionary<Population, string> KeptPostViewColumns =
+    private static readonly FrozenDictionary<Population, string> KeptViewColumns =
         new Dictionary<Population, string>
         {
             [Population.Everybody] = "page_views",
@@ -681,6 +684,7 @@ public static class AnalyticsSqlCompiler
             ?? CompileFromNow(scope, query)
             ?? CompileFromKept(scope, query)
             ?? CompileAboutPosts(scope, query)
+            ?? CompileAboutPages(scope, query)
             ?? throw new NotSupportedException($"No statement is defined for {query.GetType().Name}.");
     }
 
@@ -713,6 +717,25 @@ public static class AnalyticsSqlCompiler
             KeptPostViewsQuery postViews => CompileKeptPostViews(scope, postViews),
             PostSeriesQuery postSeries => CompilePostSeries(scope, postSeries),
             KeptMonthsOfPostQuery monthsOfPost => CompileKeptMonthsOfPost(scope, monthsOfPost),
+            _ => null,
+        };
+
+    /// <summary>
+    /// Compiles a question about how every page of a website was viewed, or nothing where it is not one.
+    /// </summary>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement, or <see langword="null"/> where this is not one of these questions.</returns>
+    /// <remarks>
+    /// A page's views are read as a post's are: from what was kept month by month, and from the reports of
+    /// the months nothing was kept of — in one statement, so that the slice asked for is taken from the two
+    /// added up.
+    /// </remarks>
+    private static CompiledStatement? CompileAboutPages(TenantScope scope, AnalyticsQuery query) =>
+        query switch
+        {
+            KeptPageMonthsQuery pageMonths => CompileKeptPageMonths(scope, pageMonths),
+            AllPagesQuery pages => CompileAllPages(scope, pages),
             _ => null,
         };
 
@@ -778,38 +801,191 @@ public static class AnalyticsSqlCompiler
     /// <param name="scope">The authorisation decision the statement is bound to.</param>
     /// <param name="query">The question.</param>
     /// <returns>The statement and its bound values.</returns>
-    private static CompiledStatement CompileKeptPostViews(TenantScope scope, KeptPostViewsQuery query)
+    private static CompiledStatement CompileKeptPostViews(TenantScope scope, KeptPostViewsQuery query) =>
+        new(
+            $"{KeptViewsByPath("consolidated_post_months", KeptViewColumns[query.Population], 0)}\nORDER BY path",
+            [
+                new QueryParameter(StatementBindings.SiteId, scope.SiteId),
+                new QueryParameter(BeforeParameter, query.Before),
+            ]);
+
+    /// <summary>
+    /// Reads the months a website's busiest pages were kept for, up to the one running now, and whether
+    /// each left a page out.
+    /// </summary>
+    /// <remarks>
+    /// Each month once, as its newest count would be read, and nothing of the pages kept in it. Whether it
+    /// left a page out is read for everybody and for the people side by side, so the statement has one shape
+    /// whoever the reading is for.
+    /// </remarks>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>The statement and its bound values.</returns>
+    private static CompiledStatement CompileKeptPageMonths(TenantScope scope, KeptPageMonthsQuery query)
     {
-        var sql = $$"""
+        const string sql = """
             SELECT
-                path,
-                toInt64(sum(views)) AS page_views
-            FROM
-            (
-                SELECT
-                    month,
-                    paths,
-                    {{KeptPostViewColumns[query.Population]}} AS counted
-                FROM consolidated_post_months
-                WHERE site_id = {site_id:UUID}
-                  AND month < {before:Date}
-                ORDER BY month, counted_at DESC
-                LIMIT 1 BY month
-            )
-            ARRAY JOIN
-                paths AS path,
-                counted AS views
-            GROUP BY path
-            HAVING page_views > 0
-            ORDER BY path
+                month,
+                left_out_page_views > 0 AS left_out,
+                left_out_people_page_views > 0 AS people_left_out
+            FROM consolidated_page_months
+            WHERE site_id = {site_id:UUID}
+              AND month <= toStartOfMonth(toDate(fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC'), {time_zone:String}))
+            ORDER BY month, counted_at DESC
+            LIMIT 1 BY month
             """;
 
         return new CompiledStatement(
             sql,
             [
                 new QueryParameter(StatementBindings.SiteId, scope.SiteId),
-                new QueryParameter(BeforeParameter, query.Before),
+                new QueryParameter(ToParameter, query.Range.To.ToUnixTimeMilliseconds()),
+                new QueryParameter(TimeZoneParameter, scope.TimeZoneId),
             ]);
+    }
+
+    /// <summary>
+    /// Lists one slice of every page of a website, with the views each had across the website's whole
+    /// record, most viewed first.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The reports from the first instant of the month views are counted from the reports in to the moment
+    /// of reading are counted exactly as the list of pages counts them, from
+    /// <see cref="PostViewsStatement"/>; to each path's count is added what each month before that one kept
+    /// of it, read as its newest count. Nothing a person can name reaches the count: the first instant and
+    /// the month come from the store's own record of the website's months.
+    /// </para>
+    /// <para>
+    /// A search is the bound words, each of which has to be found in a page's path as it is stored or in
+    /// the path with its escaped letters written out — whatever their case, and only once the views of the
+    /// path have been added up — so a page found by one word is found whole. The letters written out are
+    /// worked out once for each path, ahead of the words, and anything they leave that is not text is read
+    /// as the character that stands for what cannot be read. No search is no words, and every page holds
+    /// every word of none.
+    /// </para>
+    /// <para>
+    /// The pages that match are counted, and the most viewed of them gathered, in one pass over them: most
+    /// viewed first, the path breaking a tie, so successive slices neither repeat a page nor skip one — as
+    /// many as reach the end of the slice asked for, and never more than <see cref="AllPagesQuery.MostListed"/>.
+    /// Gathering no more than a slice can reach holds that many pages however many match, where numbering
+    /// every one of them would hold them all at once, in memory that cannot spill to disk. The first gathered
+    /// is the most viewed, so a slice past the end, or further along than the list reaches, still says how
+    /// many match and how often the most viewed was viewed. The bound is written into the statement as it is,
+    /// so the approved statements change when it does.
+    /// </para>
+    /// </remarks>
+    /// <param name="scope">The authorisation decision the statement is bound to.</param>
+    /// <param name="query">The question.</param>
+    /// <returns>
+    /// The statement and its bound values. It answers one row: how many pages match, the views of the most
+    /// viewed of them, nought where none does, and the page of the list asked for, each page as its views made
+    /// negative and its path, so that the order they are gathered in is the list's. Only that page leaves the
+    /// store, however far down the list it is.
+    /// </returns>
+    private static CompiledStatement CompileAllPages(TenantScope scope, AllPagesQuery query)
+    {
+        var kept = JudgedPeople.Among(ReconciledEvents.Identified, query.Population);
+        var mostListed = AllPagesQuery.MostListed.ToString(CultureInfo.InvariantCulture);
+
+        var sql = $$"""
+            {{PostViewsStatement.Reported(query.Population)}},
+                reported AS
+                (
+                    {{PostViewsStatement.ByPath(kept.Source, 8)}}
+                ),
+                kept_views AS
+                (
+                    {{KeptViewsByPath("consolidated_page_months", KeptViewColumns[query.Population], 8)}}
+                ),
+                viewed AS
+                (
+                    SELECT
+                        path,
+                        page_views
+                    FROM
+                    (
+                        SELECT
+                            path,
+                            toInt64(sum(page_views)) AS page_views,
+                            toValidUTF8(decodeURLComponent(path)) AS readable
+                        FROM
+                        (
+                            SELECT path, page_views FROM reported
+                            UNION ALL
+                            SELECT path, page_views FROM kept_views
+                        )
+                        GROUP BY path
+                    )
+                    WHERE page_views > 0
+                      AND arrayAll(
+                          word -> positionCaseInsensitiveUTF8(path, word) > 0 OR positionCaseInsensitiveUTF8(readable, word) > 0,
+                          {words:Array(String)})
+                )
+            SELECT
+                matching,
+                -tupleElement(busiest[1], 1) AS most_page_views,
+                arraySlice(busiest, {offset:UInt32} + 1, {limit:UInt32}) AS shown
+            FROM
+            (
+                SELECT
+                    toInt64(count()) AS matching,
+                    groupArraySorted(least({offset:UInt32} + {limit:UInt32}, {{mostListed}}))((-page_views, path)) AS busiest
+                FROM viewed
+            )
+            """;
+
+        return new CompiledStatement(
+            sql,
+            [
+                new QueryParameter(StatementBindings.SiteId, scope.SiteId),
+                new QueryParameter(FromParameter, query.LiveFrom.ToUnixTimeMilliseconds()),
+                new QueryParameter(ToParameter, query.Range.To.ToUnixTimeMilliseconds()),
+                new QueryParameter(BeforeParameter, query.KeptBefore),
+                new QueryParameter(WordsParameter, query.Words.ToArray()),
+                new QueryParameter(LimitParameter, (uint)query.Limit),
+                new QueryParameter(OffsetParameter, (uint)query.Offset),
+                .. PopulationParameters(query.Population),
+            ]);
+    }
+
+    /// <summary>
+    /// Writes the pages delivered at each path kept in a table of months of paths, added up over the months
+    /// kept before one, each month read as its newest count.
+    /// </summary>
+    /// <param name="table">The table. Written in this file and never supplied by a caller.</param>
+    /// <param name="column">Which counts to read, from <see cref="KeptViewColumns"/>.</param>
+    /// <param name="indent">
+    /// Spaces the selection's lines after its first are laid out against, matching the depth the calling
+    /// statement nests it at.
+    /// </param>
+    /// <returns>The selection, which binds <c>site_id</c> and <c>before</c>.</returns>
+    private static string KeptViewsByPath(string table, string column, int indent)
+    {
+        var pad = new string(' ', indent);
+
+        return $$"""
+            SELECT
+            {{pad}}    path,
+            {{pad}}    toInt64(sum(views)) AS page_views
+            {{pad}}FROM
+            {{pad}}(
+            {{pad}}    SELECT
+            {{pad}}        month,
+            {{pad}}        paths,
+            {{pad}}        {{column}} AS counted
+            {{pad}}    FROM {{table}}
+            {{pad}}    WHERE site_id = {site_id:UUID}
+            {{pad}}      AND month < {before:Date}
+            {{pad}}    ORDER BY month, counted_at DESC
+            {{pad}}    LIMIT 1 BY month
+            {{pad}})
+            {{pad}}ARRAY JOIN
+            {{pad}}    paths AS path,
+            {{pad}}    counted AS views
+            {{pad}}GROUP BY path
+            {{pad}}HAVING page_views > 0
+            """;
     }
 
     /// <summary>
@@ -852,7 +1028,7 @@ public static class AnalyticsSqlCompiler
                 SELECT
                     month,
                     paths,
-                    {{KeptPostViewColumns[query.Population]}} AS counted,
+                    {{KeptViewColumns[query.Population]}} AS counted,
                     counted_at,
                     begins_at,
                     ends_at,

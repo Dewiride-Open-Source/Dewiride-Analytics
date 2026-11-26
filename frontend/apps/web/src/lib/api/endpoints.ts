@@ -6,15 +6,17 @@ import type {
   Granularity,
   PeriodGranularity,
 } from '@/lib/analytics/period';
-import { DEFAULT_POSTS_ORDER, type PostsListing } from '@/lib/analytics/posts';
+import { DEFAULT_POSTS_ORDER, type PagesListing, type PostsListing } from '@/lib/analytics/posts';
 import { discardResource, readResource, submitResource } from './client';
 import {
   type ActionGrouping,
   type Actions,
+  type AllPages,
   type AllTime,
   type AllTimeSeries,
   type AllTimeTraffic,
   actionsSchema,
+  allPagesSchema,
   allTimeSchema,
   allTimeSeriesSchema,
   allTimeTrafficSchema,
@@ -266,6 +268,35 @@ export function readPostsPage(
   return readResource(
     `${siteAddress(siteId)}/posts?${withPopulation(asked, population)}`,
     postsPageSchema,
+  );
+}
+
+/**
+ * One page of the list of every page of a website, for one population: each with its views across
+ * the whole record, the most viewed first, with how many there are, or how many hold every word
+ * searched for. No window, for the reason all time has none.
+ *
+ * What was searched for is only ever a value in the question, as it is for the posts. A search of
+ * nothing is left unsaid, as everybody is; where the page begins and how many it holds are always
+ * said.
+ */
+export function readAllPages(
+  siteId: string,
+  population: Population,
+  { search, limit, offset }: PagesListing,
+): Promise<AllPages> {
+  const asked = new URLSearchParams();
+
+  if (search !== '') {
+    asked.set('search', search);
+  }
+
+  asked.set('limit', String(limit));
+  asked.set('offset', String(offset));
+
+  return readResource(
+    `${siteAddress(siteId)}/insights/pages?${withPopulation(asked, population)}`,
+    allPagesSchema,
   );
 }
 

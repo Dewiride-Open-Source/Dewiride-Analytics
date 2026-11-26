@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EVERY_JOURNEY } from '@/lib/analytics/journeys';
 import type { Population } from '@/lib/analytics/people-only';
-import type { PostsListing } from '@/lib/analytics/posts';
+import type { PagesListing, PostsListing } from '@/lib/analytics/posts';
 import {
   readActions,
+  readAllPages,
   readAllTime,
   readAllTimeSeries,
   readAllTimeTraffic,
@@ -716,6 +717,72 @@ describe('asking the engine for a page of a website’s posts', () => {
     engineAnswering(200, { ...PAGE, ...wrong });
 
     await expect(readPostsPage(SITE, 'everybody', FIRST)).rejects.toThrow();
+  });
+});
+
+describe('asking the engine for a page of every page of a website', () => {
+  const PAGES = {
+    matching: 2490,
+    viewsFrom: '2026-08',
+    leftOut: true,
+    mostPageViews: 904,
+    shown: [
+      { path: '/', pageViews: 904 },
+      { path: '/caf%C3%A9/', pageViews: 3 },
+    ],
+  };
+
+  const FIRST: PagesListing = { search: '', limit: 25, offset: 0 };
+
+  it('asks for the first page, saying nothing of an empty search or of everybody', async () => {
+    const engine = engineAnswering(200, PAGES);
+
+    await readAllPages(SITE, 'everybody', FIRST);
+
+    expect(addressOf(engine.first().path)).toBe(`/api/sites/${SITE}/insights/pages`);
+    expect([...askedIn(engine.first().path).entries()]).toStrictEqual([
+      ['limit', '25'],
+      ['offset', '0'],
+    ]);
+  });
+
+  /** What was typed is written by whoever reads the screen, and the engine has to read back exactly that. */
+  it.each(['100% sure', 'C:\\temp', 'a&only=robots#top', 'https://example.com/café/?x=1'])(
+    'carries the search %j as a value, and the people where asked',
+    async (search) => {
+      const engine = engineAnswering(200, PAGES);
+
+      await readAllPages(SITE, 'people', { search, limit: 50, offset: 100 });
+
+      expect(addressOf(engine.first().path)).toBe(`/api/sites/${SITE}/insights/pages`);
+      expect([...askedIn(engine.first().path).entries()]).toStrictEqual([
+        ['search', search],
+        ['limit', '50'],
+        ['offset', '100'],
+        ['only', 'people'],
+      ]);
+    },
+  );
+
+  it('reads a page as the engine gives it, past the end of the list and where nothing matched', async () => {
+    const pastTheEnd = { ...PAGES, shown: [] };
+    const unmatched = { ...PAGES, matching: 0, viewsFrom: null, mostPageViews: 0, shown: [] };
+
+    for (const answer of [PAGES, pastTheEnd, unmatched]) {
+      engineAnswering(200, answer);
+
+      await expect(readAllPages(SITE, 'everybody', FIRST)).resolves.toStrictEqual(answer);
+    }
+  });
+
+  it.each([
+    ['whether a month left pages out', { leftOut: 'yes' }],
+    ['the month views are counted from', { viewsFrom: '2026-8' }],
+    ['how often a page was viewed', { shown: [{ path: '/', pageViews: 1.5 }] }],
+  ])('refuses %s it cannot read as one', async (_, wrong) => {
+    engineAnswering(200, { ...PAGES, ...wrong });
+
+    await expect(readAllPages(SITE, 'everybody', FIRST)).rejects.toThrow();
   });
 });
 

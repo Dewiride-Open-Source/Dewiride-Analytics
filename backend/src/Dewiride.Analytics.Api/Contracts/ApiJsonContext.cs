@@ -51,6 +51,7 @@ namespace Dewiride.Analytics.Api.Contracts;
 [JsonSerializable(typeof(InsightsPostsResponse))]
 [JsonSerializable(typeof(InsightsPostResponse))]
 [JsonSerializable(typeof(PostsPageResponse))]
+[JsonSerializable(typeof(AllPagesResponse))]
 [JsonSerializable(typeof(AddSiteRequest))]
 [JsonSerializable(typeof(SiteSummary))]
 [JsonSerializable(typeof(ActionsResponse))]

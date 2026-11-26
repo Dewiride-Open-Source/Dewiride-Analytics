@@ -608,6 +608,39 @@ describe('the posts on the insights screen before any can be shown', () => {
     },
   );
 
+  /** Every page is listed from the record alone, so a website with no sitemap reaches it too. */
+  it.each([
+    ['no sitemap', { address: null, state: 'none' }, '', '/app/insights/posts?of=pages'],
+    [
+      'reading switched off',
+      { state: 'off' },
+      'only=people',
+      '/app/insights/posts?of=pages&only=people',
+    ],
+    [
+      'a sitemap that could not be read',
+      { state: 'failed', problem: 'not-found' },
+      'only=people',
+      '/app/insights/posts?of=pages&only=people',
+    ],
+    ['a sitemap that lists no posts', { state: 'read' }, '', '/app/insights/posts?of=pages'],
+  ] as const)(
+    'leads to every page wherever the posts cannot be shown, counting the same people: %s',
+    async (_, reading, address, href) => {
+      engineWith({
+        site: { ...SITE, role: 'viewer' },
+        sitemap: { ...READ, posts: 0, dated: 0, ...reading },
+      });
+
+      renderScreen(<Insights />, { searchParams: address });
+
+      expect(await screen.findByRole('link', { name: 'See every page' })).toHaveAttribute(
+        'href',
+        href,
+      );
+    },
+  );
+
   it('says part of the sitemap could not be read, above the posts it did find', async () => {
     engineWith({ sitemap: { ...READ, state: 'partly-read', problem: 'too-slow', reading: 12 } });
 

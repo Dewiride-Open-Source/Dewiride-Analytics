@@ -56,6 +56,7 @@ app.MapSites();
 app.MapKeptHistory();
 app.MapInsightsPosts();
 app.MapInsightsPost();
+app.MapInsightsPages();
 app.MapServerKeys();
 app.MapSiteSettings();
 app.MapHealth();

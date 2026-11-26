@@ -3,7 +3,8 @@ using Dewiride.Analytics.Application.Posts;
 namespace Dewiride.Analytics.Application.Tests.Posts;
 
 /// <summary>
-/// Covers how what somebody searched their posts for is read: as words, and no longer than a search may be.
+/// Covers how what somebody searched their posts or pages for is read: as words, no longer than a search
+/// may be, and with a whole web address compared by the path it names.
 /// </summary>
 public sealed class PostSearchTests
 {
@@ -89,5 +90,68 @@ public sealed class PostSearchTests
     {
         PostSearch.TryRead("caf\uD800e", out var text).Should().BeTrue();
         text.Should().Be("caf\uFFFDe");
+    }
+
+    /// <summary>
+    /// A whole web address is compared by the path it names, spelled as the collector stores a path: its
+    /// scheme and the website's name before it and whatever follows it let go, and letters an address
+    /// escapes escaped.
+    /// </summary>
+    /// <param name="text">The address searched for.</param>
+    /// <param name="path">The path it is compared as.</param>
+    [Theory]
+    [InlineData("https://example.com/posts/older/", "/posts/older/")]
+    [InlineData("HTTP://EXAMPLE.COM/posts/older/?utm_source=newsletter#top", "/posts/older/")]
+    [InlineData("https://example.com/caf\u00E9/", "/caf%C3%A9/")]
+    [InlineData("https://example.com", "/")]
+    public void A_Whole_Web_Address_Is_Compared_By_The_Path_It_Names(string text, string path)
+    {
+        PostSearch.PathIn(text).Should().Be(path);
+    }
+
+    /// <summary>
+    /// Anything that is not a whole web address — part of a path, an address without its scheme, another
+    /// kind of address, words — is compared exactly as it was written.
+    /// </summary>
+    /// <param name="text">The text searched for.</param>
+    [Theory]
+    [InlineData("/posts/older/")]
+    [InlineData("posts/older")]
+    [InlineData("example.com/posts/older/")]
+    [InlineData("ftp://example.com/posts/older/")]
+    [InlineData("mailto:someone@example.com")]
+    [InlineData("file:///posts/older/")]
+    [InlineData("https://")]
+    [InlineData("Moved House")]
+    public void Text_That_Is_No_Whole_Web_Address_Is_Compared_As_Written(string text)
+    {
+        PostSearch.PathIn(text).Should().Be(text);
+    }
+
+    /// <summary>
+    /// A search of a website's pages is read as the words it holds, each once, in the order first written —
+    /// a word repeated in other letters' case is another word, since case is set aside where the words are
+    /// compared — and nothing searched for is no words at all.
+    /// </summary>
+    [Fact]
+    public void A_Search_Is_Read_As_Every_Word_It_Holds()
+    {
+        PostSearch.TryRead("  guide \t 2024  guide Caf\u00E9\r\nGUIDE ", out var text).Should().BeTrue();
+
+        PostSearch.WordsOf(text).Should().Equal("guide", "2024", "Caf\u00E9", "GUIDE");
+        PostSearch.WordsOf(null).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// An address pasted among other words is compared by the path it names, as an address pasted alone is,
+    /// and the words around it are left as they were written.
+    /// </summary>
+    [Fact]
+    public void A_Pasted_Address_Is_Searched_For_By_Its_Path()
+    {
+        PostSearch.TryRead("older https://example.com/posts/older/?utm_source=feed caf\u00E9", out var text)
+            .Should().BeTrue();
+
+        PostSearch.WordsOf(text).Should().Equal("older", "/posts/older/", "caf\u00E9");
     }
 }

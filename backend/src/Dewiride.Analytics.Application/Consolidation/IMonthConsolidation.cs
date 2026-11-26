@@ -5,7 +5,8 @@ using Dewiride.Analytics.Classification;
 namespace Dewiride.Analytics.Application.Consolidation;
 
 /// <summary>
-/// Counts a website's finished months and keeps their totals.
+/// Counts a website's finished months and keeps their totals, the views of its posts and the views
+/// of its busiest pages.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -94,6 +95,32 @@ public interface IMonthConsolidation
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task that completes once the store has them.</returns>
     Task KeepPostsAsync(IReadOnlyCollection<ConsolidatedPostMonth> months, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads how each month whose pages were kept for a website was counted, as its newest count.
+    /// </summary>
+    /// <param name="siteId">The website.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One per month whose pages were kept, oldest first.</returns>
+    Task<ImmutableArray<KeptPageMonth>> SurveyPagesAsync(Guid siteId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Counts the pages delivered at every path of a website in one month, for everybody and for the
+    /// visits judged to be people, by the arithmetic of the dashboard's list of pages, and keeps the
+    /// busiest of them on the terms <see cref="KeptPages"/> sets.
+    /// </summary>
+    /// <param name="month">The month.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The paths kept, in ordinal order, and what the others added up to.</returns>
+    Task<CountedPages> CountPagesAsync(MonthToCount month, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Keeps counted months of pages, each replacing whatever was kept of the same month's pages before.
+    /// </summary>
+    /// <param name="months">The months, all of one website.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes once the store has them.</returns>
+    Task KeepPagesAsync(IReadOnlyCollection<ConsolidatedPageMonth> months, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -214,7 +241,7 @@ public sealed record KeptPostMonth(DateOnly Month, KeptMonth Described, string F
 /// <param name="CountedAt">When the count was taken.</param>
 public sealed record ConsolidatedPostMonth(
     MonthToCount Month,
-    ImmutableArray<PostMonthViews> Views,
+    ImmutableArray<PathMonthViews> Views,
     string Fingerprint,
     RulesetVersion Ruleset,
     DateTimeOffset RulesetJudgedTo,
@@ -227,9 +254,64 @@ public sealed record ConsolidatedPostMonth(
 }
 
 /// <summary>
+/// How a kept month of a website's pages was counted.
+/// </summary>
+/// <param name="Month">The first of the month, on the calendar it was counted on.</param>
+/// <param name="Described">
+/// How it was counted, on the terms a month's totals say it, with no first day: that is kept with the
+/// month's totals alone.
+/// </param>
+public sealed record KeptPageMonth(DateOnly Month, KeptMonth Described);
+
+/// <summary>
+/// What one month of a website's pages was counted as.
+/// </summary>
+/// <param name="Kept">The paths the month keeps, in ordinal order, each with the pages delivered there.</param>
+/// <param name="LeftOut">What every other path a page was delivered at in the month added up to.</param>
+public sealed record CountedPages(ImmutableArray<PathMonthViews> Kept, PagesLeftOut LeftOut);
+
+/// <summary>
+/// What the paths a month of pages did not keep added up to.
+/// </summary>
+/// <param name="Paths">How many paths a page was delivered at that the month did not keep.</param>
+/// <param name="PageViews">Pages delivered at them to everybody.</param>
+/// <param name="PeoplePageViews">Pages delivered at them in the visits judged to be people.</param>
+public readonly record struct PagesLeftOut(long Paths, long PageViews, long PeoplePageViews);
+
+/// <summary>
+/// One month of a website's busiest pages, counted and ready to keep.
+/// </summary>
+/// <remarks>
+/// The paths are whatever visitors asked for, so only the busiest are kept, on the terms
+/// <see cref="KeptPages"/> sets, and nothing about who asked: what a month keeps is how often each of
+/// them was viewed, and how many other paths there were and how often those were viewed in all.
+/// </remarks>
+/// <param name="Month">Which month, and where.</param>
+/// <param name="Views">Each path kept, in ordinal order, with the pages delivered there.</param>
+/// <param name="LeftOut">What every other path a page was delivered at in the month added up to.</param>
+/// <param name="Ruleset">The rules the engine was running.</param>
+/// <param name="RulesetJudgedTo">How far those rules had judged the website, no further than the month.</param>
+/// <param name="CountedTo">The last instant the count reached.</param>
+/// <param name="JudgedTo">How far judging had reached, no further than the month.</param>
+/// <param name="CountedAt">When the count was taken.</param>
+public sealed record ConsolidatedPageMonth(
+    MonthToCount Month,
+    ImmutableArray<PathMonthViews> Views,
+    PagesLeftOut LeftOut,
+    RulesetVersion Ruleset,
+    DateTimeOffset RulesetJudgedTo,
+    DateTimeOffset CountedTo,
+    DateTimeOffset JudgedTo,
+    DateTimeOffset CountedAt)
+{
+    /// <summary>Which version of the arithmetic counted it.</summary>
+    public int CountingRules { get; init; } = Consolidation.CountingRules.Pages;
+}
+
+/// <summary>
 /// The pages delivered at one of a website's paths in one month.
 /// </summary>
 /// <param name="Path">The path, as the collector stored it.</param>
 /// <param name="PageViews">Pages delivered at it to everybody.</param>
 /// <param name="PeoplePageViews">Pages delivered at it in the visits judged to be people.</param>
-public readonly record struct PostMonthViews(string Path, long PageViews, long PeoplePageViews);
+public readonly record struct PathMonthViews(string Path, long PageViews, long PeoplePageViews);

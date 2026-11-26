@@ -121,7 +121,7 @@ internal sealed partial class ConsolidationWorker(
             Level = LogLevel.Warning,
             Message = "Keeping each website's monthly totals is switched off. Nothing already kept is "
                 + "affected, but a month whose reports expire while it is off is never counted, and its "
-                + "totals are lost with them.")]
+                + "totals and the views of its posts and its pages are lost with them.")]
         public static partial void Disabled(ILogger logger);
 
         [LoggerMessage(

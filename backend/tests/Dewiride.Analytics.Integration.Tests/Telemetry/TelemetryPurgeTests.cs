@@ -158,7 +158,7 @@ public sealed class TelemetryPurgeTests(AnalyticsStackFixture stack)
         var month = ZoneCalendar.FirstOf(calendar.DateOf(Yesterday)).AddMonths(-2);
         var going = await ControlPlaneSeed.AddSiteAsync(stack, domain: $"{Guid.NewGuid():n}.example.com");
         var staying = await ControlPlaneSeed.AddSiteAsync(stack, domain: $"{Guid.NewGuid():n}.example.com");
-        var read = new PostMonthViews("/posts/hello/", 3, 1);
+        var read = new PathMonthViews("/posts/hello/", 3, 1);
 
         await KeptPosts.KeepAsync(stack, KeptPosts.Counted(going, calendar, month, "listed", Yesterday, read));
         await KeptPosts.KeepAsync(stack, KeptPosts.Counted(staying, calendar, month, "listed", Yesterday, read));
@@ -167,6 +167,29 @@ public sealed class TelemetryPurgeTests(AnalyticsStackFixture stack)
 
         (await KeptPosts.WrittenAsync(stack, going.Id)).Should().Be(0);
         (await KeptPosts.WrittenAsync(stack, staying.Id)).Should().Be(1);
+    }
+
+    /// <summary>
+    /// A website's months of pages never expire either, and hold paths whoever visited it asked for, so
+    /// removing the website deletes them with everything else it had — and those of that website alone.
+    /// </summary>
+    [Fact]
+    public async Task The_Page_Months_Kept_For_A_Site_Go_With_It_And_Nobody_Elses_Do()
+    {
+        var calendar = new ZoneCalendar("Etc/UTC");
+        var month = ZoneCalendar.FirstOf(calendar.DateOf(Yesterday)).AddMonths(-2);
+        var going = await ControlPlaneSeed.AddSiteAsync(stack, domain: $"{Guid.NewGuid():n}.example.com");
+        var staying = await ControlPlaneSeed.AddSiteAsync(stack, domain: $"{Guid.NewGuid():n}.example.com");
+        var read = new PathMonthViews("/pricing/", 3, 1);
+        var leftOut = new PagesLeftOut(2, 2, 0);
+
+        await KeptPageMonths.KeepAsync(stack, KeptPageMonths.Counted(going, calendar, month, Yesterday, leftOut, read));
+        await KeptPageMonths.KeepAsync(stack, KeptPageMonths.Counted(staying, calendar, month, Yesterday, leftOut, read));
+
+        await PurgeAsync(going.Id);
+
+        (await KeptPageMonths.WrittenAsync(stack, going.Id)).Should().Be(0);
+        (await KeptPageMonths.WrittenAsync(stack, staying.Id)).Should().Be(1);
     }
 
     private DateTimeOffset Yesterday =>

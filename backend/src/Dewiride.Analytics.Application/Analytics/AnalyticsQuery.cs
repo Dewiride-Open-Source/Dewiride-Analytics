@@ -1443,3 +1443,138 @@ public sealed record KeptMonthsOfPostQuery : AnalyticsQuery
     /// <summary>Who the kept figures are about.</summary>
     public Population Population { get; init; } = Population.Everybody;
 }
+
+/// <summary>
+/// The months a website's busiest pages were kept for, and whether each of them left any page out.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The months, and nothing of the pages kept in them, which is what decides where the views of a
+/// website's pages stop being read from what was kept and begin to be counted from the reports.
+/// </para>
+/// <para>
+/// Whether a month left a page out is read for everybody and for the people at once, on one row, so the
+/// question has one shape whoever it is asked for, and the caller takes the one it needs.
+/// </para>
+/// </remarks>
+public sealed record KeptPageMonthsQuery : AnalyticsQuery
+{
+    /// <summary>
+    /// Asks for the months as they stand at a moment.
+    /// </summary>
+    /// <param name="asOf">The moment, which decides which month is the one running now.</param>
+    public KeptPageMonthsQuery(DateTimeOffset asOf)
+        : base(new TimeRange(DateTimeOffset.UnixEpoch, asOf))
+    {
+    }
+}
+
+/// <summary>
+/// One slice of every page of a website, with its views across the website's whole record, most viewed
+/// first.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A page's views are put together as a post's are: what was kept of each month before the first one
+/// answered from its reports, and the reports themselves from there to the present, counted by the
+/// arithmetic of <see cref="SitePagesQuery"/>. So in the month running now a page has the views the list of
+/// pages gives it, and before it the views kept for it — none for a month that did not keep it.
+/// </para>
+/// <para>
+/// A search is the words somebody typed, each made into what a path is compared with. Every one of them has
+/// to be found in a page's path, or in the path as it reads with its escaped letters written out, whatever
+/// their case. The words are bound to the statement as values and never written into it.
+/// </para>
+/// <para>
+/// The ordering is total — most viewed first, and the path breaks a tie — so successive slices neither repeat
+/// a page nor skip one. Only the <see cref="MostListed"/> most viewed pages that match can be listed: a slice
+/// further along than they reach, like one past the end, has nothing in it. Every slice, those included, comes
+/// back with how many match and the most viewed of them.
+/// </para>
+/// </remarks>
+public sealed record AllPagesQuery : AnalyticsQuery
+{
+    /// <summary>Most pages any one question may ask for.</summary>
+    public const int MostPages = 100;
+
+    /// <summary>
+    /// Most of the pages that match that can be listed, the most viewed of them: how far along the list any
+    /// slice can reach.
+    /// </summary>
+    /// <remarks>
+    /// The pages before a slice are gathered with it, most viewed first, so a slice further along holds more of
+    /// them while it is read. Bounded, what a reading holds of them stays bounded however many pages a month was
+    /// asked for at, the made-up ones a flood of requests invents included; numbering every page that matches
+    /// would hold all of them at once, in memory that cannot spill to disk.
+    /// </remarks>
+    public const int MostListed = 10_000;
+
+    /// <summary>
+    /// Most words one search may hold: as many as a search as long as one may be can hold, each a letter
+    /// with a space after it.
+    /// </summary>
+    public const int MostWords = 50;
+
+    /// <summary>
+    /// Asks for a slice of every page of a website.
+    /// </summary>
+    /// <param name="asOf">The moment the record is read at.</param>
+    /// <param name="liveFrom">The month views begin to be counted from the reports in.</param>
+    /// <param name="words">The words a page has to hold, none for every page; at most <see cref="MostWords"/>.</param>
+    /// <param name="limit">How many pages to return, at most <see cref="MostPages"/>.</param>
+    /// <param name="offset">
+    /// How many of the most viewed pages to pass over first. One at or past <see cref="MostListed"/> asks for a
+    /// slice with nothing in it.
+    /// </param>
+    /// <exception cref="ArgumentNullException">No month was given.</exception>
+    /// <exception cref="ArgumentException">The words are missing, or one of them is empty.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The month begins after the moment of reading, there are more words than <see cref="MostWords"/>, the
+    /// limit is outside its bounds, or the offset is negative.
+    /// </exception>
+    public AllPagesQuery(
+        DateTimeOffset asOf,
+        RecordedMonth liveFrom,
+        ImmutableArray<string> words,
+        int limit,
+        int offset)
+        : base(new TimeRange(DateTimeOffset.UnixEpoch, asOf))
+    {
+        ArgumentNullException.ThrowIfNull(liveFrom);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(liveFrom.Begins, asOf);
+
+        if (words.IsDefault || words.Any(string.IsNullOrEmpty))
+        {
+            throw new ArgumentException("Search for words, or for nothing at all.", nameof(words));
+        }
+
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(words.Length, MostWords);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, MostPages);
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+
+        LiveFrom = liveFrom.Begins;
+        KeptBefore = liveFrom.Month;
+        Words = words;
+        Limit = limit;
+        Offset = offset;
+    }
+
+    /// <summary>The first instant counted from the reports: where the month views are counted from them in begins.</summary>
+    public DateTimeOffset LiveFrom { get; }
+
+    /// <summary>The first of the first month whose kept pages are not read.</summary>
+    public DateOnly KeptBefore { get; }
+
+    /// <summary>The words a page has to hold.</summary>
+    public ImmutableArray<string> Words { get; }
+
+    /// <summary>How many pages to return.</summary>
+    public int Limit { get; }
+
+    /// <summary>How many of the most viewed pages to pass over first.</summary>
+    public int Offset { get; }
+
+    /// <summary>Who the pages were delivered to.</summary>
+    public Population Population { get; init; } = Population.Everybody;
+}

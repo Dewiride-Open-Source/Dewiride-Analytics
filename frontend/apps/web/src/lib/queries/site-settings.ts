@@ -69,11 +69,15 @@ export function useUpdateSiteSettings(siteId: string) {
  * back to the tab, which is often from their own website after putting right what this said was
  * wrong. Beyond that it asks again only while something is under way: {@link askAgainIn} has the
  * pace, and a reading that has finished stays finished until it next changes.
+ *
+ * @param enabled Whether to ask at all: a screen showing nothing a reading decides, such as the list
+ * of every page, neither asks nor goes on asking.
  */
-export function useSitemapStatus(siteId: string) {
+export function useSitemapStatus(siteId: string, enabled = true) {
   return useQuery({
     queryKey: sitemapStatusKey(siteId),
     queryFn: () => readSitemapStatus(siteId),
+    enabled,
     retry: false,
     staleTime: 0,
     refetchOnWindowFocus: true,

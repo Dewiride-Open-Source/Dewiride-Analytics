@@ -2,8 +2,24 @@ import { type PostsOrder, postsOrderSchema, type SitemapStatus } from '@/lib/api
 
 /**
  * What the screen about a website's record says about its posts, from how reading its sitemap stands,
- * where a post can be opened from, and how the list of every post is searched, ordered and paged.
+ * where a post can be opened from, and how the list of every post, or of every page, is searched,
+ * ordered and paged.
  */
+
+/** What the screen of every post lists: the posts its sitemap lists, or every page it was viewed at. */
+export const LISTS = ['posts', 'pages'] as const;
+
+/** One of them. */
+export type ListKind = (typeof LISTS)[number];
+
+/** The list the screen opens on where its address names none. */
+export const DEFAULT_LIST: ListKind = 'posts';
+
+/**
+ * What the list chosen is called in the screen's address. A word of its own: `show` is the picture
+ * the overview draws, and `list` the way back from a post's page.
+ */
+export const LIST_OF_KEY = 'of';
 
 /** The orders the list of every post can be read in, as the engine names them. */
 export const POSTS_ORDERS = postsOrderSchema.options;
@@ -22,6 +38,12 @@ export type PostsPageSize = (typeof POSTS_PAGE_SIZES)[number];
 
 /** How many posts a page holds where nobody has chosen. */
 export const POSTS_PAGE_SIZE: PostsPageSize = 25;
+
+/**
+ * How far down the list of every page reaches, the most viewed first: the most the engine reads for
+ * one answer. Every page beyond it is still counted, and is found by searching for it.
+ */
+export const PAGES_LISTED_MOST = 10_000;
 
 /**
  * The longest search the engine reads, in the units a browser counts a box's length in. A search is
@@ -52,6 +74,12 @@ export interface PostsListing {
   /** How many posts are passed over to reach it. */
   readonly offset: number;
 }
+
+/**
+ * One page of the list of every page: what the pages on it hold in their address, how many it holds
+ * and where it begins. Pages are only ever listed the most viewed first.
+ */
+export type PagesListing = Pick<PostsListing, 'search' | 'limit' | 'offset'>;
 
 /** A run of what a search reads as the space between two words: any kind of space, or any control. */
 const BETWEEN_WORDS = /[\p{Z}\p{Cc}]+/u;

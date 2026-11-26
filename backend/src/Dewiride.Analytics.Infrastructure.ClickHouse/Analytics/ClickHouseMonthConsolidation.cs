@@ -27,6 +27,11 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// answers for every path a page was delivered at in the month, of which only the posts' rows are kept
 /// (<see cref="PostViewsStatement.ReadAsync"/>), so no post's path is ever sent to the store.
 /// </para>
+/// <para>
+/// A month's busiest pages are kept on a row of their own too. The statement that counts them ranks every
+/// path in the store and answers with the ones the month keeps and what the rest added up to, so whatever
+/// was asked for in a month, what comes back is bounded.
+/// </para>
 /// </remarks>
 /// <param name="client">Telemetry store client for counting.</param>
 /// <param name="origin">When this installation began keeping months.</param>
@@ -35,6 +40,8 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
     private const string TableName = "consolidated_months";
 
     private const string PostTableName = "consolidated_post_months";
+
+    private const string PageTableName = "consolidated_page_months";
 
     /// <summary>Insert columns, in the order <see cref="ToRow(ConsolidatedMonth)"/> produces values for them.</summary>
     private static readonly string[] Columns =
@@ -88,6 +95,29 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
         "page_views",
         "people_page_views",
         "posts_fingerprint",
+        "ruleset_major",
+        "ruleset_minor",
+        "ruleset_judged_to",
+        "counting_rules",
+        "counted_to",
+        "judged_to",
+        "counted_at",
+    ];
+
+    /// <summary>Insert columns of a month of pages, in the order its <see cref="ToRow(ConsolidatedPageMonth)"/> produces values for them.</summary>
+    private static readonly string[] PageColumns =
+    [
+        "site_id",
+        "month",
+        "time_zone",
+        "begins_at",
+        "ends_at",
+        "paths",
+        "page_views",
+        "people_page_views",
+        "left_out_paths",
+        "left_out_page_views",
+        "left_out_people_page_views",
         "ruleset_major",
         "ruleset_minor",
         "ruleset_judged_to",
@@ -257,6 +287,61 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
             : client.InsertBinaryAsync(PostTableName, PostColumns, months.Select(ToRow), Waited(), cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<ImmutableArray<KeptPageMonth>> SurveyPagesAsync(Guid siteId, CancellationToken cancellationToken)
+    {
+        var months = ImmutableArray.CreateBuilder<KeptPageMonth>();
+
+        await using var reader = await ExecuteAsync(ConsolidationSqlCompiler.CompilePageSurvey(siteId), cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            months.Add(new KeptPageMonth(KeptRows.Day(reader, 0), DescribedKept(reader)));
+        }
+
+        return months.DrainToImmutable();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// What is kept is put in ordinal order here rather than by the store, which orders text by its bytes.
+    /// </remarks>
+    public async Task<CountedPages> CountPagesAsync(MonthToCount month, CancellationToken cancellationToken)
+    {
+        await using var reader = await ExecuteAsync(ConsolidationSqlCompiler.CompilePageCount(month), cancellationToken)
+            .ConfigureAwait(false);
+
+        // An aggregate with no grouping always produces exactly one row, including over a month that
+        // holds no page at all, where it keeps none and leaves none out.
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return new CountedPages([], default);
+        }
+
+        var paths = await reader.GetFieldValueAsync<string[]>(0, cancellationToken).ConfigureAwait(false);
+        var everybody = await reader.GetFieldValueAsync<long[]>(1, cancellationToken).ConfigureAwait(false);
+        var people = await reader.GetFieldValueAsync<long[]>(2, cancellationToken).ConfigureAwait(false);
+
+        return new CountedPages(
+            [
+                .. paths
+                    .Select((path, at) => new PathMonthViews(path, everybody[at], people[at]))
+                    .OrderBy(view => view.Path, StringComparer.Ordinal),
+            ],
+            new PagesLeftOut(reader.GetInt64(3), reader.GetInt64(4), reader.GetInt64(5)));
+    }
+
+    /// <inheritdoc />
+    public Task KeepPagesAsync(IReadOnlyCollection<ConsolidatedPageMonth> months, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(months);
+
+        return months.Count == 0
+            ? Task.CompletedTask
+            : client.InsertBinaryAsync(PageTableName, PageColumns, months.Select(ToRow), Waited(), cancellationToken);
+    }
+
     /// <summary>
     /// How a kept month is written: waited for, so a run that returns has kept what it counted.
     /// </summary>
@@ -314,30 +399,59 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
         ];
     }
 
-    private static object[] ToRow(ConsolidatedPostMonth month)
-    {
-        var counted = month.Month;
+    private static object[] ToRow(ConsolidatedPostMonth month) =>
+    [
+        .. Where(month.Month),
+        .. Viewed(month.Views),
+        month.Fingerprint,
+        .. HowCounted(month.Ruleset, month.RulesetJudgedTo, month.CountingRules, month.CountedTo, month.JudgedTo, month.CountedAt),
+    ];
 
-        return
-        [
-            counted.SiteId,
-            Midnight(counted.Month),
-            counted.TimeZoneId,
-            counted.Window.From.UtcDateTime,
-            counted.Window.To.UtcDateTime,
-            month.Views.Select(view => view.Path).ToArray(),
-            month.Views.Select(view => (ulong)view.PageViews).ToArray(),
-            month.Views.Select(view => (ulong)view.PeoplePageViews).ToArray(),
-            month.Fingerprint,
-            (ushort)month.Ruleset.Major,
-            (ushort)month.Ruleset.Minor,
-            month.RulesetJudgedTo.UtcDateTime,
-            (ushort)month.CountingRules,
-            month.CountedTo.UtcDateTime,
-            month.JudgedTo.UtcDateTime,
-            month.CountedAt.UtcDateTime,
-        ];
-    }
+    private static object[] ToRow(ConsolidatedPageMonth month) =>
+    [
+        .. Where(month.Month),
+        .. Viewed(month.Views),
+        (ulong)month.LeftOut.Paths,
+        (ulong)month.LeftOut.PageViews,
+        (ulong)month.LeftOut.PeoplePageViews,
+        .. HowCounted(month.Ruleset, month.RulesetJudgedTo, month.CountingRules, month.CountedTo, month.JudgedTo, month.CountedAt),
+    ];
+
+    /// <summary>Which website and month a row of paths is, and where that month was read.</summary>
+    private static object[] Where(MonthToCount counted) =>
+    [
+        counted.SiteId,
+        Midnight(counted.Month),
+        counted.TimeZoneId,
+        counted.Window.From.UtcDateTime,
+        counted.Window.To.UtcDateTime,
+    ];
+
+    /// <summary>The paths of a row of paths, each with everybody's pages and the people's, as three arrays.</summary>
+    private static object[] Viewed(ImmutableArray<PathMonthViews> views) =>
+    [
+        views.Select(view => view.Path).ToArray(),
+        views.Select(view => (ulong)view.PageViews).ToArray(),
+        views.Select(view => (ulong)view.PeoplePageViews).ToArray(),
+    ];
+
+    /// <summary>How a row of paths was counted, as it ends.</summary>
+    private static object[] HowCounted(
+        RulesetVersion ruleset,
+        DateTimeOffset rulesetJudgedTo,
+        int countingRules,
+        DateTimeOffset countedTo,
+        DateTimeOffset judgedTo,
+        DateTimeOffset countedAt) =>
+    [
+        (ushort)ruleset.Major,
+        (ushort)ruleset.Minor,
+        rulesetJudgedTo.UtcDateTime,
+        (ushort)countingRules,
+        countedTo.UtcDateTime,
+        judgedTo.UtcDateTime,
+        countedAt.UtcDateTime,
+    ];
 
     /// <summary>How a kept month was counted, from the columns the calendar reads of it.</summary>
     private static KeptMonth Described(ClickHouseDataReader reader)
@@ -357,18 +471,22 @@ internal sealed class ClickHouseMonthConsolidation(IClickHouseClient client, Kee
 
     /// <summary>How a kept month of posts was counted, from the columns its survey reads.</summary>
     private static KeptPostMonth DescribedPosts(ClickHouseDataReader reader) =>
+        new(KeptRows.Day(reader, 0), DescribedKept(reader), reader.GetString(9));
+
+    /// <summary>
+    /// How a kept month of posts or of pages was counted, from the columns every survey of them reads
+    /// after the month.
+    /// </summary>
+    private static KeptMonth DescribedKept(ClickHouseDataReader reader) =>
         new(
-            KeptRows.Day(reader, 0),
-            new KeptMonth(
-                reader.GetString(1),
-                null,
-                new RulesetVersion(reader.GetFieldValue<ushort>(3), reader.GetFieldValue<ushort>(4)),
-                reader.GetDateTimeOffset(5),
-                reader.GetFieldValue<ushort>(6),
-                reader.GetDateTimeOffset(7),
-                reader.GetDateTimeOffset(8),
-                reader.GetDateTimeOffset(9)),
-            reader.GetString(2));
+            reader.GetString(1),
+            null,
+            new RulesetVersion(reader.GetFieldValue<ushort>(2), reader.GetFieldValue<ushort>(3)),
+            reader.GetDateTimeOffset(4),
+            reader.GetFieldValue<ushort>(5),
+            reader.GetDateTimeOffset(6),
+            reader.GetDateTimeOffset(7),
+            reader.GetDateTimeOffset(8));
 
     /// <summary>
     /// A month's best hour as it is kept: the day it fell on and which hour of that day, on the website's

@@ -94,7 +94,7 @@ internal static class KeptPosts
         DateOnly month,
         string fingerprint,
         DateTimeOffset countedAt,
-        params PostMonthViews[] views)
+        params PathMonthViews[] views)
     {
         ArgumentNullException.ThrowIfNull(site);
         ArgumentNullException.ThrowIfNull(calendar);

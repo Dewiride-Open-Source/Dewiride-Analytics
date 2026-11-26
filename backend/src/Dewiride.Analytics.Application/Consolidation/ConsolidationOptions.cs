@@ -3,7 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace Dewiride.Analytics.Application.Consolidation;
 
 /// <summary>
-/// How the engine keeps each website's monthly totals.
+/// How the engine keeps each website's monthly totals, and the monthly views of its posts and of its
+/// busiest pages.
 /// </summary>
 public sealed class ConsolidationOptions
 {
@@ -15,7 +16,8 @@ public sealed class ConsolidationOptions
     /// </summary>
     /// <remarks>
     /// Switching this off keeps nothing new; it deletes nothing already kept. A month whose
-    /// reports expire while it is off is never counted, and its totals are lost with them.
+    /// reports expire while it is off is never counted, and its totals and the views of its posts
+    /// and its pages are lost with them.
     /// </remarks>
     public bool Enabled { get; init; } = true;
 
@@ -33,7 +35,8 @@ public sealed class ConsolidationOptions
     public TimeSpan Interval { get; init; } = TimeSpan.FromMinutes(15);
 
     /// <summary>
-    /// Most months one run counts for any one website.
+    /// Most months one run counts for any one website, of its totals, of its posts and of its pages
+    /// each.
     /// </summary>
     /// <remarks>
     /// Counting a month reads every report it holds, so a website with a year of history is

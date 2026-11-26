@@ -224,7 +224,7 @@ public sealed class InsightsPostReadTests(AnalyticsStackFixture stack)
         await KeptRecord.KeepAsync(stack, KeptRecord.Counted(site, calendar, longAgo, 40));
         await KeptPosts.KeepAsync(
             stack,
-            KeptPosts.Counted(site, calendar, longAgo, PostFingerprint.Of(["/posts/a/"]), Counted(calendar, longAgo), new PostMonthViews("/posts/a/", 40, 25)));
+            KeptPosts.Counted(site, calendar, longAgo, PostFingerprint.Of(["/posts/a/"]), Counted(calendar, longAgo), new PathMonthViews("/posts/a/", 40, 25)));
         await SitemapSeed.WriteAsync(stack, KeptPosts.Post(site.Id, "/posts/a/", SitemapSeed.Now(stack), lately));
         await KeptRecord.WriteAsync(
             stack,
@@ -268,10 +268,10 @@ public sealed class InsightsPostReadTests(AnalyticsStackFixture stack)
         await KeptRecord.KeepAsync(stack, KeptRecord.Counted(site, calendar, thirteen, 30));
         await KeptPosts.KeepAsync(
             stack,
-            KeptPosts.Counted(site, calendar, fifteen, fingerprint, Counted(calendar, fifteen), new PostMonthViews("/posts/a/", 4, 2)));
+            KeptPosts.Counted(site, calendar, fifteen, fingerprint, Counted(calendar, fifteen), new PathMonthViews("/posts/a/", 4, 2)));
         await KeptPosts.KeepAsync(
             stack,
-            KeptPosts.Counted(site, calendar, thirteen, fingerprint, Counted(calendar, thirteen), new PostMonthViews("/posts/a/", 6, 3)));
+            KeptPosts.Counted(site, calendar, thirteen, fingerprint, Counted(calendar, thirteen), new PathMonthViews("/posts/a/", 6, 3)));
         await SitemapSeed.WriteAsync(
             stack,
             KeptPosts.Post(site.Id, "/posts/a/", SitemapSeed.Now(stack), calendar.MidnightOn(fifteen.AddDays(-20))));

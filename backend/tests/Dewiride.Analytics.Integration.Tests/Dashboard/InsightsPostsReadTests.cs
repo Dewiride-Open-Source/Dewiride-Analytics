@@ -97,7 +97,7 @@ public sealed class InsightsPostsReadTests(AnalyticsStackFixture stack)
                 longAgo,
                 PostFingerprint.Of(["/posts/a/"]),
                 calendar.MidnightOn(longAgo.AddMonths(1)).AddDays(1),
-                new PostMonthViews("/posts/a/", 40, 25)));
+                new PathMonthViews("/posts/a/", 40, 25)));
         await SitemapSeed.WriteAsync(stack, KeptPosts.Post(site.Id, "/posts/a/", SitemapSeed.Now(stack), lately));
         await KeptRecord.WriteAsync(
             stack,

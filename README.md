@@ -65,10 +65,10 @@ and the [master plan](#master-plan) below it says what does not yet.
   still counts in how your pages are read, because there it is the only measurement of that page
   there is.
 - **Insights**, a screen of its own for a website's whole record: its page views and daily visitors
-  since it was first measured, its best day ever, its busiest day of the week and hour on its own
-  clock, and every month and year by total views or by average per day. All of it can be kept to the
-  visits judged to be people, and a month that could not be counted says so rather than reading as
-  nought.
+  since it was first measured, its best day and its best hour ever, its busiest day of the week and
+  hour on its own clock, and every month and year by total views or by average per day. All of it can
+  be kept to the visits judged to be people, and a month that could not be counted says so rather than
+  reading as nought.
 - A website's posts, known from its sitemap. Give its settings the sitemap's address and the engine
   reads it, and once each page it lists, for that page's title and publish date, keeping to one
   request a second and to the website's own addresses. Settings says how many posts it found, how
@@ -487,8 +487,9 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-18.
 
 **5.8 Insights**
 
-- **Done** · All-time page views and daily visitors, the best day ever, the busiest day of the week
-  and hour, every month and year by total views or by average per day, and the same for people only.
+- **Done** · All-time page views and daily visitors, the best day and the best hour ever, the busiest
+  day of the week and hour, every month and year by total views or by average per day, and the same
+  for people only.
 - **Done** · Posts from the website's own sitemap: how many, the newest ten with their views, the most
   read ever, and a calendar of the last 12 months of posting.
 - **Done** · A page for each post: its views since they were first counted, on average per day and in

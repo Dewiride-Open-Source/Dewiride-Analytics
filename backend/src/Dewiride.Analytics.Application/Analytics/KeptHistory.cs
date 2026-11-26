@@ -350,23 +350,33 @@ public static class KeptHistory
     }
 
     /// <summary>
-    /// What a website's whole record says about when it is read: its best day, how its reading falls
-    /// across the week and the day, and how much of it each month holds.
+    /// What a website's whole record says about when it is read: its best day and its best hour, how
+    /// its reading falls across the week and the day, and how much of it each month holds.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A kept month gives the best day and the weekday and hour figures kept with it. A month answered
-    /// from its reports gives them from its figures day by day and hour by hour, on the website's
-    /// clock, which is how a kept month's were counted. Those figures cover a stretch that can hold
-    /// months that were kept, and only the months answered from their reports are read from them, so
-    /// no day is counted twice. A month missing from the record adds nothing and covers no days.
+    /// A kept month gives the best day, the best hour and the weekday and hour figures kept with it. A
+    /// month answered from its reports gives them from its figures day by day and hour by hour, on the
+    /// website's clock, which is how a kept month's were counted. Those figures cover a stretch that
+    /// can hold months that were kept, and only the months answered from their reports are read from
+    /// them, so no day or hour is counted twice. A month missing from the record adds nothing and
+    /// covers no days.
     /// </para>
     /// <para>
-    /// The best day is the busiest of the months' best days and the earliest of a tie. Being worked
-    /// out afresh rather than recorded, it falls with its month where a month still held is counted
-    /// again under newer rules. Every weekday or hour sharing the most is busiest, and none is where
-    /// nothing was read. A figure a day or an hour counted a visitor's page in may count it again in
-    /// another, so a weekday's or an hour's share is of its own figures, never of the month's total.
+    /// The best day is the busiest of the months' best days, and the best hour the busiest of their
+    /// best hours, each the earliest of a tie (ADRs 0066, 0079). Being worked out afresh rather than
+    /// recorded, either falls with its month where a month still held is counted again under newer
+    /// rules. Every weekday or hour sharing the most is busiest, and none is where nothing was read. A
+    /// figure a day or an hour counted a visitor's page in may count it again in another, so a
+    /// weekday's or an hour's share is of its own figures, never of the month's total.
+    /// </para>
+    /// <para>
+    /// The best hour is an hour on the clock, never an hour of the day: the hour the clocks go back
+    /// through is two hours, each with its own pages, where the hours of the day fold them into one. A
+    /// month read from a row counted by a version of the arithmetic that kept no hour holds pages and
+    /// cannot say which of its hours was busiest, so the best hour is worked out from the months after
+    /// the newest such month alone, and says which month that is — never naming an hour from before
+    /// it.
     /// </para>
     /// </remarks>
     /// <param name="months">The record, resolved.</param>
@@ -385,7 +395,7 @@ public static class KeptHistory
         ArgumentNullException.ThrowIfNull(live);
         ArgumentNullException.ThrowIfNull(zone);
 
-        var best = new BusiestDay();
+        var best = new Peak<DateOnly>();
         var weekdays = new long[MonthFigures.Weekdays];
         var hours = new long[MonthFigures.Hours];
         var fromReports = months
@@ -419,11 +429,16 @@ public static class KeptHistory
             }
         }
 
+        var bestHourFrom = BestHourFrom(months);
+        var bestHour = BestHourOf(months, bestHourFrom, live.Hours, zone);
         var today = ZoneDays.Of(asOf, zone);
 
         return new KeptInsights(
-            best.Day,
+            best.When,
             best.PageViews,
+            bestHour.When,
+            bestHour.PageViews,
+            bestHourFrom,
             [.. weekdays],
             Busiest(weekdays),
             [.. hours],
@@ -431,7 +446,7 @@ public static class KeptHistory
             [.. months.Select(month => ReadingOf(month, firstDay, live.PageViews, today))]);
     }
 
-    private static void AddKept(MonthFigures figures, BusiestDay best, long[] weekdays, long[] hours)
+    private static void AddKept(MonthFigures figures, Peak<DateOnly> best, long[] weekdays, long[] hours)
     {
         if (figures.BestDay is { } day)
         {
@@ -441,6 +456,65 @@ public static class KeptHistory
         AddTo(weekdays, figures.ByWeekday);
         AddTo(hours, figures.ByHour);
     }
+
+    /// <summary>
+    /// The month the best hour is known from: the one after the newest kept month that holds pages and
+    /// no best hour, or nothing where every kept month holding pages names one.
+    /// </summary>
+    private static DateOnly? BestHourFrom(ImmutableArray<MonthOfRecord> months) =>
+        months
+            .LastOrDefault(month => month is
+            {
+                Source: MonthSource.Kept,
+                Month.Kept.Figures: { PageViews: > 0, BestHour: null },
+            })
+            ?.Month.Month.AddMonths(1);
+
+    /// <summary>
+    /// The busiest hour on the website's clock of the months from <paramref name="from"/> on: each kept
+    /// month's best hour, and every hour of the months answered from their reports.
+    /// </summary>
+    private static Peak<DateTime> BestHourOf(
+        ImmutableArray<MonthOfRecord> months,
+        DateOnly? from,
+        IReadOnlyList<TimeSeriesPoint> live,
+        TimeZoneInfo zone)
+    {
+        var best = new Peak<DateTime>();
+        var known = months.Where(month => from is not { } first || month.Month.Month >= first).ToArray();
+        var fromReports = known
+            .Where(month => month.Source == MonthSource.Live)
+            .Select(month => month.Month.Month)
+            .ToHashSet();
+
+        foreach (var month in known)
+        {
+            if (month is { Source: MonthSource.Kept, Month.Kept.Figures: { BestHour: { } hour } figures })
+            {
+                best.Offer(hour, figures.BestHourPageViews);
+            }
+        }
+
+        foreach (var point in live)
+        {
+            var shown = TimeZoneInfo.ConvertTime(point.BucketStart, zone);
+
+            if (fromReports.Contains(new DateOnly(shown.Year, shown.Month, 1)))
+            {
+                best.Offer(HourOnTheClock(shown), point.Value);
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// An hour as the website's clock showed its first minute, which is how a kept month's best hour is
+    /// named. The two hours the clocks show alike as they go back are named alike, and each is offered
+    /// with its own pages.
+    /// </summary>
+    private static DateTime HourOnTheClock(DateTimeOffset shown) =>
+        new(shown.Year, shown.Month, shown.Day, shown.Hour, 0, 0, DateTimeKind.Unspecified);
 
     private static void AddTo(long[] sums, ImmutableArray<long> figures)
     {
@@ -607,6 +681,15 @@ public sealed record LiveMonths(
 /// </summary>
 /// <param name="BestDay">The day the most pages were delivered, the earliest of a tie, or nothing where none were.</param>
 /// <param name="BestDayPageViews">Pages delivered on that day.</param>
+/// <param name="BestHour">
+/// The clock hour the most pages were delivered in, as the website's clock showed its first minute, the
+/// earliest of a tie, or nothing where none were.
+/// </param>
+/// <param name="BestHourPageViews">Pages delivered in that hour.</param>
+/// <param name="BestHourFrom">
+/// The first of the month the best hour is worked out from, where a kept month before it holds pages and
+/// no best hour; nothing where every month of the record is part of it.
+/// </param>
 /// <param name="Weekdays">Pages delivered on each day of the week, Monday first.</param>
 /// <param name="BusiestWeekdays">Every place in <paramref name="Weekdays"/> sharing the most, or none where nothing was read.</param>
 /// <param name="Hours">Pages delivered in each hour of the day, from midnight on the website's clock.</param>
@@ -615,6 +698,9 @@ public sealed record LiveMonths(
 public sealed record KeptInsights(
     DateOnly? BestDay,
     long BestDayPageViews,
+    DateTime? BestHour,
+    long BestHourPageViews,
+    DateOnly? BestHourFrom,
     ImmutableArray<long> Weekdays,
     ImmutableArray<int> BusiestWeekdays,
     ImmutableArray<long> Hours,

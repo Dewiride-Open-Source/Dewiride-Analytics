@@ -217,11 +217,15 @@ export const allTimeSchema = z.object({
  * What a website's whole record says, for one population, in one answer: its totals, the day and the
  * times it was read most, and every month of it.
  *
- * Days and hours are on the website's clock. `weekdays` runs from Monday and `hours` from midnight,
- * and the two `busiest` lists name every place sharing the most, none where nothing was read.
- * `months` runs oldest first, the last of them the month running now, one for every month of the
- * record: `pageViews` is nothing where a month is left out, as `missing` or `unjudged` says why, and
- * `daysMeasured` is how many days its figure covers, none for such a month.
+ * Days and hours are on the website's clock. `bestHour` is the clock hour the most pages were read
+ * in, named by the day it fell on and by `hour`, counted from midnight; two hours the clocks show
+ * alike are two hours, never one. Each best is the earliest of a tie, and nothing where nothing was
+ * read. `bestHourFrom` is the month the best hour is known from, where an older month was kept
+ * without one, and nothing where every month names its own. `weekdays` runs from Monday and `hours`
+ * from midnight, and the two `busiest` lists name every place sharing the most, none where nothing
+ * was read. `months` runs oldest first, the last of them the month running now, one for every month
+ * of the record: `pageViews` is nothing where a month is left out, as `missing` or `unjudged` says
+ * why, and `daysMeasured` is how many days its figure covers, none for such a month.
  */
 export const insightsSchema = z.object({
   firstDay: calendarDay.nullable(),
@@ -230,6 +234,14 @@ export const insightsSchema = z.object({
   pageViews: z.number().int(),
   visitors: z.number().int(),
   bestDay: z.object({ day: calendarDay, pageViews: z.number().int() }).nullable(),
+  bestHour: z
+    .object({
+      day: calendarDay,
+      hour: z.number().int().min(0).max(23),
+      pageViews: z.number().int(),
+    })
+    .nullable(),
+  bestHourFrom: calendarMonth.nullable(),
   weekdays: z.array(z.number().int()).length(7),
   busiestWeekdays: z.array(z.number().int()),
   hours: z.array(z.number().int()).length(24),

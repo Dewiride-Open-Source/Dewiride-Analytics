@@ -18,9 +18,9 @@ namespace Dewiride.Analytics.Infrastructure.ClickHouse.Analytics;
 /// A month is counted from exactly the fragments the dashboard counts from — the reconciliation of
 /// the two halves of the measurement, pages delivered, the people the verdicts cover, and the
 /// buckets of the website's calendar — so a kept month is the overview of that month, its busiest
-/// day is the busiest bucket of the daily series, and its hours are the hourly series folded. A
-/// test holds the version of the arithmetic, <see cref="CountingRules.Current"/>, to the text of
-/// these statements.
+/// day is the busiest bucket of the daily series, its best hour the busiest bucket of the hourly
+/// series, and its hours are the hourly series folded. A test holds the version of the arithmetic,
+/// <see cref="CountingRules.Current"/>, to the text of these statements.
 /// </para>
 /// <para>
 /// The counting statements end by asking the store for one thread and ten minutes at most. They run
@@ -83,9 +83,9 @@ public static class ConsolidationSqlCompiler
     /// Three cuts of the month in one statement, each grouped exactly as the dashboard groups it: the
     /// month whole, as the overview counts a period; day by day, as the daily series does, which
     /// gives the busiest day and the weekdays; and hour by hour, as the hourly series does, which
-    /// gives the hours. A cut is never derived from a finer one, because pages delivered are the
-    /// larger of what the two halves of the measurement saw, and the larger of two sums is not the
-    /// sum of the larger.
+    /// gives the best hour and the hours. A cut is never derived from a finer one, because pages
+    /// delivered are the larger of what the two halves of the measurement saw, and the larger of two
+    /// sums is not the sum of the larger.
     /// </para>
     /// <para>
     /// The three are gathered inside a selection of their own, because the store does not say

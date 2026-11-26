@@ -6,9 +6,11 @@ namespace Dewiride.Analytics.Application.Consolidation;
 /// <remarks>
 /// <para>
 /// Raised whenever the statements that count a month change what they count — a correction to how
-/// a page delivered is recognised, a change to who is a visitor. A month kept under an older
-/// version is counted again while its reports remain, and keeps the old arithmetic once they are
-/// gone, saying which it was.
+/// a page delivered is recognised, a change to who is a visitor — and whenever a month comes to keep
+/// a figure that rows counted by an older version lack, even where the statements already count
+/// it: version 3 keeps each month's best hour (ADR 0079). A month kept under an older version is
+/// counted again while its reports remain, and keeps the old arithmetic once they are gone, saying
+/// which it was.
 /// </para>
 /// <para>
 /// A test holds this to the statements themselves, so a change to any fragment they share with the
@@ -18,7 +20,7 @@ namespace Dewiride.Analytics.Application.Consolidation;
 public static class CountingRules
 {
     /// <summary>The version this build counts with.</summary>
-    public const int Current = 2;
+    public const int Current = 3;
 
     /// <summary>The version this build counts a month's posts with.</summary>
     /// <remarks>

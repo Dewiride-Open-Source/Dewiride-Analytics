@@ -25,8 +25,8 @@ public sealed class InsightsReadTests(AnalyticsStackFixture stack)
     private const string Address = "/insights";
 
     /// <summary>
-    /// For a month kept and the month running now: the first day, the page views, the best day, and
-    /// the weekday and hour on the website's clock.
+    /// For a month kept and the month running now: the first day, the page views, the best day and
+    /// best hour, and the weekday and hour on the website's clock.
     /// </summary>
     [Fact]
     public async Task Insights_Read_The_Kept_Months()
@@ -41,6 +41,8 @@ public sealed class InsightsReadTests(AnalyticsStackFixture stack)
         insights.FirstDay.Should().Be(Day(read.FirstDay));
         insights.PageViews.Should().Be(3);
         insights.BestDay.Should().Be(new InsightsBestDay(Day(read.FirstDay), 2));
+        insights.BestHour.Should().Be(new InsightsBestHour(Day(read.FirstDay), 11, 2));
+        insights.BestHourFrom.Should().BeNull();
         insights.Weekdays.Should().Equal(read.Weekdays);
         insights.BusiestWeekdays.Should().Equal(Busiest(read.Weekdays));
         insights.Hours.Should().Equal(read.Hours);
@@ -73,6 +75,8 @@ public sealed class InsightsReadTests(AnalyticsStackFixture stack)
         kept.PageViews.Should().Be(answered.PageViews);
         kept.Visitors.Should().Be(answered.Visitors);
         kept.BestDay.Should().Be(answered.BestDay);
+        kept.BestHour.Should().Be(answered.BestHour).And.NotBeNull();
+        kept.BestHourFrom.Should().Be(answered.BestHourFrom);
         kept.Weekdays.Should().Equal(answered.Weekdays);
         kept.Hours.Should().Equal(answered.Hours);
         kept.Months.Should().Equal(answered.Months);
@@ -151,10 +155,12 @@ public sealed class InsightsReadTests(AnalyticsStackFixture stack)
 
         everybody.PageViews.Should().Be(7);
         everybody.BestDay.Should().Be(new InsightsBestDay(Day(read.LastMonth.AddDays(6)), 4));
+        everybody.BestHour.Should().Be(new InsightsBestHour(Day(read.LastMonth.AddDays(6)), 15, 4));
         everybody.Hours[15].Should().Be(read.Hours[15] + 4);
 
         people.PageViews.Should().Be(3);
         people.BestDay.Should().Be(new InsightsBestDay(Day(read.FirstDay), 2));
+        people.BestHour.Should().Be(new InsightsBestHour(Day(read.FirstDay), 11, 2));
         people.Weekdays.Should().Equal(read.Weekdays);
         people.Hours.Should().Equal(read.Hours);
         people.Months.Select(month => month.PageViews).Should().Equal(2, 1);
@@ -204,7 +210,43 @@ public sealed class InsightsReadTests(AnalyticsStackFixture stack)
         insights.Missing.Should().Contain(Month(longAgo.AddMonths(1)));
         insights.Months.Count(month => month.PageViews is null).Should().Be(insights.Missing.Count);
         insights.BestDay.Should().Be(new InsightsBestDay(Day(longAgo), 40));
+        insights.BestHour.Should().Be(new InsightsBestHour(Day(longAgo), 0, 40));
+        insights.BestHourFrom.Should().BeNull();
         insights.PageViews.Should().Be(40);
+    }
+
+    /// <summary>
+    /// A month kept by an engine whose arithmetic kept no hour, too old to be counted again, holds
+    /// pages and cannot say which of its hours was busiest. Its best day still stands; the best hour is
+    /// worked out from the month after it, and the answer names that month.
+    /// </summary>
+    [Fact]
+    public async Task A_Month_Kept_Without_A_Best_Hour_Names_The_Month_The_Best_Hour_Is_Known_From()
+    {
+        var calendar = new ZoneCalendar(Kolkata);
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain(), timeZoneId: Kolkata);
+        var now = await KeptRecord.NowInsideTheMonthAsync(stack, calendar);
+        var running = ZoneCalendar.FirstOf(calendar.DateOf(now));
+        var longAgo = running.AddMonths(-15);
+        var counted = KeptRecord.Counted(site, calendar, longAgo, 40);
+        var lately = calendar.MidnightOn(running) > now.AddMinutes(-40) ? calendar.MidnightOn(running) : now.AddMinutes(-40);
+        var shown = TimeZoneInfo.ConvertTime(lately, TimeZoneInfo.FindSystemTimeZoneById(Kolkata));
+
+        await KeptRecord.KeepAsync(
+            stack,
+            counted with
+            {
+                Everybody = counted.Everybody with { BestHour = null, BestHourPageViews = 0 },
+                CountingRules = 2,
+            });
+        await KeptRecord.WriteAsync(stack, [KeptRecord.Page(site.Id, lately, "/", $"reader-{site.Id:n}")]);
+
+        using var browser = await SignedIn.AsAsync(stack, SiteRole.Viewer, site.Id);
+        var insights = await AskAsync(browser, site.Id);
+
+        insights.BestDay.Should().Be(new InsightsBestDay(Day(longAgo), 40));
+        insights.BestHourFrom.Should().Be(Month(longAgo.AddMonths(1)));
+        insights.BestHour.Should().Be(new InsightsBestHour(Day(calendar.DateOf(lately)), shown.Hour, 1));
     }
 
     /// <summary>
@@ -248,6 +290,8 @@ public sealed class InsightsReadTests(AnalyticsStackFixture stack)
         insights.FirstDay.Should().BeNull();
         insights.PageViews.Should().Be(0);
         insights.BestDay.Should().BeNull();
+        insights.BestHour.Should().BeNull();
+        insights.BestHourFrom.Should().BeNull();
         insights.Weekdays.Should().HaveCount(7).And.OnlyContain(pages => pages == 0);
         insights.Hours.Should().HaveCount(24).And.OnlyContain(pages => pages == 0);
         insights.BusiestWeekdays.Should().BeEmpty();

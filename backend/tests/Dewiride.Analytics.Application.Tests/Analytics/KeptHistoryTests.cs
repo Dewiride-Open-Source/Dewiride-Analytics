@@ -584,7 +584,7 @@ public sealed class KeptHistoryTests
                 new TimeRange(begins, ends),
                 firstDay,
                 DateTime.DaysInMonth(year, month),
-                new MonthFigures(pageViews, pageViews, null, 0, [.. new long[MonthFigures.Weekdays]], [.. new long[MonthFigures.Hours]]),
+                new MonthFigures(pageViews, pageViews, null, 0, null, 0, [.. new long[MonthFigures.Weekdays]], [.. new long[MonthFigures.Hours]]),
                 verdicts ?? [],
                 judgedTo ?? ends));
     }

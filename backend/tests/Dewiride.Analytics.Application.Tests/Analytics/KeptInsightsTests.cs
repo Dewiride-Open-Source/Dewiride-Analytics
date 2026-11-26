@@ -3,8 +3,8 @@ using Dewiride.Analytics.Application.Analytics;
 namespace Dewiride.Analytics.Application.Tests.Analytics;
 
 /// <summary>
-/// Covers what a website's whole record says about when it is read: its best day, how its reading
-/// falls across the week and the day, and how much of it each month holds.
+/// Covers what a website's whole record says about when it is read: its best day and best hour, how
+/// its reading falls across the week and the day, and how much of it each month holds.
 /// </summary>
 /// <remarks>
 /// The record is read at the middle of March 2026. A month that began before about the middle of
@@ -37,25 +37,46 @@ public sealed class KeptInsightsTests
     }
 
     /// <summary>
+    /// The busiest of the months' best hours, and of two as busy the one that came first, on the terms
+    /// of the best day — an evening of January against a morning of February.
+    /// </summary>
+    [Fact]
+    public void The_Best_Hour_Ever_Is_The_Busiest_Kept_Hour_And_The_Earliest_Of_A_Tie()
+    {
+        var insights = Read(
+            Kept(2026, 1, pageViews: 50, bestHour: Hour(2026, 1, 20, 20), bestHourPageViews: 12),
+            Kept(2026, 2, pageViews: 50, bestHour: Hour(2026, 2, 3, 9), bestHourPageViews: 12),
+            Kept(2025, 12, pageViews: 40, bestHour: Hour(2025, 12, 9, 10), bestHourPageViews: 11),
+            Unkept(2026, 3));
+
+        insights.BestHour.Should().Be(Hour(2026, 1, 20, 20));
+        insights.BestHourPageViews.Should().Be(12);
+        insights.BestHourFrom.Should().BeNull();
+    }
+
+    /// <summary>
     /// Worked out afresh from the months rather than recorded, so a month still held that is counted
     /// again under newer rules can take the record with it. A figure that could only ever rise would
-    /// go on naming a day the rules no longer support.
+    /// go on naming a day, or an hour, the rules no longer support.
     /// </summary>
     [Fact]
     public void A_Record_Can_Fall_When_Its_Month_Is_Counted_Again()
     {
         var before = Read(
-            Kept(2026, 1, bestDay: new DateOnly(2026, 1, 20), bestDayPageViews: 90),
-            Kept(2026, 2, bestDay: new DateOnly(2026, 2, 3), bestDayPageViews: 40),
+            Kept(2026, 1, pageViews: 90, bestDay: new DateOnly(2026, 1, 20), bestDayPageViews: 90, bestHour: Hour(2026, 1, 20, 11), bestHourPageViews: 60),
+            Kept(2026, 2, pageViews: 40, bestDay: new DateOnly(2026, 2, 3), bestDayPageViews: 40, bestHour: Hour(2026, 2, 3, 15), bestHourPageViews: 25),
             Unkept(2026, 3));
         var after = Read(
-            Kept(2026, 1, bestDay: new DateOnly(2026, 1, 20), bestDayPageViews: 30),
-            Kept(2026, 2, bestDay: new DateOnly(2026, 2, 3), bestDayPageViews: 40),
+            Kept(2026, 1, pageViews: 30, bestDay: new DateOnly(2026, 1, 20), bestDayPageViews: 30, bestHour: Hour(2026, 1, 20, 11), bestHourPageViews: 20),
+            Kept(2026, 2, pageViews: 40, bestDay: new DateOnly(2026, 2, 3), bestDayPageViews: 40, bestHour: Hour(2026, 2, 3, 15), bestHourPageViews: 25),
             Unkept(2026, 3));
 
         before.BestDay.Should().Be(new DateOnly(2026, 1, 20));
+        before.BestHour.Should().Be(Hour(2026, 1, 20, 11));
         after.BestDay.Should().Be(new DateOnly(2026, 2, 3));
         after.BestDayPageViews.Should().Be(40);
+        after.BestHour.Should().Be(Hour(2026, 2, 3, 15));
+        after.BestHourPageViews.Should().Be(25);
     }
 
     [Fact]
@@ -98,6 +119,9 @@ public sealed class KeptInsightsTests
 
         insights.BestDay.Should().BeNull();
         insights.BestDayPageViews.Should().Be(0);
+        insights.BestHour.Should().BeNull();
+        insights.BestHourPageViews.Should().Be(0);
+        insights.BestHourFrom.Should().BeNull();
         insights.Weekdays.Should().HaveCount(7).And.OnlyContain(pages => pages == 0);
         insights.Hours.Should().HaveCount(24).And.OnlyContain(pages => pages == 0);
         insights.BusiestWeekdays.Should().BeEmpty();
@@ -105,9 +129,9 @@ public sealed class KeptInsightsTests
     }
 
     /// <summary>
-    /// A month answered from its reports is folded on the website's clock. In India the first hour of
-    /// Monday 2 March begins at 18:30 on Sunday in UTC, so reading it in UTC would name another day of
-    /// the week and another hour.
+    /// A month answered from its reports is folded on the website's clock, and its best hour named on
+    /// it. In India the first hour of Monday 2 March begins at 18:30 on Sunday in UTC, so reading it in
+    /// UTC would name another day of the week and another hour.
     /// </summary>
     [Fact]
     public void A_Month_Answered_From_Its_Reports_Is_Folded_On_The_Websites_Clock()
@@ -132,14 +156,18 @@ public sealed class KeptInsightsTests
         insights.Hours[0].Should().Be(6);
         insights.Hours[14].Should().Be(3);
         insights.BusiestHours.Should().Equal(0);
+        insights.BestHour.Should().Be(Hour(2026, 3, 2, 0));
+        insights.BestHourPageViews.Should().Be(6);
     }
 
     /// <summary>
     /// The clocks go back through an hour once a year, and each of the two is that hour on the
-    /// website's clock, so their pages fold into the one hour they were read in.
+    /// website's clock, so their pages fold into the one hour of the day they were read in. On the
+    /// clock they are still two hours, and the best hour is the busier of them — never the two added
+    /// together, which would name an hour busier than any the website had.
     /// </summary>
     [Fact]
-    public void Two_Hours_The_Clocks_Show_Alike_Are_One_Hour_Of_The_Day()
+    public void Two_Hours_The_Clocks_Show_Alike_Are_One_Hour_Of_The_Day_And_Two_Hours_On_The_Clock()
     {
         var london = TimeZoneInfo.FindSystemTimeZoneById("Europe/London");
         var first = new DateTimeOffset(2025, 10, 26, 1, 0, 0, TimeSpan.FromHours(1));
@@ -163,14 +191,17 @@ public sealed class KeptInsightsTests
             AsOf);
 
         insights.Hours[1].Should().Be(5);
+        insights.BestHour.Should().Be(Hour(2025, 10, 26, 1));
+        insights.BestHourPageViews.Should().Be(3);
     }
 
     /// <summary>
     /// The reports read for the months answered from them cover a stretch that can hold a month that
-    /// was kept. That month is read from what was kept of it, and its days are not counted again.
+    /// was kept. That month is read from what was kept of it, and its days and hours are not counted
+    /// again.
     /// </summary>
     [Fact]
-    public void A_Day_Of_A_Kept_Month_Is_Not_Counted_Again_From_The_Reports()
+    public void A_Day_Or_An_Hour_Of_A_Kept_Month_Is_Not_Counted_Again_From_The_Reports()
     {
         var keptDay = new DateOnly(2026, 2, 16);
         var live = new LiveMonths(
@@ -189,11 +220,21 @@ public sealed class KeptInsightsTests
         var insights = Read(
             live,
             Unkept(2026, 1),
-            Kept(2026, 2, pageViews: 20, bestDay: keptDay, bestDayPageViews: 20, weekdays: [20, 0, 0, 0, 0, 0, 0]),
+            Kept(
+                2026,
+                2,
+                pageViews: 20,
+                bestDay: keptDay,
+                bestDayPageViews: 20,
+                bestHour: Hour(2026, 2, 16, 10),
+                bestHourPageViews: 20,
+                weekdays: [20, 0, 0, 0, 0, 0, 0]),
             Unkept(2026, 3));
 
         insights.BestDay.Should().Be(keptDay);
         insights.BestDayPageViews.Should().Be(20);
+        insights.BestHour.Should().Be(Hour(2026, 2, 16, 10));
+        insights.BestHourPageViews.Should().Be(20);
         insights.Weekdays[0].Should().Be(22);
         insights.Hours[10].Should().Be(1);
         insights.Hours[11].Should().Be(0);
@@ -201,19 +242,77 @@ public sealed class KeptInsightsTests
         insights.Months.Select(month => month.PageViews).Should().Equal(1, 20, 1);
     }
 
-    /// <summary>A day from the reports can take the record from a kept one, and only by beating it.</summary>
+    /// <summary>
+    /// A day or an hour from the reports can take the record from a kept one, and only by beating it —
+    /// the hour running now among them, whose pages are still arriving.
+    /// </summary>
     [Fact]
-    public void A_Day_From_The_Reports_Takes_The_Record_Only_By_Beating_It()
+    public void A_Day_Or_An_Hour_From_The_Reports_Takes_The_Record_Only_By_Beating_It()
     {
-        var kept = Kept(2026, 2, bestDay: new DateOnly(2026, 2, 16), bestDayPageViews: 20);
+        var kept = Kept(
+            2026,
+            2,
+            pageViews: 40,
+            bestDay: new DateOnly(2026, 2, 16),
+            bestDayPageViews: 20,
+            bestHour: Hour(2026, 2, 16, 10),
+            bestHourPageViews: 9);
         var today = new DateTimeOffset(2026, 3, 2, 0, 0, 0, TimeSpan.Zero);
+        var runningHour = new DateTimeOffset(2026, 3, 15, 12, 0, 0, TimeSpan.Zero);
 
-        var asBusy = Read(new LiveMonths(new Dictionary<DateTimeOffset, long>(), [new TimeSeriesPoint(today, 20)], []), kept, Unkept(2026, 3));
-        var busier = Read(new LiveMonths(new Dictionary<DateTimeOffset, long>(), [new TimeSeriesPoint(today, 21)], []), kept, Unkept(2026, 3));
+        var asBusy = Read(
+            new LiveMonths(new Dictionary<DateTimeOffset, long>(), [new TimeSeriesPoint(today, 20)], [new TimeSeriesPoint(runningHour, 9)]),
+            kept,
+            Unkept(2026, 3));
+        var busier = Read(
+            new LiveMonths(new Dictionary<DateTimeOffset, long>(), [new TimeSeriesPoint(today, 21)], [new TimeSeriesPoint(runningHour, 10)]),
+            kept,
+            Unkept(2026, 3));
 
         asBusy.BestDay.Should().Be(new DateOnly(2026, 2, 16));
+        asBusy.BestHour.Should().Be(Hour(2026, 2, 16, 10));
         busier.BestDay.Should().Be(new DateOnly(2026, 3, 2));
         busier.BestDayPageViews.Should().Be(21);
+        busier.BestHour.Should().Be(Hour(2026, 3, 15, 12));
+        busier.BestHourPageViews.Should().Be(10);
+    }
+
+    /// <summary>
+    /// A month kept by a version of the arithmetic that kept no hour holds pages and cannot say which of
+    /// its hours was busiest. The best hour is worked out from the month after it, and names no hour from
+    /// before it — neither one kept with an older month nor one from the reports of a month never kept —
+    /// where any could be beaten by an hour of the month it cannot see into.
+    /// </summary>
+    [Fact]
+    public void A_Month_Kept_With_Pages_And_No_Hour_Names_The_Best_Hour_From_The_Month_After_It()
+    {
+        var neverKept = new DateTimeOffset(2025, 10, 6, 10, 0, 0, TimeSpan.Zero);
+
+        var insights = Read(
+            new LiveMonths(new Dictionary<DateTimeOffset, long>(), [], [new TimeSeriesPoint(neverKept, 500)]),
+            Unkept(2025, 10),
+            Kept(2025, 11, pageViews: 90, bestHour: Hour(2025, 11, 5, 10), bestHourPageViews: 90),
+            Kept(2025, 12, pageViews: 30),
+            Kept(2026, 1, pageViews: 20, bestHour: Hour(2026, 1, 7, 9), bestHourPageViews: 8),
+            Kept(2026, 2, pageViews: 10, bestHour: Hour(2026, 2, 3, 15), bestHourPageViews: 4),
+            Unkept(2026, 3));
+
+        insights.BestHourFrom.Should().Be(new DateOnly(2026, 1, 1));
+        insights.BestHour.Should().Be(Hour(2026, 1, 7, 9));
+        insights.BestHourPageViews.Should().Be(8);
+    }
+
+    /// <summary>A month kept with nothing read in it has no hour to name, and hides none.</summary>
+    [Fact]
+    public void A_Month_Kept_With_Nothing_Read_Leaves_The_Best_Hour_Whole()
+    {
+        var insights = Read(
+            Kept(2026, 1, pageViews: 10, bestHour: Hour(2026, 1, 5, 10), bestHourPageViews: 4),
+            Kept(2026, 2),
+            Unkept(2026, 3));
+
+        insights.BestHourFrom.Should().BeNull();
+        insights.BestHour.Should().Be(Hour(2026, 1, 5, 10));
     }
 
     /// <summary>
@@ -289,32 +388,45 @@ public sealed class KeptInsightsTests
 
     /// <summary>
     /// A month kept before judging had finished with it, and too old to be counted again, has figures
-    /// for everybody. Asked about people, nothing of it counts: not its best day, not its weekdays or
-    /// hours, and not its days.
+    /// for everybody. Asked about people, nothing of it counts: not its best day or best hour, not its
+    /// weekdays or hours, and not its days — and a month left out names no month the best hour is known
+    /// from, though the same month holding pages and no hour names one for everybody.
     /// </summary>
     [Fact]
     public void A_Month_Whose_People_Were_Never_Settled_Adds_Nothing_To_An_Answer_About_People()
     {
+        var unsettledWithoutAnHour = Kept(
+            2024,
+            12,
+            pageViews: 30,
+            judgedTo: new DateTimeOffset(2024, 12, 20, 0, 0, 0, TimeSpan.Zero));
         var unsettled = Kept(
             2025,
             1,
             pageViews: 40,
             bestDay: new DateOnly(2025, 1, 9),
             bestDayPageViews: 40,
+            bestHour: Hour(2025, 1, 9, 13),
+            bestHourPageViews: 25,
             weekdays: [40, 0, 0, 0, 0, 0, 0],
             judgedTo: new DateTimeOffset(2025, 1, 20, 0, 0, 0, TimeSpan.Zero));
-        var record = new KeptMonths(null, [unsettled, Unkept(2026, 3)]);
+        var record = new KeptMonths(null, [unsettledWithoutAnHour, unsettled, Unkept(2026, 3)]);
 
         var aboutPeople = KeptHistory.Insights(KeptHistory.Resolve(record, AsOf, judged: true), null, NoReports, TimeZoneInfo.Utc, AsOf);
         var aboutEverybody = KeptHistory.Insights(KeptHistory.Resolve(record, AsOf, judged: false), null, NoReports, TimeZoneInfo.Utc, AsOf);
 
-        aboutPeople.Months[0].Should().Be(new MonthReading(new DateOnly(2025, 1, 1), null, 0));
+        aboutPeople.Months[0].Should().Be(new MonthReading(new DateOnly(2024, 12, 1), null, 0));
+        aboutPeople.Months[1].Should().Be(new MonthReading(new DateOnly(2025, 1, 1), null, 0));
         aboutPeople.BestDay.Should().BeNull();
+        aboutPeople.BestHour.Should().BeNull();
+        aboutPeople.BestHourFrom.Should().BeNull();
         aboutPeople.Weekdays.Should().OnlyContain(pages => pages == 0);
         aboutPeople.BusiestWeekdays.Should().BeEmpty();
 
-        aboutEverybody.Months[0].PageViews.Should().Be(40);
+        aboutEverybody.Months[1].PageViews.Should().Be(40);
         aboutEverybody.BestDay.Should().Be(new DateOnly(2025, 1, 9));
+        aboutEverybody.BestHour.Should().Be(Hour(2025, 1, 9, 13));
+        aboutEverybody.BestHourFrom.Should().Be(new DateOnly(2025, 1, 1));
         aboutEverybody.BusiestWeekdays.Should().Equal(0);
     }
 
@@ -325,6 +437,8 @@ public sealed class KeptInsightsTests
 
         insights.Months.Should().BeEmpty();
         insights.BestDay.Should().BeNull();
+        insights.BestHour.Should().BeNull();
+        insights.BestHourFrom.Should().BeNull();
         insights.BusiestHours.Should().BeEmpty();
     }
 
@@ -363,6 +477,8 @@ public sealed class KeptInsightsTests
         int? daysMeasured = null,
         DateOnly? bestDay = null,
         long bestDayPageViews = 0,
+        DateTime? bestHour = null,
+        long bestHourPageViews = 0,
         long[]? weekdays = null,
         long[]? hours = null,
         DateTimeOffset? judgedTo = null)
@@ -382,6 +498,8 @@ public sealed class KeptInsightsTests
                     pageViews,
                     bestDay,
                     bestDayPageViews,
+                    bestHour,
+                    bestHourPageViews,
                     [.. weekdays ?? new long[MonthFigures.Weekdays]],
                     [.. hours ?? new long[MonthFigures.Hours]]),
                 [],
@@ -396,4 +514,8 @@ public sealed class KeptInsightsTests
     }
 
     private static DateTimeOffset Midnight(int year, int month) => new(year, month, 1, 0, 0, 0, TimeSpan.Zero);
+
+    /// <summary>An hour as the website's clock shows its first minute.</summary>
+    private static DateTime Hour(int year, int month, int day, int hour) =>
+        new(year, month, day, hour, 0, 0, DateTimeKind.Unspecified);
 }

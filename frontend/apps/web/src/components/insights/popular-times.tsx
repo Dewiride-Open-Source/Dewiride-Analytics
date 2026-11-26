@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { CELL, FIGURE, Figures } from '@/components/charts/figures';
 import { writeShare } from '@/components/dashboard/ranked-list';
 import { Card } from '@/components/ui/card';
-import { A_MONDAY, weekdayName, writableDay } from '@/lib/analytics/all-time';
+import { A_MONDAY, weekdayName, writableDay, writtenMonth } from '@/lib/analytics/all-time';
 import { shareOf } from '@/lib/analytics/share';
 import type { Insights } from '@/lib/api/schemas';
 import { cn } from '@/lib/styling';
@@ -49,9 +49,10 @@ const TYPICAL_WEEKDAY: Typical = { place: 2, shared: 5 };
 const TYPICAL_HOUR: Typical = { place: 14, shared: 11 };
 
 /**
- * A best day ever of typical length when written out, so that the stand-in laid out from it is right
- * for most days. It is about the middle of how wide a day is written and takes one line from a phone
- * 360 wide up, where one of the longest would hold two lines open for a day that usually takes one.
+ * A day of typical length when written out, so that the stand-in laid out from it is right for most
+ * best days, and for most days a best hour falls on. It is about the middle of how wide a day is
+ * written and takes one line from a phone 360 wide up, where one of the longest would hold two lines
+ * open for a day that usually takes one.
  */
 const TYPICAL_BEST_DAY = '2026-08-18';
 
@@ -119,9 +120,11 @@ interface PopularTimesProps {
 }
 
 /**
- * When a website is read most: its best day ever, and the day of the week and the hour with the most
- * page views. Where several share the most, all of them are named, because choosing one would say
- * something the figures do not. Each share is of its own run of figures, so a run adds up to the whole.
+ * When a website is read most: its best day and its best hour ever, and the day of the week and the
+ * hour of the day with the most page views. Where several share the most of a week or a day, all of
+ * them are named, because choosing one would say something the figures do not; a best ever is the
+ * earliest of a tie, as the engine names it. Each share is of its own run of figures, so a run adds up
+ * to the whole.
  *
  * One card whether or not its figures are in. Its headings, its tiles, the line that unfolds its
  * figures and the names of their rows stand through the wait, and each figure is a typical one written
@@ -153,6 +156,7 @@ export function PopularTimes({ insights, zone, figuresOpen, onFiguresToggle }: P
 
       <div className={TILES}>
         <BestDay insights={insights} />
+        <BestHour insights={insights} />
         <Busiest
           label={t('weekday')}
           stretch={week}
@@ -219,57 +223,121 @@ function TimesHeading({ zone }: { readonly zone: string | undefined }) {
   );
 }
 
-/**
- * The best day ever and how much was read on it; a mark where nothing read can name one; or, while it
- * is on its way, a day of typical length and as many page views standing in for it.
- */
+/** When a record was: the day, and the hour of it where the record is an hour's. */
+interface When {
+  readonly day: string;
+  readonly hour?: string;
+}
+
+/** A record named by when it was, and how much was read then. */
+interface Dated {
+  readonly when: When;
+  readonly pageViews: number;
+}
+
+/** The best day ever: the day, and how much was read on it. */
 function BestDay({ insights }: { readonly insights: Insights | undefined }) {
-  const pages = useTranslations('dashboard.pages');
+  const t = useTranslations('insights.times');
   const format = useFormatter();
-
-  if (insights === undefined) {
-    return (
-      <BestDayTile
-        day={<StandIn words={dayInFull(TYPICAL_BEST_DAY, format)} />}
-        views={<StandIn words={pages('total', { count: TYPICAL_VIEWS })} />}
-      />
-    );
-  }
-
-  const { bestDay } = insights;
+  const best = insights?.bestDay;
 
   return (
-    <BestDayTile
-      day={bestDay ? dayInFull(bestDay.day, format) : ABSENT}
-      views={bestDay && pages('total', { count: bestDay.pageViews })}
+    <DatedRecord
+      label={t('bestDay')}
+      held={best && { when: { day: dayInFull(best.day, format) }, pageViews: best.pageViews }}
+      typical={{ day: dayInFull(TYPICAL_BEST_DAY, format) }}
     />
   );
 }
 
-interface BestDayTileProps {
-  /** The day, or what stands in for it. */
-  readonly day: ReactNode;
-  /** How much was read on it, or nothing where nothing read can name a day. */
-  readonly views: ReactNode;
-}
-
-/** The best day ever, across the card: it has no strip beneath it to fill a tile with. */
-function BestDayTile({ day, views }: BestDayTileProps) {
+/**
+ * The best hour ever: the day it fell on, the hour of it, and how much was read in it. Where an older
+ * month was kept without its best hour, the record holds only from the month after it, and its name
+ * says so rather than calling it the best ever.
+ */
+function BestHour({ insights }: { readonly insights: Insights | undefined }) {
   const t = useTranslations('insights.times');
+  const format = useFormatter();
+  const best = insights?.bestHour;
+  const from = insights?.bestHourFrom;
 
   return (
-    <div
-      className={cn(
-        TILE,
-        'flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 md:col-span-2',
+    <DatedRecord
+      label={from ? t('bestHourSince', { month: writtenMonth(from, format) }) : t('bestHour')}
+      held={
+        best && {
+          when: { day: dayInFull(best.day, format), hour: hourCalled(best.hour, format) },
+          pageViews: best.pageViews,
+        }
+      }
+      typical={{
+        day: dayInFull(TYPICAL_BEST_DAY, format),
+        hour: hourCalled(TYPICAL_HOUR.place, format),
+      }}
+    />
+  );
+}
+
+interface DatedRecordProps {
+  readonly label: string;
+  /**
+   * What holds the record; nothing where nothing read can name one; undefined while it is on its way.
+   */
+  readonly held: Dated | null | undefined;
+  /** When such a record usually is, for what stands in for it to be laid out from. */
+  readonly typical: When;
+}
+
+/**
+ * A record named by when it was, with how much was read then; a mark where nothing read can name one;
+ * or, while it is on its way, a time of typical length and as many page views standing in for it.
+ */
+function DatedRecord({ label, held, typical }: DatedRecordProps) {
+  const pages = useTranslations('dashboard.pages');
+
+  if (held === undefined) {
+    return (
+      <RecordTile
+        label={label}
+        value={<WrittenWhen when={typical} waiting />}
+        detail={<StandIn words={pages('total', { count: TYPICAL_VIEWS })} />}
+      />
+    );
+  }
+
+  return (
+    <RecordTile
+      label={label}
+      value={held && <WrittenWhen when={held.when} />}
+      detail={held && pages('total', { count: held.pageViews })}
+    />
+  );
+}
+
+interface WrittenWhenProps {
+  readonly when: When;
+  /** Whether it is a typical time standing in for one on its way. */
+  readonly waiting?: boolean;
+}
+
+/**
+ * When a record was: the day, which a phone breaks into lines of about the same length rather than
+ * leaving the year on a line of its own, and the hour of it on a line of its own, kept whole so that
+ * no line ends inside it; or, while it is on its way, the same written out and hidden.
+ */
+function WrittenWhen({ when, waiting = false }: WrittenWhenProps) {
+  const written = (words: string) => (waiting ? <StandIn words={words} /> : words);
+
+  return (
+    <>
+      <span className="block text-balance">{written(when.day)}</span>
+      {when.hour === undefined ? null : (
+        <>
+          {' '}
+          <span className="block whitespace-nowrap">{written(when.hour)}</span>
+        </>
       )}
-    >
-      <div className="flex min-w-0 flex-col gap-1">
-        <h3 className="text-sm font-medium text-foreground-muted">{t('bestDay')}</h3>
-        <p className="text-xl font-semibold tracking-tight text-foreground">{day}</p>
-      </div>
-      {views ? <p className="text-sm text-foreground-muted tabular-nums">{views}</p> : null}
-    </div>
+    </>
   );
 }
 
@@ -383,10 +451,14 @@ interface RecordTileProps {
   readonly long?: boolean;
   /** How much it holds, or nothing where nothing read can say. */
   readonly detail: ReactNode;
-  readonly children: ReactNode;
+  /** What is drawn beneath it, or nothing for a record named by when it was. */
+  readonly children?: ReactNode;
 }
 
-/** One record: what it is, what holds it, and how much it holds. */
+/**
+ * One record: what it is, what holds it, and how much it holds. With nothing drawn beneath, how much it
+ * holds sits at the foot, level with the tile beside it however many lines each names its time on.
+ */
 function RecordTile({ label, value, long = false, detail, children }: RecordTileProps) {
   return (
     <div className={cn(TILE, 'flex min-w-0 flex-col gap-1')}>
@@ -399,7 +471,9 @@ function RecordTile({ label, value, long = false, detail, children }: RecordTile
       >
         {value ?? ABSENT}
       </p>
-      <p className="text-sm text-foreground-muted">{detail}</p>
+      <p className={cn('text-sm text-foreground-muted', children === undefined && 'mt-auto')}>
+        {detail}
+      </p>
       {children}
     </div>
   );

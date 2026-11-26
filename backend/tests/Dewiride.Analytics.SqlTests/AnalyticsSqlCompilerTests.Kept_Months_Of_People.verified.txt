@@ -18,6 +18,9 @@ WITH
             verdict_visits AS kept_verdict_visits,
             verdict_page_views AS kept_verdict_page_views,
             judged_to AS kept_judged_to,
+            people_best_hour_day AS kept_best_hour_day,
+            people_best_hour AS kept_best_hour,
+            people_best_hour_page_views AS kept_best_hour_page_views,
             1 AS counted
         FROM consolidated_months
         WHERE site_id = {site_id:UUID}
@@ -80,7 +83,10 @@ SELECT
     kept_verdict_categories AS verdict_categories,
     kept_verdict_visits AS verdict_visits,
     kept_verdict_page_views AS verdict_page_views,
-    kept_judged_to AS judged_to
+    kept_judged_to AS judged_to,
+    kept_best_hour_day AS best_hour_day,
+    kept_best_hour AS best_hour,
+    kept_best_hour_page_views AS best_hour_page_views
 FROM calendar
 LEFT JOIN kept ON calendar.calendar_month = kept.kept_month
 ORDER BY month

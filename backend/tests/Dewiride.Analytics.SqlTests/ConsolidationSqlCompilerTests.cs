@@ -46,12 +46,15 @@ public sealed partial class ConsolidationSqlCompilerTests
     /// fragment these statements share with the dashboard's own. Raise
     /// <see cref="CountingRules.Current"/> and add the new version's entry here, so the months still
     /// held are counted again by the new arithmetic rather than freezing with the old. The earlier
-    /// entries stay, as the record of what each version counted with.
+    /// entries stay, as the record of what each version counted with. A version raised for a figure
+    /// read from statements that did not change — version 3, which keeps each month's best hour from
+    /// the hourly cut the count already made (ADR 0079) — shares the fingerprint of the one before it.
     /// </remarks>
     private static readonly Dictionary<int, string> ArithmeticOf = new()
     {
         [1] = "2c66959a2fac04ae5e9a15dca73075c14b3c4406d3fa2cd793c00cf2ad74c9e6",
         [2] = "ca7d306dad33e52da4eb8775b6f297b739733600780a06ee8743b452ad06777b",
+        [3] = "ca7d306dad33e52da4eb8775b6f297b739733600780a06ee8743b452ad06777b",
     };
 
     /// <summary>

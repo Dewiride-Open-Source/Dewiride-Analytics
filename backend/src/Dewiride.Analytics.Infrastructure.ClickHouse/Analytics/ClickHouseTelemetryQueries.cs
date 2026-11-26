@@ -1054,6 +1054,8 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client, Keepi
                 (long)reader.GetFieldValue<ulong>(at + 5),
                 KeptRows.DayOrNothing(reader, at + 6),
                 (long)reader.GetFieldValue<ulong>(at + 7),
+                KeptRows.HourOrNothing(reader, at + 14),
+                (long)reader.GetFieldValue<ulong>(at + 16),
                 Signed(reader.GetFieldValue<ulong[]>(at + 8)),
                 Signed(reader.GetFieldValue<ulong[]>(at + 9))),
             [

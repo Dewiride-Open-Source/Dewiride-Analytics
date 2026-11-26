@@ -53,6 +53,8 @@ const RECORD: InsightsAnswer = {
   pageViews: 4321,
   visitors: 1234,
   bestDay: { day: '2026-09-16', pageViews: 412 },
+  bestHour: { day: '2026-09-02', hour: 20, pageViews: 123 },
+  bestHourFrom: null,
   weekdays: [10, 20, 40, 10, 10, 5, 5],
   busiestWeekdays: [2],
   hours: HOURS,
@@ -82,6 +84,7 @@ const PEOPLE: InsightsAnswer = {
   pageViews: 1000,
   visitors: 300,
   bestDay: { day: '2026-09-17', pageViews: 90 },
+  bestHour: { day: '2026-09-03', hour: 9, pageViews: 12 },
 };
 
 /** The same months, with nobody judged a person in any of them. */
@@ -90,6 +93,7 @@ const NOBODY: InsightsAnswer = {
   pageViews: 0,
   visitors: 0,
   bestDay: null,
+  bestHour: null,
   weekdays: [0, 0, 0, 0, 0, 0, 0],
   busiestWeekdays: [],
   hours: Array.from({ length: 24 }, () => 0),
@@ -294,10 +298,79 @@ describe('the insights screen', () => {
 
     renderScreen(<Insights />);
 
-    const day = await screen.findByText('Wednesday, September 16, 2026');
+    await screen.findByText('Wednesday, September 16, 2026');
 
-    expect(day.parentElement?.parentElement).toHaveTextContent('412 page views');
-    expect(day.parentElement).toHaveTextContent('Best day ever');
+    expect(tile('Best day ever')).toHaveTextContent('Wednesday, September 16, 2026');
+    expect(tile('Best day ever')).toHaveTextContent('412 page views');
+  });
+
+  it('names the best hour ever with its day, its time and its page views', async () => {
+    engineWith({});
+
+    renderScreen(<Insights />);
+
+    await screen.findByText('Wednesday, September 2, 2026');
+
+    expect(tile('Best hour ever')).toHaveTextContent('Wednesday, September 2, 2026 8:00 – 8:59 PM');
+    expect(tile('Best hour ever')).toHaveTextContent('123 page views');
+    expect(tile('Best day ever')).not.toHaveTextContent('8:00 – 8:59 PM');
+  });
+
+  /** A phone breaks a long day where it must, and a line ending at `8:00` reads as an hour of its own. */
+  it("keeps the best hour's time whole on a line of its own", async () => {
+    engineWith({});
+
+    renderScreen(<Insights />);
+
+    await screen.findByText('Wednesday, September 2, 2026');
+
+    expect(within(tile('Best hour ever')).getByText('Wednesday, September 2, 2026')).toHaveClass(
+      'block',
+    );
+    expect(within(tile('Best hour ever')).getByText('8:00 – 8:59 PM')).toHaveClass(
+      'block',
+      'whitespace-nowrap',
+    );
+  });
+
+  /**
+   * Where an older month was kept without its best hour, the hour named is the best only since; calling
+   * it the best ever would say something the months cannot.
+   */
+  it('names the best hour since the month hours are known from, where an older month names none', async () => {
+    engineWith({ everybody: { ...RECORD, bestHourFrom: '2026-01' } });
+
+    renderScreen(<Insights />);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Best hour since January 2026' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Best hour ever' })).not.toBeInTheDocument();
+    expect(tile('Best hour since January 2026')).toHaveTextContent('8:00 – 8:59 PM');
+    expect(tile('Best day ever')).toHaveTextContent('Wednesday, September 16, 2026');
+  });
+
+  /** The records named by when they were come first, the run of a week and of a day beneath them. */
+  it('sets the best day and the best hour first, then the busiest day of the week and hour of the day', async () => {
+    engineWith({});
+
+    renderScreen(<Insights />);
+
+    await screen.findByText('4,321');
+
+    const tiles = tile('Best day ever').parentElement;
+
+    expect(tiles).not.toBeNull();
+    expect(
+      within(tiles as HTMLElement)
+        .getAllByRole('heading', { level: 3 })
+        .map((heading) => heading.textContent),
+    ).toStrictEqual([
+      'Best day ever',
+      'Best hour ever',
+      'Busiest day of the week',
+      'Busiest hour of the day',
+    ]);
   });
 
   it("names the busiest weekday and hour on the website's clock", async () => {
@@ -309,8 +382,8 @@ describe('the insights screen', () => {
 
     expect(tile('Busiest day of the week')).toHaveTextContent('Wednesday');
     expect(tile('Busiest day of the week')).toHaveTextContent('40% of page views');
-    expect(tile('Busiest hour')).toHaveTextContent('2:00 – 2:59 PM');
-    expect(tile('Busiest hour')).toHaveTextContent('50% of page views');
+    expect(tile('Busiest hour of the day')).toHaveTextContent('2:00 – 2:59 PM');
+    expect(tile('Busiest hour of the day')).toHaveTextContent('50% of page views');
     expect(screen.getByText('Days and hours are counted in Kolkata.')).toBeInTheDocument();
     expect(screen.queryByText(/Asia\/Kolkata/)).not.toBeInTheDocument();
   });
@@ -367,10 +440,10 @@ describe('the insights screen', () => {
       within(tile('Busiest day of the week')).getByTitle('Wednesday: 40 page views'),
     ).toBeInTheDocument();
     expect(
-      within(tile('Busiest hour')).getByTitle('2:00 – 2:59 PM: 50 page views'),
+      within(tile('Busiest hour of the day')).getByTitle('2:00 – 2:59 PM: 50 page views'),
     ).toBeInTheDocument();
     expect(
-      within(tile('Busiest hour')).getByTitle('12:00 – 12:59 AM: 0 page views'),
+      within(tile('Busiest hour of the day')).getByTitle('12:00 – 12:59 AM: 0 page views'),
     ).toBeInTheDocument();
   });
 
@@ -392,8 +465,8 @@ describe('the insights screen', () => {
 
     expect(tile('Busiest day of the week')).toHaveTextContent('Tuesday and Wednesday');
     expect(tile('Busiest day of the week')).toHaveTextContent('30% of page views each');
-    expect(tile('Busiest hour')).toHaveTextContent('9:00 – 9:59 AM and 2:00 – 2:59 PM');
-    expect(tile('Busiest hour')).toHaveTextContent('50% of page views each');
+    expect(tile('Busiest hour of the day')).toHaveTextContent('9:00 – 9:59 AM and 2:00 – 2:59 PM');
+    expect(tile('Busiest hour of the day')).toHaveTextContent('50% of page views each');
   });
 
   /** Several hours wrap on a phone, and a line ending at `9:00` reads as an hour of its own. */
@@ -411,7 +484,9 @@ describe('the insights screen', () => {
     await screen.findByText('4,321');
 
     for (const hour of ['9:00 – 9:59 AM', '2:00 – 2:59 PM']) {
-      expect(within(tile('Busiest hour')).getByText(hour)).toHaveClass('whitespace-nowrap');
+      expect(within(tile('Busiest hour of the day')).getByText(hour)).toHaveClass(
+        'whitespace-nowrap',
+      );
     }
   });
 
@@ -432,9 +507,9 @@ describe('the insights screen', () => {
     expect(within(tile('Busiest day of the week')).getByText('Tuesday').parentElement).toHaveClass(
       'text-base',
     );
-    expect(within(tile('Busiest hour')).getByText('2:00 – 2:59 PM').parentElement).toHaveClass(
-      'text-xl',
-    );
+    expect(
+      within(tile('Busiest hour of the day')).getByText('2:00 – 2:59 PM').parentElement,
+    ).toHaveClass('text-xl');
   });
 
   /** Nothing read names no day, and the screen says so rather than inventing one. */
@@ -450,9 +525,12 @@ describe('the insights screen', () => {
     renderScreen(<Insights />);
 
     await waitFor(() => expect(tile('Busiest day of the week')).toHaveTextContent('—'));
-    expect(screen.getByText('Best day ever').parentElement).toHaveTextContent('—');
-    expect(tile('Busiest hour')).toHaveTextContent('—');
-    expect(tile('Busiest hour')).not.toHaveTextContent('of page views');
+    expect(tile('Best day ever')).toHaveTextContent('—');
+    expect(tile('Best day ever')).not.toHaveTextContent('page views');
+    expect(tile('Best hour ever')).toHaveTextContent('—');
+    expect(tile('Best hour ever')).not.toHaveTextContent('page views');
+    expect(tile('Busiest hour of the day')).toHaveTextContent('—');
+    expect(tile('Busiest hour of the day')).not.toHaveTextContent('of page views');
   });
 });
 
@@ -747,6 +825,9 @@ describe('the insights screen kept to people', () => {
     expect(
       screen.getAllByText('Every figure counts only the visits judged to be people.'),
     ).toHaveLength(1);
+    expect(tile('Best day ever')).toHaveTextContent('Thursday, September 17, 2026');
+    expect(tile('Best hour ever')).toHaveTextContent('Thursday, September 3, 2026 9:00 – 9:59 AM');
+    expect(tile('Best hour ever')).toHaveTextContent('12 page views');
     expect(engine.all().some(({ path }) => path.endsWith('/insights?only=people'))).toBe(true);
     expect(screen.getByRole('button', { name: /People only/ })).toHaveAttribute(
       'aria-pressed',
@@ -1112,7 +1193,8 @@ describe('the insights screen with nothing to show yet', () => {
     expect(screen.getByText('Days and hours are counted in Kolkata.')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Best day ever' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Busiest day of the week' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Busiest hour' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Best hour ever' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Busiest hour of the day' })).toBeInTheDocument();
     expect(screen.getByText('Show these figures as a table')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Months and years' })).toBeInTheDocument();
     expect(screen.getAllByText('Page views in each month, newest year first.')).not.toHaveLength(0);

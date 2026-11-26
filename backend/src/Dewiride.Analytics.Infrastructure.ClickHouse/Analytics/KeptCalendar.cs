@@ -163,4 +163,13 @@ internal static class KeptRows
     /// <returns>The day, or nothing.</returns>
     public static DateOnly? DayOrNothing(ClickHouseDataReader reader, int column) =>
         reader.IsDBNull(column) ? null : Day(reader, column);
+
+    /// <summary>Reads an hour that may be absent: the day it fell on, and which hour of that day.</summary>
+    /// <param name="reader">The reader, on the row.</param>
+    /// <param name="column">Where the day is; which hour of it is in the column after.</param>
+    /// <returns>The hour as the website's clock showed its first minute, or nothing where no day is kept.</returns>
+    public static DateTime? HourOrNothing(ClickHouseDataReader reader, int column) =>
+        DayOrNothing(reader, column) is { } day
+            ? day.ToDateTime(new TimeOnly(reader.GetByte(column + 1), 0), DateTimeKind.Unspecified)
+            : null;
 }

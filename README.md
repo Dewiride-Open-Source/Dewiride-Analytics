@@ -65,7 +65,9 @@ and the [master plan](#master-plan) below it says what does not yet.
   however many reports follow about how it was read; a reading whose arrival never reached us
   adds no page view and opens no visit, because nothing on it says which visit it belonged to. It
   still counts in how your pages are read, because there it is the only measurement of that page
-  there is.
+  there is. A visitor is counted in each hour and each day they opened a page in, and nowhere else:
+  somebody still reading a page from the hour before, or from before midnight, is not counted
+  again, so no hour or day ever shows more visitors than page views.
 - **Insights**, a screen of its own for a website's whole record: its page views and daily visitors
   since it was first measured, its best day and its best hour ever, its busiest day of the week and
   hour on its own clock, and every month and year by total views or by average per day. All of it can

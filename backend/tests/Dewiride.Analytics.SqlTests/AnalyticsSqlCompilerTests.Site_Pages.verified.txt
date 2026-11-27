@@ -142,7 +142,7 @@ FROM
     SELECT
         path,
         toInt64(sum(page_views)) AS page_views,
-        toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS visitors
+        toInt64(uniqExactIf(visitor_key, visitor_key != '' AND delivered > 0)) AS visitors
     FROM
     (
         SELECT

@@ -11,6 +11,8 @@
   this failure in its own consequences and accepted it. It has now been measured.
 - **Followed by**: [0035](0035-a-visit-is-judged-on-all-of-itself.md), which measured the consequence
   this one left open — a departure arriving after its visit was judged — and closes what re-judging can.
+- **Followed by**: [0081](0081-a-visitor-is-somebody-who-opened-a-page.md), which counts a visitor on the
+  terms this record counts a page: only where a page was opened.
 
 ## Context
 

@@ -241,6 +241,7 @@ WITH
             GROUP BY visitor_key, path
         )
         GROUP BY visitor_key
+        HAVING page_views > 0
     )
 SELECT
     source,

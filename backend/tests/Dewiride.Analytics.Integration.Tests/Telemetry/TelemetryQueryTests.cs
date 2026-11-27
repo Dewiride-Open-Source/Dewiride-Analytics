@@ -86,6 +86,63 @@ public sealed class TelemetryQueryTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// A key whose only reports say how a page was being read — the tail of a visit whose key changed
+    /// part-way through, or a page opened the day before — opened nothing here, so it is no visitor:
+    /// not in the headline, and not in the day it reported in (ADR 0081).
+    /// </summary>
+    [Fact]
+    public async Task A_Key_That_Only_Reported_Reading_Is_No_Visitor()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            PageView(siteId, Midnight.AddHours(1), "visitor-a"),
+            Engagement(siteId, Midnight.AddHours(1).AddMinutes(1), "visitor-a"),
+            Engagement(siteId, Midnight.AddHours(1).AddMinutes(2), "visitor-b"),
+            Exit(siteId, Midnight.AddHours(1).AddMinutes(3), "visitor-b"));
+
+        var overview = await Queries.GetOverviewAsync(Scope(siteId), new OverviewQuery(Day()), Cancellation.Token);
+        var days = await Queries.GetTimeSeriesAsync(
+            Scope(siteId),
+            new TimeSeriesQuery(Day(), TimeGranularity.Day, TimeSeriesMetric.Visitors),
+            Cancellation.Token);
+
+        overview.Should().Be(new OverviewResult(PageViews: 1, Visitors: 1, Events: 4));
+        days.Should().ContainSingle().Which.Value.Should().Be(1);
+    }
+
+    /// <summary>
+    /// A reader who opens a page at eight minutes to eleven and is still on it when the hour turns is
+    /// a visitor of the hour they opened it in. What they report after it — how the reading went, and
+    /// leaving — is about that page, counted there, so the next hour holds neither a page view nor a
+    /// visitor, and no hour ever holds more visitors than pages.
+    /// </summary>
+    [Fact]
+    public async Task An_Hour_Counts_As_Visitors_Only_Those_Who_Opened_A_Page_In_It()
+    {
+        var siteId = Guid.NewGuid();
+        var opened = Midnight.AddHours(10).AddMinutes(52);
+        var hours = new TimeRange(Midnight.AddHours(10), Midnight.AddHours(12));
+
+        await WriteAsync(
+            PageView(siteId, opened, "visitor-a"),
+            Engagement(siteId, opened.AddMinutes(9), "visitor-a"),
+            Exit(siteId, opened.AddMinutes(14), "visitor-a"));
+
+        var visitors = await Queries.GetTimeSeriesAsync(
+            Scope(siteId),
+            new TimeSeriesQuery(hours, TimeGranularity.Hour, TimeSeriesMetric.Visitors),
+            Cancellation.Token);
+        var pageViews = await Queries.GetTimeSeriesAsync(
+            Scope(siteId),
+            new TimeSeriesQuery(hours, TimeGranularity.Hour, TimeSeriesMetric.PageViews),
+            Cancellation.Token);
+
+        visitors.Select(point => point.Value).Should().Equal(1, 0);
+        pageViews.Select(point => point.Value).Should().Equal(1, 0);
+    }
+
+    /// <summary>
     /// The window is half-open, so an event on the boundary belongs to the next window and not to
     /// this one. Counting it twice is how "yesterday against today" quietly inflates.
     /// </summary>
@@ -526,6 +583,9 @@ public sealed class TelemetryQueryTests(AnalyticsStackFixture stack)
 
     private static RawEvent Engagement(Guid siteId, DateTimeOffset at, string? visitorKey) =>
         Event(siteId, at, visitorKey, EventKind.Engagement);
+
+    private static RawEvent Exit(Guid siteId, DateTimeOffset at, string? visitorKey) =>
+        Event(siteId, at, visitorKey, EventKind.Exit);
 
     private static RawEvent Event(Guid siteId, DateTimeOffset at, string? visitorKey, EventKind kind) => new()
     {

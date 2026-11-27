@@ -238,6 +238,26 @@ public sealed class SiteLocationsTests(AnalyticsStackFixture stack)
         places.TotalVisitors.Should().Be(1);
     }
 
+    /// <summary>
+    /// A key whose only reports in the window say how a page was being read opened nothing in it, so
+    /// it is nobody the place list counts: on no row, and not in the total the rows share, exactly as
+    /// it is in no headline (ADR 0081).
+    /// </summary>
+    [Fact]
+    public async Task A_Key_That_Only_Reported_Reading_Places_Nobody()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            InCountry(siteId, Midnight.AddHours(1), "visitor-a", "IN", "Pune"),
+            InCountry(siteId, Midnight.AddHours(2), "visitor-b", "GB", "London") with { Kind = EventKind.Engagement });
+
+        var places = await PageOfPlaces(siteId);
+
+        places.Places.Select(place => place.Place).Should().Equal("IN");
+        places.TotalVisitors.Should().Be(1);
+    }
+
     [Fact]
     public async Task Places_Outside_The_Window_Are_Left_Out()
     {

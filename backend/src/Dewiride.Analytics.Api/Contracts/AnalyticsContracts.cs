@@ -906,7 +906,23 @@ public sealed record LiveVisitorSummary(
 /// </summary>
 /// <param name="Start">The minute began here.</param>
 /// <param name="PageViews">How many pages were delivered in it.</param>
-public sealed record LiveMinuteRow(DateTimeOffset Start, long PageViews);
+/// <param name="SentBy">How many of those pages went to the visitors each kind of site sent.</param>
+public sealed record LiveMinuteRow(DateTimeOffset Start, long PageViews, LivePagesSentByResponse SentBy);
+
+/// <summary>
+/// How many of a minute's pages went to the visitors each kind of site sent.
+/// </summary>
+/// <remarks>
+/// Under the names <see cref="LiveArrivalsResponse"/> counts the visitors under, and with each visitor
+/// under the same kind there, so a screen keeping its list to one kind can keep the minutes to the
+/// pages of the same visitors. Not a breakdown of the minute: the pages of somebody nothing named a
+/// sender for are under none of the four.
+/// </remarks>
+/// <param name="Search">Pages that went to visitors a search engine sent.</param>
+/// <param name="Assistant">Pages that went to visitors an AI assistant sent.</param>
+/// <param name="Social">Pages that went to visitors a social network sent.</param>
+/// <param name="Link">Pages that went to visitors a link on any other site sent.</param>
+public sealed record LivePagesSentByResponse(long Search, long Assistant, long Social, long Link);
 
 /// <summary>
 /// One page visitors are on.

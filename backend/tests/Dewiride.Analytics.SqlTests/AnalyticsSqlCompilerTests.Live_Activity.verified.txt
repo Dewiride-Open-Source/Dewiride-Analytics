@@ -1,5 +1,47 @@
 ﻿--- statement ---
 WITH
+    arrived AS
+    (
+        SELECT
+            event_id,
+            surface,
+            visitor_key,
+            correlation_id,
+            server_ts,
+            kind,
+            path,
+            referrer AS source_address,
+            if(
+                referrer_domain != ''
+                AND referrer_domain != {site_domain:String}
+                AND NOT endsWith(referrer_domain, concat('.', {site_domain:String})),
+                if(
+                    startsWith(referrer_domain, 'www.'),
+                    substring(referrer_domain, 5),
+                    referrer_domain),
+                '') AS sending_host
+        FROM events
+        WHERE site_id = {site_id:UUID}
+          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
+          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+    ),
+    named AS
+    (
+        SELECT
+            *,
+            splitByChar('.', sending_host) AS labels,
+            multiIf(
+                length(labels) < 2, sending_host,
+                length(labels) > 2
+                    AND has({second_levels:Array(String)}, arrayElement(labels, -2)),
+                    arrayElement(labels, -3),
+                arrayElement(labels, -2)) AS sending_name,
+            if(
+                has({source_keys:Array(String)}, sending_host),
+                sending_host,
+                sending_name) AS catalogue_key
+        FROM arrived
+    ),
     windowed AS
     (
         SELECT
@@ -9,11 +51,23 @@ WITH
             correlation_id,
             server_ts,
             kind,
-            path
-        FROM events
-        WHERE site_id = {site_id:UUID}
-          AND server_ts >= fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC')
-          AND server_ts < fromUnixTimestamp64Milli({to_ms:Int64}, 'UTC')
+            path,
+            source_address,
+            sending_host,
+            transform(
+                catalogue_key,
+                {source_keys:Array(String)},
+                {source_names:Array(String)},
+                sending_host) AS source_site,
+            if(
+                sending_host = '',
+                '',
+                transform(
+                    catalogue_key,
+                    {source_keys:Array(String)},
+                    {source_channels:Array(String)},
+                    'link')) AS source_channel
+        FROM named
     ),
     stamped AS
     (
@@ -137,6 +191,15 @@ WITH
         ASOF LEFT JOIN linked ON windowed.visitor_key = linked.reported_key
             AND toUnixTimestamp64Milli(windowed.server_ts) >= linked.changed_ms
     ),
+    sent AS
+    (
+        SELECT
+            visitor_key,
+            argMinIf(source_channel, (server_ts, event_id), sending_host != '') AS from_kind
+        FROM identified
+        WHERE visitor_key != ''
+        GROUP BY visitor_key
+    ),
     delivered AS
     (
         SELECT
@@ -152,8 +215,13 @@ WITH
     )
 SELECT
     minute,
-    toInt64(sum(page_views)) AS page_views
+    toInt64(sum(page_views)) AS pages_read,
+    toInt64(sumIf(page_views, from_kind = 'search')) AS pages_read_sent_by_search,
+    toInt64(sumIf(page_views, from_kind = 'assistant')) AS pages_read_sent_by_assistant,
+    toInt64(sumIf(page_views, from_kind = 'social')) AS pages_read_sent_by_social,
+    toInt64(sumIf(page_views, from_kind = 'link')) AS pages_read_sent_by_link
 FROM delivered
+LEFT JOIN sent USING (visitor_key)
 GROUP BY minute
 ORDER BY minute WITH FILL
     FROM toStartOfMinute(fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC'))
@@ -165,3 +233,8 @@ SETTINGS max_execution_time = 10
 site_id = 0197c0de-0000-7000-8000-000000000001
 from_ms = 1778196600000
 to_ms = 1778198400000
+site_domain = 'example.com'
+second_levels = ['ac', 'co', 'com', 'edu', 'go', 'gob', 'gouv', 'gov', 'govt', 'ne', 'net', 'or', 'org']
+source_keys = ['mail.google.com', 'news.google.com', 'translate.google.com', 'gemini.google.com', 'chat.openai.com', 'copilot.microsoft.com', 'com.google.android.gm', 'google', 'bing', 'yahoo', 'duckduckgo', 'ecosia', 'qwant', 'startpage', 'brave', 'kagi', 'mojeek', 'marginalia', 'searx', 'yandex', 'baidu', 'naver', 'daum', 'seznam', 'sogou', 'ask', 'aol', 'lycos', 'chatgpt', 'openai', 'perplexity', 'claude', 'copilot', 'phind', 'poe', 'facebook', 'instagram', 'threads', 'twitter', 'x', 't', 'linkedin', 'lnkd', 'reddit', 'youtube', 'youtu', 'pinterest', 'tiktok', 'bsky', 'mastodon', 'tumblr', 'vk', 'weibo', 'quora']
+source_names = ['Gmail', 'Google News', 'Google Translate', 'Gemini', 'ChatGPT', 'Copilot', 'Gmail', 'Google', 'Bing', 'Yahoo', 'DuckDuckGo', 'Ecosia', 'Qwant', 'Startpage', 'Brave Search', 'Kagi', 'Mojeek', 'Marginalia', 'SearXNG', 'Yandex', 'Baidu', 'Naver', 'Daum', 'Seznam', 'Sogou', 'Ask', 'AOL', 'Lycos', 'ChatGPT', 'ChatGPT', 'Perplexity', 'Claude', 'Copilot', 'Phind', 'Poe', 'Facebook', 'Instagram', 'Threads', 'X', 'X', 'X', 'LinkedIn', 'LinkedIn', 'Reddit', 'YouTube', 'YouTube', 'Pinterest', 'TikTok', 'Bluesky', 'Mastodon', 'Tumblr', 'VK', 'Weibo', 'Quora']
+source_channels = ['link', 'link', 'link', 'assistant', 'assistant', 'assistant', 'link', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'search', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'assistant', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social', 'social']

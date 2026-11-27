@@ -558,7 +558,7 @@ public sealed partial class AnalyticsSqlCompilerTests
             Facets(),
             new SiteVisitJourneyQuery(Visit, IdleTimeout, "example.com", 200),
             LiveVisitors(),
-            new SiteLiveActivityQuery(HalfHour()),
+            new SiteLiveActivityQuery(HalfHour(), "example.com"),
             new SiteLivePagesQuery(HalfHour(), 10),
             LiveTrail(),
         ];
@@ -1442,7 +1442,7 @@ public sealed partial class AnalyticsSqlCompilerTests
     [Fact]
     public void Live_Activity()
     {
-        var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteLiveActivityQuery(HalfHour()));
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteLiveActivityQuery(HalfHour(), "example.com"));
 
         Snapshot.Matches(CompiledStatementReport.Render(statement));
     }
@@ -1666,7 +1666,7 @@ public sealed partial class AnalyticsSqlCompilerTests
     [Fact]
     public void A_Reading_Of_The_Last_Half_Hour_Leaves_No_Minute_Out()
     {
-        var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteLiveActivityQuery(HalfHour()));
+        var statement = AnalyticsSqlCompiler.Compile(Scope(), new SiteLiveActivityQuery(HalfHour(), "example.com"));
 
         statement.Sql.Should().Contain("ORDER BY minute WITH FILL");
         statement.Sql.Should().Contain("STEP INTERVAL 1 MINUTE");
@@ -3745,7 +3745,7 @@ public sealed partial class AnalyticsSqlCompilerTests
     private static CompiledStatement[] EveryReadingAboutNow() =>
     [
         AnalyticsSqlCompiler.Compile(Scope(), LiveVisitors()),
-        AnalyticsSqlCompiler.Compile(Scope(), new SiteLiveActivityQuery(HalfHour())),
+        AnalyticsSqlCompiler.Compile(Scope(), new SiteLiveActivityQuery(HalfHour(), "example.com")),
         AnalyticsSqlCompiler.Compile(Scope(), new SiteLivePagesQuery(HalfHour(), 10)),
         AnalyticsSqlCompiler.Compile(Scope(), LiveTrail()),
     ];

@@ -201,6 +201,7 @@ function Reading({
           at={answer.at}
           timeZoneId={site.timeZoneId}
           siteName={site.displayName}
+          narrowing={narrowing}
         />
 
         <LiveVisitors

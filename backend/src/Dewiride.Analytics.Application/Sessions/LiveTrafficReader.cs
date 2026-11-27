@@ -100,7 +100,7 @@ public sealed class LiveTrafficReader(
             .ConfigureAwait(false);
 
         var minutes = await telemetry
-            .GetSiteLiveActivityAsync(scope, new SiteLiveActivityQuery(window), cancellationToken)
+            .GetSiteLiveActivityAsync(scope, new SiteLiveActivityQuery(window, siteDomain), cancellationToken)
             .ConfigureAwait(false);
 
         var pages = await telemetry

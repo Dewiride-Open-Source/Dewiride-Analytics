@@ -814,7 +814,10 @@ internal sealed class ClickHouseTelemetryQueries(IClickHouseClient client, Keepi
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            minutes.Add(new LiveMinute(reader.GetDateTimeOffset(0), reader.GetInt64(1)));
+            minutes.Add(new LiveMinute(
+                reader.GetDateTimeOffset(0),
+                reader.GetInt64(1),
+                new LivePagesSentBy(reader.GetInt64(2), reader.GetInt64(3), reader.GetInt64(4), reader.GetInt64(5))));
         }
 
         return minutes;

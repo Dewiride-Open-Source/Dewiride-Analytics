@@ -5,12 +5,14 @@ import {
   anybodyActive,
   anythingRead,
   arrivalChips,
+  arrivalKeptTo,
   cameHereFrom,
   keptTo,
   type LiveRow,
   listFoot,
   minutesSince,
   namedNow,
+  pagesReadEachMinute,
   pagesReadIn,
   pressChip,
   RECOGNISABLE_NOW,
@@ -108,10 +110,10 @@ function rowsOf(answer: Live, held: readonly LiveVisitor[] = []): readonly LiveR
 
 /** Four minutes running up to the reading, the last of which the reading was taken inside. */
 const MINUTES: readonly LiveMinute[] = [
-  { start: '2026-08-29T10:27:00.000Z', pageViews: 4 },
-  { start: '2026-08-29T10:28:00.000Z', pageViews: 0 },
-  { start: '2026-08-29T10:29:00.000Z', pageViews: 6 },
-  { start: '2026-08-29T10:30:00.000Z', pageViews: 1 },
+  { start: '2026-08-29T10:27:00.000Z', pageViews: 4, sentBy: { ...NOBODY_SENT, search: 2 } },
+  { start: '2026-08-29T10:28:00.000Z', pageViews: 0, sentBy: NOBODY_SENT },
+  { start: '2026-08-29T10:29:00.000Z', pageViews: 6, sentBy: { ...NOBODY_SENT, link: 5 } },
+  { start: '2026-08-29T10:30:00.000Z', pageViews: 1, sentBy: { ...NOBODY_SENT, search: 1 } },
 ];
 
 function row(visitorKey: string, stillHere = true, at = AT): LiveRow {
@@ -409,14 +411,41 @@ describe('the minute that has not finished', () => {
   });
 });
 
+describe('the pages the drawing of the half hour shows', () => {
+  it("is everybody's pages while the list is kept to everybody", () => {
+    expect(pagesReadEachMinute(MINUTES, null)).toEqual([4, 0, 6, 1]);
+  });
+
+  /** The columns and the rows beside them describe the same people while it is kept to them. */
+  it('is the pages of the visitors one kind of site sent while the list is kept to them', () => {
+    expect(pagesReadEachMinute(MINUTES, { by: 'sourceKind', kind: 'search' })).toEqual([
+      2, 0, 0, 1,
+    ]);
+    expect(pagesReadEachMinute(MINUTES, { by: 'sourceKind', kind: 'link' })).toEqual([0, 0, 5, 0]);
+  });
+
+  /** What has been recognised is named among the visitors a reading carries, never in a minute. */
+  it("is everybody's pages while the list is kept to something recognised", () => {
+    const recognised = { by: 'category', category: 'known-ai-crawler' } as const;
+
+    expect(pagesReadEachMinute(MINUTES, recognised)).toEqual([4, 0, 6, 1]);
+    expect(arrivalKeptTo(recognised)).toBeNull();
+  });
+
+  it('names the kind of site a list kept to how visitors arrived is kept to', () => {
+    expect(arrivalKeptTo({ by: 'sourceKind', kind: 'assistant' })).toBe('assistant');
+    expect(arrivalKeptTo(null)).toBeNull();
+  });
+});
+
 describe('whether the half hour is worth drawing', () => {
   it('is worth drawing when anything at all was read', () => {
-    expect(anythingRead(MINUTES)).toBe(true);
+    expect(anythingRead([4, 0, 6, 1])).toBe(true);
   });
 
   /** Thirty columns all at nought is honest, unreadable, and indistinguishable from a fault. */
   it('is not worth drawing when every minute of it was silent', () => {
-    expect(anythingRead(MINUTES.map((minute) => ({ ...minute, pageViews: 0 })))).toBe(false);
+    expect(anythingRead([0, 0, 0, 0])).toBe(false);
   });
 
   it('is not worth drawing when there are no minutes at all', () => {

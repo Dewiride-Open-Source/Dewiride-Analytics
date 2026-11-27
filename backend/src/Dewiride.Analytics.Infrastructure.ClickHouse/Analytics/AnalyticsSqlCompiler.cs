@@ -1615,12 +1615,20 @@ public static class AnalyticsSqlCompiler
     /// the measurement is the one delivery it was, on the same terms as every other count of pages
     /// in this file.
     /// </para>
+    /// <para>
+    /// Each minute also says how many of its pages went to the visitors each kind of site sent, so the
+    /// drawing can be kept to them the moment somebody keeps the list of who is here to them, without a
+    /// second question (ADR 0082). A visitor's kind is read as the reading of who is here reads it —
+    /// the earliest report in the window naming a sender, over the same reduction — so the minutes kept
+    /// to a kind are the pages of the very visitors that kind counts.
+    /// </para>
     /// </remarks>
     private static CompiledStatement CompileSiteLiveActivity(TenantScope scope, SiteLiveActivityQuery query)
     {
         var sql = $$"""
             WITH
-                {{LiveActivity.Window(
+                {{SendingSites.Of(
+                    LiveActivity.TheseMinutes,
                     "event_id",
                     "surface",
                     "visitor_key",
@@ -1629,6 +1637,15 @@ public static class AnalyticsSqlCompiler
                     "kind",
                     "path")}},
                 {{ReconciledEvents.Reconciliation}},
+                sent AS
+                (
+                    SELECT
+                        visitor_key,
+                        argMinIf(source_channel, (server_ts, event_id), sending_host != '') AS from_kind
+                    FROM identified
+                    WHERE {{LiveActivity.EveryVisitor}}
+                    GROUP BY visitor_key
+                ),
                 delivered AS
                 (
                     SELECT
@@ -1641,8 +1658,13 @@ public static class AnalyticsSqlCompiler
                 )
             SELECT
                 minute,
-                toInt64(sum(page_views)) AS page_views
+                toInt64(sum(page_views)) AS pages_read,
+                {{PagesSentBy(SourceChannel.Search)}},
+                {{PagesSentBy(SourceChannel.Assistant)}},
+                {{PagesSentBy(SourceChannel.Social)}},
+                {{PagesSentBy(SourceChannel.Link)}}
             FROM delivered
+            LEFT JOIN sent USING (visitor_key)
             GROUP BY minute
             ORDER BY minute WITH FILL
                 FROM toStartOfMinute(fromUnixTimestamp64Milli({from_ms:Int64}, 'UTC'))
@@ -1651,7 +1673,29 @@ public static class AnalyticsSqlCompiler
             {{LiveActivity.WithinTheBeat}}
             """;
 
-        return new CompiledStatement(sql, [.. WindowParameters(scope, query.Range)]);
+        return new CompiledStatement(
+            sql,
+            [.. WindowParameters(scope, query.Range), .. SendingSites.Parameters(query.SiteDomain)]);
+    }
+
+    /// <summary>
+    /// Counts how many of a minute's pages went to the visitors one kind of site sent.
+    /// </summary>
+    /// <remarks>
+    /// Spelled from the catalogue's own function, on the terms of <see cref="SentBy"/>, so the kind a
+    /// minute's pages are put under is the one the visitors who read them are counted under. Pages
+    /// delivered to nobody a key names, or to somebody nothing named a sender for, join no kind and
+    /// fall under none. Summed from each visitor's <c>page_views</c> in the minute, which is why the
+    /// minute's own total is named <c>pages_read</c>: a total named <c>page_views</c> would be what
+    /// that name meant here.
+    /// </remarks>
+    /// <param name="kind">The kind of site. Never <see cref="SourceChannel.Direct"/>.</param>
+    /// <returns>The column, named <c>pages_read_sent_by_</c> followed by the kind's spelling.</returns>
+    private static string PagesSentBy(SourceChannel kind)
+    {
+        var spelling = TrafficSources.Spelling(kind);
+
+        return $"toInt64(sumIf(page_views, from_kind = '{spelling}')) AS pages_read_sent_by_{spelling}";
     }
 
     /// <summary>

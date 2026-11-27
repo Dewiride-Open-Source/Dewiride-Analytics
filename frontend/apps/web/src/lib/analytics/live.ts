@@ -88,9 +88,41 @@ export function runningMinute(minutes: readonly LiveMinute[], at: string): numbe
   return running === -1 ? null : running;
 }
 
-/** Whether anything at all was read in the half hour, which decides whether it is worth drawing. */
-export function anythingRead(minutes: readonly LiveMinute[]): boolean {
-  return minutes.some((minute) => minute.pageViews > 0);
+/**
+ * The pages read in each minute of the half hour, as the drawing of it shows them.
+ *
+ * Kept to the visitors one kind of site sent while the list of who is here is kept to them, so the
+ * drawing and the list describe the same people (ADR 0082). Kept to something recognised, it is
+ * everybody's: what has been recognised is named among the visitors a reading carries, never among
+ * everybody the half hour holds, so no minute can be kept to it.
+ *
+ * @param minutes The half hour, one bucket a minute.
+ * @param narrowing What the list of who is here is kept to.
+ */
+export function pagesReadEachMinute(
+  minutes: readonly LiveMinute[],
+  narrowing: LiveNarrowing,
+): readonly number[] {
+  const kind = arrivalKeptTo(narrowing);
+
+  return minutes.map((minute) => (kind === null ? minute.pageViews : minute.sentBy[kind]));
+}
+
+/**
+ * The kind of site the list of who is here is kept to the visitors of, or nothing where it is kept
+ * to everybody or to something recognised.
+ */
+export function arrivalKeptTo(narrowing: LiveNarrowing): SourceKind | null {
+  return narrowing?.by === 'sourceKind' ? narrowing.kind : null;
+}
+
+/**
+ * Whether anything at all was read in the half hour, which decides whether it is worth drawing.
+ *
+ * @param pages The pages read in each minute of it.
+ */
+export function anythingRead(pages: readonly number[]): boolean {
+  return pages.some((read) => read > 0);
 }
 
 /**

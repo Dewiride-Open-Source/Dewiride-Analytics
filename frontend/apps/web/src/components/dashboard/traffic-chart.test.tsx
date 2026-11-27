@@ -460,7 +460,7 @@ describe('how much traffic there was', () => {
   it('draws both measures across the same buckets', () => {
     const option = show();
 
-    expect(option.series.map((one) => one.name)).toStrictEqual(['Page views', 'Daily visitors']);
+    expect(option.series.map((one) => one.name)).toStrictEqual(['Page views', 'Visitors']);
     expect(option.series[0]?.data).toStrictEqual([40, 55, 30]);
     expect(option.series[1]?.data).toStrictEqual([12, 18, 9]);
     expect(option.xAxis.data).toHaveLength(3);
@@ -515,10 +515,10 @@ describe('a period drawn an hour at a time', () => {
   });
 
   /**
-   * Counted in an hour, distinct visitors are the people who were there in that hour. Calling that
-   * figure the day's would be a claim about numbers that were never added up that way.
+   * An hour's visitors are those who opened a page in it, as a day's are those who opened a page
+   * that day, so the hour wears the cards' name and the clock it is told by.
    */
-  it('does not call an hour of visitors a day of them', () => {
+  it('calls an hour’s visitors by the cards’ name', () => {
     const option = show({ activity: HOURS, granularity: 'hour', manyDays: false });
 
     expect(option.series.map((one) => one.name)).toStrictEqual(['Page views', 'Visitors']);
@@ -559,10 +559,10 @@ describe('a period drawn a week at a time', () => {
   });
 
   /** A week's visitors are counted the way the cards count them, and keep the cards' name. */
-  it("keeps calling a week's visitors daily visitors", () => {
+  it('calls a week’s visitors by the cards’ name', () => {
     const option = show({ activity: WEEKS, granularity: 'week' });
 
-    expect(named(option)).toStrictEqual(['Page views', 'Daily visitors']);
+    expect(named(option)).toStrictEqual(['Page views', 'Visitors']);
     expect(option.series[1]?.data).toStrictEqual([40, 98, 91, 95, 66]);
   });
 
@@ -697,10 +697,10 @@ describe('a period drawn a month at a time', () => {
     expect(plain(cardHeading(option, 1))).toBe('September');
   });
 
-  it("keeps calling a month's visitors daily visitors", () => {
+  it('calls a month’s visitors by the cards’ name', () => {
     const option = show({ activity: MONTHS, granularity: 'month' });
 
-    expect(named(option)).toStrictEqual(['Page views', 'Daily visitors']);
+    expect(named(option)).toStrictEqual(['Page views', 'Visitors']);
   });
 
   it('says months follow the calendar where the website is, and that somebody who comes back counts again', () => {
@@ -1595,14 +1595,11 @@ describe('the card a hover opens', () => {
     }
   });
 
-  /** How much was read is named for what it counts, so its figures need nothing beside them. */
-  it('writes the figures of how much as plain numbers', () => {
+  /** Visitors and page views are named for what they count, so their figures need nothing beside them. */
+  it('writes the figures of visitors and page views as plain numbers', () => {
     const measures = show({ peopleOnly: true }).series.filter((one) => one.markArea === undefined);
 
-    expect(measures.map((one) => one.name)).toStrictEqual([
-      'Page views by people',
-      'Daily visitors judged to be people',
-    ]);
+    expect(measures.map((one) => one.name)).toStrictEqual(['Page views', 'Visitors']);
 
     for (const measure of measures) {
       expect(measure.tooltip?.valueFormatter?.(365, 0)).toBe('365');
@@ -1678,7 +1675,7 @@ describe('who the traffic was', () => {
     expect(screen.getByText('No visits have been judged in this period yet.')).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'See how much was read' }));
+    await userEvent.click(screen.getByRole('button', { name: 'See visitors and page views' }));
 
     expect(chose).toHaveBeenCalledWith('activity');
   });
@@ -1839,7 +1836,7 @@ describe('choosing what to look at and how', () => {
   it('offers both questions and reports which one was asked for', async () => {
     show();
 
-    await userEvent.click(screen.getByRole('radio', { name: 'Who came' }));
+    await userEvent.click(screen.getByRole('radio', { name: 'Visits' }));
 
     expect(chose).toHaveBeenCalledWith('who');
   });
@@ -1883,7 +1880,7 @@ describe('a picture that could not be drawn', () => {
     show({ problem: new Error('nope') });
 
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'Who came' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Visits' })).toBeInTheDocument();
   });
 });
 
@@ -1938,10 +1935,7 @@ describe('the earlier stretch, set behind the one being read', () => {
     const option = show({ view: 'activity', against: true });
     const earlier = option.series.filter((one) => one.lineStyle?.type === 'dashed');
 
-    expect(earlier.map((one) => one.name)).toStrictEqual([
-      'Page views before',
-      'Daily visitors before',
-    ]);
+    expect(earlier.map((one) => one.name)).toStrictEqual(['Page views before', 'Visitors before']);
     expect(earlier[0]?.data).toStrictEqual([30, 44, 28]);
     expect(earlier[1]?.data).toStrictEqual([10, 15, 8]);
   });
@@ -2081,39 +2075,25 @@ describe('the picture kept to the people a website is for', () => {
 
   /**
    * The figures are the cards' own arithmetic over the people's reports, so they are the same
-   * shape as everybody's and differ only in whose they are — which their names say.
+   * shape as everybody's and differ only in whose they are — which the picture's description and
+   * the caption under the switch say, so the measures keep the cards' names.
    */
-  it('names the measures for the people when the figures are theirs', () => {
+  it('keeps the cards’ names for the measures when the figures are the people’s', () => {
     const option = show({ view: 'activity', peopleOnly: true });
 
-    expect(option.series.map((one) => one.name)).toStrictEqual([
-      'Page views by people',
-      'Daily visitors judged to be people',
-    ]);
+    expect(option.series.map((one) => one.name)).toStrictEqual(['Page views', 'Visitors']);
     expect(option.series[0]?.data).toStrictEqual([40, 55, 30]);
     expect(option.series[1]?.data).toStrictEqual([12, 18, 9]);
   });
 
-  it('does not call an hour of people a day of them', () => {
-    const option = show({
-      view: 'activity',
-      peopleOnly: true,
-      activity: HOURS,
-      granularity: 'hour',
-    });
+  /** A stretch's visitors are those who opened a page in it, an hour's as much as a week's. */
+  it.each([
+    { granularity: 'hour', activity: HOURS },
+    { granularity: 'week', activity: WEEKS },
+  ] as const)('calls the people of each $granularity by the cards’ name', (cut) => {
+    const option = show({ view: 'activity', peopleOnly: true, ...cut });
 
-    expect(option.series[1]?.name).toBe('Visitors judged to be people');
-  });
-
-  it('keeps calling a week of people daily visitors judged to be people', () => {
-    const option = show({
-      view: 'activity',
-      peopleOnly: true,
-      activity: WEEKS,
-      granularity: 'week',
-    });
-
-    expect(option.series[1]?.name).toBe('Daily visitors judged to be people');
+    expect(option.series[1]?.name).toBe('Visitors');
   });
 
   it('says once whose figures they are, and where its days are cut', () => {
@@ -2183,14 +2163,11 @@ describe('the picture kept to the people a website is for', () => {
     expect(screen.getAllByText('still being judged')).toHaveLength(3);
   });
 
-  it("names the earlier period's measures for the people too", () => {
+  it('gives the people’s earlier period the cards’ names too', () => {
     const activity = show({ view: 'activity', peopleOnly: true, against: true });
     const dashed = activity.series.filter((one) => one.lineStyle?.type === 'dashed');
 
-    expect(dashed.map((one) => one.name)).toStrictEqual([
-      'Page views by people before',
-      'Daily visitors judged to be people before',
-    ]);
+    expect(dashed.map((one) => one.name)).toStrictEqual(['Page views before', 'Visitors before']);
     expect(dashed[0]?.data).toStrictEqual(EARLIER_DAYS.map((point) => point.pageViews));
     expect(dashed[1]?.data).toStrictEqual(EARLIER_DAYS.map((point) => point.visitors));
   });
@@ -2252,7 +2229,7 @@ describe('the picture kept to the people a website is for', () => {
 
     expect(screen.getByText('No visits have been judged in this period yet.')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'See how much was read' }));
+    await userEvent.click(screen.getByRole('button', { name: 'See visitors and page views' }));
 
     expect(chose).toHaveBeenCalledWith('activity');
   });

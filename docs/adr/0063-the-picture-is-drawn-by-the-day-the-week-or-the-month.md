@@ -28,6 +28,9 @@
 - **Revised by**: [0081](0081-a-visitor-is-somebody-who-opened-a-page.md). A bucket counts each key a
   page was delivered to in it, so a reader still on a page opened in the bucket before is not counted
   again. Visitors stay daily.
+- **Revised by**: [0083](0083-a-figure-is-called-what-other-analytics-tools-call-it.md). The figure is
+  called "Visitors" by every cut; the card's note and the caption of a week, a month or a year say that
+  somebody who comes back on another day counts again.
 - **Followed by**: [0070](0070-a-post-is-read-on-a-page-of-its-own.md), whose picture of one post is
   cut, drawn, pressed into and remembered as this picture is.
 - **Extended by**: [0075](0075-a-run-of-days-is-set-beside-the-same-weekdays-before-it.md). The cards'

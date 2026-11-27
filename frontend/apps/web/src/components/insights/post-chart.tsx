@@ -488,10 +488,10 @@ function ViewsDrawn({
 
   const measure = useMemo<Measure>(
     () => ({
-      name: t(peopleOnly ? 'measurePeople' : 'measure'),
+      name: t('measure'),
       values: points.map((point) => point.value),
     }),
-    [t, peopleOnly, points],
+    [t, points],
   );
 
   const option = useCallback(

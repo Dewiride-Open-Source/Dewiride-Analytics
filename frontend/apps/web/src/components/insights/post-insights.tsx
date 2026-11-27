@@ -463,7 +463,7 @@ function PostRecord({ answer, site, population, peopleOnly, reading }: PostRecor
 
   return (
     <>
-      <PostHighlights answer={answer} timeZoneId={site?.timeZoneId} peopleOnly={peopleOnly} />
+      <PostHighlights answer={answer} timeZoneId={site?.timeZoneId} />
       {answer === undefined || site === undefined ? (
         <PostChartWaiting />
       ) : (

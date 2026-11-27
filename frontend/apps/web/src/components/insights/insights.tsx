@@ -137,7 +137,6 @@ function SiteInsights({ site, reading }: SiteInsightsProps) {
       <RecordPlace
         shown={shown}
         site={site}
-        peopleOnly={peopleOnly}
         reading={reading}
         posts={posts}
         onShowCode={() => setShowingCode(true)}
@@ -227,7 +226,6 @@ interface RecordPlaceProps {
   readonly shown: RecordShown;
   /** The website, or nothing while which one it is has still to be read. */
   readonly site: Site | undefined;
-  readonly peopleOnly: boolean;
   readonly reading: RecordReading;
   readonly posts: PostsPlace;
   readonly onShowCode: () => void;
@@ -243,7 +241,6 @@ interface RecordPlaceProps {
 function RecordPlace({
   shown,
   site,
-  peopleOnly,
   reading,
   posts,
   onShowCode,
@@ -256,7 +253,6 @@ function RecordPlace({
       <WholeRecord
         insights={shown.state === 'ready' ? shown.insights : undefined}
         site={site}
-        peopleOnly={peopleOnly}
         reading={reading}
         posts={posts}
       />
@@ -331,7 +327,6 @@ interface WholeRecordProps {
   readonly insights: InsightsAnswer | undefined;
   /** The website, or nothing while which one it is has still to be read. */
   readonly site: Site | undefined;
-  readonly peopleOnly: boolean;
   readonly reading: RecordReading;
   readonly posts: PostsPlace;
 }
@@ -342,7 +337,7 @@ interface WholeRecordProps {
  * the record and arrive in their own time, between when the website is read most and how each month
  * went.
  */
-function WholeRecord({ insights, site, peopleOnly, reading, posts }: WholeRecordProps) {
+function WholeRecord({ insights, site, reading, posts }: WholeRecordProps) {
   const words = useSiteMonthsWords();
 
   return (
@@ -350,7 +345,6 @@ function WholeRecord({ insights, site, peopleOnly, reading, posts }: WholeRecord
       <Highlights
         figures={insights}
         site={site}
-        peopleOnly={peopleOnly}
         leftOut={
           insights && site ? <LeftOut insights={insights} timeZoneId={site.timeZoneId} /> : null
         }
@@ -390,20 +384,18 @@ interface HighlightsProps {
   readonly figures: Pick<InsightsAnswer, 'pageViews' | 'visitors'> | undefined;
   /** The website, or nothing while which one it is has still to be read. */
   readonly site: Site | undefined;
-  readonly peopleOnly: boolean;
   /** What says which months the figures leave out, where they leave any out. */
   readonly leftOut: ReactNode;
 }
 
 /**
- * The record's headline figures, or their stand-ins until they are in: page views and daily visitors,
+ * The record's headline figures, or their stand-ins until they are in: page views and visitors,
  * labelled as the overview's cards are so the same figure is called the same thing wherever it is
  * read, and how many posts the website has, which arrives in its own time.
  */
-function Highlights({ figures, site, peopleOnly, leftOut }: HighlightsProps) {
+function Highlights({ figures, site, leftOut }: HighlightsProps) {
   const t = useTranslations('insights.highlights');
   const metrics = useTranslations('dashboard.metrics');
-  const labels = useTranslations(peopleOnly ? 'dashboard.metrics.people' : 'dashboard.metrics');
   const format = useFormatter();
   const heading = useId();
 
@@ -418,17 +410,17 @@ function Highlights({ figures, site, peopleOnly, leftOut }: HighlightsProps) {
       <div className="grid gap-4 sm:grid-cols-3">
         {figures === undefined ? (
           <>
-            <MetricCardSkeleton label={labels('pageViews.label')} />
-            <MetricCardSkeleton label={labels('visitors.label')} note={metrics('visitors.note')} />
+            <MetricCardSkeleton label={metrics('pageViews.label')} />
+            <MetricCardSkeleton label={metrics('visitors.label')} note={metrics('visitors.note')} />
           </>
         ) : (
           <>
             <MetricCard
-              label={labels('pageViews.label')}
+              label={metrics('pageViews.label')}
               value={format.number(figures.pageViews)}
             />
             <MetricCard
-              label={labels('visitors.label')}
+              label={metrics('visitors.label')}
               value={format.number(figures.visitors)}
               note={metrics('visitors.note')}
             />

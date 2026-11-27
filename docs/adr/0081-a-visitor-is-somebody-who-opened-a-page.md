@@ -17,6 +17,8 @@
 - **Revises**: [0064](0064-a-month-outlives-the-reports-it-was-counted-from.md), whose "a month's visitors
   are counted as the overview counts a period" still holds, by the overview's new arithmetic. Every month
   still held is counted again under version 4.
+- **Followed by**: [0083](0083-a-figure-is-called-what-other-analytics-tools-call-it.md), which gives the
+  figure one name, "Visitors", whatever the cut and whoever is counted.
 
 ## Context
 

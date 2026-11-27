@@ -13,20 +13,20 @@ interface PostHighlightsProps {
   readonly answer: PostInsights | undefined;
   /** The website's zone, which the months are named in, or nothing while the website is not known. */
   readonly timeZoneId: string | undefined;
-  readonly peopleOnly: boolean;
 }
 
 /**
  * What a post's whole life comes to: how often it has been read, how often a day, and the month it
  * was read most in; or their stand-ins until they are in. Under them, whatever the figures need to be
  * read honestly: since when its views are counted, where some of its life went uncounted, and the
- * months they leave out.
+ * months they leave out. Kept to people, the figures keep their names; the sentence under the switch
+ * that kept them says whom they count.
  */
-export function PostHighlights({ answer, timeZoneId, peopleOnly }: PostHighlightsProps) {
+export function PostHighlights({ answer, timeZoneId }: PostHighlightsProps) {
   const t = useTranslations('insights.post.highlights');
   const highlights = useTranslations('insights.highlights');
   const heading = useId();
-  const views = peopleOnly ? t('viewsPeople') : t('views');
+  const views = t('views');
 
   return (
     <section aria-labelledby={heading} className="flex flex-col gap-3">

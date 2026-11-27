@@ -12,6 +12,9 @@
   actually got, so the buckets an engine stopped or catching up has not reached are washed too, and
   an overview kept to people that has counted none says "No people yet" while any of it is unsettled.
   The journeys screen is not told yet.
+- **Revised by**: [0083](0083-a-figure-is-called-what-other-analytics-tools-call-it.md). Kept to people,
+  the cards and the chart's measures keep the names they have for everybody; the sentence under the
+  switch is what says whom they count.
 - **Revises**: [0040](0040-what-a-screen-remembers.md), whose decisions that "the cards above the
   chart are untouched" and that "the people-only figures … will not add up to the page views and
   visitors in the cards above" are given up: every figure on the overview, and the list of

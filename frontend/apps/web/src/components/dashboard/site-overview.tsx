@@ -299,7 +299,6 @@ export function SiteOverview({ site }: SiteOverviewProps) {
           before={before}
           measuring={measuring}
           comparedWith={comparedWith}
-          peopleOnly={peopleOnly}
           refused={headline.cardsRefused}
         />
       </div>
@@ -720,8 +719,6 @@ interface HeadlineCardsProps {
    * nothing where there is nothing to measure them against.
    */
   readonly comparedWith: string | undefined;
-  /** Whether the figures are kept to the visits judged to be people. */
-  readonly peopleOnly: boolean;
   /** Whether the cards' own figures could not be had. */
   readonly refused: boolean;
 }
@@ -734,35 +731,33 @@ interface HeadlineCardsProps {
  * the number it is measured against is in too — as it does when somebody sets the period beside
  * other days, whose figures are asked for while the period's own are already on screen. It never
  * shows a change worked out against other days than the words beside it name. Every stand-in is laid
- * out from the card's own words — the label kept to the population on screen, and the sentence
- * saying how the number moved where it will — so the picture the reader is using below the cards
- * stays where it is while a period's answers arrive one after the other, save a line where a card's
- * sentence breaks a line apart from its stand-in's.
+ * out from the card's own words — its label, and the sentence saying how the number moved where it
+ * will — so the picture the reader is using below the cards stays where it is while a period's answers
+ * arrive one after the other, save a line where a card's sentence breaks a line apart from its
+ * stand-in's.
+ *
+ * The cards wear the names the columns under the chart wear, so the table adds up to the cards in the
+ * reader's own terms; kept to people, they keep those names, and the sentence under the switch that
+ * kept them says whom they count.
  *
  * A stand-in promises a figure on its way, so figures that could not be had are shown as the mark for
  * no figure: the notice above says why, and a stand-in moving under it would say something is coming
  * when nothing is. Asked again and answered, the numbers take their place.
  */
-function HeadlineCards({
-  totals,
-  before,
-  measuring,
-  comparedWith,
-  peopleOnly,
-  refused,
-}: HeadlineCardsProps) {
+function HeadlineCards({ totals, before, measuring, comparedWith, refused }: HeadlineCardsProps) {
   const metrics = useTranslations('dashboard.metrics');
-  // The cards are labelled with what they count, in the same words the columns under the chart
-  // wear, so the table adds up to the cards in the reader's own terms.
-  const labels = useTranslations(peopleOnly ? 'dashboard.metrics.people' : 'dashboard.metrics');
   const format = useFormatter();
 
   if (totals === undefined && refused) {
     return (
       <>
-        <MetricCard label={labels('pageViews.label')} value={null} />
-        <MetricCard label={labels('visitors.label')} value={null} note={metrics('visitors.note')} />
-        <MetricCard label={labels('pagesPerVisitor.label')} value={null} />
+        <MetricCard label={metrics('pageViews.label')} value={null} />
+        <MetricCard
+          label={metrics('visitors.label')}
+          value={null}
+          note={metrics('visitors.note')}
+        />
+        <MetricCard label={metrics('pagesPerVisitor.label')} value={null} />
       </>
     );
   }
@@ -773,13 +768,13 @@ function HeadlineCards({
   if (totals === undefined) {
     return (
       <>
-        <MetricCardSkeleton label={labels('pageViews.label')} comparedWith={against} />
+        <MetricCardSkeleton label={metrics('pageViews.label')} comparedWith={against} />
         <MetricCardSkeleton
-          label={labels('visitors.label')}
+          label={metrics('visitors.label')}
           comparedWith={against}
           note={metrics('visitors.note')}
         />
-        <MetricCardSkeleton label={labels('pagesPerVisitor.label')} comparedWith={against} />
+        <MetricCardSkeleton label={metrics('pagesPerVisitor.label')} comparedWith={against} />
       </>
     );
   }
@@ -789,14 +784,14 @@ function HeadlineCards({
   return (
     <>
       <MetricCard
-        label={labels('pageViews.label')}
+        label={metrics('pageViews.label')}
         value={format.number(totals.pageViews)}
         change={before && changeBetween(totals.pageViews, before.pageViews)}
         changeDue={due}
         comparedWith={against}
       />
       <MetricCard
-        label={labels('visitors.label')}
+        label={metrics('visitors.label')}
         value={format.number(totals.visitors)}
         change={before && changeBetween(totals.visitors, before.visitors)}
         changeDue={due}
@@ -804,7 +799,7 @@ function HeadlineCards({
         note={metrics('visitors.note')}
       />
       <MetricCard
-        label={labels('pagesPerVisitor.label')}
+        label={metrics('pagesPerVisitor.label')}
         value={perVisitor(totals.pageViews, totals.visitors, format)}
         change={before && changeBetween(pagesEach(totals), pagesEach(before))}
         changeDue={due}

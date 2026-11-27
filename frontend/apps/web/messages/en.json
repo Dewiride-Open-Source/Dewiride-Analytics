@@ -204,22 +204,11 @@
         "label": "Page views"
       },
       "visitors": {
-        "label": "Daily visitors",
+        "label": "Visitors",
         "note": "Someone who returns tomorrow counts again."
       },
       "pagesPerVisitor": {
         "label": "Pages per visitor"
-      },
-      "people": {
-        "pageViews": {
-          "label": "Page views by people"
-        },
-        "visitors": {
-          "label": "Daily visitors judged to be people"
-        },
-        "pagesPerVisitor": {
-          "label": "Pages per person"
-        }
       },
       "change": {
         "up": "<strong>{amount} more</strong> than {period}",
@@ -263,8 +252,8 @@
       "title": "Traffic",
       "view": {
         "label": "What the chart shows",
-        "who": "Who came",
-        "activity": "How much"
+        "who": "Visits",
+        "activity": "Visitors & page views"
       },
       "drawing": {
         "label": "How the chart is drawn",
@@ -288,8 +277,7 @@
       },
       "activity": {
         "pageViews": "Page views",
-        "visitors": "Daily visitors",
-        "visitorsByHour": "Visitors",
+        "visitors": "Visitors",
         "summary": "Page views and visitors for {site} over the chosen period.",
         "cut": {
           "hour": "Times are the clock in {zone}.",
@@ -331,7 +319,7 @@
         "total": "All visits",
         "visits": "{count, plural, one {# visit} other {# visits}}",
         "none": "No visits have been judged in this period yet.",
-        "noneAction": "See how much was read",
+        "noneAction": "See visitors and page views",
         "against": "The dashed line is {days}{cut, select, week {, lined up week for week} month {, lined up month for month} other {}}."
       },
       "against": {
@@ -353,9 +341,6 @@
         "judgingAll": "This whole period is still being judged.",
         "none": "No visits in this period were judged to be people.",
         "activity": {
-          "pageViews": "Page views by people",
-          "visitors": "Daily visitors judged to be people",
-          "visitorsByHour": "Visitors judged to be people",
           "summary": "Page views and visitors among people on {site} over the chosen period.",
           "cut": {
             "hour": "Times are the clock in {zone}.",
@@ -769,7 +754,6 @@
       "undated": "No publishing date",
       "highlights": {
         "views": "Views",
-        "viewsPeople": "Views by people",
         "perDay": "Average per day",
         "bestMonth": "Best month",
         "bestMonthViews": "{count, plural, one {# view} other {# views}}",
@@ -778,7 +762,6 @@
       "chart": {
         "title": "Views over time",
         "measure": "Views",
-        "measurePeople": "Views by people",
         "summary": "Views of this post over the chosen period.",
         "summaryPeople": "Views by people of this post over the chosen period.",
         "none": "Nobody read this post in this period.",

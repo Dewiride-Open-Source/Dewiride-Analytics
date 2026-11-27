@@ -38,6 +38,9 @@
   these terms — and widens the retention envelope by it.
 - **Extended by**: [0079](0079-a-month-keeps-its-best-hour-beside-its-best-day.md), which keeps each
   month's busiest hour beside its busiest day, on these terms, and widens the retention envelope by it.
+- **Revised by**: [0081](0081-a-visitor-is-somebody-who-opened-a-page.md). A month's visitors are still
+  counted as the overview counts a period, and that is now each key a page was delivered to; every month
+  still held is counted again under version 4 of the arithmetic.
 - **Extended by**: [0080](0080-a-website-s-busiest-pages-are-kept-a-month-at-a-time.md), which keeps the
   views of each month's busiest pages beside its totals, on these terms and within a bound, and widens
   the retention envelope by it.

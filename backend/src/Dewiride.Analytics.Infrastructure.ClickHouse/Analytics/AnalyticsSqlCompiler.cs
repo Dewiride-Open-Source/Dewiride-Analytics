@@ -86,10 +86,11 @@ public static class AnalyticsSqlCompiler
     private const string KeptToThePostsPaths = "\n        WHERE path IN {post_paths:Array(String)}";
 
     /// <summary>
-    /// Aggregate per metric, over one visitor's activity on one page. Visitors excludes activity
-    /// carrying no visitor key: a surface that could not derive one has not observed an anonymous
-    /// visitor, it has observed nothing about who was there, and counting those together would
-    /// invent a single busy phantom.
+    /// Aggregate per metric, over one visitor's activity on one page. Visitors counts the keys a page
+    /// was delivered to in the bucket, so a reader still on a page opened in the bucket before is
+    /// counted in that one and not again (ADR 0081). It excludes activity carrying no visitor key: a
+    /// surface that could not derive one has not observed an anonymous visitor, it has observed
+    /// nothing about who was there, and counting those together would invent a single busy phantom.
     /// </summary>
     private static readonly FrozenDictionary<TimeSeriesMetric, string> MetricExpressions =
         new Dictionary<TimeSeriesMetric, string>
@@ -2643,7 +2644,7 @@ public static class AnalyticsSqlCompiler
                 SELECT
                     path,
                     toInt64(sum(page_views)) AS page_views,
-                    toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS visitors
+                    {{ReconciledEvents.Visitors}} AS visitors
                 FROM
                 (
                     SELECT
@@ -2817,6 +2818,7 @@ public static class AnalyticsSqlCompiler
                         GROUP BY visitor_key, path
                     )
                     GROUP BY visitor_key
+                    HAVING {{ReconciledEvents.OpenedAPage}}
                 )
             SELECT
                 place,
@@ -2934,6 +2936,7 @@ public static class AnalyticsSqlCompiler
                         GROUP BY visitor_key, path
                     )
                     GROUP BY visitor_key
+                    HAVING {{ReconciledEvents.OpenedAPage}}
                 )
             SELECT
                 source,
@@ -3021,6 +3024,7 @@ public static class AnalyticsSqlCompiler
                         GROUP BY visitor_key, path
                     )
                     GROUP BY visitor_key
+                    HAVING {{ReconciledEvents.OpenedAPage}}
                 )
             SELECT
                 device,
@@ -3086,6 +3090,7 @@ public static class AnalyticsSqlCompiler
                         GROUP BY visitor_key, path
                     )
                     GROUP BY visitor_key
+                    HAVING {{ReconciledEvents.OpenedAPage}}
                 )
             SELECT
                 name,

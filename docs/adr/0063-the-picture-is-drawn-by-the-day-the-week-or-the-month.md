@@ -25,6 +25,9 @@
   full strength, and a picture of fewer than three buckets is drawn as columns, with no choice of
   drawing. Its kept months are cut by this record's month buckets and can be opened in detail from
   its first day still kept.
+- **Revised by**: [0081](0081-a-visitor-is-somebody-who-opened-a-page.md). A bucket counts each key a
+  page was delivered to in it, so a reader still on a page opened in the bucket before is not counted
+  again. Visitors stay daily.
 - **Followed by**: [0070](0070-a-post-is-read-on-a-page-of-its-own.md), whose picture of one post is
   cut, drawn, pressed into and remembered as this picture is.
 - **Extended by**: [0075](0075-a-run-of-days-is-set-beside-the-same-weekdays-before-it.md). The cards'

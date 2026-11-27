@@ -365,6 +365,30 @@ public sealed class PopulationTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// Among the people as among everybody, a reader is a visitor of the hour they opened a page in.
+    /// Reading on past the hour, pressing a control and leaving in the next one, they are no visitor
+    /// of that hour, which holds none of their page views either (ADR 0081).
+    /// </summary>
+    [Fact]
+    public async Task A_Person_Still_Reading_When_The_Hour_Turns_Is_A_Visitor_Of_The_Hour_They_Opened_A_Page_In()
+    {
+        var site = await ControlPlaneSeed.AddSiteAsync(stack, domain: Domain());
+        var hour = new DateTimeOffset(Yesterday.Date.AddHours(Yesterday.Hour), TimeSpan.Zero);
+
+        // Two pages at three minutes and one minute to the hour; the press and the departure after it.
+        await WriteAsync(AReading(site.Id, Reader, hour.AddMinutes(-3)));
+        await DescribedTraffic.JudgeAsync(stack, site);
+        await JudgedAsExpectedAsync(site, Window(), visits: 1, people: 1);
+
+        var hours = new TimeRange(hour.AddHours(-1), hour.AddHours(1));
+        var visitors = await HourlyOfPeopleAsync(site, hours, TimeSeriesMetric.Visitors);
+        var pageViews = await HourlyOfPeopleAsync(site, hours, TimeSeriesMetric.PageViews);
+
+        visitors.Select(point => point.Value).Should().Equal(1, 0);
+        pageViews.Select(point => point.Value).Should().Equal(2, 0);
+    }
+
+    /// <summary>
     /// What the product exists to leave out. Something probing for a way in is judged as such,
     /// and its pages are counted for everybody and never for people.
     /// </summary>
@@ -474,6 +498,12 @@ public sealed class PopulationTests(AnalyticsStackFixture stack)
         Queries.GetTimeSeriesAsync(
             Scope(site),
             new TimeSeriesQuery(Window(), TimeGranularity.Day, TimeSeriesMetric.PageViews) { Population = population },
+            Cancellation.Token);
+
+    private Task<IReadOnlyList<TimeSeriesPoint>> HourlyOfPeopleAsync(Site site, TimeRange hours, TimeSeriesMetric metric) =>
+        Queries.GetTimeSeriesAsync(
+            Scope(site),
+            new TimeSeriesQuery(hours, TimeGranularity.Hour, metric) { Population = Population.People },
             Cancellation.Token);
 
     private SitePagesQuery Pages(Population population) =>

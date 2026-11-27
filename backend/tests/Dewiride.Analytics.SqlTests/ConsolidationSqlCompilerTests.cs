@@ -55,6 +55,7 @@ public sealed partial class ConsolidationSqlCompilerTests
         [1] = "2c66959a2fac04ae5e9a15dca73075c14b3c4406d3fa2cd793c00cf2ad74c9e6",
         [2] = "ca7d306dad33e52da4eb8775b6f297b739733600780a06ee8743b452ad06777b",
         [3] = "ca7d306dad33e52da4eb8775b6f297b739733600780a06ee8743b452ad06777b",
+        [4] = "8a2c551362bb765a7841c5ac70d7d5c726366b122776eb7823196513ce788c78",
     };
 
     /// <summary>

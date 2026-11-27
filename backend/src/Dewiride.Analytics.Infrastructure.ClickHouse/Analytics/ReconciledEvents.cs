@@ -109,16 +109,42 @@ internal static class ReconciledEvents
     public static string ReconciliationPerSite { get; } = Reconciling("site_id");
 
     /// <summary>
-    /// Daily visitors: each visitor key once, and none for the activity that carries no key.
+    /// Visitors: each visitor key a page was delivered to once, and none for the activity that
+    /// carries no key.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// A visitor of an hour, a day or a page is somebody who opened a page in it (ADR 0081). A
+    /// progress, departure or press report is an account of a page its visitor was already on, and
+    /// that visitor is counted where the page was opened; a key whose only reports in a grouping are
+    /// of that kind is a reader carried over from the hour or day before, or the tail of a visit whose
+    /// key changed part-way through, and counting it again would put more visitors than pages on the
+    /// screen. Read from a grouping of one row per key and page that
+    /// <see cref="DeliveredPageViews(int)"/> counted, by its <c>delivered</c> rather than its
+    /// <c>page_views</c>: the statements that read this name their own total <c>page_views</c>, and
+    /// inside them that name means the total.
+    /// </para>
+    /// <para>
     /// A surface that could not derive a key observed nothing about who was there, and counting all
     /// of that activity together would invent one busy phantom. A key covers one UTC day, so over a
     /// longer stretch this counts somebody once for every day they came. Written once because the
-    /// headline totals, the series and the months kept after their reports have to count the same
-    /// visitors, and a test holds the version of the kept months' arithmetic to this text.
+    /// headline totals, the series, the list of pages and the months kept after their reports have to
+    /// count the same visitors, and a test holds the version of the kept months' arithmetic to this
+    /// text.
+    /// </para>
     /// </remarks>
-    public const string Visitors = "toInt64(uniqExactIf(visitor_key, visitor_key != ''))";
+    public const string Visitors = "toInt64(uniqExactIf(visitor_key, visitor_key != '' AND delivered > 0))";
+
+    /// <summary>
+    /// Whether a page was delivered to a visitor: a condition on a grouping of one row per visitor
+    /// whose <c>page_views</c> is that visitor's total.
+    /// </summary>
+    /// <remarks>
+    /// The lists of who was where, where they came from and what they used say how
+    /// <see cref="Visitors"/> divides, so they hold exactly the keys it counts: a key that only
+    /// reported reading a page it was already on is on no row, as it is in no total.
+    /// </remarks>
+    public const string OpenedAPage = "page_views > 0";
 
     /// <summary>
     /// Pages delivered, for a grouping already narrowed to one visitor and one page.

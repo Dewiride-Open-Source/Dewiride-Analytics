@@ -137,7 +137,7 @@ FROM
 (
     SELECT
         calendar_bucket,
-        toInt64(uniqExactIf(visitor_key, visitor_key != '')) AS value
+        toInt64(uniqExactIf(visitor_key, visitor_key != '' AND delivered > 0)) AS value
     FROM
     (
         SELECT

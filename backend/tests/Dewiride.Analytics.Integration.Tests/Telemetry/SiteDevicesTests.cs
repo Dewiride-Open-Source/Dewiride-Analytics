@@ -289,6 +289,30 @@ public sealed class SiteDevicesTests(AnalyticsStackFixture stack)
         browsers.TotalVisitors.Should().Be(1);
     }
 
+    /// <summary>
+    /// A key whose only reports in the window say how a page was being read opened nothing in it, so
+    /// it is counted on no device and with no browser, as it is in no headline (ADR 0081).
+    /// </summary>
+    [Fact]
+    public async Task A_Key_That_Only_Reported_Reading_Counts_Towards_Nothing()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            Used(siteId, Midnight.AddHours(1), "visitor-a", DeviceClass.Phone, "Chrome", "Android"),
+            Used(siteId, Midnight.AddHours(2), "visitor-b", DeviceClass.Desktop, "Firefox", "Linux") with
+            {
+                Kind = EventKind.Exit,
+            });
+
+        var devices = await SplitOfDevices(siteId);
+        var browsers = await PageOfSoftware(siteId);
+
+        devices.Select(device => device.Device).Should().Equal(DeviceClass.Phone);
+        browsers.Names.Select(name => name.Name).Should().Equal("Chrome");
+        browsers.TotalVisitors.Should().Be(1);
+    }
+
     [Fact]
     public async Task Activity_Outside_The_Window_Is_Left_Out()
     {

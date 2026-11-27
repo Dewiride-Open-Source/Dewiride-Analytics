@@ -271,7 +271,7 @@ public sealed class MonthConsolidationTests(AnalyticsStackFixture stack)
 
         var kept = Of(await KeptRecord.RowsAsync(stack, site.Id), month);
 
-        Long(kept["counting_rules"]).Should().Be(CountingRules.Current).And.Be(3);
+        Long(kept["counting_rules"]).Should().Be(CountingRules.Current).And.Be(4);
         Long(kept["page_views"]).Should().Be(8);
         BestHourOf(kept).Should().Be((month.AddDays(2), 15, 5L));
         BestHourOf(kept, "people_").Should().Be((month.AddDays(2), 10, 2L));

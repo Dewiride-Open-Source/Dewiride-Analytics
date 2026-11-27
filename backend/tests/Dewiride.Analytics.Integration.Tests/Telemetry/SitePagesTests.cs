@@ -233,6 +233,24 @@ public sealed class SitePagesTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// A visitor of a page is somebody it was delivered to. A key that only reported reading it opened
+    /// it under another key or before the window, and is that page's visitor there (ADR 0081).
+    /// </summary>
+    [Fact]
+    public async Task A_Key_That_Only_Reported_Reading_A_Page_Is_Not_Its_Visitor()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            FromBrowser(siteId, Midnight.AddHours(1), "visitor-a", "/read"),
+            Engaged(siteId, Midnight.AddHours(2), "visitor-b", "/read"));
+
+        var pages = await PageOfAddresses(siteId);
+
+        pages.Pages.Should().ContainSingle().Which.Visitors.Should().Be(1);
+    }
+
+    /// <summary>
     /// A page read for half an hour is reported on over and over while it is being read. All of
     /// those reports are about one delivery, and a page delivered once is one page view.
     /// </summary>

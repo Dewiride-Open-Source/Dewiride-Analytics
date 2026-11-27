@@ -149,6 +149,28 @@ public sealed class SiteSourcesTests(AnalyticsStackFixture stack)
     }
 
     /// <summary>
+    /// A key whose only reports in the window say how a page was being read opened nothing in it, so
+    /// no site sent it anywhere: it is on no row and in no total (ADR 0081).
+    /// </summary>
+    [Fact]
+    public async Task A_Key_That_Only_Reported_Reading_Was_Sent_By_Nobody()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            From(siteId, Midnight.AddHours(1), "visitor-a", "https://duckduckgo.com/"),
+            From(siteId, Midnight.AddHours(2), "visitor-b", "https://news.ycombinator.com/item") with
+            {
+                Kind = EventKind.Engagement,
+            });
+
+        var sources = await PageOfSources(siteId);
+
+        sources.Sources.Select(source => source.Source).Should().Equal("DuckDuckGo");
+        sources.TotalVisitors.Should().Be(1);
+    }
+
+    /// <summary>
     /// Grouped by page, the row is the address of the page the link was on — which article sent
     /// the readers, rather than merely which site.
     /// </summary>

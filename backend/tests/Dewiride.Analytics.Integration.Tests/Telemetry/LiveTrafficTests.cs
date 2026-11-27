@@ -613,6 +613,38 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
 
         minutes.Should().HaveCount(31);
         minutes.Should().OnlyContain(minute => minute.PageViews == 0);
+        minutes.Should().OnlyContain(minute => minute.SentBy == default);
+    }
+
+    /// <summary>
+    /// Every minute says how many of its pages went to the visitors each kind of site sent, each
+    /// visitor under the kind the count of how they arrived puts them under — the first page naming a
+    /// sender decides, and the pages they open after it, which name the site itself, go with them.
+    /// Somebody nothing named a sender for is under no kind, so the kinds are not a breakdown of the
+    /// minute (ADR 0082).
+    /// </summary>
+    [Fact]
+    public async Task Each_Minute_Says_How_Many_Of_Its_Pages_Went_To_The_Visitors_Each_Kind_Of_Site_Sent()
+    {
+        var siteId = Guid.NewGuid();
+
+        await WriteAsync(
+            Referred(FromBrowser(siteId, Now.AddMinutes(-5), "searcher", "/posts/hello"), SearchResults, SearchHost),
+            Referred(FromBrowser(siteId, Now.AddMinutes(-4), "searcher", "/pricing"), OwnPage, SiteDomain),
+            Referred(FromBrowser(siteId, Now.AddMinutes(-4), "asked-an-assistant", "/posts/hello"), "https://chatgpt.com/", "chatgpt.com"),
+            FromBrowser(siteId, Now.AddMinutes(-4), "typed-it", "/"));
+
+        var here = await WhoIsHere(siteId);
+        var minutes = await ByTheMinute(siteId);
+        var fifth = minutes.Single(minute => minute.Start == Now.AddMinutes(-5));
+        var fourth = minutes.Single(minute => minute.Start == Now.AddMinutes(-4));
+
+        fifth.PageViews.Should().Be(1);
+        fifth.SentBy.Should().Be(new LivePagesSentBy(Search: 1, Assistant: 0, Social: 0, Link: 0));
+        fourth.PageViews.Should().Be(3);
+        fourth.SentBy.Should().Be(new LivePagesSentBy(Search: 1, Assistant: 1, Social: 0, Link: 0));
+        minutes.Sum(minute => minute.SentBy.Search).Should().Be(2);
+        here.Arrivals.Should().Be(new LiveArrivals(Search: 1, Assistant: 1, Social: 0, Link: 0));
     }
 
     [Fact]
@@ -985,7 +1017,7 @@ public sealed class LiveTrafficTests(AnalyticsStackFixture stack)
     private Task<IReadOnlyList<LiveMinute>> ByTheMinute(Guid siteId) =>
         stack.Services.GetRequiredService<ITelemetryQueries>().GetSiteLiveActivityAsync(
             Scope(siteId),
-            new SiteLiveActivityQuery(Window()),
+            new SiteLiveActivityQuery(Window(), SiteDomain),
             Cancellation.Token);
 
     private Task<IReadOnlyList<LivePage>> WhatIsBeingRead(Guid siteId) =>

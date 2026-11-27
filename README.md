@@ -652,7 +652,8 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-26.
 - **Done** · How the visitors here arrived — from a search engine, an AI assistant, a social network
   or a link on another site — counted over the whole half hour beside what has been recognised;
   pressing any of them keeps the list of who is here to those visitors, and the address carries the
-  choice.
+  choice. Kept to how visitors arrived, the minute-by-minute drawing shows only those visitors' pages
+  too.
 - **Not started** · Similar visits active — 3.5.
 
 **8.5 Question-led entry points**

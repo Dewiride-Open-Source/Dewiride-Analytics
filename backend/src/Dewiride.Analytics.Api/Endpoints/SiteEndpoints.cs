@@ -1647,9 +1647,24 @@ internal static class SiteEndpoints
                 reading.Arrivals.Social,
                 reading.Arrivals.Link),
             [.. reading.Visitors.Select(Here)],
-            [.. reading.Minutes.Select(minute => new LiveMinuteRow(minute.Start, minute.PageViews))],
+            [.. reading.Minutes.Select(Minute)],
             [.. reading.Pages.Select(page => new LivePageRow(page.Path, page.Visitors))]));
     }
+
+    /// <summary>
+    /// Reports one minute of the reading, and how many of its pages went to the visitors each kind of
+    /// site sent.
+    /// </summary>
+    /// <param name="minute">The minute.</param>
+    /// <returns>The minute, as the wire carries it.</returns>
+    private static LiveMinuteRow Minute(LiveMinute minute) => new(
+        minute.Start,
+        minute.PageViews,
+        new LivePagesSentByResponse(
+            minute.SentBy.Search,
+            minute.SentBy.Assistant,
+            minute.SentBy.Social,
+            minute.SentBy.Link));
 
     /// <summary>
     /// Reports one visitor who is here, and what may be said about them.

@@ -1073,16 +1073,44 @@ public sealed record SiteLiveVisitorsQuery : AnalyticsQuery
 }
 
 /// <summary>
-/// How much of a site was read in each minute of the last stretch of them.
+/// How much of a site was read in each minute of the last stretch of them, and how much of it by the
+/// visitors each kind of site sent.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Counted over the whole window rather than over the visitors an answer had room for, so the
 /// picture is of the site and not of a hundred of its readers. Every minute the window covers comes
 /// back, including the ones nothing happened in, because a gap in a drawing is a fact about the
 /// site and filling it in afterwards would be the reader's own arithmetic.
+/// </para>
+/// <para>
+/// What sent a visitor is read as <see cref="SiteLiveVisitorsQuery"/> reads it, so the minutes kept to
+/// one kind of site are the pages of exactly the visitors that kind is counted for (ADR 0082).
+/// </para>
 /// </remarks>
-/// <param name="Range">The stretch of minutes, ending at the present moment.</param>
-public sealed record SiteLiveActivityQuery(TimeRange Range) : AnalyticsQuery(Range);
+public sealed record SiteLiveActivityQuery : AnalyticsQuery
+{
+    /// <summary>Asks how much of a site was read in each minute of the last stretch of them.</summary>
+    /// <param name="range">The stretch of minutes, ending at the present moment.</param>
+    /// <param name="siteDomain">The measured site's own address, so it is never one of its own sources.</param>
+    /// <exception cref="ArgumentException">The site's address is missing.</exception>
+    public SiteLiveActivityQuery(TimeRange range, string siteDomain)
+        : base(range)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(siteDomain);
+
+        SiteDomain = siteDomain;
+    }
+
+    /// <summary>
+    /// The measured site's own address.
+    /// </summary>
+    /// <remarks>
+    /// Read from the site catalogue rather than from the request, on the terms of
+    /// <see cref="SiteLiveVisitorsQuery.SiteDomain"/>.
+    /// </remarks>
+    public string SiteDomain { get; }
+}
 
 /// <summary>
 /// The pages a site's visitors are on at this moment, the one holding most visitors first.

@@ -231,9 +231,9 @@ describe('who is here now', () => {
     engineReading([
       reading([visitor({ visitor: 'a1' }), visitor({ visitor: 'a2' })], {
         minutes: [
-          { start: '2026-08-29T10:28:00.000Z', pageViews: 1_200 },
-          { start: '2026-08-29T10:29:00.000Z', pageViews: 0 },
-          { start: '2026-08-29T10:30:00.000Z', pageViews: 7 },
+          { start: '2026-08-29T10:28:00.000Z', pageViews: 1_200, sentBy: NOBODY_SENT },
+          { start: '2026-08-29T10:29:00.000Z', pageViews: 0, sentBy: NOBODY_SENT },
+          { start: '2026-08-29T10:30:00.000Z', pageViews: 7, sentBy: NOBODY_SENT },
         ],
       }),
     ]);
@@ -444,9 +444,9 @@ describe('what the half hour looked like', () => {
     engineReading([
       reading([visitor()], {
         minutes: [
-          { start: '2026-08-29T10:28:00.000Z', pageViews: 4 },
-          { start: '2026-08-29T10:29:00.000Z', pageViews: 6 },
-          { start: '2026-08-29T10:30:00.000Z', pageViews: 1 },
+          { start: '2026-08-29T10:28:00.000Z', pageViews: 4, sentBy: NOBODY_SENT },
+          { start: '2026-08-29T10:29:00.000Z', pageViews: 6, sentBy: NOBODY_SENT },
+          { start: '2026-08-29T10:30:00.000Z', pageViews: 1, sentBy: NOBODY_SENT },
         ],
         pages: [{ path: '/writing/how-we-measure', visitors: 1 }],
       }),
@@ -1182,12 +1182,20 @@ describe('keeping the list to one kind of visitor', () => {
     expect(screen.getByRole('heading', { name: "Who's here" })).toHaveFocus();
   });
 
-  it('leaves the figures, the pages and the minutes counting everybody', async () => {
+  it('keeps the minutes to the visitors the chip names, and the figures and pages to everybody', async () => {
     engineReading([
       reading([SEARCHED, TYPED, SCANNING], {
         minutes: [
-          { start: '2026-08-29T10:29:00.000Z', pageViews: 6 },
-          { start: '2026-08-29T10:30:00.000Z', pageViews: 3 },
+          {
+            start: '2026-08-29T10:29:00.000Z',
+            pageViews: 6,
+            sentBy: { ...NOBODY_SENT, search: 2 },
+          },
+          {
+            start: '2026-08-29T10:30:00.000Z',
+            pageViews: 3,
+            sentBy: { ...NOBODY_SENT, search: 1 },
+          },
         ],
         pages: [
           { path: '/searched', visitors: 1 },
@@ -1219,7 +1227,10 @@ describe('keeping the list to one kind of visitor', () => {
       within(minutes)
         .getAllByRole('cell')
         .map((cell) => cell.textContent),
-    ).toEqual(['6', '3']);
+    ).toEqual(['2', '1']);
+    expect(
+      within(minutes).getByText('Pages read by visitors from a search engine'),
+    ).toBeInTheDocument();
   });
 
   it('admits a kept list is the most recently active when there are more of them', async () => {

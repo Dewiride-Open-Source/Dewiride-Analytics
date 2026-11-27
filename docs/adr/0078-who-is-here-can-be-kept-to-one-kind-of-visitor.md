@@ -17,6 +17,10 @@
   own ("From a search engine") the chips use; and
   [0028](0028-what-a-link-carries.md) and [0040](0040-what-a-screen-remembers.md), under which what a
   reader chose is written into the address and a narrowing is never remembered.
+- **Revised by**: [0082](0082-the-minutes-follow-how-the-visitors-arrived.md). Kept to the visitors one
+  kind of site sent, the minute-by-minute drawing is kept to them too; kept to something recognised, or
+  to everybody, it still counts everybody. The figures on the card and the pages being read are
+  unchanged.
 
 ## Context
 

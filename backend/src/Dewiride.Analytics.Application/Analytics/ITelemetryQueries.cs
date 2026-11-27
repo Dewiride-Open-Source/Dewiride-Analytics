@@ -315,9 +315,12 @@ public interface ITelemetryQueries
 
     /// <summary>Returns how much of a site was read in each minute of the last stretch of them.</summary>
     /// <param name="scope">Proof the caller may read this site.</param>
-    /// <param name="query">The stretch of minutes.</param>
+    /// <param name="query">The stretch of minutes, and the site's own address.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Every minute the window covers, oldest first, including the empty ones.</returns>
+    /// <returns>
+    /// Every minute the window covers, oldest first, including the empty ones, each with how many of
+    /// its pages went to the visitors each kind of site sent.
+    /// </returns>
     Task<IReadOnlyList<LiveMinute>> GetSiteLiveActivityAsync(
         TenantScope scope,
         SiteLiveActivityQuery query,
@@ -1165,7 +1168,29 @@ public readonly record struct LiveVisitor(
 /// </summary>
 /// <param name="Start">The minute began here, by the collector's own clock.</param>
 /// <param name="PageViews">How many pages were delivered in it.</param>
-public readonly record struct LiveMinute(DateTimeOffset Start, long PageViews);
+/// <param name="SentBy">How many of those pages went to the visitors each kind of site sent.</param>
+public readonly record struct LiveMinute(DateTimeOffset Start, long PageViews, LivePagesSentBy SentBy);
+
+/// <summary>
+/// How many of a minute's pages went to the visitors each kind of site sent.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Each visitor is put under the kind of site <see cref="LiveArrivals"/> counts them under — the one
+/// the earliest report in the window naming a sender named — so a minute kept to one kind holds the
+/// pages of exactly the visitors that kind is counted for, and the minutes and the list kept to it
+/// describe the same people (ADR 0082).
+/// </para>
+/// <para>
+/// Not a breakdown of the minute. The pages of somebody nothing named a sender for, and of activity
+/// carrying no visitor key, are under none of the four.
+/// </para>
+/// </remarks>
+/// <param name="Search">Pages that went to visitors a search engine sent.</param>
+/// <param name="Assistant">Pages that went to visitors an AI assistant sent.</param>
+/// <param name="Social">Pages that went to visitors a social network sent.</param>
+/// <param name="Link">Pages that went to visitors a link on any other site sent.</param>
+public readonly record struct LivePagesSentBy(long Search, long Assistant, long Social, long Link);
 
 /// <summary>
 /// One page visitors are on.

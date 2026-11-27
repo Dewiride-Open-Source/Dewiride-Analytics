@@ -960,13 +960,16 @@
     "activity": {
       "title": "Minute by minute",
       "measure": "Pages read",
+      "measureSentBy": "Pages read by visitors {kind, select, search {from a search engine} assistant {from an AI assistant} social {from a social network} other {from a link on another site}}",
       "summary": "Pages read on {site} each minute over the last half hour.",
+      "summarySentBy": "Pages read on {site} each minute over the last half hour by visitors {kind, select, search {from a search engine} assistant {from an AI assistant} social {from a social network} other {from a link on another site}}.",
       "zone": "Times are the clock in {zone}.",
       "filling": "The last column is still filling.",
       "stillFilling": "still filling",
       "table": "Show these figures as a table",
       "columnTime": "Time",
-      "none": "Nothing has been read in the last half hour."
+      "none": "Nothing has been read in the last half hour.",
+      "noneSentBy": "Nothing has been read in the last half hour by visitors {kind, select, search {from a search engine} assistant {from an AI assistant} social {from a social network} other {from a link on another site}}."
     },
     "pages": {
       "title": "What's being read",

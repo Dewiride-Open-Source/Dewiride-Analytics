@@ -977,10 +977,25 @@ export const visitFacetsSchema = z.object({
   entryPages: z.array(visitDetailRowSchema),
 });
 
+/**
+ * How many of a minute's pages went to the visitors each kind of site sent.
+ *
+ * Each visitor is under the kind the count of how they arrived puts them under, so the minutes kept
+ * to one kind are the pages of the very visitors that kind counts. The pages of somebody nothing named
+ * a sender for are under none of the four, so the four are not a breakdown of the minute.
+ */
+export const livePagesSentBySchema = z.object({
+  search: z.number().int(),
+  assistant: z.number().int(),
+  social: z.number().int(),
+  link: z.number().int(),
+} satisfies Record<SourceKind, z.ZodNumber>);
+
 /** One minute of a website's reading, including the ones nothing happened in. */
 export const liveMinuteSchema = z.object({
   start: timestamp,
   pageViews: z.number().int(),
+  sentBy: livePagesSentBySchema,
 });
 
 /**

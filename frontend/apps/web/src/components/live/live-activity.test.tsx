@@ -1,5 +1,7 @@
+import { within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { LiveActivity } from '@/components/live/live-activity';
+import type { LiveNarrowing } from '@/lib/analytics/live';
 import type { LiveMinute } from '@/lib/api/schemas';
 import { drawn } from '@/test/drawing';
 import { renderScreen } from '@/test/harness';
@@ -21,19 +23,34 @@ const AT = '2026-08-29T10:30:20.000Z';
  * like and is exactly the shape that must not be read as traffic falling away.
  */
 const MINUTES: readonly LiveMinute[] = [
-  { start: '2026-08-29T10:26:00.000Z', pageViews: 4 },
-  { start: '2026-08-29T10:27:00.000Z', pageViews: 0 },
-  { start: '2026-08-29T10:28:00.000Z', pageViews: 9 },
-  { start: '2026-08-29T10:29:00.000Z', pageViews: 7 },
-  { start: '2026-08-29T10:30:00.000Z', pageViews: 2 },
+  { start: '2026-08-29T10:26:00.000Z', pageViews: 4, sentBy: sent(3, 0) },
+  { start: '2026-08-29T10:27:00.000Z', pageViews: 0, sentBy: sent(0, 0) },
+  { start: '2026-08-29T10:28:00.000Z', pageViews: 9, sentBy: sent(1, 2) },
+  { start: '2026-08-29T10:29:00.000Z', pageViews: 7, sentBy: sent(0, 0) },
+  { start: '2026-08-29T10:30:00.000Z', pageViews: 2, sentBy: sent(1, 0) },
 ];
+
+/** How many of a minute's pages went to visitors a search engine and an AI assistant sent. */
+function sent(search: number, assistant: number): LiveMinute['sentBy'] {
+  return { search, assistant, social: 0, link: 0 };
+}
 
 /** Kolkata, so that a minute written on the site's clock cannot pass for one written on UTC. */
 const ZONE = 'Asia/Kolkata';
 
-function render(minutes: readonly LiveMinute[] = MINUTES, at = AT) {
+function render(
+  minutes: readonly LiveMinute[] = MINUTES,
+  at = AT,
+  narrowing: LiveNarrowing = null,
+) {
   return renderScreen(
-    <LiveActivity minutes={minutes} at={at} timeZoneId={ZONE} siteName="My Blog" />,
+    <LiveActivity
+      minutes={minutes}
+      at={at}
+      timeZoneId={ZONE}
+      siteName="My Blog"
+      narrowing={narrowing}
+    />,
   );
 }
 
@@ -123,6 +140,63 @@ describe('the half hour, as figures', () => {
     getByText('Show these figures as a table').click();
 
     expect(await findByText('still filling')).toBeInTheDocument();
+  });
+});
+
+describe('the half hour, kept to how visitors arrived', () => {
+  const SEARCH = { by: 'sourceKind', kind: 'search' } as const;
+
+  /** The columns and the list beside them describe the same people while it is kept to them. */
+  it('draws only the pages that went to visitors a search engine sent', () => {
+    render(MINUTES, AT, SEARCH);
+
+    expect(columns()).toStrictEqual([3, 0, 1, 0, expect.objectContaining({ value: 1 })]);
+  });
+
+  it('names whose pages the columns count', () => {
+    const { getAllByText, getByRole } = render(MINUTES, AT, SEARCH);
+
+    expect(getAllByText('Pages read by visitors from a search engine').length).toBeGreaterThan(0);
+    expect(
+      getByRole('img', {
+        name: 'Pages read on My Blog each minute over the last half hour by visitors from a search engine.',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('publishes the same kept figures in the table', async () => {
+    const { getByText, findByRole } = render(MINUTES, AT, { by: 'sourceKind', kind: 'assistant' });
+
+    getByText('Show these figures as a table').click();
+
+    const table = await findByRole('table');
+
+    expect(table).toHaveTextContent('Pages read by visitors from an AI assistant');
+    expect(
+      within(table)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent),
+    ).toEqual(['0', '0', '2', '0', '0']);
+  });
+
+  /**
+   * What has been recognised is named only among the visitors a reading carries, so no minute can be
+   * kept to it: the columns stay everybody's, and say so by their name.
+   */
+  it("keeps everybody's columns, and their name, while the list is kept to something recognised", () => {
+    const { getAllByText } = render(MINUTES, AT, { by: 'category', category: 'known-ai-crawler' });
+
+    expect(columns()).toStrictEqual([4, 0, 9, 7, expect.objectContaining({ value: 2 })]);
+    expect(getAllByText('Pages read').length).toBeGreaterThan(0);
+  });
+
+  it('says nothing was read by those visitors where none of their pages fall in the half hour', () => {
+    const { getByText, queryByRole } = render(MINUTES, AT, { by: 'sourceKind', kind: 'social' });
+
+    expect(
+      getByText('Nothing has been read in the last half hour by visitors from a social network.'),
+    ).toBeInTheDocument();
+    expect(queryByRole('img')).not.toBeInTheDocument();
   });
 });
 

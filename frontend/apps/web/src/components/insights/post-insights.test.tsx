@@ -1378,7 +1378,7 @@ describe('the screen about one post kept to people', () => {
 
     const views = await within(await highlights()).findByText('512');
 
-    expect(views.parentElement).toHaveTextContent('Views by people');
+    expect(views.parentElement).toHaveTextContent('Views');
     expect(
       screen.getAllByText('Every figure counts only the visits judged to be people.'),
     ).toHaveLength(1);
@@ -1408,7 +1408,7 @@ describe('the screen about one post kept to people', () => {
     expect(
       await screen.findByText('Every figure counts only the visits judged to be people.'),
     ).toBeInTheDocument();
-    expect(within(await highlights()).getByText('Views by people')).toBeInTheDocument();
+    expect(within(await highlights()).getByText('Views')).toBeInTheDocument();
   });
 
   it('says once that the newest are still being judged where judging is two days behind', async () => {

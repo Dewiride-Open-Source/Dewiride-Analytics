@@ -289,7 +289,7 @@ describe('the insights screen', () => {
     const visitors = screen.getByText('1,234');
 
     expect(views.parentElement).toHaveTextContent('Page views');
-    expect(visitors.parentElement).toHaveTextContent('Daily visitors');
+    expect(visitors.parentElement).toHaveTextContent('Visitors');
     expect(visitors.parentElement).toHaveTextContent('Someone who returns tomorrow counts again.');
   });
 
@@ -820,8 +820,12 @@ describe('the insights screen kept to people', () => {
     renderScreen(<Insights />, { searchParams: 'only=people' });
 
     expect(await screen.findByText('1,000')).toBeInTheDocument();
-    expect(screen.getByText('Page views by people')).toBeInTheDocument();
-    expect(screen.getByText('Daily visitors judged to be people')).toBeInTheDocument();
+
+    // The figures keep their names, and the clause above them says whom they count.
+    const highlights = screen.getByRole('region', { name: 'All-time highlights' });
+
+    expect(within(highlights).getByText('Page views')).toBeInTheDocument();
+    expect(within(highlights).getByText('Visitors')).toBeInTheDocument();
     expect(
       screen.getAllByText('Every figure counts only the visits judged to be people.'),
     ).toHaveLength(1);
@@ -864,7 +868,9 @@ describe('the insights screen kept to people', () => {
     // Once the website is known, which is what names the clock its days are counted on.
     await screen.findByText('Days and hours are counted in Kolkata.');
 
-    expect(screen.getByText('Page views by people')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'All-time highlights' })).getByText('Page views'),
+    ).toBeInTheDocument();
     expect(
       screen.getByText('Every figure counts only the visits judged to be people.'),
     ).toBeInTheDocument();
@@ -1184,7 +1190,7 @@ describe('the insights screen with nothing to show yet', () => {
     const highlights = await screen.findByRole('region', { name: 'All-time highlights' });
 
     expect(within(highlights).getByText('Page views')).toBeInTheDocument();
-    expect(within(highlights).getByText('Daily visitors')).toBeInTheDocument();
+    expect(within(highlights).getByText('Visitors')).toBeInTheDocument();
     await waitFor(() => expect(container.querySelector('.animate-pulse')).not.toBeNull());
     expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
 

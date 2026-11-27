@@ -141,13 +141,13 @@ describe('a measure drawn as a line or an area', () => {
   /** Two measures share their months, and each is dotted in its own colour, over both areas. */
   it('draws the dots of each measure in its own colour, over both measures', () => {
     const series = drawn(BROKEN, 'area', {
-      name: 'Daily visitors',
+      name: 'Visitors',
       values: BROKEN.map((value) => (value === null ? null : Math.round(value / 2))),
     });
 
     expect(series.map((one) => one.name)).toStrictEqual([
       'Views',
-      'Daily visitors',
+      'Visitors',
       undefined,
       undefined,
     ]);

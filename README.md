@@ -44,7 +44,7 @@ and the [master plan](#master-plan) below it says what does not yet.
   website. Removing a website deletes everything ever measured for it and nothing brings it back,
   so it asks you to type the website's address before it will go ahead. Anyone who can change a
   website's settings can rename it; removing one is the owner's alone.
-- A dashboard showing page views, daily visitors, a traffic graph drawn by the day, the week or the
+- A dashboard showing page views, visitors, a traffic graph drawn by the day, the week or the
   month whose bars can be pressed to look at the days they cover, and the pages a period's traffic
   went to, for a website you own. "All time" shows the figures and the graph, by the month or the
   year, back to the first month the website was measured — or, on an installation that first runs
@@ -68,7 +68,7 @@ and the [master plan](#master-plan) below it says what does not yet.
   there is. A visitor is counted in each hour and each day they opened a page in, and nowhere else:
   somebody still reading a page from the hour before, or from before midnight, is not counted
   again, so no hour or day ever shows more visitors than page views.
-- **Insights**, a screen of its own for a website's whole record: its page views and daily visitors
+- **Insights**, a screen of its own for a website's whole record: its page views and visitors
   since it was first measured, its best day and its best hour ever, its busiest day of the week and
   hour on its own clock, and every month and year by total views or by average per day. All of it can
   be kept to the visits judged to be people, and a month that could not be counted says so rather than
@@ -431,7 +431,7 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-26.
 
 **5.2 Headline figures**
 
-- **Done** · Page views, daily visitors, pages per visitor — and the same for people only.
+- **Done** · Page views, visitors, pages per visitor — and the same for people only.
 - **Done** · Who's visiting: visits and pages per category with strength; share per tone.
 - **Not started** · Single figures: automated visits, unknown visits, automated page views,
   crawler fetches, content reads.
@@ -474,7 +474,7 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-26.
   that can be pressed to look at the days they cover.
 - **Done** · All time: the headline figures and the graph by months or years, back to the first
   month kept.
-- **Partly done** · The "Who came" chart stacks four tones over time; AI and search are folded
+- **Partly done** · The "Visits" chart stacks four tones over time; AI and search are folded
   into Machinery.
 - **Not started** · AI crawlers and search crawlers as lines of their own.
 - **Not started** · Changes for automated, suspicious and unknown traffic; Human Traffic Score
@@ -494,7 +494,7 @@ up. Each line is marked with one of four states. Last reviewed 2026-11-26.
 
 **5.8 Insights**
 
-- **Done** · All-time page views and daily visitors, the best day and the best hour ever, the busiest
+- **Done** · All-time page views and visitors, the best day and the best hour ever, the busiest
   day of the week and hour, every month and year by total views or by average per day, and the same
   for people only.
 - **Done** · Posts from the website's own sitemap: how many, the newest ten with their views, the most

@@ -159,8 +159,11 @@ function aboutEarlierDays(path: string, setUpAt?: Date): boolean {
   );
 }
 
-/** The labels of the three headline cards, as everybody's figures are labelled. */
-const CARD_LABELS = ['Page views', 'Daily visitors', 'Pages per visitor'];
+/** The labels of the three headline cards, whoever they count. */
+const CARD_LABELS = ['Page views', 'Visitors', 'Pages per visitor'];
+
+/** The one clause the figures are read under while they are kept to people. */
+const KEPT_TO_PEOPLE = 'Every figure counts only the visits judged to be people.';
 
 /**
  * Whether the card a label heads holds the place of the line saying how its number moved, with a
@@ -539,7 +542,7 @@ describe('the dashboard', () => {
 
     await waitFor(() => expect(within(grid).getAllByText('—')).toHaveLength(3));
     expect(grid.querySelector('.animate-pulse')).toBeNull();
-    expect(within(grid).getByRole('heading', { name: 'Daily visitors' })).toBeInTheDocument();
+    expect(within(grid).getByRole('heading', { name: 'Visitors' })).toBeInTheDocument();
     expect(within(grid).getByRole('heading', { name: 'Pages per visitor' })).toBeInTheDocument();
     expect(
       within(grid).getByText('Someone who returns tomorrow counts again.'),
@@ -613,7 +616,7 @@ describe('the dashboard', () => {
 
     renderScreen(<Dashboard />);
 
-    await userEvent.click(await screen.findByRole('radio', { name: 'How much' }));
+    await userEvent.click(await screen.findByRole('radio', { name: 'Visitors & page views' }));
 
     expect(
       await screen.findByRole('img', { name: /Page views and visitors for/ }),
@@ -657,7 +660,7 @@ describe('the dashboard', () => {
       await screen.findByText('Visits that have finished, by day in Kolkata.'),
     ).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('radio', { name: 'How much' }));
+    await userEvent.click(screen.getByRole('radio', { name: 'Visitors & page views' }));
 
     expect(
       await screen.findByText('Days run midnight to midnight in Kolkata.'),
@@ -1019,7 +1022,7 @@ describe('the whole screen kept to people', () => {
   it('asks every panel about the same people', async () => {
     const engine = keptToPeople('?only=people&show=activity');
 
-    await screen.findAllByText('Page views by people');
+    await screen.findByText(KEPT_TO_PEOPLE);
     await waitFor(() => {
       for (const address of ACTIVITY) {
         expect(engine.all().some(({ path }) => path.includes(address))).toBe(true);
@@ -1054,7 +1057,7 @@ describe('the whole screen kept to people', () => {
   it('still checks everybody, quietly', async () => {
     const engine = keptToPeople();
 
-    await screen.findByText('Page views by people');
+    await screen.findByText(KEPT_TO_PEOPLE);
 
     const everybody = engine
       .all()
@@ -1064,21 +1067,25 @@ describe('the whole screen kept to people', () => {
     expect(everybody).toHaveLength(1);
   });
 
-  it('labels the cards with what they count', async () => {
+  /** The figures keep their names, and the clause above them says whom they count. */
+  it('labels the cards as everybody’s are', async () => {
     keptToPeople();
 
-    expect(await screen.findByText('Page views by people')).toBeInTheDocument();
-    expect(screen.getByText('Daily visitors judged to be people')).toBeInTheDocument();
-    expect(screen.getByText('Pages per person')).toBeInTheDocument();
+    expect(await screen.findByText(KEPT_TO_PEOPLE)).toBeInTheDocument();
+
+    const grid = screen.getByRole('heading', { name: 'Page views' }).closest('.grid');
+
+    expect(grid).not.toBeNull();
+    for (const label of CARD_LABELS) {
+      expect(within(grid as HTMLElement).getByRole('heading', { name: label })).toBeInTheDocument();
+    }
     expect(screen.getByText('Someone who returns tomorrow counts again.')).toBeInTheDocument();
   });
 
   it('says once, above the figures, whose they are', async () => {
     keptToPeople();
 
-    expect(
-      await screen.findByText('Every figure counts only the visits judged to be people.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(KEPT_TO_PEOPLE)).toBeInTheDocument();
   });
 
   it('says nothing about whose the figures are when they are everybody’s', async () => {
@@ -1088,9 +1095,7 @@ describe('the whole screen kept to people', () => {
 
     await screen.findByText('Page views');
 
-    expect(
-      screen.queryByText('Every figure counts only the visits judged to be people.'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(KEPT_TO_PEOPLE)).not.toBeInTheDocument();
   });
 
   it('washes the newest figures the engine has not finished judging', async () => {
@@ -1267,7 +1272,7 @@ describe('the whole screen kept to people', () => {
   it('starts every list again when the population changes', async () => {
     const engine = keptToPeople('?only=people');
 
-    await screen.findByText('Page views by people');
+    await screen.findByText(KEPT_TO_PEOPLE);
     await userEvent.click(screen.getByRole('button', { name: /People only/ }));
 
     await screen.findByText('Page views');
@@ -1385,7 +1390,7 @@ describe('a day pressed on the picture', () => {
 
     renderScreen(<Dashboard />, { searchParams: '?period=yesterday' });
 
-    await userEvent.click(await screen.findByRole('radio', { name: 'How much' }));
+    await userEvent.click(await screen.findByRole('radio', { name: 'Visitors & page views' }));
     await screen.findByRole('img', { name: /Page views and visitors for/ });
     await userEvent.click(screen.getByText('Show these figures as a table'));
 
@@ -2702,7 +2707,7 @@ describe('all time', () => {
     expect(screen.queryByText('20,520')).not.toBeInTheDocument();
 
     // Under all time as under any period, a stand-in promises a figure that is not coming.
-    const cards = screen.getByRole('heading', { name: 'Page views by people' }).closest('.grid');
+    const cards = screen.getByRole('heading', { name: 'Page views' }).closest('.grid');
 
     expect(cards).not.toBeNull();
     await waitFor(() => expect(within(cards as HTMLElement).getAllByText('—')).toHaveLength(3));
@@ -2735,7 +2740,7 @@ describe('all time', () => {
     expect(await screen.findAllByText('Something went wrong')).not.toHaveLength(0);
 
     const cards = screen
-      .getByRole('heading', { name: 'Page views by people' })
+      .getByRole('heading', { name: 'Page views' })
       .closest('.grid') as HTMLElement;
 
     expect(cards.querySelector('.animate-pulse')).not.toBeNull();

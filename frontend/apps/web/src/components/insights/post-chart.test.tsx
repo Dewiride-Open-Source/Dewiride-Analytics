@@ -602,9 +602,7 @@ describe('the picture of a post’s views', () => {
       ),
     ).toBeInTheDocument();
     expect(drawnSeries(PEOPLE_DRAWN).some((one) => one.markArea !== undefined)).toBe(true);
-    expect(screen.getAllByRole('listitem').map((key) => key.textContent)).toStrictEqual([
-      'Views by people',
-    ]);
+    expect(screen.getAllByRole('listitem').map((key) => key.textContent)).toStrictEqual(['Views']);
 
     await unfold();
 

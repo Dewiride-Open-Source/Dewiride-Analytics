@@ -448,7 +448,7 @@ function ActivityView({
     'people',
   );
 
-  // Where the picture's words are found: the people's measures carry the people in their names.
+  // Where the picture's own description is found: kept to people, it says whom it counts.
   const wording = peopleOnly ? 'people.activity' : 'activity';
 
   const starts = useMemo(() => points.map((point) => point.start), [points]);
@@ -456,18 +456,11 @@ function ActivityView({
   const figure = useFigure(days, unsettled);
   const leftOut = useLeftOut(missing, unsettled, buckets.timeZoneId);
 
-  // Counted in an hour, distinct visitors are the people who were there in that hour, which is a
-  // different figure from the day's. Naming it the day's would be a claim the numbers do not make.
-  // Over a week or a month they are counted exactly as the cards count them, and keep the cards'
-  // name: somebody who comes back on another day counts again, as the caption beneath says.
-  const names = useMemo(
-    () =>
-      [
-        t(`${wording}.pageViews`),
-        granularity === 'hour' ? t(`${wording}.visitorsByHour`) : t(`${wording}.visitors`),
-      ] as const,
-    [t, wording, granularity],
-  );
+  // The measures wear the cards' names whatever the cut and whoever is counted, so the table adds up
+  // to the cards in the same words. A stretch's visitors are those who opened a page in it, and
+  // somebody who comes back on another day counts again, as the caption beneath says of any stretch
+  // longer than a day.
+  const names = useMemo(() => [t('activity.pageViews'), t('activity.visitors')] as const, [t]);
 
   const measures = useMemo(
     () =>
